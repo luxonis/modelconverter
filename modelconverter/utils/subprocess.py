@@ -54,12 +54,12 @@ def subprocess_run(
     if not silent:
         log_message(info_string)
     if result.stderr:
-        string = result.stderr.decode("utf-8")
+        string = result.stderr.decode(errors="ignore")
         if not silent:
             log_message(f"[ STDERR ]:\n{string}")
         info_string += f"\n[ STDERR ]:\n{string}"
     if result.stdout:
-        string = result.stdout.decode("utf-8")
+        string = result.stdout.decode(errors="ignore")
         if not silent:
             log_message(f"[ STDOUT ]:\n{string}")
         info_string += f"\n[ STDOUT ]:\n{string}"
