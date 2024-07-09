@@ -70,15 +70,13 @@ Requires `hailo_ai_sw_suite_2024-04:1` docker image to be present on the system.
 
 1. Build the docker image:
 
-  ```bash
-  docker build -f docker/<package>/Dockerfile.public -t luxonis/modelconverter-<package>:latest .
-  ```
-
+   ```bash
+   docker build -f docker/<package>/Dockerfile.public -t luxonis/modelconverter-<package>:latest .
+   ```
 1. For easier use, you can install the ModelConverter CLI. You can install it from PyPI using the following command:
 
    ```bash
    pip install modelconv
-
    ```
    For usage instructions, see `modelconverter --help`.
 
