@@ -15,6 +15,10 @@ permissions:
 env:
   DOCKERFILE: docker/${{ inputs.package }}/Dockerfile
   TAG: luxonis/modelconverter-${{ inputs.package }}:latest
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_S3_ENDPOINT_URL: ${{ secrets.AWS_S3_ENDPOINT_URL }}
+  PACKAGE: ${{ inputs.package }}
 
 jobs:
   tests:
@@ -53,11 +57,6 @@ jobs:
         token_format: access_token
 
     - name: Run Tests
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_S3_ENDPOINT_URL: ${{ secrets.AWS_S3_ENDPOINT_URL }}
-        PACKAGE: ${{ inputs.package }}
       run: |
         pytest -s --verbose "tests/test_packages/test_$PACKAGE.py"
 
