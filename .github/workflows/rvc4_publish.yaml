@@ -1,0 +1,16 @@
+name: Publish - RVC4
+
+on:
+  workflow_dispatch:
+
+  release:
+    types: [published]
+    branches:
+      - main
+
+jobs:
+  rvc4-publish:
+    uses: ./.github/workflows/publish.yaml
+    secrets: inherit
+    with:
+      package: rvc4

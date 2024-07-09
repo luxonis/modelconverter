@@ -1,0 +1,38 @@
+name: yolo_instance_seg_mre
+stages:
+  yolov5n-seg:
+    input_model: "s3://luxonis-test-bucket/modelconverter-test/yolov5n-seg.onnx"
+
+    mean_values: [ 0, 0, 0 ]
+    scale_values: [ 255, 255, 255 ]
+    reverse_input_channels: true
+    keep_intermediate_outputs: true
+
+    calibration:
+      path: "s3://luxonis-test-bucket/modelconverter-test/imagenette-calib.zip"
+      max_images: 20
+      encoding: BGR
+
+    inputs:
+      - name: images
+
+    outputs:
+      - name: output1_yolov5
+      - name: output2_yolov5
+      - name: output3_yolov5
+      - name: output1_masks
+      - name: output2_masks
+      - name: output3_masks
+      - name: protos_output
+
+  mult:
+    input_model: "s3://luxonis-test-bucket/modelconverter-test/mult.onnx"
+    inputs:
+      - name: coeffs
+        calibration:
+          stage: yolov5n-seg
+          script: "s3://luxonis-test-bucket/modelconverter-test/script.py"
+      - name: prototypes
+        calibration:
+          stage: yolov5n-seg
+          output: protos_output

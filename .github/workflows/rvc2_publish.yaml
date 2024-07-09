@@ -1,0 +1,16 @@
+name: Publish - RVC2
+
+on:
+  workflow_dispatch:
+
+  release:
+    types: [published]
+    branches:
+      - main
+
+jobs:
+  rvc2-publish:
+    uses: ./.github/workflows/publish.yaml
+    secrets: inherit
+    with:
+      package: rvc2

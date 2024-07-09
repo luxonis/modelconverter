@@ -1,0 +1,12 @@
+# Common parameters
+
+input_model: "s3://luxonis-test-bucket/modelconverter-test/mnist.onnx"
+
+scale_values: [255]
+shape: [ 1, 1, 28, 28 ]
+
+encoding: GRAY
+
+calibration:
+  path: "s3://luxonis-test-bucket/modelconverter-test/mnist_dataset.zip"
+  max_images: 20

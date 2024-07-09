@@ -1,0 +1,30 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+
+RUN apt-get update && \
+    apt-get install -y \
+    cmake unzip perl libatomic1 libc++-dev ffmpeg libcurl4 libncurses5 patch git
+
+COPY docker/extra_packages/snpe.zip .
+RUN unzip snpe.zip -d /opt && rm snpe.zip
+RUN mv /opt/qairt/* /opt/snpe && rmdir /opt/qairt
+
+COPY docker/rvc4/requirements.txt requirements-rvc4.txt
+COPY requirements.txt .
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements-rvc4.txt && \
+    pip install --no-cache-dir -r requirements.txt && \
+    rm requirements-rvc4.txt requirements.txt
+
+
+COPY docker/rvc4/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh  && \
+    mkdir /app/modelconverter
+COPY modelconverter pyproject.toml /app/modelconverter/
+RUN cd modelconverter && pip install -e . --no-deps
+
+ENV IN_DOCKER=
+
+ENTRYPOINT ["/app/entrypoint.sh"]

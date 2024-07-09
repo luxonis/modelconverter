@@ -1,0 +1,33 @@
+name: yolov8_instance_seg
+stages:
+  yolov8-seg:
+    input_model: "models/yolov8n_seg_512x288.onnx"
+    mean_values: [ 0, 0, 0 ]
+    scale_values: [ 255, 255, 255 ]
+    keep_intermediate_outputs: true
+    calibration:
+      path: "shared_with_container/calibration_data/imagenette-calib"
+      max_images: 20
+    inputs:
+      - name: images
+    outputs:
+      - name: output1_masks
+      - name: output1_yolov8
+      - name: output2_masks
+      - name: output2_yolov8
+      - name: output3_masks
+      - name: output3_yolov8
+      - name: protos_output
+
+  mult:
+    input_model: "models/mult_512x288.onnx"
+    encoding: NONE
+    inputs:
+      - name: coeffs
+        calibration:
+          stage: yolov8-seg
+          script: "shared_with_container/script.py"
+      - name: prototypes
+        calibration:
+          stage: yolov8-seg
+          output: protos_output

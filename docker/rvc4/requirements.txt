@@ -1,0 +1,4 @@
+pytest
+tflite
+psutil
+numpy<2

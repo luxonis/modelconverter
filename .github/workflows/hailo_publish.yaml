@@ -1,0 +1,17 @@
+name: Publish - HAILO
+
+on:
+  workflow_dispatch:
+
+  release:
+    types: [published]
+    branches:
+      - main
+
+jobs:
+  hailo-publish:
+    uses: ./.github/workflows/publish.yaml
+    secrets: inherit
+    with:
+      package: hailo
+

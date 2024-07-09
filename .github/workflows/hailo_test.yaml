@@ -1,0 +1,23 @@
+name: Test - HAILO
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'modelconverter/packages/hailo/**'
+      - 'tests/test_packages/test_hailo.py'
+      - 'dockerfiles/Dockerfile.hailo'
+      - 'entrypoints/entrypoint_hailo.sh'
+      - '.github/workflows/modelconverter_test.yaml'
+      - '.github/workflows/hailo_test.yaml'
+
+jobs:
+  hailo-test:
+    uses: ./.github/workflows/modelconverter_test.yaml
+    secrets: inherit
+    with:
+      package: hailo
+

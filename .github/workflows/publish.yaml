@@ -1,0 +1,100 @@
+name: Package publishing
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        required: true
+        type: string
+        description: Which package to publish
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  PROJECT_ID: easyml-394818
+  GAR_LOCATION: us-central1
+  DOCKERFILE: docker/${{ inputs.package }}/Dockerfile
+  NAME: luxonis/modelconverter-${{ inputs.package }}
+  STEM: modelconverter-${{ inputs.package }}
+
+jobs:
+  ghcr-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Get modelconverter version
+      id: commit
+      run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Docker login to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Publish latest
+      run: |
+        docker build -f $DOCKERFILE -t $NAME:latest .
+        docker tag $NAME:latest ghcr.io/$NAME:latest
+        docker push ghcr.io/$NAME:latest
+
+    - name: Publish tagged
+      run: |
+        VERSION=${{ steps.commit.outputs.sha }}
+        docker tag $NAME:latest ghcr.io/$NAME:$VERSION
+        docker push ghcr.io/$NAME:$VERSION
+
+  gar-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Get modelconverter version
+      id: commit
+      run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Authenticate to Google Cloud
+      id: google-auth
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+        token_format: access_token
+
+    - name: Docker login to GAR
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.GAR_LOCATION }}-docker.pkg.dev
+        username: oauth2accesstoken
+        password: ${{ steps.google-auth.outputs.access_token }}
+
+    - name: Docker login to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Publish
+      run: |
+        docker build -f $DOCKERFILE -t $NAME:latest .
+
+        VERSION=${{ steps.commit.outputs.sha }}
+        GAR_TAG="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/internal/$STEM:$VERSION"
+
+        docker tag $NAME:latest $GAR_TAG
+        docker push $GAR_TAG
+
+        IFS=' ' read -r -a REPO_ARRAY <<< "${{ vars.EXTERNAL_CLIENTS }}"
+        for REPO in "${REPO_ARRAY[@]}"; do
+          GAR_CLIENT_TAG="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPO/$STEM:$VERSION"
+            docker tag $GAR_TAG $GAR_CLIENT_TAG
+            docker push $GAR_CLIENT_TAG
+        done

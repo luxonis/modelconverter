@@ -1,0 +1,11 @@
+Pillow
+PyYAML
+gcsfs
+luxonis-ml[data,nn_archive] >= 0.2.2
+onnx
+onnxruntime
+onnxsim
+s3fs
+s3transfer
+typer
+docker

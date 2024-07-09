@@ -1,0 +1,19 @@
+# Common parameters
+
+input_model: "s3://luxonis-test-bucket/modelconverter-test/resnet18-simplified.bin"
+
+mean_values: "imagenet"
+scale_values: "imagenet"
+reverse_input_channels: true
+data_type: FLOAT32
+shape: [ 1, 3, 256, 256 ]
+
+calibration:
+  path: "s3://luxonis-test-bucket/modelconverter-test/coco128.zip"
+  max_images: 20
+  encoding: BGR
+
+hailo:
+  optimization_level: 3
+  compression_level: 3
+  batch_size: 4

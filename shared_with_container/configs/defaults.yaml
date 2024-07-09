@@ -1,0 +1,182 @@
+
+# Name of the model. Will be the stem of the input model if undefined.
+name: ~
+
+# Override the output directory name. If not provided, the output directory
+# will be named `<model_name>_to_<target>_<timestamp>`.
+output_dir_name: ~
+
+# List of stages for multistage models. Doesn't have to be provided
+# for single-stage models.
+stages:
+
+  # Name of the stage. Required.
+  stage_name:
+
+    # Path to an ONNX or IR model. IR is supported only for RVC2 and RVC3 conversions.
+    # It can be either a local file or an S3 url. Required.
+    input_model: ~
+
+    # Specify the current input and desired output encoding for image data inputs.
+    encoding:
+      from: RGB
+      to: BGR
+
+    # Configuration for the calibration dataset.
+    # Required for Hailo and RVC4, optional for RVC3, ignored for RVC2.
+    # If specified, then the `calibration.path` must be provided.
+    calibration:
+      # Path to the calibration dataset. It can be either a local directory,
+      # an S3 url, or an LDF identificator in a form <dataset_name>:<split>.
+      # Example:
+      # path: models/coco128
+      # path: test_name:val
+      path: ~
+
+      # Include only the specified number of images from the calibration dataset.
+      # Optional.
+      max_images: -1
+
+      # What method to use for resizing. Options are:
+      #  - CROP: center crop the image to the specified size.
+      #  - PAD: resize and pad the image to the specified size.
+      #  - RESIZE: resize the image to the specified size, ignoring aspect ratio.
+      resize_method: RESIZE
+
+      # For multi-stage models, the calibration can be an output of a previous stage.
+      # The `link` section specifies how to use the outputs from the previous stage.
+      # link:
+
+        # Name of the stage to link to. Required.
+        # stage: ~
+
+        # Name of the output to use. Either `output` or `script` must be provided.
+        # output: ~
+
+        # A custom python script to use for post-processing the linked output.
+        # It can be either a path or url to a python file, or a string with the script.
+        # The script must contain a function
+        # `run_script(outputs: dict[str, np.ndarray]) -> np.ndarray` which takes the
+        # dictionary of linked outputs and produces a single array.
+        # Either `output` or `script` must be provided.
+        # script: ~
+
+    # Scale values to be used for the input image per channel.
+    # Can be either:
+    #  - a single value to be used for all channels.
+    #  - a list of values to be used for each channel.
+    #  - a "imagenet" string to use the ImageNet values.
+    #    Equivalent to [ 123.675, 116.28, 103.53 ]
+    scale_values: ~
+
+    # Mean values to be used for the input image per channel.
+    # Same options as for scale_values. "imagenet" equivalent to [ 58.395, 57.12, 57.375 ].
+    mean_values: ~
+
+    # The input shape of the network in NCHW format. If not provided,
+    # it will be inferred from the model if possible.
+    shape: ~
+
+    # Remote path where to upload the compiled model. Optional.
+    output_remote_url: ~
+
+    # Keep the intermediate files created during the compilation.
+    keep_intermediate_outputs: true
+
+    # Do not run ONNX simplifier on the provided model.
+    disable_onnx_simplification: false
+
+    # List of input names with shapes,
+    # data types, values for freezing and input modifiers.
+    # Overrides the top-level input modifiers.
+    # Example:
+    # inputs:
+    #  - name: input.0  # a node name for hailo, a tensor name of other platforms
+    #    shape: [ 1, 3, 256, 256 ]
+    #    data_type: float32 (default)
+    #    scale_values: [ 255., 255., 255. ]
+    #    reverse_input_channels: false
+    #  - name: is_training
+    #    freeze_value: false
+    #  - name: sequence_len
+    #    freeze_value: 250
+    #
+    # data_type can be one of ['FLOAT16', 'FLOAT32', 'UINT8']
+    inputs: []
+
+    # List of the output names.
+    # Example:
+    # outputs:
+    #   - name: output.0
+    #   - name: output.1
+    outputs: []
+
+    # --- Hailo-Specific Arguments ---
+    hailo:
+      # Specifies the optimization level. A number between 0 and 3.
+      optimization_level: 2
+
+      # Specifies the compression level. A number between 0 and 4.
+      compression_level: 2
+
+      # Batch size for the calibration.
+      # batch_size: 8
+      batch_size: 8
+
+      # Stop after quantization. Used in tests.
+      early_stop: false
+
+      # List of additional arguments to pass to the model optimizer.
+      alls: []
+
+      # Disables calibration.
+      disable_calibration: false
+
+    # --- RVC2-Specific Arguments ---
+    rvc2:
+      # Specifies number of shaves.
+      number_of_shaves: 8
+
+      # Specifies number of CMX slices.
+      number_of_cmx_slices: 8
+
+      # List of additional arguments to pass to the model optimizer.
+      # The additional arguments are passed as-is and always take precedence
+      # over the default arguments.
+      mo_args: []
+
+      # List of additional arguments to pass to the compile_tool.
+      compile_tool_args: []
+
+      # Produces .superblob file instead of regular .blob.
+      superblob: true
+
+    # --- RVC3-Specific Argument ---
+    rvc3:
+      # Target device for POT. Can be one of { VPU, ANY }
+      pot_target_device: VPU
+
+      # List of additional arguments to pass to the model optimizer.
+      # The additional arguments are passed as-is and always take precedence
+      # over the default arguments.
+      mo_args: []
+
+      # List of additional arguments to pass to the compile_tool.
+      compile_tool_args: []
+
+    # --- RVC4-Specific Arguments ---
+    rvc4:
+      # List of additional arguments to pass to SNPE onnx-to-dlc.
+      # The additional arguments are passed as-is and always take precedence
+      # over the default arguments.
+      snpe_onnx_to_dlc_args: []
+
+      # List of additional arguments to pass to SNPE snpe-dlc-quant.
+      snpe_dlc_quant_args: []
+
+      # List of additional arguments to pass to SNPE snpe-dlc-graph-prepare.
+      snpe_dlc_graph_prepare_args: []
+
+      # Whether to include the raw images in the intermediate outputs.
+      # Warning: the raw images can get very large.
+      keep_raw_images: False
