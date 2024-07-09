@@ -31,9 +31,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Docker on MacOS
-      if: ${{ matrix.os == 'macos-13' }}
-      uses: douglascamata/setup-docker-macos-action@v1-alpha
+    - name: Set up Docker
+      uses: crazy-max/ghaction-setup-docker@v3
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v3
