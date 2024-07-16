@@ -61,6 +61,9 @@ class RVC4Exporter(Exporter):
         self.input_list_path = self.intermediate_outputs_dir / "img_list.txt"
 
     def export(self) -> Path:
+        out_dlc_path = self.output_dir / f"{self.model_name}.dlc"
+        self._inference_model_path = out_dlc_path
+
         dlc_path = self.onnx_to_dlc()
         if self._disable_calibration:
             return dlc_path
@@ -96,7 +99,6 @@ class RVC4Exporter(Exporter):
             self.input_list_path.unlink()
 
         logger.info("Performing offline graph preparation.")
-        out_dlc_path = self.output_dir / f"{self.model_name}.dlc"
         args = self.snpe_dlc_graph_prepare
         self._add_args(args, ["--input_dlc", quantized_dlc_path])
         self._add_args(args, ["--output_dlc", out_dlc_path])
