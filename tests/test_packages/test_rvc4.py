@@ -22,6 +22,14 @@ def test_resnet18_infer(rvc4_resnet18_onnx_env):
     resnet18_infer(rvc4_resnet18_onnx_env)
 
 
+def test_resnet18_non_quant_convert(rvc4_non_quant_resnet18_onnx_env):
+    check_convert(rvc4_non_quant_resnet18_onnx_env)
+
+
+def test_resnet18_non_quant_infer(rvc4_non_quant_resnet18_onnx_env):
+    resnet18_infer(rvc4_non_quant_resnet18_onnx_env)
+
+
 def test_resnet18_archive_convert(rvc4_resnet18_archive_env):
     check_convert(rvc4_resnet18_archive_env)
 
