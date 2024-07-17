@@ -99,7 +99,7 @@ def process_nn_archive(
     }
 
     for head in archive_config.model.heads or []:
-        postprocessor_path = getattr(head, "postprocessor_path", None)
+        postprocessor_path = getattr(head.metadata, "postprocessor_path", None)
         if postprocessor_path is not None:
             input_model_path = untar_path / postprocessor_path
             head_stage_config = {
@@ -142,8 +142,12 @@ def modelconverter_config_to_nn(
                         "dtype": inp.data_type.value,
                         "input_type": "image",
                         "preprocessing": {
-                            "mean": [0, 0, 0],
-                            "scale": [1, 1, 1],
+                            "mean": [0] * len(inp.mean_values)
+                            if inp.mean_values
+                            else None,
+                            "scale": [1] * len(inp.scale_values)
+                            if inp.scale_values
+                            else None,
                             "reverse_channels": False,
                             "interleaved_to_planar": False,
                         },
@@ -179,5 +183,5 @@ def modelconverter_config_to_nn(
                 "Multistage NN Archives must sxpecify 1 head in the archive config"
             )
         head = archive_cfg.model.heads[0]
-        head.postprocessor_path = f"{post_stage_key}{target.suffix}"
+        head.metadata.postprocessor_path = f"{post_stage_key}{target.suffix}"
     return archive_cfg
