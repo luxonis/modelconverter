@@ -99,7 +99,7 @@ def process_nn_archive(
     }
 
     for head in archive_config.model.heads or []:
-        postprocessor_path = getattr(head, "postprocessor_path", None)
+        postprocessor_path = getattr(head.metadata, "postprocessor_path", None)
         if postprocessor_path is not None:
             input_model_path = untar_path / postprocessor_path
             head_stage_config = {
