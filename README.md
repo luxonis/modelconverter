@@ -1,8 +1,8 @@
 # ModelConverter - Compilation Library
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![PyPI](https://img.shields.io/pypi/v/luxonis-ml?label=pypi%20package)](https://pypi.org/project/modelconv/)
-[![PyPI - Downloads](https://img.shields.io/pypi/dm/luxonis-ml)](https://pypi.org/project/modelconv/)
+[![PyPI](https://img.shields.io/pypi/v/modelconv?label=pypi%20package)](https://pypi.org/project/modelconv/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/modelconv)](https://pypi.org/project/modelconv/)
 
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Docformatter](https://img.shields.io/badge/%20formatter-docformatter-fedcba.svg)](https://github.com/PyCQA/docformatter)
@@ -24,6 +24,8 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 - [MLOps - Compilation Library](#mlops---compilation-library)
   - [Table of Contents](#table-of-contents)
   - [Installation](#installation)
+    - [Before You Begin](#before-you-begin)
+    - [Instructions](#instructions)
     - [GPU Support](#gpu-support)
   - [Running ModelConverter](#running-modelconverter)
     - [Sharing Files](#sharing-files)
@@ -37,6 +39,13 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
   - [Benchmarking](#benchmarking)
 
 ## Installation
+
+### System Requirements
+
+`ModelConverter` requires `docker` to be installed on your system.
+It is recommended to use Ubuntu OS for the best compatibility.
+On Windows or MacOS, it is recommended to install `docker` using the [Docker Desktop](https://www.docker.com/products/docker-desktop).
+Otherwise follow the installation instructions for your OS from the [official website](https://docs.docker.com/engine/install/).
 
 ### Before You Begin
 
@@ -57,24 +66,19 @@ Requires `snpe.zip` archive to be present in `docker/extra_packages`. You can do
 
 Requires `hailo_ai_sw_suite_2024-04:1` docker image to be present on the system. You can download the image from the [Hailo website](https://developer.hailo.ai/developer-zone/sw-downloads/).
 
-### Building the Image
-
-1. Ensure `docker` is installed on your machine. If not, refer to the installation guide [here](https://docs.docker.com/engine/install/).
-
-1. Install the modelconverter package. You can install it from PyPI using the following command:
-
-   ```bash
-   pip install modelconv
-
-   ```
+### Instructions
 
 1. Build the docker image:
 
-```bash
-docker build -f docker/<package>/Dockerfile.public -t luxonis/modelconverter-<package>:latest .
-```
+   ```bash
+   docker build -f docker/<package>/Dockerfile.public -t luxonis/modelconverter-<package>:latest .
+   ```
+1. For easier use, you can install the ModelConverter CLI. You can install it from PyPI using the following command:
 
-This will also install the `modelconverter` CLI. For usage instructions, see `modelconverter --help`.
+   ```bash
+   pip install modelconv
+   ```
+   For usage instructions, see `modelconverter --help`.
 
 ### GPU Support
 

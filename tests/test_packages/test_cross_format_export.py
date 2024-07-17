@@ -1,18 +1,11 @@
 from itertools import product
-from typing import Dict, Final
+from typing import Final
 
 import pytest
 
 from modelconverter.utils import subprocess_run
 
-URL_PREFIX: Final[str] = "gs://luxonis-test-bucket/modelconverter/"
-
-PATHS: Final[Dict[str, Dict[str, str]]] = {
-    "singlestage": {
-        "nn_archive": "gs://luxonis-test-bucket/modelconverter/resnet18.tar.xz",
-        "native": "gs://luxonis-test-bucket/modelconverter/resnet18.yaml",
-    },
-}
+URL_PREFIX: Final[str] = "shared_with_container/configs/"
 
 
 @pytest.mark.parametrize(
