@@ -153,7 +153,7 @@ def prepare(
         converted_model_path = (
             converted_model_path_prefix / f"{model_name}.dlc"
         )
-    elif service in ["rvc2", "rvc3"]:
+    elif service in ["rvc2", "rvc3", "rvc3_non_quant"]:
         converted_model_path = (
             converted_model_path_prefix
             / "intermediate_outputs"
