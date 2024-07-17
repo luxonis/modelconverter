@@ -19,6 +19,10 @@ def test_resnet18_convert(rvc3_resnet18_onnx_env):
     check_convert(rvc3_resnet18_onnx_env)
 
 
+def test_resnet18_non_quant_convert(rvc3_non_quant_resnet18_onnx_env):
+    check_convert(rvc3_non_quant_resnet18_onnx_env)
+
+
 def test_resnet18_ir_convert(rvc3_resnet18_ir_env):
     check_convert(rvc3_resnet18_ir_env)
 
