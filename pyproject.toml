@@ -1,6 +1,6 @@
 [project]
 name = "modelconv"
-version = "0.1.1"
+version = "0.1.2"
 description = "Converter for neural models into various formats."
 readme = "README.md"
 requires-python = ">=3.8"
