@@ -183,5 +183,5 @@ def modelconverter_config_to_nn(
                 "Multistage NN Archives must sxpecify 1 head in the archive config"
             )
         head = archive_cfg.model.heads[0]
-        head.postprocessor_path = f"{post_stage_key}{target.suffix}"
+        head.metadata.postprocessor_path = f"{post_stage_key}{target.suffix}"
     return archive_cfg
