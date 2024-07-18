@@ -2,10 +2,6 @@
 # Name of the model. Will be the stem of the input model if undefined.
 name: ~
 
-# Override the output directory name. If not provided, the output directory
-# will be named `<model_name>_to_<target>_<timestamp>`.
-output_dir_name: ~
-
 # List of stages for multistage models. Doesn't have to be provided
 # for single-stage models.
 stages:

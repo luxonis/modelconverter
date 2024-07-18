@@ -193,10 +193,10 @@ def prepare(
         result_convert = subprocess_run(
             f"modelconverter convert {service.replace('_superblob', '').replace('_non_quant', '')} "
             f"--path {config_url} "
+            f"--output-dir _{model_name}-test "
             "--dev "
             "--no-gpu "
             f"input_model {file_url} "
-            f"output_dir_name _{model_name}-test "
             "hailo.compression_level 0 "
             "hailo.optimization_level 0 "
             "hailo.early_stop True "
