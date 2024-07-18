@@ -415,8 +415,16 @@ def convert(
             if to == Format.NN_ARCHIVE:
                 logger.info("Converting to NN archive")
                 assert main_stage is not None
+                if len(out_models) > 1:
+                    model_name = f"{main_stage}{out_models[0].suffix}"
+                else:
+                    model_name = out_models[0].name
                 nn_archive = modelconverter_config_to_nn(
-                    cfg, target, archive_cfg, preprocessing, main_stage
+                    cfg,
+                    Path(model_name),
+                    archive_cfg,
+                    preprocessing,
+                    main_stage,
                 )
                 generator = ArchiveGenerator(
                     archive_name=cfg.name,

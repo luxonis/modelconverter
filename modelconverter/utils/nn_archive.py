@@ -14,7 +14,6 @@ from luxonis_ml.nn_archive.config_building_blocks import (
 
 from modelconverter.utils.config import Config
 from modelconverter.utils.constants import MISC_DIR
-from modelconverter.utils.types import Target
 
 
 def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
@@ -116,15 +115,12 @@ def process_nn_archive(
 
 def modelconverter_config_to_nn(
     config: Config,
-    target: Target,
+    model_name: Path,
     orig_nn: Optional[NNArchiveConfig],
     preprocessing: Dict[str, PreprocessingBlock],
     main_stage_key: str,
 ) -> NNArchiveConfig:
     is_multistage = len(config.stages) > 1
-
-    if main_stage_key is None:
-        main_stage_key = next(iter(config.stages.keys()))
 
     cfg = config.stages[main_stage_key]
     archive_cfg = NNArchiveConfig(
@@ -132,8 +128,8 @@ def modelconverter_config_to_nn(
             "config_version": "1.0",
             "model": {
                 "metadata": {
-                    "name": main_stage_key,
-                    "path": f"{main_stage_key}{target.suffix}",
+                    "name": model_name.stem,
+                    "path": str(model_name),
                 },
                 "inputs": [
                     {
@@ -183,5 +179,7 @@ def modelconverter_config_to_nn(
                 "Multistage NN Archives must sxpecify 1 head in the archive config"
             )
         head = archive_cfg.model.heads[0]
-        head.metadata.postprocessor_path = f"{post_stage_key}{target.suffix}"
+        head.metadata.postprocessor_path = (
+            f"{post_stage_key}{model_name.suffix}"
+        )
     return archive_cfg
