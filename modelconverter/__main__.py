@@ -445,7 +445,7 @@ def convert(
                 )
                 generator = ArchiveGenerator(
                     archive_name=cfg.name,
-                    save_path=str(output_dir),
+                    save_path=str(output_path),
                     cfg_dict=nn_archive.model_dump(),
                     executables_paths=[
                         str(out_model) for out_model in out_models
