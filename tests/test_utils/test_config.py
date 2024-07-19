@@ -169,7 +169,6 @@ def load_and_compare(
         expected = {
             "name": name,
             "stages": {name: expected},
-            "output_dir_name": None,
         }
     assert config == expected
 

@@ -444,7 +444,6 @@ class SingleStageConfig(CustomBaseModel):
 # TODO: Output remote url
 class Config(LuxonisConfig):
     stages: Annotated[Dict[str, SingleStageConfig], Field(min_length=1)]
-    output_dir_name: Optional[str] = None
     name: str
 
     def get_stage_config(self, stage: Optional[str]) -> SingleStageConfig:
@@ -466,11 +465,9 @@ class Config(LuxonisConfig):
     def _validate_stages(cls, data: Dict[str, Any]) -> Dict[str, Any]:
         if "stages" not in data:
             name = data.pop("name", "default_stage")
-            output_dir_name = data.pop("output_dir_name", None)
             data = {
                 "stages": {name: data},
                 "name": name,
-                "output_dir_name": output_dir_name,
             }
         else:
             extra = {}
