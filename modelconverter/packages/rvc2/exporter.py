@@ -21,9 +21,9 @@ from ..base_exporter import Exporter
 
 logger = getLogger(__name__)
 
-COMPILE_TOOL: Final[
-    str
-] = f'{env["INTEL_OPENVINO_DIR"]}/tools/compile_tool/compile_tool'
+COMPILE_TOOL: Final[str] = (
+    f'{env["INTEL_OPENVINO_DIR"]}/tools/compile_tool/compile_tool'
+)
 
 DEFAULT_SUPER_SHAVES: Final[int] = 8
 
@@ -141,9 +141,9 @@ class RVC2Exporter(Exporter):
         if self.superblob:
             return self.compile_superblob(args)
 
-        return self.compile(args)
+        return self.compile_blob(args)
 
-    def compile(self, args: list) -> Path:
+    def compile_blob(self, args: list) -> Path:
         output_path = (
             self.output_dir / f"{self.model_name}-{self.target.name.lower()}"
         )
@@ -172,7 +172,7 @@ class RVC2Exporter(Exporter):
 
         orig_args = args.copy()
 
-        default_blob_path = self.compile(
+        default_blob_path = self.compile_blob(
             orig_args
             + [
                 "-o",
