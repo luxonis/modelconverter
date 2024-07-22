@@ -1,9 +1,18 @@
+from dataclasses import dataclass
 from typing import List, Union
-from dataclasses import dataclass, Field
 
 
 @dataclass
-class Shape:
+class Shape(List[int]):
+    """Class for handling shapes with labels.
+
+    @type shape: List[int]
+    @ivar shape: List of dimensions of the shape.
+
+    @type layout: List[str]
+    @ivar layout: List of labels for each dimension of the shape.
+    """
+
     shape: List[int]
     layout: List[str]
 
@@ -26,13 +35,20 @@ class Shape:
 
     def guess_new_layout(self, other: List[int]) -> "Shape":
         """Tries to guess the layout of the new shape.
+        The new shape must contain the same elements as the old one.
+        If two values are the same, the order of their labels will be preserved.
 
         Example::
 
             >>> shape = Shape([1, 3, 256, 256], ["N", "C", "H", "W"])
-            >>> shape.guess_new_layout([3, 256, 256, 1])
+            >>> shape.guess_new_layout([1, 256, 256, 3])
             >>> Shape([1, 256, 256, 3], ["N", "H", "W", "C"])
 
+        @type other: List[int]
+        @param other: New shape to guess the layout of.
+
+        @rtype: L{Shape}
+        @return: New L{Shape} instance with guessed layout.
         """
         if len(other) != len(self):
             raise ValueError(
