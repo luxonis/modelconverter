@@ -444,7 +444,7 @@ def convert(
                     main_stage,
                 )
                 generator = ArchiveGenerator(
-                    archive_name=cfg.name,
+                    archive_name=f"{cfg.name}.{target.value.lower()}",
                     save_path=str(output_path),
                     cfg_dict=nn_archive.model_dump(),
                     executables_paths=[
