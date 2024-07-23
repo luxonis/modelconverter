@@ -38,7 +38,7 @@ class Shape:
 
     def __rich_repr__(self):
         yield "shape", self.shape
-        yield "layout", self.layout
+        yield "layout", self.layout_string
 
     def __len__(self) -> int:
         return len(self._shape)
@@ -62,6 +62,10 @@ class Shape:
     @property
     def shape(self) -> List[int]:
         return list(self._shape.values())
+
+    @property
+    def layout_string(self) -> str:
+        return "".join(self.layout)
 
     @staticmethod
     def _default_layout(shape: List[int]) -> List[str]:

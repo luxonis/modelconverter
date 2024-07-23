@@ -2,22 +2,12 @@ from modelconverter.utils.shape import Shape
 
 
 def test_shape():
-    shape = Shape([1, 3, 256, 256], ["N", "C", "H", "W"])
+    shape = Shape([1, 3, 256, 256], "NCHW")
     assert shape[0] == 1
     assert shape["N"] == 1
     assert len(shape) == 4
-    assert shape.guess_new_layout([3, 256, 256, 1]).layout == [
-        "C",
-        "H",
-        "W",
-        "N",
-    ]
-    assert shape.guess_new_layout([1, 256, 256, 3]).layout == [
-        "N",
-        "H",
-        "W",
-        "C",
-    ]
+    assert shape.guess_new_layout([3, 256, 256, 1]).layout_string == "CHWN"
+    assert shape.guess_new_layout([1, 256, 256, 3]).layout_string == "NHWC"
     assert shape.guess_new_layout([1, 3, 256, 256]) == shape
 
     for v in shape:

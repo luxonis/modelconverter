@@ -154,15 +154,15 @@ def modelconverter_config_to_nn(
         new_shape = model_metadata.input_shapes[inp.name]
         # new_dtype = model_metadata.input_dtypes[inp.name]
         if inp.shape is not None:
-            layout = inp.shape.guess_new_layout(new_shape).layout
+            layout = inp.shape.guess_new_layout(new_shape).layout_string
         else:
-            layout = Shape._default_layout(new_shape)
+            layout = Shape(new_shape).layout_string
 
         archive_cfg["model"]["inputs"].append(
             {
                 "name": inp.name,
                 "shape": new_shape,
-                "layout": "".join(layout),
+                "layout": layout,
                 # "dtype": new_dtype.value,
                 "dtype": inp.data_type.value,
                 # "dtype": "float32",
@@ -181,17 +181,17 @@ def modelconverter_config_to_nn(
         )
     for out in cfg.outputs:
         new_shape = model_metadata.output_shapes[out.name]
-        new_dtype = model_metadata.output_dtypes[out.name]
+        # new_dtype = model_metadata.output_dtypes[out.name]
         if out.shape is not None:
-            layout = out.shape.guess_new_layout(new_shape).layout
+            layout = out.shape.guess_new_layout(new_shape).layout_string
         else:
-            layout = Shape._default_layout(new_shape)
+            layout = Shape(new_shape).layout_string
 
         archive_cfg["model"]["outputs"].append(
             {
                 "name": out.name,
                 "shape": new_shape,
-                "layout": "".join(layout),
+                "layout": layout,
                 # "dtype": new_dtype.value,
                 "dtype": out.data_type.value,
                 # "dtype": "float32",
