@@ -1,7 +1,8 @@
 Pillow
 PyYAML
 gcsfs
-luxonis-ml[data,nn_archive] >= 0.2.2
+# luxonis-ml[data,nn_archive] >= 0.2.2
+luxonis-ml[data,nn_archive] @ git+https://github.com/luxonis/luxonis-ml.git@dev
 onnx
 onnxruntime
 onnxsim
