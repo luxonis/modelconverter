@@ -20,6 +20,10 @@ def test_shape():
     ]
     assert shape.guess_new_layout([1, 3, 256, 256]) == shape
 
+    for v in shape:
+        assert v == 1
+        break
+
 
 def test_shape_complex():
     shape = Shape(

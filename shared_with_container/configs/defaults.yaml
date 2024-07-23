@@ -124,7 +124,7 @@ stages:
       batch_size: 8
 
       # Stop after quantization. Used in tests.
-      early_stop: false
+      disable_compilation: false
 
       # List of additional arguments to pass to the model optimizer.
       alls: []

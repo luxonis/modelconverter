@@ -14,6 +14,8 @@ from luxonis_ml.nn_archive.config_building_blocks import (
 
 from modelconverter.utils.config import Config
 from modelconverter.utils.constants import MISC_DIR
+from modelconverter.utils.metadata import get_metadata
+from modelconverter.utils.shape import Shape
 from modelconverter.utils.types import Target
 
 
@@ -78,6 +80,7 @@ def process_nn_archive(
             {
                 "name": inp.name,
                 "shape": inp.shape,
+                "layout": inp.layout,
                 "data_type": inp.dtype.value,
                 "mean_values": mean,
                 "scale_values": scale,
@@ -87,7 +90,12 @@ def process_nn_archive(
 
     for out in archive_config.model.outputs:
         main_stage_config["outputs"].append(
-            {"name": out.name, "data_type": out.dtype.value}
+            {
+                "name": out.name,
+                "shape": out.shape,
+                "layout": out.layout,
+                "data_type": out.dtype.value,
+            }
         )
 
     main_stage_key = Path(archive_config.model.metadata.path).stem
@@ -120,50 +128,80 @@ def modelconverter_config_to_nn(
     orig_nn: Optional[NNArchiveConfig],
     preprocessing: Dict[str, PreprocessingBlock],
     main_stage_key: str,
+    model_path: Path,
 ) -> NNArchiveConfig:
     is_multistage = len(config.stages) > 1
+    model_metadata = get_metadata(model_path)
 
     if main_stage_key is None:
         main_stage_key = next(iter(config.stages.keys()))
 
     cfg = config.stages[main_stage_key]
-    archive_cfg = NNArchiveConfig(
-        **{
-            "config_version": "1.0",
-            "model": {
-                "metadata": {
-                    "name": main_stage_key,
-                    "path": f"{main_stage_key}{target.suffix}",
-                },
-                "inputs": [
-                    {
-                        "name": inp.name,
-                        "shape": inp.shape,
-                        "dtype": inp.data_type.value,
-                        "input_type": "image",
-                        "preprocessing": {
-                            "mean": [0, 0, 0],
-                            "scale": [1, 1, 1],
-                            "reverse_channels": False,
-                            "interleaved_to_planar": False,
-                        },
-                    }
-                    for inp in cfg.inputs
-                ],
-                "outputs": [
-                    {
-                        "name": out.name,
-                        "dtype": out.data_type.value,
-                    }
-                    for out in cfg.outputs
-                ],
-                "heads": orig_nn.model.heads if orig_nn else [],
+    archive_cfg = {
+        "config_version": "1.0",
+        "model": {
+            "metadata": {
+                "name": main_stage_key,
+                "path": f"{main_stage_key}{target.suffix}",
             },
-        }
-    )
+            "inputs": [],
+            "outputs": [],
+            "heads": orig_nn.model.heads if orig_nn else [],
+        },
+    }
+
+    for inp in cfg.inputs:
+        new_shape = model_metadata.input_shapes[inp.name]
+        # new_dtype = model_metadata.input_dtypes[inp.name]
+        if inp.shape is not None:
+            layout = inp.shape.guess_new_layout(new_shape).layout
+        else:
+            layout = Shape._default_layout(new_shape)
+
+        archive_cfg["model"]["inputs"].append(
+            {
+                "name": inp.name,
+                "shape": new_shape,
+                "layout": "".join(layout),
+                # "dtype": new_dtype.value,
+                "dtype": inp.data_type.value,
+                # "dtype": "float32",
+                "input_type": "image",
+                "preprocessing": {
+                    "mean": [0 for _ in inp.mean_values]
+                    if inp.mean_values
+                    else None,
+                    "scale": [1 for _ in inp.scale_values]
+                    if inp.scale_values
+                    else None,
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                },
+            }
+        )
+    for out in cfg.outputs:
+        new_shape = model_metadata.output_shapes[out.name]
+        new_dtype = model_metadata.output_dtypes[out.name]
+        if out.shape is not None:
+            layout = out.shape.guess_new_layout(new_shape).layout
+        else:
+            layout = Shape._default_layout(new_shape)
+
+        archive_cfg["model"]["outputs"].append(
+            {
+                "name": out.name,
+                "shape": new_shape,
+                "layout": "".join(layout),
+                # "dtype": new_dtype.value,
+                "dtype": out.data_type.value,
+                # "dtype": "float32",
+            }
+        )
+
+    archive = NNArchiveConfig(**archive_cfg)
 
     for name, block in preprocessing.items():
-        nn_inp = get_archive_input(archive_cfg, name)
+        nn_inp = get_archive_input(archive, name)
         nn_inp.preprocessing = block
 
     if is_multistage:
@@ -174,10 +212,10 @@ def modelconverter_config_to_nn(
         post_stage_key = [
             key for key in config.stages if key != main_stage_key
         ][0]
-        if not archive_cfg.model.heads:
+        if not archive.model.heads:
             raise ValueError(
                 "Multistage NN Archives must sxpecify 1 head in the archive config"
             )
-        head = archive_cfg.model.heads[0]
+        head = archive.model.heads[0]
         head.postprocessor_path = f"{post_stage_key}{target.suffix}"
-    return archive_cfg
+    return archive

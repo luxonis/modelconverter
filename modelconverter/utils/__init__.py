@@ -25,7 +25,9 @@ from .nn_archive import (
     process_nn_archive,
 )
 from .onnx_tools import onnx_attach_normalization_to_inputs
+from .shape import Shape
 from .subprocess import subprocess_run
+from .metadata import Metadata, get_metadata
 
 __all__ = [
     "ModelconverterException",
@@ -49,4 +51,7 @@ __all__ = [
     "get_docker_image",
     "docker_exec",
     "in_docker",
+    "Shape",
+    "Metadata",
+    "get_metadata",
 ]

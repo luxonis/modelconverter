@@ -1,9 +1,10 @@
+from collections import OrderedDict
 from dataclasses import dataclass
-from typing import List, Union
+from typing import Dict, List, Optional, Union
 
 
-@dataclass
-class Shape(List[int]):
+@dataclass(init=False)
+class Shape:
     """Class for handling shapes with labels.
 
     @type shape: List[int]
@@ -13,25 +14,73 @@ class Shape(List[int]):
     @ivar layout: List of labels for each dimension of the shape.
     """
 
-    shape: List[int]
-    layout: List[str]
+    _shape: Dict[str, int]
 
-    def __post_init__(self):
-        self._shape = {k: v for k, v in zip(self.layout, self.shape)}
+    def __init__(
+        self, shape: List[int], layout: Optional[Union[List[str], str]] = None
+    ):
+        if layout is None:
+            layout = self._default_layout(shape)
+        if isinstance(layout, str):
+            layout = list(layout)
+
+        if len(shape) != len(layout):
+            raise ValueError("Length of shape and layout must be the same.")
+
+        self._shape = OrderedDict(zip(layout, shape))
+        self.layout = layout
+
+    def __str__(self) -> str:
+        return f"Shape({self.shape}, {self.layout})"
+
+    def __repr__(self) -> str:
+        return str(self)
+
+    def __rich_repr__(self):
+        yield "shape", self.shape
+        yield "layout", self.layout
+
+    def __len__(self) -> int:
+        return len(self._shape)
 
     def __getitem__(self, idx: Union[int, str]) -> int:
         if isinstance(idx, int):
-            return self.shape[idx]
+            vals = list(self._shape.values())
+            if idx > len(vals):
+                raise IndexError(f"Index {idx} out of range.")
+            return vals[idx]
         elif isinstance(idx, str):
+            if idx not in self._shape:
+                raise KeyError(f"Label '{idx}' not found in layout.")
             return self._shape[idx]
         else:
-            raise TypeError(
+            raise ValueError(
                 f"Invalid type {type(idx)} for indexing. "
                 "Use int or str instead."
             )
 
-    def __len__(self) -> int:
-        return len(self.shape)
+    @property
+    def shape(self) -> List[int]:
+        return list(self._shape.values())
+
+    @staticmethod
+    def _default_layout(shape: List[int]) -> List[str]:
+        layout = []
+        i = 0
+        if shape[0] == 1:
+            layout.append("N")
+            i = 1
+        if len(shape) - i == 3:
+            if shape[i] < shape[i + 1] and shape[i] < shape[i + 2]:
+                return layout + ["C", "H", "W"]
+            elif shape[-1] < shape[-2] and shape[-1] < shape[-3]:
+                return layout + ["H", "W", "C"]
+        while len(layout) < len(shape):
+            letter = chr(ord("A") + i)
+            if letter not in layout:
+                layout.append(letter)
+            i += 1
+        return layout
 
     def guess_new_layout(self, other: List[int]) -> "Shape":
         """Tries to guess the layout of the new shape.
@@ -54,17 +103,15 @@ class Shape(List[int]):
             raise ValueError(
                 "The length of the new shape must be the same as the old one."
             )
-        if sorted(self.shape) != sorted(other):
+        if sorted(self._shape.values()) != sorted(other):
             raise ValueError(
                 "The new shape must contain the same elements as the old one."
             )
-        old_shape_tuples = [
-            (self.shape[i], self.layout[i]) for i in range(len(self.shape))
-        ]
+        old_shape_tuples = list(self._shape.items())
 
         new_layout = []
         for dim in other:
-            for i, (old_dim, old_label) in enumerate(old_shape_tuples):
+            for i, (old_label, old_dim) in enumerate(old_shape_tuples):
                 if old_dim == dim:
                     new_layout.append(old_label)
                     old_shape_tuples.pop(i)

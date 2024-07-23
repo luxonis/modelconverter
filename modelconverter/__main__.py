@@ -264,7 +264,9 @@ def infer(
 
 
 @app.command()
-def shell(target: TargetArgument, dev: DevOption = False, gpu: GPUOption = True):
+def shell(
+    target: TargetArgument, dev: DevOption = False, gpu: GPUOption = True
+):
     """Boots up a shell inside a docker container for the specified target platform."""
     if dev:
         docker_build(target.value, tag="dev")
@@ -413,10 +415,19 @@ def convert(
             if not isinstance(out_models, list):
                 out_models = [out_models]
             if to == Format.NN_ARCHIVE:
+                from modelconverter.packages.base_exporter import Exporter
+
                 logger.info("Converting to NN archive")
                 assert main_stage is not None
                 nn_archive = modelconverter_config_to_nn(
-                    cfg, target, archive_cfg, preprocessing, main_stage
+                    cfg,
+                    target,
+                    archive_cfg,
+                    preprocessing,
+                    main_stage,
+                    exporter.inference_model_path
+                    if isinstance(exporter, Exporter)
+                    else exporter.exporters[main_stage].inference_model_path,
                 )
                 generator = ArchiveGenerator(
                     archive_name=cfg.name,
