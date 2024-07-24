@@ -61,10 +61,32 @@ class RVC4Exporter(Exporter):
         self.input_list_path = self.intermediate_outputs_dir / "img_list.txt"
 
     def export(self) -> Path:
+        out_dlc_path = self.output_dir / f"{self.model_name}.dlc"
+        self._inference_model_path = out_dlc_path
+
         dlc_path = self.onnx_to_dlc()
         if self._disable_calibration:
-            return dlc_path
+            quantized_dlc_path = dlc_path
+        else:
+            quantized_dlc_path = self.calibrate(dlc_path)
 
+        logger.info("Performing offline graph preparation.")
+        args = self.snpe_dlc_graph_prepare
+        self._add_args(args, ["--input_dlc", quantized_dlc_path])
+        self._add_args(args, ["--output_dlc", out_dlc_path])
+        self._add_args(
+            args,
+            ["--set_output_tensors", ",".join(name for name in self.outputs)],
+        )
+        self._add_args(args, ["--htp_socs", ",".join(self.htp_socs)])
+        self._subprocess_run(
+            ["snpe-dlc-graph-prepare", *args], meta_name="graph_prepare"
+        )
+        logger.info("Offline graph preparation finished.")
+        self._inference_model_path = out_dlc_path
+        return out_dlc_path
+
+    def calibrate(self, dlc_path: Path) -> Path:
         args = self.snpe_dlc_quant
         if "--input_list" not in args:
             logger.info("Preparing calibration data.")
@@ -95,22 +117,7 @@ class RVC4Exporter(Exporter):
             shutil.rmtree(self.raw_img_dir)
             self.input_list_path.unlink()
 
-        logger.info("Performing offline graph preparation.")
-        out_dlc_path = self.output_dir / f"{self.model_name}.dlc"
-        args = self.snpe_dlc_graph_prepare
-        self._add_args(args, ["--input_dlc", quantized_dlc_path])
-        self._add_args(args, ["--output_dlc", out_dlc_path])
-        self._add_args(
-            args,
-            ["--set_output_tensors", ",".join(name for name in self.outputs)],
-        )
-        self._add_args(args, ["--htp_socs", ",".join(self.htp_socs)])
-        self._subprocess_run(
-            ["snpe-dlc-graph-prepare", *args], meta_name="graph_prepare"
-        )
-        logger.info("Offline graph preparation finished.")
-        self._inference_model_path = out_dlc_path
-        return out_dlc_path
+        return quantized_dlc_path
 
     def prepare_calibration_data(self) -> Optional[Path]:
         class Entry(NamedTuple):

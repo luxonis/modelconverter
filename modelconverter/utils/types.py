@@ -199,15 +199,6 @@ class Target(Enum):
     RVC3 = "rvc3"
     RVC4 = "rvc4"
 
-    @property
-    def suffix(self) -> str:
-        return {
-            "hailo": ".hef",
-            "rvc2": ".blob",
-            "rvc3": ".blob",
-            "rvc4": ".dlc",
-        }[self.value]
-
 
 class InputFileType(Enum):
     ONNX = "ONNX"

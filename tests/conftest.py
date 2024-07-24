@@ -27,6 +27,7 @@ MODEL_CONFIGS = chain(
                 MNISTMetric,
                 ["input"],
                 "onnx",
+                "",
             ),
             (
                 service,
@@ -35,6 +36,7 @@ MODEL_CONFIGS = chain(
                 ResnetMetric,
                 ["input.1"],
                 "onnx",
+                "",
             ),
             (
                 service,
@@ -43,6 +45,7 @@ MODEL_CONFIGS = chain(
                 ResnetMetric,
                 ["input.1"],
                 "ir",
+                "",
             ),
             (
                 service,
@@ -51,6 +54,7 @@ MODEL_CONFIGS = chain(
                 ResnetMetric,
                 ["input.1"],
                 "archive",
+                "",
             ),
             (
                 service,
@@ -59,6 +63,16 @@ MODEL_CONFIGS = chain(
                 YoloV6Metric,
                 ["images"],
                 "onnx",
+                "",
+            ),
+            (
+                service,
+                "resnet18",
+                "s3://luxonis-test-bucket/modelconverter-test/imagenette-extra-small.zip",
+                ResnetMetric,
+                ["input.1"],
+                "onnx",
+                "rvc4.disable_calibration true rvc3.disable_calibration true",
             ),
         ]
         for service in [
@@ -66,7 +80,9 @@ MODEL_CONFIGS = chain(
             "rvc2_superblob",
             "rvc3",
             "rvc3_quant",
+            "rvc3_non_quant",
             "rvc4",
+            "rvc4_non_quant",
             "hailo",
         ]
     ]
@@ -75,7 +91,9 @@ MODEL_CONFIGS = chain(
 setup_logging(use_rich=True)
 
 
-def prepare_fixture(service, model_name, dataset_url, metric, input_names):
+def prepare_fixture(
+    service, model_name, dataset_url, metric, input_names, extra_args
+):
     @pytest.fixture(scope="session")
     def _fixture():
         return prepare(
@@ -84,14 +102,25 @@ def prepare_fixture(service, model_name, dataset_url, metric, input_names):
             dataset_url=dataset_url,
             metric=metric,
             input_names=input_names,
+            extra_args=extra_args,
         )
 
     return _fixture
 
 
-for service, model, url, metric, inputs, model_type in MODEL_CONFIGS:
+for (
+    service,
+    model,
+    url,
+    metric,
+    inputs,
+    model_type,
+    extra_args,
+) in MODEL_CONFIGS:
     fixture_name = f"{service}_{model}_{model_type}_env"
-    fixture_function = prepare_fixture(service, model, url, metric, inputs)
+    fixture_function = prepare_fixture(
+        service, model, url, metric, inputs, extra_args
+    )
     exec(f"{fixture_name} = fixture_function")
 
 
@@ -102,6 +131,7 @@ def prepare(
     metric: Type[Metric],
     input_names: List[str],
     model_type: str = "onnx",
+    extra_args: str = "",
 ) -> Tuple[
     str,
     Path,
@@ -119,11 +149,11 @@ def prepare(
     converted_model_path_prefix = (
         Path("shared_with_container") / "outputs" / f"_{model_name}-test"
     )
-    if service == "rvc4":
+    if service in ["rvc4", "rvc4_non_quant"]:
         converted_model_path = (
             converted_model_path_prefix / f"{model_name}.dlc"
         )
-    elif service in ["rvc2", "rvc3"]:
+    elif service in ["rvc2", "rvc3", "rvc3_non_quant"]:
         converted_model_path = (
             converted_model_path_prefix
             / "intermediate_outputs"
@@ -159,20 +189,22 @@ def prepare(
     else:
         file_url = f"s3://luxonis-test-bucket/modelconverter-test/archives/{model_name}.tar.xz"
 
-    if "quant" not in service:
+    if "quant" not in service or "non_quant" in service:
         result_convert = subprocess_run(
-            f"modelconverter convert {service.replace('_superblob', '')} "
+            f"modelconverter convert {service.replace('_superblob', '').replace('_non_quant', '')} "
             f"--path {config_url} "
+            f"--output-dir _{model_name}-test "
             "--dev "
             "--no-gpu "
             f"input_model {file_url} "
-            f"output_dir_name _{model_name}-test "
             "hailo.compression_level 0 "
             "hailo.optimization_level 0 "
             "hailo.disable_compilation True "
             f"rvc2.superblob {'false' if 'superblob' not in service else 'true'} "
             "calibration.max_images 30 "
-            + ("--to nn_archive" if model_type == "archive" else ""),
+            + ("--to nn_archive" if model_type == "archive" else "")
+            + " "
+            + extra_args,
         )
     else:
         result_convert = None
@@ -207,5 +239,5 @@ def prepare(
         input_files_dirs,
         dest,
         result_convert,
-        service.replace("_quant", ""),
+        service.replace("_quant", "").replace("_non", ""),
     )

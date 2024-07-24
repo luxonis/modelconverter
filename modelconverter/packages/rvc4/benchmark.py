@@ -51,8 +51,10 @@ class AdbHandler:
                 f"stdout:\n{stdout}\n"
                 f"stderr:\n{stderr}\n"
             )
-        return result.returncode, stdout.decode("utf-8"), stderr.decode(
-            "utf-8"
+        return (
+            result.returncode,
+            stdout.decode(errors="ignore"),
+            stderr.decode(errors="ignore"),
         )
 
     def shell(self, cmd: str) -> Tuple[int, str, str]:

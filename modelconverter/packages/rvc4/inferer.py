@@ -21,12 +21,9 @@ class RVC4Inferer(Inferer):
         shutil.rmtree(outputs_path, ignore_errors=True)
 
         with open("input_list.txt", "w") as f:
-            print(self.header, file=f)
+            f.write(self.header + "\n")
             for input_name, path in inputs.items():
                 raw_path = Path(f"raw_images/{input_name}.raw")
-                print(
-                    f"{self.in_shapes[input_name]} {self.in_dtypes[input_name]}"
-                )
                 arr = read_image(
                     path,
                     shape=self.in_shapes[input_name],
@@ -36,8 +33,8 @@ class RVC4Inferer(Inferer):
                     transpose=False,
                 )
                 arr.tofile(raw_path)
-                print(f"{input_name}:={raw_path}", file=f, end=" ")
-            print(file=f)
+                f.write(f"{input_name}:={raw_path} ")
+            f.write("\n")
 
         subprocess_run(
             [

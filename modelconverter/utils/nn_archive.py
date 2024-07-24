@@ -107,7 +107,7 @@ def process_nn_archive(
     }
 
     for head in archive_config.model.heads or []:
-        postprocessor_path = getattr(head, "postprocessor_path", None)
+        postprocessor_path = getattr(head.metadata, "postprocessor_path", None)
         if postprocessor_path is not None:
             input_model_path = untar_path / postprocessor_path
             head_stage_config = {
@@ -124,7 +124,7 @@ def process_nn_archive(
 
 def modelconverter_config_to_nn(
     config: Config,
-    target: Target,
+    model_name: Path,
     orig_nn: Optional[NNArchiveConfig],
     preprocessing: Dict[str, PreprocessingBlock],
     main_stage_key: str,
@@ -133,16 +133,14 @@ def modelconverter_config_to_nn(
     is_multistage = len(config.stages) > 1
     model_metadata = get_metadata(model_path)
 
-    if main_stage_key is None:
-        main_stage_key = next(iter(config.stages.keys()))
-
     cfg = config.stages[main_stage_key]
+
     archive_cfg = {
         "config_version": "1.0",
         "model": {
             "metadata": {
-                "name": main_stage_key,
-                "path": f"{main_stage_key}{target.suffix}",
+                "name": model_name.stem,
+                "path": str(model_name),
             },
             "inputs": [],
             "outputs": [],
@@ -219,5 +217,7 @@ def modelconverter_config_to_nn(
                 "Multistage NN Archives must sxpecify 1 head in the archive config"
             )
         head = archive.model.heads[0]
-        head.postprocessor_path = f"{post_stage_key}{target.suffix}"
+        head.metadata.postprocessor_path = (
+            f"{post_stage_key}{model_name.suffix}"
+        )
     return archive

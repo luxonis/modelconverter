@@ -95,7 +95,7 @@ BuildOption: TypeAlias = Annotated[
     ),
 ]
 ModelPathOption: TypeAlias = Annotated[
-    str, typer.Option(help="Path to or url of the model file.")
+    str, typer.Option(help="A URL or a path to the model file.")
 ]
 
 DockerOption: TypeAlias = Annotated[
@@ -112,16 +112,24 @@ GPUOption: TypeAlias = Annotated[
     typer.Option(help="Use GPU for conversion. Only relevant for HAILO."),
 ]
 
+OutputDirOption: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option(
+        ..., "--output-dir", "-o", help="Name of the output directory."
+    ),
+]
 
-def get_output_dir_name(target: Target, config: Config) -> Path:
+
+def get_output_dir_name(
+    target: Target, name: str, output_dir: Optional[str]
+) -> Path:
     date = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    if config.output_dir_name is not None:
-        output_dir_name = config.output_dir_name
-        if (OUTPUTS_DIR / output_dir_name).exists():
-            shutil.rmtree(OUTPUTS_DIR / output_dir_name)
+    if output_dir is not None:
+        if (OUTPUTS_DIR / output_dir).exists():
+            shutil.rmtree(OUTPUTS_DIR / output_dir)
     else:
-        output_dir_name = f"{config.name}_to_{target.name.lower()}_{date}"
-    return OUTPUTS_DIR / output_dir_name
+        output_dir = f"{name}_to_{target.name.lower()}_{date}"
+    return OUTPUTS_DIR / output_dir
 
 
 def get_configs(
@@ -205,19 +213,22 @@ def infer(
         Path,
         typer.Option(
             ...,
+            "--input-path",
+            "-i",
             help="Path to the directory with data for inference."
             "The directory must contain one subdirectory per input, named the same as the input."
             "Inference data must be provided in the NPY format.",
         ),
     ],
     path: PathOption,
-    dest: Annotated[
-        Path, typer.Option(..., help="Path to the output directory.")
-    ],
+    output_dir: OutputDirOption = None,
     stage: Annotated[
         Optional[str],
         typer.Option(
-            help="Name of the stage to run. Only needed for multistage configs."
+            ...,
+            "--stage",
+            "-s",
+            help="Name of the stage to run. Only needed for multistage configs.",
         ),
     ] = None,
     dev: DevOption = False,
@@ -240,8 +251,11 @@ def infer(
         try:
             mult_cfg, _, _ = get_configs(path, opts)
             cfg = mult_cfg.get_stage_config(stage)
+            output_path = get_output_dir_name(
+                target, mult_cfg.name, output_dir
+            )
             Inferer = get_inferer(target)
-            Inferer.from_config(model_path, input_path, dest, cfg).run()
+            Inferer.from_config(model_path, input_path, output_path, cfg).run()
         except Exception:
             logger.exception("Encountered an unexpected error!")
             exit(2)
@@ -253,11 +267,11 @@ def infer(
             str(model_path),
             "--input-path",
             str(input_path),
-            "--dest",
-            str(dest),
             "--path",
             str(path),
         ]
+        if output_dir is not None:
+            args.extend(["--output-dir", output_dir])
         if opts is not None:
             args.extend(opts)
         docker_exec(target.value, *args, tag=tag, use_gpu=gpu)
@@ -340,6 +354,7 @@ def benchmark(
 def convert(
     target: TargetArgument,
     path: PathOption = None,
+    output_dir: OutputDirOption = None,
     dev: DevOption = False,
     to: FormatOption = Format.NATIVE,
     gpu: GPUOption = True,
@@ -391,11 +406,11 @@ def convert(
             if archive_preprocess:
                 cfg, preprocessing = extract_preprocessing(cfg)
 
-            output_dir = get_output_dir_name(target, cfg)
-            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = get_output_dir_name(target, cfg.name, output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
             reset_logging()
             setup_logging(
-                file=str(output_dir / "modelconverter.log"), use_rich=True
+                file=str(output_path / "modelconverter.log"), use_rich=True
             )
             if is_multistage:
                 from modelconverter.packages.multistage_exporter import (
@@ -403,12 +418,12 @@ def convert(
                 )
 
                 exporter = MultiStageExporter(
-                    target=target, config=cfg, output_dir=output_dir
+                    target=target, config=cfg, output_dir=output_path
                 )
             else:
                 exporter = get_exporter(target)(
                     config=next(iter(cfg.stages.values())),
-                    output_dir=output_dir,
+                    output_dir=output_path,
                 )
 
             out_models = exporter.run()
@@ -419,9 +434,12 @@ def convert(
 
                 logger.info("Converting to NN archive")
                 assert main_stage is not None
+                if len(out_models) > 1:
+                    model_name = f"{main_stage}{out_models[0].suffix}"
+                else:
+                    model_name = out_models[0].name
                 nn_archive = modelconverter_config_to_nn(
-                    cfg,
-                    target,
+                    Path(model_name),
                     archive_cfg,
                     preprocessing,
                     main_stage,
@@ -430,13 +448,13 @@ def convert(
                     else exporter.exporters[main_stage].inference_model_path,
                 )
                 generator = ArchiveGenerator(
-                    archive_name=cfg.name,
-                    save_path=str(output_dir),
+                    archive_name=f"{cfg.name}.{target.value.lower()}",
+                    save_path=str(output_path),
                     cfg_dict=nn_archive.model_dump(),
                     executables_paths=[
                         str(out_model) for out_model in out_models
                     ]
-                    + [str(output_dir / "buildinfo.json")],
+                    + [str(output_path / "buildinfo.json")],
                 )
                 out_models = [generator.make_archive()]
                 logger.info(f"Model exported to {out_models[0]}")
@@ -479,6 +497,8 @@ def convert(
         ]
         if main_stage is not None:
             args.extend(["--main-stage", main_stage])
+        if output_dir is not None:
+            args.extend(["--output-dir", output_dir])
         if path is not None:
             args.extend(["--path", path])
         if opts is not None:

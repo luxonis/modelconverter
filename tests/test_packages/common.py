@@ -42,7 +42,7 @@ def mnist_infer(mnist_env):
     result = subprocess_run(
         f"modelconverter infer {service} "
         f"--model-path {converted_model_path} "
-        f"--dest {dest} "
+        f"--output-dir {dest} "
         f"--input-path {input_files_dir.parent} "
         f"--path {config_url} "
         "--dev "
@@ -83,7 +83,7 @@ def resnet18_infer(resnet18_env):
     result = subprocess_run(
         f"modelconverter infer {service} "
         f"--model-path {converted_model_path} "
-        f"--dest {dest} "
+        f"--output-dir {dest} "
         f"--input-path {input_files_dir.parent} "
         f"--path {config_url} "
         "--dev "
@@ -128,7 +128,7 @@ def yolov6n_infer(yolov6n_env):
     result = subprocess_run(
         f"modelconverter infer {service} "
         f"--model-path {converted_model_path} "
-        f"--dest {dest} "
+        f"--output-dir {dest} "
         f"--input-path {input_files_dir.parent} "
         f"--path {config_url} "
         "--dev "
