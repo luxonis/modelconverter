@@ -39,7 +39,7 @@ NAMED_VALUES = {
 
 
 class CustomBaseModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="forbid")
 
 
 class LinkCalibrationConfig(CustomBaseModel):
