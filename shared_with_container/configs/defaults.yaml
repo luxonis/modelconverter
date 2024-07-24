@@ -73,9 +73,12 @@ stages:
     # Same options as for scale_values. "imagenet" equivalent to [ 58.395, 57.12, 57.375 ].
     mean_values: ~
 
-    # The input shape of the network in NCHW format. If not provided,
+    # The input shape of the network. If not provided,
     # it will be inferred from the model if possible.
     shape: ~
+
+    # Lettercode representation of the input layout. e.g. NCHW
+    layout: ~
 
     # Remote path where to upload the compiled model. Optional.
     output_remote_url: ~

@@ -94,17 +94,9 @@ class OutputConfig(CustomBaseModel):
     layout: Optional[str] = None
     data_type: DataType = DataType.FLOAT32
 
-    # @field_validator("data_type", mode="before")
-    # @staticmethod
-    # def _default_data_type(value: Any) -> DataType:
-    #     """Parses the data_type from the config."""
-    #     if value is None:
-    #         return DataType.FLOAT32
-    #     return DataType(value)
-
     @model_validator(mode="before")
     @classmethod
-    def _make_default_shape(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _make_default_layout(cls, data: Dict[str, Any]) -> Dict[str, Any]:
         shape = data.get("shape")
         layout = data.get("layout")
         if shape is None and layout is not None:
