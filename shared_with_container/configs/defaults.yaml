@@ -128,6 +128,9 @@ stages:
       # Disables calibration.
       disable_calibration: false
 
+      # Hardware architecture to be used.
+      hw_arch: hailo8
+
     # --- RVC2-Specific Arguments ---
     rvc2:
       # Specifies number of shaves.
