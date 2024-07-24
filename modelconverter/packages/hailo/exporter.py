@@ -119,7 +119,7 @@ class HailoExporter(Exporter):
         quantized_har_path = self._calibrate(har_path)
         self._inference_model_path = Path(quantized_har_path)
         if self.disable_compilation:
-            logger.info("Early stop enabled. Skipping compilation.")
+            logger.warning("Compilation disabled, skipping compilation.")
             copy_path = Path(quantized_har_path).parent / (
                 Path(quantized_har_path).stem + "_copy.har"
             )

@@ -169,7 +169,7 @@ def prepare(
             f"output_dir_name _{model_name}-test "
             "hailo.compression_level 0 "
             "hailo.optimization_level 0 "
-            "hailo.early_stop True "
+            "hailo.disable_compilation True "
             f"rvc2.superblob {'false' if 'superblob' not in service else 'true'} "
             "calibration.max_images 30 "
             + ("--to nn_archive" if model_type == "archive" else ""),

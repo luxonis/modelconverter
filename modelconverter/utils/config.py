@@ -18,7 +18,7 @@ from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MODELS_DIR
 from modelconverter.utils.filesystem_utils import resolve_path
 from modelconverter.utils.metadata import get_metadata
-from modelconverter.utils.shape import Shape
+from modelconverter.utils.layout import make_default_layout
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -90,26 +90,43 @@ class RandomCalibrationConfig(CustomBaseModel):
 
 class OutputConfig(CustomBaseModel):
     name: str
-    shape: Optional[Shape] = None
+    shape: Optional[List[int]] = None
+    layout: Optional[str] = None
     data_type: DataType = DataType.FLOAT32
 
-    @field_validator("data_type", mode="before")
-    @staticmethod
-    def _default_data_type(value: Any) -> DataType:
-        """Parses the data_type from the config."""
-        if value is None:
-            return DataType.FLOAT32
-        return DataType(value)
+    # @field_validator("data_type", mode="before")
+    # @staticmethod
+    # def _default_data_type(value: Any) -> DataType:
+    #     """Parses the data_type from the config."""
+    #     if value is None:
+    #         return DataType.FLOAT32
+    #     return DataType(value)
 
     @model_validator(mode="before")
     @classmethod
-    def validate_shape(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _make_default_shape(cls, data: Dict[str, Any]) -> Dict[str, Any]:
         shape = data.get("shape")
-        layout = data.pop("layout", None)
-        if shape is None:
+        layout = data.get("layout")
+        if shape is None and layout is not None:
+            raise ValueError("`layout` cannot be provided without `shape`.")
+        elif shape is None:
             return data
-        data["shape"] = Shape(shape, layout)
+        if layout is None:
+            layout = make_default_layout(shape)
+        data["layout"] = layout.upper()
         return data
+
+    @model_validator(mode="after")
+    def validate_layout(self) -> Self:
+        if self.shape is None:
+            return self
+        assert self.layout is not None
+        if len(self.layout) != len(self.shape):
+            raise ValueError(
+                f"Length of `layout` ({len(self.layout)}) must match "
+                f"length of `shape` ({len(self.shape)})."
+            )
+        return self
 
 
 class EncodingConfig(CustomBaseModel):
@@ -359,8 +376,8 @@ class SingleStageConfig(CustomBaseModel):
                 tensor_shape, tensor_dtype = _get_onnx_inter_info(
                     data["input_model"], inp_name
                 )
-                metadata.input_shapes[inp_name] = tensor_shape
-                metadata.input_dtypes[inp_name] = tensor_dtype
+                metadata.input_shapes[inp_name] = tensor_shape  # type: ignore
+                metadata.input_dtypes[inp_name] = tensor_dtype  # type: ignore
                 logger.warning(
                     f"Input `{inp_name}` is not present in inputs of the ONNX model. "
                     f"Assuming it is an intermediate node."

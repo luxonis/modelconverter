@@ -25,7 +25,7 @@ from .nn_archive import (
     process_nn_archive,
 )
 from .onnx_tools import onnx_attach_normalization_to_inputs
-from .shape import Shape
+from .layout import guess_new_layout, make_default_layout
 from .subprocess import subprocess_run
 from .metadata import Metadata, get_metadata
 
@@ -51,7 +51,8 @@ __all__ = [
     "get_docker_image",
     "docker_exec",
     "in_docker",
-    "Shape",
+    "guess_new_layout",
+    "make_default_layout",
     "Metadata",
     "get_metadata",
 ]

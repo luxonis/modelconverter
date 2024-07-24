@@ -15,7 +15,7 @@ from luxonis_ml.nn_archive.config_building_blocks import (
 from modelconverter.utils.config import Config
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.metadata import get_metadata
-from modelconverter.utils.shape import Shape
+from modelconverter.utils.layout import guess_new_layout, make_default_layout
 from modelconverter.utils.types import Target
 
 
@@ -154,9 +154,10 @@ def modelconverter_config_to_nn(
         new_shape = model_metadata.input_shapes[inp.name]
         # new_dtype = model_metadata.input_dtypes[inp.name]
         if inp.shape is not None:
-            layout = inp.shape.guess_new_layout(new_shape).layout_string
+            assert inp.layout is not None
+            layout = guess_new_layout(inp.layout, inp.shape, new_shape)
         else:
-            layout = Shape(new_shape).layout_string
+            layout = make_default_layout(new_shape)
 
         archive_cfg["model"]["inputs"].append(
             {
@@ -183,9 +184,10 @@ def modelconverter_config_to_nn(
         new_shape = model_metadata.output_shapes[out.name]
         # new_dtype = model_metadata.output_dtypes[out.name]
         if out.shape is not None:
-            layout = out.shape.guess_new_layout(new_shape).layout_string
+            assert out.layout is not None
+            layout = guess_new_layout(out.layout, out.shape, new_shape)
         else:
-            layout = Shape(new_shape).layout_string
+            layout = make_default_layout(new_shape)
 
         archive_cfg["model"]["outputs"].append(
             {

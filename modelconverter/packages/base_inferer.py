@@ -4,11 +4,11 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 
 import numpy as np
 
-from modelconverter.utils import Shape, resolve_path
+from modelconverter.utils import resolve_path
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
@@ -23,9 +23,9 @@ class Inferer(ABC):
     model_path: Path
     src: Path
     dest: Path
-    in_shapes: Dict[str, Shape]
+    in_shapes: Dict[str, List[int]]
     in_dtypes: Dict[str, DataType]
-    out_shapes: Dict[str, Shape]
+    out_shapes: Dict[str, List[int]]
     out_dtypes: Dict[str, DataType]
     resize_method: Dict[str, ResizeMethod]
     encoding: Dict[str, Encoding]
