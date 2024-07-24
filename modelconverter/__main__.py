@@ -221,7 +221,7 @@ def infer(
         ),
     ],
     path: PathOption,
-    output_dir: OutputDirOption = None,
+    output_dir: OutputDirOption,
     stage: Annotated[
         Optional[str],
         typer.Option(
@@ -251,11 +251,8 @@ def infer(
         try:
             mult_cfg, _, _ = get_configs(path, opts)
             cfg = mult_cfg.get_stage_config(stage)
-            output_path = get_output_dir_name(
-                target, mult_cfg.name, output_dir
-            )
             Inferer = get_inferer(target)
-            Inferer.from_config(model_path, input_path, output_path, cfg).run()
+            Inferer.from_config(model_path, input_path, Path(output_dir), cfg).run()
         except Exception:
             logger.exception("Encountered an unexpected error!")
             exit(2)
