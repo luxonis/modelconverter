@@ -1,4 +1,4 @@
-FROM hailo_ai_sw_suite_2024-04:1
+FROM hailo_ai_sw_suite_2024-07:1
 USER root
 
 COPY requirements.txt .
