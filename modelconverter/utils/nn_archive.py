@@ -14,9 +14,8 @@ from luxonis_ml.nn_archive.config_building_blocks import (
 
 from modelconverter.utils.config import Config
 from modelconverter.utils.constants import MISC_DIR
-from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
-from modelconverter.utils.types import Target
+from modelconverter.utils.metadata import get_metadata
 
 
 def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:

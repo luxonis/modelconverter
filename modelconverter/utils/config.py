@@ -17,8 +17,8 @@ from typing_extensions import Annotated, Self
 from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MODELS_DIR
 from modelconverter.utils.filesystem_utils import resolve_path
-from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.layout import make_default_layout
+from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.types import (
     DataType,
     Encoding,

@@ -12,7 +12,6 @@ def make_default_layout(shape: List[int]) -> str:
         >>> "NCHW"
         >>> make_default_layout([1, 19, 7, 8])
         >>> "NABC"
-
     """
     layout = []
     i = 0

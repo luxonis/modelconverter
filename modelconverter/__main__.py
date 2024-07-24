@@ -439,6 +439,7 @@ def convert(
                 else:
                     model_name = out_models[0].name
                 nn_archive = modelconverter_config_to_nn(
+                    cfg,
                     Path(model_name),
                     archive_cfg,
                     preprocessing,

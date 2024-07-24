@@ -19,15 +19,15 @@ from .filesystem_utils import (
     upload_file_to_remote,
 )
 from .image import read_calib_dir, read_image
+from .layout import guess_new_layout, make_default_layout
+from .metadata import Metadata, get_metadata
 from .nn_archive import (
     get_archive_input,
     modelconverter_config_to_nn,
     process_nn_archive,
 )
 from .onnx_tools import onnx_attach_normalization_to_inputs
-from .layout import guess_new_layout, make_default_layout
 from .subprocess import subprocess_run
-from .metadata import Metadata, get_metadata
 
 __all__ = [
     "ModelconverterException",
