@@ -23,7 +23,9 @@ with _replace_pydantic():
 class HailoInferer(Inferer):
     def setup(self):
         self.runner = ClientRunner(
-            hw_arch="hailo8",
+            hw_arch=self.config.hailo.hw_arch
+            if self.config is not None
+            else "hailo8",
             har=str(self.model_path),
         )
         hn_dict = self.runner.get_hn_dict()

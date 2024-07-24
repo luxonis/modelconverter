@@ -57,6 +57,7 @@ DEFAULT_TARGET_CONFIGS = {
         "early_stop": False,
         "alls": [],
         "disable_calibration": False,
+        "hw_arch": "hailo8",
     },
 }
 
@@ -257,6 +258,7 @@ def test_correct():
                 "batch_size": 4,
                 "early_stop": False,
                 "alls": [],
+                "hw_arch": "hailo8",
             },
         },
     )
