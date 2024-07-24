@@ -252,7 +252,9 @@ def infer(
             mult_cfg, _, _ = get_configs(path, opts)
             cfg = mult_cfg.get_stage_config(stage)
             Inferer = get_inferer(target)
-            Inferer.from_config(model_path, input_path, Path(output_dir), cfg).run()
+            Inferer.from_config(
+                model_path, input_path, Path(output_dir), cfg
+            ).run()
         except Exception:
             logger.exception("Encountered an unexpected error!")
             exit(2)
