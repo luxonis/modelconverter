@@ -25,7 +25,8 @@ def make_default_layout(shape: List[int]) -> str:
             return "".join(layout + ["H", "W", "C"])
     i = 0
     while len(layout) < len(shape):
-        letter = chr(ord("A") + i)
+        # Starting with "C" for more sensible defaults
+        letter = chr(ord("A") + (i + 2) % 26)
         if letter not in layout:
             layout.append(letter)
         i += 1

@@ -24,5 +24,5 @@ def test_shape_complex():
 
 def test_make_default_layout():
     assert make_default_layout([1, 3, 256, 256]) == "NCHW"
-    assert make_default_layout([1, 19, 7, 8]) == "NABC"
+    assert make_default_layout([1, 19, 7, 8]) == "NCDE"
     assert make_default_layout([256, 256, 3]) == "HWC"

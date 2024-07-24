@@ -83,11 +83,13 @@ DEFAULT_DUMMY_OUTPUTS = [
         "name": "output0",
         "data_type": DataType.FLOAT32,
         "shape": [1, 10],
+        "layout": "NC",
     },
     {
         "name": "output1",
         "data_type": DataType.FLOAT32,
         "shape": [1, 5, 5, 5],
+        "layout": "NCDE",
     },
 ]
 
@@ -142,6 +144,7 @@ inputs:
   - name: "input0"
     scale_values: [255,255,255]
     shape: [1, 3, 64, 64]
+    layout: "NCHW"
     calibration:
       max_images: 100
 """
@@ -203,6 +206,7 @@ def test_correct():
                 {
                     "name": "input0",
                     "shape": [1, 3, 64, 64],
+                    "layout": "NCHW",
                     "scale_values": [255, 255, 255],
                     "mean_values": [120, 0, 0],
                     "reverse_input_channels": False,
@@ -221,6 +225,7 @@ def test_correct():
                 {
                     "name": "input1",
                     "shape": [1, 3, 256, 256],
+                    "layout": "NCHW",
                     "data_type": DataType.FLOAT32,
                     "reverse_input_channels": True,
                     "mean_values": [256, 256],
@@ -239,6 +244,7 @@ def test_correct():
                     "name": "output0",
                     "data_type": DataType.FLOAT32,
                     "shape": [1, 10],
+                    "layout": "NC",
                 },
             ],
             **DEFAULT_GENERAL_CONFIG,
@@ -287,6 +293,7 @@ def test_top_level():
                 {
                     "name": "input0",
                     "shape": [1, 3, 64, 64],
+                    "layout": "NCHW",
                     "scale_values": [255, 255, 255],
                     "mean_values": [123.675, 116.28, 103.53],
                     "reverse_input_channels": True,
@@ -302,6 +309,7 @@ def test_top_level():
                 {
                     "name": "input1",
                     "shape": [1, 3, 64, 64],
+                    "layout": "NCHW",
                     "scale_values": [255, 255, 255],
                     "mean_values": [123.675, 116.28, 103.53],
                     "reverse_input_channels": True,
@@ -320,6 +328,7 @@ def test_top_level():
                     "name": "output1",
                     "data_type": DataType.FLOAT32,
                     "shape": [1, 5, 5, 5],
+                    "layout": "NCDE",
                 },
             ],
             **DEFAULT_GENERAL_CONFIG,
@@ -350,6 +359,8 @@ def test_top_level_override():
             "[1,10]",
             "outputs.0.data_type",
             "float16",
+            "outputs.0.layout",
+            "NA",
             "inputs.0.name",
             "input0",
             "inputs.0.shape",
@@ -379,6 +390,7 @@ def test_top_level_override():
                 {
                     "name": "input0",
                     "shape": [1, 3, 256, 256],
+                    "layout": "NCHW",
                     "scale_values": [1.0, 2.0, 3.0],
                     "mean_values": [4.0, 5.0, 6.0],
                     "reverse_input_channels": False,
@@ -397,6 +409,7 @@ def test_top_level_override():
                 {
                     "name": "input1",
                     "shape": [1, 3, 64, 64],
+                    "layout": "NCHW",
                     "scale_values": [255.0, 255.0, 255.0],
                     "mean_values": [123.675, 116.28, 103.53],
                     "reverse_input_channels": True,
@@ -415,6 +428,7 @@ def test_top_level_override():
                     "name": "883",
                     "data_type": DataType.FLOAT16,
                     "shape": [1, 10],
+                    "layout": "NA",
                 },
             ],
             **DEFAULT_GENERAL_CONFIG,
@@ -458,6 +472,7 @@ def test_no_top_level():
                 {
                     "name": "input0",
                     "shape": [1, 3, 256, 256],
+                    "layout": "NCHW",
                     "scale_values": [1.0, 2.0, 3.0],
                     "mean_values": [4.0, 5.0, 6.0],
                     "reverse_input_channels": False,
@@ -479,6 +494,7 @@ def test_no_top_level():
                     "name": "output0",
                     "data_type": DataType.FLOAT32,
                     "shape": [1, 10],
+                    "layout": "NC",
                 },
             ],
             **DEFAULT_GENERAL_CONFIG,
@@ -547,6 +563,7 @@ def test_onnx_load():
                 {
                     "name": "input0",
                     "shape": [1, 3, 64, 64],
+                    "layout": "NCHW",
                     "scale_values": None,
                     "mean_values": None,
                     "reverse_input_channels": True,
@@ -558,6 +575,7 @@ def test_onnx_load():
                 {
                     "name": "input1",
                     "shape": [1, 3, 128, 128],
+                    "layout": "NCHW",
                     "scale_values": None,
                     "mean_values": None,
                     "reverse_input_channels": True,
@@ -599,6 +617,7 @@ def test_explicit_nones():
                 {
                     "name": "input0",
                     "shape": [1, 3, 64, 64],
+                    "layout": "NCHW",
                     "scale_values": None,
                     "mean_values": None,
                     "reverse_input_channels": True,
@@ -610,6 +629,7 @@ def test_explicit_nones():
                 {
                     "name": "input1",
                     "shape": [1, 3, 128, 128],
+                    "layout": "NCHW",
                     "scale_values": None,
                     "mean_values": None,
                     "reverse_input_channels": True,

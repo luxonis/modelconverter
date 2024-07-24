@@ -5,7 +5,7 @@ import pytest
 
 from modelconverter.utils import subprocess_run
 
-URL_PREFIX: Final[str] = "shared_with_container/configs/"
+URL_PREFIX: Final[str] = "gs://luxonis-test-bucket/modelconverter/"
 
 
 @pytest.mark.parametrize(
