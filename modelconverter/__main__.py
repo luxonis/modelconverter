@@ -511,7 +511,9 @@ def convert(
 
 @app.command()
 def archive(
-    path: Annotated[str, typer.Argument(help="Path to the model file.")],
+    path: Annotated[
+        str, typer.Argument(help="Path or an URL of the model file.")
+    ],
     save_path: Annotated[
         Optional[str],
         typer.Option(
