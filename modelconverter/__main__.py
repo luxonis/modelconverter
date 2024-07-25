@@ -535,8 +535,17 @@ def archive(
     model_path = resolve_path(path, MODELS_DIR)
     cfg = archive_from_model(model_path)
     save_path = save_path or f"{cfg.model.metadata.name}.tar.xz"
-    if not save_path.endswith(".tar.xz"):
-        save_path += f"/{cfg.model.metadata.name}.tar.xz"
+    if save_path.endswith("tar.xz"):
+        compression = "xz"
+    elif save_path.endswith("tar.gz"):
+        compression = "gz"
+    elif save_path.endswith("tar.bz2"):
+        compression = "bz2"
+    else:
+        compression = "xz"
+
+    if not save_path.endswith(f".tar.{compression}"):
+        save_path += f"/{cfg.model.metadata.name}.tar.{compression}"
     archive_name = save_path.split("/")[-1]
     protocol = LuxonisFileSystem.get_protocol(save_path)
     if protocol != "file":
@@ -546,6 +555,7 @@ def archive(
     archive_save_path = ArchiveGenerator(
         archive_name=archive_name,
         save_path=archive_save_path,
+        compression=compression,
         cfg_dict=cfg.model_dump(),
         executables_paths=[str(model_path)],
     ).make_archive()
