@@ -270,11 +270,15 @@ class HailoConfig(TargetConfig):
     batch_size: int = 8
     disable_compilation: bool = False
     alls: List[str] = []
+    hw_arch: Literal[
+        "hailo8", "hailo8l", "hailo8r", "hailo10h", "hailo15h", "hailo15m"
+    ] = "hailo8"
 
 
 class BlobBaseConfig(TargetConfig):
     mo_args: List[str] = []
     compile_tool_args: List[str] = []
+    compress_to_fp16: bool = True
 
 
 class RVC2Config(BlobBaseConfig):
@@ -387,7 +391,7 @@ class SingleStageConfig(CustomBaseModel):
 
             if (
                 inp.get("reverse_input_channels") is not None
-                or reverse_input_channels
+                or reverse_input_channels is not None
             ):
                 inp["reverse_input_channels"] = inp.get(
                     "reverse_input_channels"

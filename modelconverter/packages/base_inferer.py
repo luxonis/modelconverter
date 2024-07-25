@@ -4,7 +4,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -29,6 +29,7 @@ class Inferer(ABC):
     out_dtypes: Dict[str, DataType]
     resize_method: Dict[str, ResizeMethod]
     encoding: Dict[str, Encoding]
+    config: Optional[SingleStageConfig] = None
 
     def __post_init__(self):
         if self.dest.exists():
@@ -70,6 +71,7 @@ class Inferer(ABC):
                 else Encoding.BGR
                 for inp in config.inputs
             },
+            config=config,
         )
 
     @abstractmethod

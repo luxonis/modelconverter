@@ -35,12 +35,14 @@ DEFAULT_TARGET_CONFIGS = {
         "number_of_shaves": 8,
         "number_of_cmx_slices": 8,
         "disable_calibration": False,
+        "compress_to_fp16": True,
     },
     "rvc3": {
         "mo_args": [],
         "compile_tool_args": [],
         "pot_target_device": PotDevice.VPU,
         "disable_calibration": False,
+        "compress_to_fp16": True,
     },
     "rvc4": {
         "snpe_onnx_to_dlc_args": [],
@@ -57,6 +59,7 @@ DEFAULT_TARGET_CONFIGS = {
         "disable_compilation": False,
         "alls": [],
         "disable_calibration": False,
+        "hw_arch": "hailo8",
     },
 }
 
@@ -254,6 +257,7 @@ def test_correct():
                 "compile_tool_args": [],
                 "pot_target_device": PotDevice.VPU,
                 "disable_calibration": False,
+                "compress_to_fp16": True,
             },
             "rvc4": {**DEFAULT_TARGET_CONFIGS["rvc4"]},
             "hailo": {
@@ -263,6 +267,7 @@ def test_correct():
                 "batch_size": 4,
                 "disable_compilation": False,
                 "alls": [],
+                "hw_arch": "hailo8",
             },
         },
     )

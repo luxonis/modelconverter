@@ -59,7 +59,6 @@ def process_nn_archive(
         "input_model": str(untar_path / archive_config.model.metadata.path),
         "inputs": [],
         "outputs": [],
-        "calibration": "random",
     }
 
     for inp in archive_config.model.inputs:
@@ -113,7 +112,6 @@ def process_nn_archive(
                 "input_model": str(input_model_path),
                 "inputs": [],
                 "outputs": [],
-                "calibration": "random",
                 "encoding": "NONE",
             }
             config["stages"][input_model_path.stem] = head_stage_config

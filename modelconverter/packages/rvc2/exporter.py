@@ -33,6 +33,7 @@ class RVC2Exporter(Exporter):
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)
+        self.compress_to_fp16 = config.rvc2.compress_to_fp16
         self.number_of_shaves = config.rvc2.number_of_shaves
         self.number_of_cmx_slices = config.rvc2.number_of_cmx_slices
         self.superblob = config.rvc2.superblob
@@ -54,6 +55,8 @@ class RVC2Exporter(Exporter):
         self._add_args(
             args, ["--output", ",".join(name for name in self.outputs)]
         )
+        if self.compress_to_fp16:
+            self._add_args(args, ["--compress_to_fp16"])
 
         if "--input" not in args:
             inp_str = ""

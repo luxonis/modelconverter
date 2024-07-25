@@ -65,6 +65,7 @@ class HailoExporter(Exporter):
         self.batch_size = config.hailo.batch_size
         self.disable_compilation = config.hailo.disable_compilation
         self._alls: List[str] = []
+        self.hw_arch = config.hailo.hw_arch
         if not tf.config.list_physical_devices("GPU"):
             logger.error(
                 "No GPU found. Setting optimization and compression level to 0."
@@ -89,7 +90,7 @@ class HailoExporter(Exporter):
         return end_nodes
 
     def export(self) -> Path:
-        runner = ClientRunner(hw_arch="hailo8")
+        runner = ClientRunner(hw_arch=self.hw_arch)
         start_nodes, net_input_shapes = self._get_start_nodes()
 
         logger.info("Translating model to Hailo IR.")
@@ -129,7 +130,7 @@ class HailoExporter(Exporter):
             )
             return copy_path
 
-        runner = ClientRunner(hw_arch="hailo8", har=quantized_har_path)
+        runner = ClientRunner(hw_arch=self.hw_arch, har=quantized_har_path)
         hef = runner.compile()
 
         hef_path = self.input_model.with_suffix(".hef")
@@ -176,7 +177,7 @@ class HailoExporter(Exporter):
     def _calibrate(self, har_path: Path) -> str:
         logger.info("Calibrating model.")
 
-        runner = ClientRunner(hw_arch="hailo8", har=str(har_path))
+        runner = ClientRunner(hw_arch=self.hw_arch, har=str(har_path))
         alls = self._get_alls(runner)
         logger.info(f"Using the following configuration: {alls}")
 
