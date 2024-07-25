@@ -221,7 +221,7 @@ def infer(
         ),
     ],
     path: PathOption,
-    output_dir: OutputDirOption = None,
+    output_dir: OutputDirOption,
     stage: Annotated[
         Optional[str],
         typer.Option(
@@ -251,11 +251,10 @@ def infer(
         try:
             mult_cfg, _, _ = get_configs(path, opts)
             cfg = mult_cfg.get_stage_config(stage)
-            output_path = get_output_dir_name(
-                target, mult_cfg.name, output_dir
-            )
             Inferer = get_inferer(target)
-            Inferer.from_config(model_path, input_path, output_path, cfg).run()
+            Inferer.from_config(
+                model_path, input_path, Path(output_dir), cfg
+            ).run()
         except Exception:
             logger.exception("Encountered an unexpected error!")
             exit(2)
@@ -430,6 +429,8 @@ def convert(
             if not isinstance(out_models, list):
                 out_models = [out_models]
             if to == Format.NN_ARCHIVE:
+                from modelconverter.packages.base_exporter import Exporter
+
                 logger.info("Converting to NN archive")
                 assert main_stage is not None
                 if len(out_models) > 1:
@@ -442,6 +443,9 @@ def convert(
                     archive_cfg,
                     preprocessing,
                     main_stage,
+                    exporter.inference_model_path
+                    if isinstance(exporter, Exporter)
+                    else exporter.exporters[main_stage].inference_model_path,
                 )
                 generator = ArchiveGenerator(
                     archive_name=f"{cfg.name}.{target.value.lower()}",

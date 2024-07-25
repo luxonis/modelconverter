@@ -42,13 +42,22 @@ class Inferer(ABC):
     def from_config(
         cls, model_path: str, src: Path, dest: Path, config: SingleStageConfig
     ):
+        for container, typ_name in zip(
+            [config.inputs, config.outputs], ["input", "output"]
+        ):
+            for node in container:
+                if node.shape is None:
+                    raise ValueError(
+                        f"Shape for {typ_name} '{node.name}' must be provided."
+                    )
+
         return cls(
             model_path=resolve_path(model_path, Path.cwd()),
             src=src,
             dest=dest,
-            in_shapes={inp.name: inp.shape for inp in config.inputs},
+            in_shapes={inp.name: inp.shape for inp in config.inputs},  # type: ignore
             in_dtypes={inp.name: inp.data_type for inp in config.inputs},
-            out_shapes={out.name: out.shape for out in config.outputs},
+            out_shapes={out.name: out.shape for out in config.outputs},  # type: ignore
             out_dtypes={out.name: out.data_type for out in config.outputs},
             resize_method={
                 inp.name: inp.calibration.resize_method

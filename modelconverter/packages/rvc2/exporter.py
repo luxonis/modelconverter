@@ -21,9 +21,9 @@ from ..base_exporter import Exporter
 
 logger = getLogger(__name__)
 
-COMPILE_TOOL: Final[str] = (
-    f'{env["INTEL_OPENVINO_DIR"]}/tools/compile_tool/compile_tool'
-)
+COMPILE_TOOL: Final[
+    str
+] = f'{env["INTEL_OPENVINO_DIR"]}/tools/compile_tool/compile_tool'
 
 DEFAULT_SUPER_SHAVES: Final[int] = 8
 

@@ -62,6 +62,7 @@ class RVC3Exporter(RVC2Exporter):
                 xml_path,
                 output_dir=str(output_dir),
             )
+            self._inference_model_path = calibrated_xml_path
             output_path = (
                 self.output_dir
                 / f"{self.model_name}-{self.target.name.lower()}-int8"

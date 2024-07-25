@@ -32,6 +32,14 @@ class DataType(Enum):
     UINT64 = "uint64"
     BOOLEAN = "boolean"
     STRING = "string"
+    UFXP8 = "ufxp8"
+    UFXP16 = "ufxp16"
+    UFXP32 = "ufxp32"
+    UFXP64 = "ufxp64"
+    FXP8 = "fxp8"
+    FXP16 = "fxp16"
+    FXP32 = "fxp32"
+    FXP64 = "fxp64"
 
     @classmethod
     def from_tensorflow_dtype(cls, dtype: int) -> "DataType":
@@ -54,6 +62,31 @@ class DataType(Enum):
         if dtype not in tensor_types:
             raise ValueError(f"Unsupported TensorFlow data type: `{dtype}`")
         return cls(tensor_types[dtype])
+
+    @classmethod
+    def from_dlc_dtype(cls, dtype: str) -> "DataType":
+        dtype_map = {
+            "Float_16": "float16",
+            "Float_32": "float32",
+            "Float_64": "float64",
+            "Int_8": "int8",
+            "Int_16": "int16",
+            "Int_32": "int32",
+            "Int_64": "int64",
+            "uInt_8": "uint8",
+            "uInt_16": "uint16",
+            "uInt_32": "uint32",
+            "uInt_64": "uint64",
+            "uFxp_8": "ufxp8",
+            "uFxp_16": "ufxp16",
+            "uFxp_32": "ufxp32",
+            "Fxp_8": "fxp8",
+            "Fxp_16": "fxp16",
+            "Fxp_32": "fxp32",
+        }
+        if dtype not in dtype_map:
+            raise ValueError(f"Unsupported DLC data type: `{dtype}`")
+        return cls(dtype_map[dtype])
 
     @classmethod
     def from_onnx_dtype(cls, dtype: int) -> "DataType":
