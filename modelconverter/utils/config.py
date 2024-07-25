@@ -373,7 +373,7 @@ class SingleStageConfig(CustomBaseModel):
 
             if (
                 inp.get("reverse_input_channels") is not None
-                or reverse_input_channels
+                or reverse_input_channels is not None
             ):
                 inp["reverse_input_channels"] = inp.get(
                     "reverse_input_channels"
