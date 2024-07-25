@@ -150,6 +150,9 @@ stages:
       # Produces .superblob file instead of regular .blob.
       superblob: true
 
+      # If the original model has FP32 weights or biases, they are compressed to FP16. All intermediate data is kept in original precision.
+      compress_to_fp16: true
+
     # --- RVC3-Specific Argument ---
     rvc3:
       # Target device for POT. Can be one of { VPU, ANY }
@@ -162,6 +165,9 @@ stages:
 
       # List of additional arguments to pass to the compile_tool.
       compile_tool_args: []
+
+      # If the original model has FP32 weights or biases, they are compressed to FP16. All intermediate data is kept in original precision.
+      compress_to_fp16: true
 
     # --- RVC4-Specific Arguments ---
     rvc4:
