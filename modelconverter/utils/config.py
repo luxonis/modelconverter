@@ -260,6 +260,7 @@ class HailoConfig(TargetConfig):
 class BlobBaseConfig(TargetConfig):
     mo_args: List[str] = []
     compile_tool_args: List[str] = []
+    compress_to_fp16: bool = True
 
 
 class RVC2Config(BlobBaseConfig):
