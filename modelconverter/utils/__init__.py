@@ -25,6 +25,7 @@ from .nn_archive import (
     get_archive_input,
     modelconverter_config_to_nn,
     process_nn_archive,
+    archive_from_model,
 )
 from .onnx_tools import onnx_attach_normalization_to_inputs
 from .subprocess import subprocess_run
@@ -55,4 +56,5 @@ __all__ = [
     "make_default_layout",
     "Metadata",
     "get_metadata",
+    "archive_from_model"
 ]
