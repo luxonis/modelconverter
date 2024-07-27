@@ -12,11 +12,13 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import Annotated, Self, TypeAlias
+from typing_extensions import Annotated, Self
 
 from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MODELS_DIR
 from modelconverter.utils.filesystem_utils import resolve_path
+from modelconverter.utils.layout import make_default_layout
+from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -27,9 +29,6 @@ from modelconverter.utils.types import (
 
 logger = logging.getLogger(__name__)
 
-FileInfoType: TypeAlias = Dict[
-    str, Tuple[Optional[List[Optional[int]]], Optional[DataType]]
-]
 
 NAMED_VALUES = {
     "imagenet": {
@@ -91,16 +90,35 @@ class RandomCalibrationConfig(CustomBaseModel):
 
 class OutputConfig(CustomBaseModel):
     name: str
-    shape: Optional[List[Optional[int]]] = None
+    shape: Optional[List[int]] = None
+    layout: Optional[str] = None
     data_type: DataType = DataType.FLOAT32
 
-    @field_validator("data_type", mode="before")
-    @staticmethod
-    def _default_data_type(value: Any) -> DataType:
-        """Parses the data_type from the config."""
-        if value is None:
-            return DataType.FLOAT32
-        return DataType(value)
+    @model_validator(mode="before")
+    @classmethod
+    def _make_default_layout(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        shape = data.get("shape")
+        layout = data.get("layout")
+        if shape is None and layout is not None:
+            raise ValueError("`layout` cannot be provided without `shape`.")
+        elif shape is None:
+            return data
+        if layout is None:
+            layout = make_default_layout(shape)
+        data["layout"] = layout.upper()
+        return data
+
+    @model_validator(mode="after")
+    def validate_layout(self) -> Self:
+        if self.shape is None:
+            return self
+        assert self.layout is not None
+        if len(self.layout) != len(self.shape):
+            raise ValueError(
+                f"Length of `layout` ({len(self.layout)}) must match "
+                f"length of `shape` ({len(self.shape)})."
+            )
+        return self
 
 
 class EncodingConfig(CustomBaseModel):
@@ -267,13 +285,17 @@ class HailoConfig(TargetConfig):
     optimization_level: Literal[-100, 0, 1, 2, 3, 4] = 2
     compression_level: Literal[0, 1, 2, 3, 4, 5] = 2
     batch_size: int = 8
-    early_stop: bool = False
+    disable_compilation: bool = False
     alls: List[str] = []
+    hw_arch: Literal[
+        "hailo8", "hailo8l", "hailo8r", "hailo10h", "hailo15h", "hailo15m"
+    ] = "hailo8"
 
 
 class BlobBaseConfig(TargetConfig):
     mo_args: List[str] = []
     compile_tool_args: List[str] = []
+    compress_to_fp16: bool = True
 
 
 class RVC2Config(BlobBaseConfig):
@@ -338,29 +360,23 @@ class SingleStageConfig(CustomBaseModel):
         encoding = data.pop("encoding", {})
         data_type = data.pop("data_type", None)
         shape = data.pop("shape", None)
+        layout = data.pop("layout", None)
         reverse_input_channels = data.pop("reverse_input_channels", None)
         top_level_calibration = data.pop("calibration", {})
 
         input_file_type = _detect_input_file_type(data["input_model"])
         data["input_file_type"] = input_file_type
-        file_inputs: FileInfoType = {}
-        file_outputs: FileInfoType = {}
-        if input_file_type == InputFileType.ONNX:
-            file_inputs, file_outputs = _get_onnx_info(data["input_model"])
-        if input_file_type == InputFileType.TFLITE:
-            file_inputs, file_outputs = _get_tflite_info(data["input_model"])
-        elif input_file_type == InputFileType.IR:
-            file_inputs, file_outputs = _get_ir_info(
-                data["input_bin"], data["input_model"]
-            )
+        metadata = get_metadata(Path(data["input_model"]))
 
         inputs = data.get("inputs")
         if not inputs:
-            inputs = [{"name": cast(Any, name)} for name in file_inputs.keys()]
+            inputs = [
+                {"name": cast(Any, name)} for name in metadata.input_shapes
+            ]
         outputs = data.get("outputs")
         if not outputs:
             outputs = [
-                {"name": cast(Any, name)} for name in file_outputs.keys()
+                {"name": cast(Any, name)} for name in metadata.output_shapes
             ]
 
         for inp in inputs:
@@ -369,17 +385,22 @@ class SingleStageConfig(CustomBaseModel):
                     f"Unable to determine name for input: `{inp}`."
                 )
             inp_name = str(inp["name"])
-            if inp_name not in file_inputs:
+            if inp_name not in metadata.input_shapes:
                 tensor_shape, tensor_dtype = _get_onnx_inter_info(
                     data["input_model"], inp_name
                 )
-                file_inputs[inp_name] = tensor_shape, tensor_dtype
+                metadata.input_shapes[inp_name] = tensor_shape  # type: ignore
+                metadata.input_dtypes[inp_name] = tensor_dtype  # type: ignore
                 logger.warning(
                     f"Input `{inp_name}` is not present in inputs of the ONNX model. "
                     f"Assuming it is an intermediate node."
                 )
-            onnx_shape, onnx_dtype = file_inputs[inp_name]
+            onnx_shape, onnx_dtype = (
+                metadata.input_shapes[inp_name],
+                metadata.input_dtypes[inp_name],
+            )
             inp["shape"] = inp.get("shape") or shape or onnx_shape
+            inp["layout"] = inp.get("layout") or layout
             inp["data_type"] = inp.get("data_type") or data_type or onnx_dtype
             inp["encoding"] = inp.get("encoding") or encoding
             inp["mean_values"] = inp.get("mean_values") or mean_values
@@ -387,7 +408,7 @@ class SingleStageConfig(CustomBaseModel):
 
             if (
                 inp.get("reverse_input_channels") is not None
-                or reverse_input_channels
+                or reverse_input_channels is not None
             ):
                 inp["reverse_input_channels"] = inp.get(
                     "reverse_input_channels"
@@ -407,7 +428,7 @@ class SingleStageConfig(CustomBaseModel):
         for out in outputs:
             out_name = str(out["name"])
             if (
-                out_name not in file_outputs
+                out_name not in metadata.output_shapes
                 and out.get("data_type") is None
                 and out.get("shape") is None
             ):
@@ -415,8 +436,11 @@ class SingleStageConfig(CustomBaseModel):
                     data["input_model"], out_name
                 )
                 onnx_shape, onnx_dtype = tensor_shape, tensor_dtype
-            elif out_name in file_outputs:
-                onnx_shape, onnx_dtype = file_outputs[out_name]
+            elif out_name in metadata.output_shapes:
+                onnx_shape, onnx_dtype = (
+                    metadata.output_shapes[out_name],
+                    metadata.output_dtypes[out_name],
+                )
             else:
                 onnx_shape, onnx_dtype = None, None
             out["shape"] = out.get("shape") or onnx_shape
@@ -573,129 +597,9 @@ def _extract_bin_xml_from_ir(ir_path: Any) -> Tuple[Path, Path]:
     return bin_path, xml_path
 
 
-def _get_tflite_info(
-    tflite_path: Path,
-) -> Tuple[FileInfoType, FileInfoType]:
-    """Reads names, shapes, and data types for all inputs and outputs of the provided
-    TFLite model.
-
-    Args:
-        tflite_path (Path): Path to the TFLite model.
-
-    Returns:
-        Tuple[FileInfoType, FileInfoType]: (input_info, output_info) where the keys
-        are the input names and the values are tuples of (shape, DataType).
-    """
-
-    import tflite
-
-    with open(tflite_path, "rb") as f:
-        data = f.read()
-
-    # Load the model
-    model = tflite.Model.GetRootAsModel(data, 0)
-
-    # Get the subgraph (model usually contains only one subgraph)
-    subgraph = model.Subgraphs(0)
-    if subgraph is None:
-        raise ValueError("Failed to load TFLite model.")
-
-    input_info = {}
-    output_info = {}
-
-    for i in range(subgraph.InputsLength()):
-        tensor = subgraph.Tensors(subgraph.Inputs(i))
-        input_info[tensor.Name().decode("utf-8")] = (  # type: ignore
-            tensor.ShapeAsNumpy().tolist(),  # type: ignore
-            DataType.from_tensorflow_dtype(tensor.Type()),  # type: ignore
-        )
-
-    for i in range(subgraph.OutputsLength()):
-        tensor = subgraph.Tensors(subgraph.Outputs(i))
-        output_info[tensor.Name().decode("utf-8")] = (  # type: ignore
-            tensor.ShapeAsNumpy().tolist(),  # type: ignore
-            DataType.from_tensorflow_dtype(tensor.Type()),  # type: ignore
-        )
-
-    return input_info, output_info
-
-
-def _get_onnx_info(onnx_path: Path) -> Tuple[FileInfoType, FileInfoType]:
-    """Reads names, shapes and data types for all inputs and outputs of the provided
-    ONNX model.
-
-    Args:
-        onnx_path (Path): Path to the ONNX model.
-
-    Returns:
-        Tuple[FileInfoType, FileInfoType]: (input_info, output_info) where the keys
-        are the input names and the values are tuples of (shape, DataType).
-    """
-
-    try:
-        model = onnx.load(str(onnx_path))
-    except Exception as e:
-        raise ValueError(f"Failed to load ONNX model: `{onnx_path}`") from e
-
-    input_info = {}
-    output_info = {}
-
-    for inp in model.graph.input:
-        shape = [dim.dim_value for dim in inp.type.tensor_type.shape.dim]
-        dtype = DataType.from_onnx_dtype(inp.type.tensor_type.elem_type)
-        input_info[inp.name] = (shape, dtype)
-
-    for output in model.graph.output:
-        shape = [dim.dim_value for dim in output.type.tensor_type.shape.dim]
-        dtype = DataType.from_onnx_dtype(output.type.tensor_type.elem_type)
-        output_info[output.name] = (shape, dtype)
-
-    return input_info, output_info
-
-
-def _get_ir_info(
-    bin_path: Path, xml_path: Path
-) -> Tuple[FileInfoType, FileInfoType]:
-    """Reads names, shapes and data types for all inputs and outputs of the provided IR
-    model (bin and xml).
-
-    Args:
-        bin_path (Path): Path to the OpenVINO binary weights of the model.
-        xml_path (Path): Path to the OpenVINO XML definition of the model.
-
-    Returns:
-        Tuple[FileInfoType, FileInfoType]: (input_info, output_info) where the keys
-        are the input names and the values are tuples of (shape, DataType).
-    """
-
-    from openvino.runtime import Core
-
-    ie = Core()
-    try:
-        model = ie.read_model(model=str(xml_path), weights=str(bin_path))
-    except Exception as e:
-        raise ValueError(
-            f"Failed to load IR model: `{bin_path}` and `{xml_path}`"
-        ) from e
-
-    input_info = {}
-    output_info = {}
-
-    for inp in model.inputs:
-        name = list(inp.names)[0]
-        dtype = DataType.from_ir_dtype(inp.element_type.get_type_name())
-        input_info[name] = (inp.shape, dtype)
-    for output in model.outputs:
-        name = list(output.names)[0]
-        dtype = DataType.from_ir_dtype(output.element_type.get_type_name())
-        output_info[name] = (output.shape, dtype)
-
-    return input_info, output_info
-
-
 def _get_onnx_node_info(
     model_path: Path, node_name: str
-) -> Tuple[List[Optional[int]], DataType]:
+) -> Tuple[List[int], DataType]:
     onnx_model = onnx.load(str(model_path))
     graph = onnx_model.graph
 
@@ -714,9 +618,13 @@ def _get_onnx_node_info(
         )
 
     shape = [
-        dim.dim_value if dim.dim_value > 0 else None
-        for dim in output_value_info.type.tensor_type.shape.dim
+        dim.dim_value for dim in output_value_info.type.tensor_type.shape.dim
     ]
+    if any(dim == 0 for dim in shape):
+        raise ValueError(
+            "Dynamic shapes are not supported. "
+            f"Shape of node '{node_name}' is {shape}."
+        )
     data_type = output_value_info.type.tensor_type.elem_type
 
     return shape, DataType.from_onnx_dtype(data_type)
@@ -724,14 +632,16 @@ def _get_onnx_node_info(
 
 def _get_onnx_tensor_info(
     model_path: Union[Path, str], tensor_name: str
-) -> Tuple[List[Optional[int]], DataType]:
+) -> Tuple[List[int], DataType]:
     model = onnx.load(str(model_path))
 
     def extract_tensor_info(tensor_type):
-        shape = [
-            dim.dim_value if dim.dim_value > 0 else None
-            for dim in tensor_type.shape.dim
-        ]
+        shape = [dim.dim_value for dim in tensor_type.shape.dim]
+        if any(dim == 0 for dim in shape):
+            raise ValueError(
+                "Dynamic shapes are not supported. "
+                f"Shape of tensor '{tensor_name}' is {shape}."
+            )
         return shape, DataType.from_onnx_dtype(tensor_type.elem_type)
 
     for tensor in chain(model.graph.input, model.graph.output):
@@ -753,7 +663,7 @@ def _get_onnx_tensor_info(
 
 def _get_onnx_inter_info(
     model_path: Path, name: str
-) -> Tuple[Optional[List[Optional[int]]], Optional[DataType]]:
+) -> Tuple[Optional[List[int]], Optional[DataType]]:
     try:
         logger.info(
             f"Attempting to find shape and data type for tensor '{name}'."

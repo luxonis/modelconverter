@@ -4,7 +4,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -29,6 +29,7 @@ class Inferer(ABC):
     out_dtypes: Dict[str, DataType]
     resize_method: Dict[str, ResizeMethod]
     encoding: Dict[str, Encoding]
+    config: Optional[SingleStageConfig] = None
 
     def __post_init__(self):
         if self.dest.exists():
@@ -41,13 +42,22 @@ class Inferer(ABC):
     def from_config(
         cls, model_path: str, src: Path, dest: Path, config: SingleStageConfig
     ):
+        for container, typ_name in zip(
+            [config.inputs, config.outputs], ["input", "output"]
+        ):
+            for node in container:
+                if node.shape is None:
+                    raise ValueError(
+                        f"Shape for {typ_name} '{node.name}' must be provided."
+                    )
+
         return cls(
             model_path=resolve_path(model_path, Path.cwd()),
             src=src,
             dest=dest,
-            in_shapes={inp.name: inp.shape for inp in config.inputs},
+            in_shapes={inp.name: inp.shape for inp in config.inputs},  # type: ignore
             in_dtypes={inp.name: inp.data_type for inp in config.inputs},
-            out_shapes={out.name: out.shape for out in config.outputs},
+            out_shapes={out.name: out.shape for out in config.outputs},  # type: ignore
             out_dtypes={out.name: out.data_type for out in config.outputs},
             resize_method={
                 inp.name: inp.calibration.resize_method
@@ -61,6 +71,7 @@ class Inferer(ABC):
                 else Encoding.BGR
                 for inp in config.inputs
             },
+            config=config,
         )
 
     @abstractmethod

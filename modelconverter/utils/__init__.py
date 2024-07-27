@@ -19,6 +19,8 @@ from .filesystem_utils import (
     upload_file_to_remote,
 )
 from .image import read_calib_dir, read_image
+from .layout import guess_new_layout, make_default_layout
+from .metadata import Metadata, get_metadata
 from .nn_archive import (
     get_archive_input,
     modelconverter_config_to_nn,
@@ -49,4 +51,8 @@ __all__ = [
     "get_docker_image",
     "docker_exec",
     "in_docker",
+    "guess_new_layout",
+    "make_default_layout",
+    "Metadata",
+    "get_metadata",
 ]

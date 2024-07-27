@@ -69,9 +69,12 @@ stages:
     # Same options as for scale_values. "imagenet" equivalent to [ 58.395, 57.12, 57.375 ].
     mean_values: ~
 
-    # The input shape of the network in NCHW format. If not provided,
+    # The input shape of the network. If not provided,
     # it will be inferred from the model if possible.
     shape: ~
+
+    # Lettercode representation of the input layout. e.g. NCHW
+    layout: ~
 
     # Remote path where to upload the compiled model. Optional.
     output_remote_url: ~
@@ -120,13 +123,16 @@ stages:
       batch_size: 8
 
       # Stop after quantization. Used in tests.
-      early_stop: false
+      disable_compilation: false
 
       # List of additional arguments to pass to the model optimizer.
       alls: []
 
       # Disables calibration.
       disable_calibration: false
+
+      # Hardware architecture to be used.
+      hw_arch: hailo8
 
     # --- RVC2-Specific Arguments ---
     rvc2:
@@ -147,6 +153,9 @@ stages:
       # Produces .superblob file instead of regular .blob.
       superblob: true
 
+      # If the original model has FP32 weights or biases, they are compressed to FP16. All intermediate data is kept in original precision.
+      compress_to_fp16: true
+
     # --- RVC3-Specific Argument ---
     rvc3:
       # Target device for POT. Can be one of { VPU, ANY }
@@ -159,6 +168,9 @@ stages:
 
       # List of additional arguments to pass to the compile_tool.
       compile_tool_args: []
+
+      # If the original model has FP32 weights or biases, they are compressed to FP16. All intermediate data is kept in original precision.
+      compress_to_fp16: true
 
     # --- RVC4-Specific Arguments ---
     rvc4:

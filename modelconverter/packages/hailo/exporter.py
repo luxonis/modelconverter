@@ -63,7 +63,9 @@ class HailoExporter(Exporter):
         self.optimization_level = config.hailo.optimization_level
         self.compression_level = config.hailo.compression_level
         self.batch_size = config.hailo.batch_size
-        self.early_stop = config.hailo.early_stop
+        self.disable_compilation = config.hailo.disable_compilation
+        self._alls: List[str] = []
+        self.hw_arch = config.hailo.hw_arch
         if not tf.config.list_physical_devices("GPU"):
             logger.error(
                 "No GPU found. Setting optimization and compression level to 0."
@@ -88,7 +90,7 @@ class HailoExporter(Exporter):
         return end_nodes
 
     def export(self) -> Path:
-        runner = ClientRunner(hw_arch="hailo8")
+        runner = ClientRunner(hw_arch=self.hw_arch)
         start_nodes, net_input_shapes = self._get_start_nodes()
 
         logger.info("Translating model to Hailo IR.")
@@ -112,12 +114,13 @@ class HailoExporter(Exporter):
         har_path = self.input_model.with_suffix(".har")
         runner.save_har(har_path)
         if self._disable_calibration:
+            self._inference_model_path = har_path
             return har_path
 
         quantized_har_path = self._calibrate(har_path)
         self._inference_model_path = Path(quantized_har_path)
-        if self.early_stop:
-            logger.info("Early stop enabled. Skipping compilation.")
+        if self.disable_compilation:
+            logger.warning("Compilation disabled, skipping compilation.")
             copy_path = Path(quantized_har_path).parent / (
                 Path(quantized_har_path).stem + "_copy.har"
             )
@@ -127,7 +130,7 @@ class HailoExporter(Exporter):
             )
             return copy_path
 
-        runner = ClientRunner(hw_arch="hailo8", har=quantized_har_path)
+        runner = ClientRunner(hw_arch=self.hw_arch, har=quantized_har_path)
         hef = runner.compile()
 
         hef_path = self.input_model.with_suffix(".hef")
@@ -174,7 +177,7 @@ class HailoExporter(Exporter):
     def _calibrate(self, har_path: Path) -> str:
         logger.info("Calibrating model.")
 
-        runner = ClientRunner(hw_arch="hailo8", har=str(har_path))
+        runner = ClientRunner(hw_arch=self.hw_arch, har=str(har_path))
         alls = self._get_alls(runner)
         logger.info(f"Using the following configuration: {alls}")
 

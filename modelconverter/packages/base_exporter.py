@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from importlib.metadata import version
 from logging import getLogger
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import onnx
@@ -85,10 +85,9 @@ class Exporter(ABC):
             logger.warning(
                 f"Random calibration is being used for input '{name}'."
             )
-            shape = cast(List[int], inp.shape)
             dest = self.intermediate_outputs_dir / "random" / name
             dest.mkdir(parents=True)
-            if shape is None or not all(isinstance(dim, int) for dim in shape):
+            if inp.shape is None:
                 exit_with(
                     ValueError(
                         f"Random calibration requires shape to be specified for input '{name}'."
@@ -96,7 +95,7 @@ class Exporter(ABC):
                 )
 
             for i in range(calib.max_images):
-                arr = np.random.normal(calib.mean, calib.std, shape)
+                arr = np.random.normal(calib.mean, calib.std, inp.shape)
                 arr = np.clip(arr, calib.min_value, calib.max_value)
 
                 arr = arr.astype(calib.data_type.as_numpy_dtype())
