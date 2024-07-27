@@ -169,6 +169,23 @@ class InputConfig(OutputConfig):
 
         return self
 
+    @model_validator(mode="after")
+    def _validate_grayscale_inputs(self) -> Self:
+        if self.layout is None:
+            return self
+
+        if "C" not in self.layout:
+            return self
+
+        assert self.shape is not None
+
+        channels = self.shape[self.layout.index("C")]
+        if channels == 1:
+            logger.info("Detected grayscale input. Setting encoding to GRAY.")
+            self.encoding.from_ = self.encoding.to = Encoding.GRAY
+
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def _random_calibration(cls, data: Dict[str, Any]) -> Dict[str, Any]:
