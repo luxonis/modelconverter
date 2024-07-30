@@ -29,6 +29,7 @@ class RVC3Exporter(RVC2Exporter):
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         Exporter.__init__(self, config=config, output_dir=output_dir)
 
+        self.compress_to_fp16 = config.rvc3.compress_to_fp16
         self.pot_target_device = config.rvc3.pot_target_device
         self.mo_args = config.rvc3.mo_args
         self.compile_tool_args = config.rvc3.compile_tool_args
