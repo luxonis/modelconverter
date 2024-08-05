@@ -218,3 +218,49 @@ def modelconverter_config_to_nn(
             f"{post_stage_key}{model_name.suffix}"
         )
     return archive
+
+
+def archive_from_model(model_path: Path) -> NNArchiveConfig:
+    metadata = get_metadata(model_path)
+
+    archive_cfg = {
+        "config_version": "1.0",
+        "model": {
+            "metadata": {
+                "name": model_path.stem,
+                "path": model_path.name,
+            },
+            "inputs": [],
+            "outputs": [],
+            "heads": [],
+        },
+    }
+
+    for name, shape in metadata.input_shapes.items():
+        archive_cfg["model"]["inputs"].append(
+            {
+                "name": name,
+                "shape": shape,
+                "layout": make_default_layout(shape),
+                "dtype": "float32",
+                "input_type": "image",
+                "preprocessing": {
+                    "mean": None,
+                    "scale": None,
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                },
+            }
+        )
+
+    for name, shape in metadata.output_shapes.items():
+        archive_cfg["model"]["outputs"].append(
+            {
+                "name": name,
+                "shape": shape,
+                "layout": make_default_layout(shape),
+                "dtype": "float32",
+            }
+        )
+
+    return NNArchiveConfig(**archive_cfg)

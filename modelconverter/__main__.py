@@ -10,7 +10,7 @@ import typer
 from luxonis_ml.nn_archive import ArchiveGenerator, is_nn_archive
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
-from luxonis_ml.utils import reset_logging, setup_logging
+from luxonis_ml.utils import LuxonisFileSystem, reset_logging, setup_logging
 from typing_extensions import Annotated, TypeAlias
 
 from modelconverter.packages import (
@@ -20,6 +20,7 @@ from modelconverter.packages import (
 )
 from modelconverter.utils import (
     ModelconverterException,
+    archive_from_model,
     docker_build,
     docker_exec,
     in_docker,
@@ -37,6 +38,8 @@ from modelconverter.utils.constants import (
     OUTPUTS_DIR,
 )
 from modelconverter.utils.types import Target
+
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(
     help="Modelconverter CLI",
@@ -145,7 +148,6 @@ def get_configs(
     @return: Tuple of the parsed modelconverter L{Config}, L{NNArchiveConfig} and the
         main stage key.
     """
-    logger = logging.getLogger(__name__)
 
     for p in [CONFIGS_DIR, MODELS_DIR, OUTPUTS_DIR, CALIBRATION_DIR]:
         logger.debug(f"Creating {p}")
@@ -252,6 +254,7 @@ def infer(
             mult_cfg, _, _ = get_configs(path, opts)
             cfg = mult_cfg.get_stage_config(stage)
             Inferer = get_inferer(target)
+            assert output_dir is not None
             Inferer.from_config(
                 model_path, input_path, Path(output_dir), cfg
             ).run()
@@ -504,6 +507,65 @@ def convert(
         if opts is not None:
             args.extend(opts)
         docker_exec(target.value, *args, tag=tag, use_gpu=gpu)
+
+
+@app.command()
+def archive(
+    path: Annotated[
+        str, typer.Argument(help="Path or an URL of the model file.")
+    ],
+    save_path: Annotated[
+        Optional[str],
+        typer.Option(
+            "-s",
+            "--save-path",
+            help="Path or URL to save the archive to. "
+            "By default, it is saved to the current directory "
+            "under the name of the model.",
+        ),
+    ] = None,
+    put_file_plugin: Annotated[
+        Optional[str],
+        typer.Option(
+            help="The name of the plugin to use for uploading the file."
+        ),
+    ] = None,
+):
+    setup_logging(use_rich=True)
+    model_path = resolve_path(path, MODELS_DIR)
+    cfg = archive_from_model(model_path)
+    save_path = save_path or f"{cfg.model.metadata.name}.tar.xz"
+    if save_path.endswith("tar.xz"):
+        compression = "xz"
+    elif save_path.endswith("tar.gz"):
+        compression = "gz"
+    elif save_path.endswith("tar.bz2"):
+        compression = "bz2"
+    else:
+        compression = "xz"
+
+    if not save_path.endswith(f".tar.{compression}"):
+        save_path += f"/{cfg.model.metadata.name}.tar.{compression}"
+    archive_name = save_path.split("/")[-1]
+    protocol = LuxonisFileSystem.get_protocol(save_path)
+    if protocol != "file":
+        archive_save_path = "./"
+    else:
+        archive_save_path = str(Path(save_path).parent)
+    archive_save_path = ArchiveGenerator(
+        archive_name=archive_name,
+        save_path=archive_save_path,
+        compression=compression,
+        cfg_dict=cfg.model_dump(),
+        executables_paths=[str(model_path)],
+    ).make_archive()
+
+    if protocol != "file":
+        upload_file_to_remote(archive_save_path, save_path, put_file_plugin)
+        Path(archive_save_path).unlink()
+        logger.info(f"Archive uploaded to {save_path}")
+    else:
+        logger.info(f"Archive saved to {save_path}")
 
 
 def version_callback(value: bool):
