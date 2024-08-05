@@ -2,7 +2,7 @@ FROM debian:bookworm-slim as BUILDER
 
 RUN apt-get update && \
     apt-get install -y \
-    cmake unzip perl libatomic1 libc++-dev ffmpeg libcurl4 libncurses5
+    cmake unzip perl libatomic1 libc++-dev ffmpeg libcurl4 libncurses5 llvm-14-runtime
 
 COPY --link docker/bases/scripts /scripts
 RUN bash /scripts/install_openssl.sh
@@ -79,4 +79,10 @@ COPY --link --from=BUILDER \
     /usr/lib/x86_64-linux-gnu/libunwind.so.1 \
     /usr/lib/x86_64-linux-gnu/libatomic.so.1 \
     /usr/lib/x86_64-linux-gnu/libtinfo.so.5 \
+    /usr/lib/x86_64-linux-gnu/libLLVM-14.so.1 \
+    /usr/lib/x86_64-linux-gnu/libedit.so.2 \
+    /usr/lib/x86_64-linux-gnu/libz3.so.4 \
+    /usr/lib/x86_64-linux-gnu/libxml2.so.2 \
+    /usr/lib/x86_64-linux-gnu/libicuuc.so.72 \
+    /usr/lib/x86_64-linux-gnu/libicudata.so.72 \
     /usr/lib_snpe/
