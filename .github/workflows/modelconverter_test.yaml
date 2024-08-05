@@ -62,7 +62,7 @@ jobs:
       run: |
         pytest -s --verbose "tests/test_packages/test_$PACKAGE.py"
 
-    - name: Run Tests (Windows)
-      if: ${{ matrix.os == 'windows-latest' }}
+    - name: Run Tests (MacOS)
+      if: ${{ matrix.os == 'macos-13' }}
       run: |
         pytest -s --verbose "tests/test_packages/test_${{env.PACKAGE}}.py"
