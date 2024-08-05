@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Dict
 
 import numpy as np
-from openvino.inference_engine.ie_api import IECore
+from openvino import Core
 
 from modelconverter.utils import read_image
 
@@ -13,7 +13,7 @@ class RVC2Inferer(Inferer):
     def setup(self):
         self.xml_path = self.model_path
         self.bin_path = self.model_path.with_suffix(".bin")
-        ie = IECore()
+        ie = Core()
         net = ie.read_network(model=self.xml_path, weights=self.bin_path)
         self.exec_net = ie.load_network(network=net, device_name="CPU")
 
