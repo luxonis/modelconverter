@@ -5,7 +5,7 @@ WORKDIR /app
 
 RUN apt-get update && \
     apt-get install -y \
-    cmake unzip perl libatomic1 libc++-dev ffmpeg libcurl4 libncurses5 patch git
+    cmake unzip perl libatomic1 libc++-dev ffmpeg libcurl4 libncurses5 patch git llvm-14-runtime
 
 COPY docker/extra_packages/snpe.zip .
 RUN unzip snpe.zip -d /opt && rm snpe.zip
