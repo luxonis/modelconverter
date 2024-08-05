@@ -24,13 +24,15 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
     pip install bsdiff4
 
-COPY docker/extra_packages/mo_patch.diff .
-RUN patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py < mo_patch.diff && rm mo_patch.diff
+RUN cp -r /usr/local/lib/python3.8/site-packages/openvino/libs /openvino_2023_2_libs
 
+COPY docker/rvc2/requirements.txt .
+RUN pip install --upgrade -r requirements.txt
+
+COPY docker/rvc2/compile_tool /usr/local/bin/compile_tool
 COPY docker/rvc2/entrypoint.sh /app/entrypoint.sh
 
-RUN echo "alias compile_tool='/opt/intel/tools/compile_tool/compile_tool'"  \
-    >> ~/.bashrc && \
+RUN chmod +x /usr/local/bin/compile_tool && \
     chmod +x /app/entrypoint.sh && \
     mkdir /app/modelconverter
 
