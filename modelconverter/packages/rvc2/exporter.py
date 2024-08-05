@@ -3,7 +3,6 @@ import tempfile
 from functools import partial
 from logging import getLogger
 from multiprocessing import Pool, cpu_count
-from os import environ as env
 from os import path
 from pathlib import Path
 from typing import Any, Dict, Final
@@ -20,10 +19,6 @@ from modelconverter.utils.types import InputFileType, Target
 from ..base_exporter import Exporter
 
 logger = getLogger(__name__)
-
-COMPILE_TOOL: Final[
-    str
-] = f'{env["INTEL_OPENVINO_DIR"]}/tools/compile_tool/compile_tool'
 
 DEFAULT_SUPER_SHAVES: Final[int] = 8
 
@@ -128,7 +123,7 @@ class RVC2Exporter(Exporter):
         return conf.name
 
     def export(self) -> Path:
-        if self.input_file_type == InputFileType.ONNX:
+        if self.input_file_type in [InputFileType.ONNX, InputFileType.TFLITE]:
             xml_path = self._export_openvino_ir()
         elif self.input_file_type == InputFileType.IR:
             xml_path = self.input_model
@@ -165,7 +160,7 @@ class RVC2Exporter(Exporter):
                 ),
             ]
 
-        self._subprocess_run([COMPILE_TOOL, *args], meta_name="compile_tool")
+        self._subprocess_run(["compile_tool", *args], meta_name="compile_tool")
         logger.info(f"Blob compiled to {blob_output_path}")
         return blob_output_path
 
@@ -261,7 +256,7 @@ class RVC2Exporter(Exporter):
         )
         args += ["-o", blob_path]
 
-        subprocess_run([COMPILE_TOOL, *args], silent=True)
+        subprocess_run(["compile_tool", *args], silent=True)
 
         patch_file = blob_path.with_suffix(".patch")
         bsdiff4.file_diff(default_blob_path, blob_path, patch_file)
@@ -274,7 +269,7 @@ class RVC2Exporter(Exporter):
             .strip()
         )
         compile_tool_version, compile_tool_build = (
-            subprocess.run([COMPILE_TOOL], capture_output=True)
+            subprocess.run(["compile_tool"], capture_output=True)
             .stdout.decode()
             .splitlines()[:2]
         )

@@ -13,14 +13,14 @@ COPY --link --from=BASE /usr/lib /usr/lib
 COPY --link --from=BASE /usr/lib_openvino /usr/lib
 COPY --link --from=BASE /usr/local/lib_38 /usr/local/lib
 
-RUN pip install pip-autoremove bsdiff4 && \
-    pip-autoremove -y pot addict pip-autoremove && \
-    pip cache purge
+COPY --link docker/rvc2/requirements.txt .
+RUN cp -r /usr/local/lib/python3.8/site-packages/openvino/libs /openvino_2023_2_libs
+RUN pip install --upgrade -r requirements.txt
 
 COPY --link docker/rvc2/entrypoint.sh /app/entrypoint.sh
+COPY --link docker/rvc2/compile_tool /usr/local/bin/compile_tool
 
-RUN echo "alias compile_tool='/opt/intel/tools/compile_tool/compile_tool'"  \
-    >> ~/.bashrc && \
+RUN chmod +x /usr/local/bin/compile_tool && \
     chmod +x /app/entrypoint.sh && \
     mkdir /app/modelconverter
 

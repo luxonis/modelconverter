@@ -1,0 +1,10 @@
+#!/bin/bash
+
+args=("$@")
+
+set --
+source /opt/intel/setupvars.sh
+
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/openvino_2023_2_libs/
+
+exec /opt/intel/tools/compile_tool/compile_tool ${args[@]}

@@ -1,0 +1,4 @@
+openvino>=2024.2.0,<2025.0.0
+openvino-dev>=2024.2.0,<2025.0.0
+bsdiff4>=1.2.4
+tflite
