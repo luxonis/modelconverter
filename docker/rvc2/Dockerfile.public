@@ -18,10 +18,12 @@ RUN sed -i 's/libtbb2/libtbbmalloc2/g' \
     bash /opt/intel/install_dependencies/install_openvino_dependencies.sh -y
 
 COPY  requirements.txt .
+COPY docker/rvc2/requirements.txt rvc2_requirements.txt
 
 RUN pip install --upgrade pip && \
     pip install /opt/intel/tools/*.whl && \
     pip install -r requirements.txt && \
+    pip install -r rvc2_requirements.txt && \
     pip install bsdiff4
 
 COPY docker/extra_packages/mo_patch.diff .

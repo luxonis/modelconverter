@@ -8,6 +8,7 @@ from os import path
 from pathlib import Path
 from typing import Any, Dict, Final
 
+import tflite2onnx
 from rich.progress import track
 
 from modelconverter.utils import (
@@ -15,7 +16,7 @@ from modelconverter.utils import (
     subprocess_run,
 )
 from modelconverter.utils.config import SingleStageConfig
-from modelconverter.utils.types import InputFileType, Target
+from modelconverter.utils.types import Encoding, InputFileType, Target
 
 from ..base_exporter import Exporter
 
@@ -127,7 +128,46 @@ class RVC2Exporter(Exporter):
             conf.write(b"MYRIAD_THROUGHPUT_STREAMS 1\n")
         return conf.name
 
+    def _transform_tflite_to_onnx(self) -> None:
+        logger.info("Converting TFLite model to ONNX.")
+        logger.warning("The TFLite to ONNX conversion is experimental.")
+
+        onnx_path = self.input_model.with_suffix(".onnx")
+        tflite2onnx.convert(str(self.input_model), str(onnx_path))
+
+        self.input_model = onnx_path
+        self.input_file_type = InputFileType.ONNX
+
+        for name, inp in self.inputs.items():
+            if (
+                inp.encoding.from_ == Encoding.NONE
+                or not inp.layout
+                or not inp.shape
+            ):
+                continue
+
+            lt = inp.layout
+            sh = inp.shape
+
+            if lt[-1] == "C":
+                if len(lt) == 4 and lt[0] == "N":
+                    self._add_args(
+                        self.mo_args, ["--layout", f"{name}(nchw->nhwc)"]
+                    )
+                    inp.shape = [sh[0], sh[3], sh[1], sh[2]]
+                    inp.layout = f"{lt[0]}{lt[3]}{lt[1]}{lt[2]}"
+
+                elif len(inp.layout) == 3:
+                    self._add_args(
+                        self.mo_args, ["--layout", f"{name}(chw->hwc)"]
+                    )
+                    inp.shape = [sh[2], sh[0], sh[1]]
+                    inp.layout = f"{lt[2]}{lt[0]}{lt[1]}"
+
     def export(self) -> Path:
+        if self.input_file_type == InputFileType.TFLITE:
+            self._transform_tflite_to_onnx()
+
         if self.input_file_type == InputFileType.ONNX:
             xml_path = self._export_openvino_ir()
         elif self.input_file_type == InputFileType.IR:

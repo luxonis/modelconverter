@@ -15,6 +15,10 @@ COPY --link --from=BASE /usr/local/lib_38 /usr/local/lib
 
 COPY --link docker/rvc3/entrypoint.sh /app/entrypoint.sh
 
+COPY docker/rvc2/requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
 RUN echo "alias compile_tool='/opt/intel/tools/compile_tool/compile_tool'" \
     >> ~/.bashrc && \
     chmod +x /app/entrypoint.sh && \
