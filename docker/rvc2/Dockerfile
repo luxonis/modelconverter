@@ -13,9 +13,9 @@ COPY --link --from=BASE /usr/lib /usr/lib
 COPY --link --from=BASE /usr/lib_openvino /usr/lib
 COPY --link --from=BASE /usr/local/lib_38 /usr/local/lib
 
-RUN pip install pip-autoremove bsdiff4 && \
-    pip-autoremove -y pot addict pip-autoremove && \
-    pip cache purge
+COPY docker/rvc2/requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY --link docker/rvc2/entrypoint.sh /app/entrypoint.sh
 

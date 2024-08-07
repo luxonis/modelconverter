@@ -37,6 +37,9 @@ class RVC3Exporter(RVC2Exporter):
         self._device_specific_buildinfo = {}
 
     def export(self) -> Path:
+        if self.input_file_type == InputFileType.TFLITE:
+            self._transform_tflite_to_onnx()
+
         if self.input_file_type == InputFileType.ONNX:
             xml_path = self._export_openvino_ir()
         elif self.input_file_type == InputFileType.IR:
