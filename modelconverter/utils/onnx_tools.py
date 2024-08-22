@@ -26,7 +26,7 @@ def onnx_attach_normalization_to_inputs(
     input_names = [input_tensor.name for input_tensor in graph.input]
     if not all(name in input_names for name in input_configs):
         raise ONNXException(
-            "You either used an invalid input name, or you're attemtpting "
+            "You either used an invalid input name, or you're attempting "
             "to use a hidden network node as an input. This is not supported "
             "in combination with input modifications (mean, scale, etc.). "
             "Either use an actual input name, or modify your network."
