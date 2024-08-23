@@ -148,7 +148,7 @@ def modelconverter_config_to_nn(
     for inp in cfg.inputs:
         new_shape = model_metadata.input_shapes[inp.name]
         # new_dtype = model_metadata.input_dtypes[inp.name]
-        if inp.shape is not None:
+        if inp.shape is not None and not any(s == 0 for s in inp.shape):
             assert inp.layout is not None
             layout = guess_new_layout(inp.layout, inp.shape, new_shape)
         else:
@@ -178,7 +178,7 @@ def modelconverter_config_to_nn(
     for out in cfg.outputs:
         new_shape = model_metadata.output_shapes[out.name]
         # new_dtype = model_metadata.output_dtypes[out.name]
-        if out.shape is not None:
+        if out.shape is not None and not any(s == 0 for s in out.shape):
             assert out.layout is not None
             layout = guess_new_layout(out.layout, out.shape, new_shape)
         else:
