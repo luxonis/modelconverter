@@ -5,6 +5,7 @@ from typing import Dict
 import numpy as np
 
 from modelconverter.utils import read_image, subprocess_run
+from modelconverter.utils.types import DataType
 
 from ..base_inferer import Inferer
 
@@ -29,7 +30,7 @@ class RVC4Inferer(Inferer):
                     shape=self.in_shapes[input_name],
                     encoding=self.encoding[input_name],
                     resize_method=self.resize_method[input_name],
-                    data_type=self.in_dtypes[input_name],
+                    data_type=DataType.FLOAT32,
                     transpose=False,
                 )
                 arr.tofile(raw_path)
