@@ -93,13 +93,13 @@ def _get_metadata_ir(bin_path: Path, xml_path: Path) -> Metadata:
 
     for inp in model.inputs:
         name = list(inp.names)[0]
-        input_shapes[name] = inp.shape
+        input_shapes[name] = list(inp.shape)
         input_dtypes[name] = DataType.from_ir_dtype(
             inp.element_type.get_type_name()
         )
     for output in model.outputs:
         name = list(output.names)[0]
-        output_shapes[name] = output.shape
+        output_shapes[name] = list(output.shape)
         output_dtypes[name] = DataType.from_ir_dtype(
             output.element_type.get_type_name()
         )
@@ -198,7 +198,7 @@ def _get_metadata_hailo(model_path: Path) -> Metadata:
     for params in runner.get_hn_dict()["layers"].values():
         if params["type"] in ["input_layer", "output_layer"]:
             name = params["original_names"][0]
-            shape = params["input_shapes"][0]
+            shape = list(params["input_shapes"][0])
             if shape[0] == -1:
                 shape[0] = 1
             if params["type"] == "input_layer":
