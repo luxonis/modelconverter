@@ -364,7 +364,7 @@ class SingleStageConfig(CustomBaseModel):
         reverse_input_channels = data.pop("reverse_input_channels", None)
         top_level_calibration = data.pop("calibration", {})
 
-        input_file_type = _detect_input_file_type(data["input_model"])
+        input_file_type = InputFileType.from_path(data["input_model"])
         data["input_file_type"] = input_file_type
         metadata = get_metadata(Path(data["input_model"]))
 
@@ -468,7 +468,7 @@ class SingleStageConfig(CustomBaseModel):
     def _download_input_model(cls, value: Dict[str, Any]) -> Dict[str, Any]:
         if "input_model" not in value:
             raise ValueError("`input_model` must be provided.")
-        input_file_type = _detect_input_file_type(value["input_model"])
+        input_file_type = InputFileType.from_path(value["input_model"])
         if input_file_type == InputFileType.IR:
             bin_path, xml_path = _extract_bin_xml_from_ir(
                 value.get("input_model")
@@ -533,22 +533,6 @@ class Config(LuxonisConfig):
             self.name = model_name
         return self
 
-
-def _detect_input_file_type(input_path: Union[str, Path]) -> InputFileType:
-    if not isinstance(input_path, str) and not isinstance(input_path, Path):
-        raise ValueError("`input_path` must be str or Path.")
-    input_path = Path(input_path)
-
-    if input_path.suffix == ".onnx":
-        return InputFileType.ONNX
-    elif input_path.suffix == ".tflite":
-        return InputFileType.TFLITE
-    elif input_path.suffix == ".pt":
-        raise NotImplementedError("PyTorch (.pt) is not yet supported.")
-    elif input_path.suffix in [".bin", ".xml"]:
-        return InputFileType.IR
-    else:
-        raise ValueError("Input file format is not recognized.")
 
 
 def _extract_bin_xml_from_ir(ir_path: Any) -> Tuple[Path, Path]:
