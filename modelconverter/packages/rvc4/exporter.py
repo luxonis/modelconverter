@@ -212,6 +212,34 @@ class RVC4Exporter(Exporter):
             for name in self.outputs:
                 args.extend(["--out_name", name])
 
+        if "--input_layout" not in args:
+            for name, inp in self.inputs.items():
+                layout = inp.layout
+                if layout is None:
+                    continue
+                if layout in ["NCD", "NDC", "D"]:
+                    layout = layout.replace("D", "F")
+                if layout in [
+                    "NCDHW",
+                    "NDHWC",
+                    "NCHW",
+                    "NHWC",
+                    "NFC",
+                    "NCF",
+                    "NTF",
+                    "TNF",
+                    "NF",
+                    "NC",
+                    "F",
+                    "NONTRIVIAL",
+                ]:
+                    args.extend(["--input_layout", name, layout])
+                else:
+                    logger.warning(
+                        f"Layout '{layout}' not supported by snpe for input '{name}'. "
+                        "Proceeding wihtout specifying layout."
+                    )
+
         if self.is_tflite:
             command = "snpe-tflite-to-dlc"
         else:

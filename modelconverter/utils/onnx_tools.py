@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Dict
 
@@ -8,6 +9,8 @@ from onnx.onnx_pb import TensorProto
 from modelconverter.utils.config import InputConfig
 
 from .exceptions import ONNXException
+
+logger = logging.getLogger(__name__)
 
 
 def onnx_attach_normalization_to_inputs(
@@ -37,6 +40,32 @@ def onnx_attach_normalization_to_inputs(
         if input_name not in input_configs:
             continue
         cfg = input_configs[input_name]
+        if (
+            not cfg.reverse_input_channels
+            and cfg.mean_values is None
+            and cfg.scale_values is None
+        ):
+            continue
+
+        shape = cfg.shape
+        layout = cfg.layout or "NCHW"
+        if shape is not None:
+            n_channels = shape[layout.index("C")]
+            if n_channels != 3:
+                logger.warning(
+                    f"Input '{input_name}' has {n_channels} channels, "
+                    "but normalization is only supported for 3 channels. "
+                    "Skipping."
+                )
+                continue
+
+        if layout not in ["NCHW", "NHWC"]:
+            logger.warning(
+                f"Input '{input_name}' has layout '{layout}', "
+                "but only 'NCHW' and 'NHWC' are supported for normalization. "
+                "Skipping."
+            )
+            continue
 
         last_output = input_name
 
@@ -44,7 +73,10 @@ def onnx_attach_normalization_to_inputs(
         if cfg.reverse_input_channels:
             split_names = [f"split_{i}_{input_name}" for i in range(3)]
             split_node = helper.make_node(
-                "Split", inputs=[last_output], outputs=split_names, axis=1
+                "Split",
+                inputs=[last_output],
+                outputs=split_names,
+                axis=1 if layout == "NCHW" else 3,
             )
             new_nodes.append(split_node)
 
@@ -52,7 +84,7 @@ def onnx_attach_normalization_to_inputs(
                 "Concat",
                 inputs=split_names[::-1],
                 outputs=[f"normalized_{input_name}"],
-                axis=1,
+                axis=1 if layout == "NCHW" else 3,
             )
             new_nodes.append(concat_node)
             last_output = f"normalized_{input_name}"
@@ -71,7 +103,9 @@ def onnx_attach_normalization_to_inputs(
             mean_tensor = helper.make_tensor(
                 f"mean_{input_name}",
                 TensorProto.FLOAT,
-                [1, len(cfg.mean_values), 1, 1],
+                [1, len(cfg.mean_values), 1, 1]
+                if layout == "NCHW"
+                else [1, 1, 1, len(cfg.mean_values)],
                 cfg.mean_values,
             )
             new_initializers.append(mean_tensor)
@@ -90,7 +124,9 @@ def onnx_attach_normalization_to_inputs(
             scale_tensor = helper.make_tensor(
                 f"scale_{input_name}",
                 TensorProto.FLOAT,
-                [1, len(cfg.scale_values), 1, 1],
+                [1, len(cfg.scale_values), 1, 1]
+                if layout == "NCHW"
+                else [1, 1, 1, len(cfg.scale_values)],
                 [1 / v for v in cfg.scale_values],
             )
             new_initializers.append(scale_tensor)
