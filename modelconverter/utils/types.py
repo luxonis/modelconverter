@@ -1,5 +1,7 @@
 from enum import Enum
+from pathlib import Path
 
+from typing import Union
 import numpy as np
 from onnx.onnx_pb import TensorProto
 
@@ -204,3 +206,20 @@ class InputFileType(Enum):
     ONNX = "ONNX"
     IR = "IR"
     TFLITE = "TFLITE"
+    DLC = "DLC"
+    HAR = "HAR"
+
+    @classmethod
+    def from_path(cls, path: Union[str, Path]) -> "InputFileType":
+        path = Path(path)
+        if path.suffix == ".onnx":
+            return cls.ONNX
+        if path.suffix in [".xml", ".bin"]:
+            return cls.IR
+        if path.suffix == ".tflite":
+            return cls.TFLITE
+        if path.suffix == ".dlc":
+            return cls.DLC
+        if path.suffix == ".har":
+            return cls.HAR
+        raise ValueError(f"Unsupported file type: `{path}`")
