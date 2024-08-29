@@ -64,14 +64,14 @@ Requires `snpe.zip` archive to be present in `docker/extra_packages`. You can do
 
 **HAILO**
 
-Requires `hailo_ai_sw_suite_2024-04:1` docker image to be present on the system. You can download the image from the [Hailo website](https://developer.hailo.ai/developer-zone/sw-downloads/).
+Requires `hailo_ai_sw_suite_2024-04:1` docker image to be present on the system. You can download the image from the [Hailo website](https://developer.hailo.ai/developer-zone/sw-downloads/). Furthermore, you need to use the `docker/hailo/Dockerfile.public` file to build the image. The `docker/hailo/Dockerfile` is for internal use only.
 
 ### Instructions
 
 1. Build the docker image:
 
    ```bash
-   docker build -f docker/<package>/Dockerfile.public -t luxonis/modelconverter-<package>:latest .
+   docker build -f docker/<package>/Dockerfile -t luxonis/modelconverter-<package>:latest .
    ```
 
 1. For easier use, you can install the ModelConverter CLI. You can install it from PyPI using the following command:
