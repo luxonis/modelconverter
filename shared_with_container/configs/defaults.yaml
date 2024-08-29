@@ -100,7 +100,7 @@ stages:
     #  - name: sequence_len
     #    freeze_value: 250
     #
-    # data_type can be one of ['FLOAT16', 'FLOAT32', 'UINT8']
+    # Examples of valid data types: 'float32', 'float32', 'uint8'
     inputs: []
 
     # List of the output names.

@@ -5,13 +5,11 @@ stages:
 
     mean_values: [ 0, 0, 0 ]
     scale_values: [ 255, 255, 255 ]
-    reverse_input_channels: true
     keep_intermediate_outputs: true
 
     calibration:
       path: "s3://luxonis-test-bucket/modelconverter-test/imagenette-calib.zip"
       max_images: 20
-      encoding: BGR
 
     inputs:
       - name: images
@@ -32,7 +30,9 @@ stages:
         calibration:
           stage: yolov5n-seg
           script: "s3://luxonis-test-bucket/modelconverter-test/script.py"
+        encoding: NONE
       - name: prototypes
         calibration:
           stage: yolov5n-seg
           output: protos_output
+        encoding: NONE
