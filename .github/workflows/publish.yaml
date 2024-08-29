@@ -16,6 +16,7 @@ env:
   PROJECT_ID: easyml-394818
   GAR_LOCATION: us-central1
   DOCKERFILE: docker/${{ inputs.package }}/Dockerfile
+  PACKAGE: ${{ inputs.package }}
   NAME: luxonis/modelconverter-${{ inputs.package }}
   STEM: modelconverter-${{ inputs.package }}
 
@@ -27,9 +28,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Get modelconverter version
-      id: commit
-      run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+    - name: Authenticate to Google Cloud
+      id: google-auth
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+        token_format: access_token
 
     - name: Docker login to GHCR
       uses: docker/login-action@v3
@@ -38,6 +42,21 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Get modelconverter version
+      id: commit
+      run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+
+    - name: Download file from GCS
+      run: |
+        cd docker/extra_packages
+        if [ "$PACKAGE" = "rvc4" ]; then
+            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/snpe.zip snpe.zip
+        elif [ "$PACKAGE" = "rvc2" ] || [ "$PACKAGE" = "rvc3" ]; then
+            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/openvino_2022_3_vpux_drop_patched.tar.gz openvino_2022_3_vpux_drop_patched.tar.gz
+        fi
     - name: Publish latest
       run: |
         docker build -f $DOCKERFILE -t $NAME:latest .
@@ -81,6 +100,18 @@ jobs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+
+    - name: Download file from GCS
+      run: |
+        cd docker/extra_packages
+        if [ "$PACKAGE" = "rvc4" ]; then
+            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/snpe.zip snpe.zip
+        elif [ "$PACKAGE" = "rvc2" ] || [ "$PACKAGE" = "rvc3" ]; then
+            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/openvino_2022_3_vpux_drop_patched.tar.gz openvino_2022_3_vpux_drop_patched.tar.gz
+        fi
 
     - name: Publish
       run: |
