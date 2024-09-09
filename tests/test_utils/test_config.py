@@ -167,7 +167,6 @@ def load_and_compare(
     expected: dict,
     multistage: bool = False,
 ):
-    Config.clear_instance()
     overrides = {opts[i]: opts[i + 1] for i in range(0, len(opts), 2)}
     config = Config.get_config(path, overrides).model_dump()
     if not multistage:
@@ -519,7 +518,6 @@ def test_no_top_level():
 )
 def test_missing(key: str, value: str):
     with pytest.raises(ValueError):
-        Config.clear_instance()
         Config.get_config(
             None,
             {
@@ -543,7 +541,6 @@ def test_missing(key: str, value: str):
 )
 def test_incorrect_type(key: str, value: str):
     with pytest.raises(ValueError):
-        Config.clear_instance()
         Config.get_config(
             None,
             {
@@ -652,7 +649,6 @@ def test_explicit_nones():
 
 
 def test_defaults():
-    Config.clear_instance()
     default = Config.get_config(
         DEFAULT_CONFIG_FILE,
         {
@@ -662,7 +658,6 @@ def test_defaults():
             "stages.stage_name.calibration.path": str(CALIBRATION_DATA_DIR_1),
         },
     ).model_dump()
-    Config.clear_instance()
     empty = Config.get_config(
         None,
         {
