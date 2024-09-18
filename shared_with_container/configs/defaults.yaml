@@ -62,11 +62,11 @@ stages:
     #  - a single value to be used for all channels.
     #  - a list of values to be used for each channel.
     #  - a "imagenet" string to use the ImageNet values.
-    #    Equivalent to [ 123.675, 116.28, 103.53 ]
+    #    Equivalent to [ 58.395, 57.12, 57.375 ]
     scale_values: ~
 
     # Mean values to be used for the input image per channel.
-    # Same options as for scale_values. "imagenet" equivalent to [ 58.395, 57.12, 57.375 ].
+    # Same options as for scale_values. "imagenet" equivalent to [ 123.675, 116.28, 103.53 ].
     mean_values: ~
 
     # The input shape of the network. If not provided,
