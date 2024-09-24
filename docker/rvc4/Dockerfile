@@ -8,16 +8,16 @@ RUN apt-get update && \
 COPY --link docker/extra_packages/snpe.zip .
 RUN unzip snpe.zip -d /opt
 
-RUN rm -r /opt/snpe/Uninstall && \
-    rm -r /opt/snpe/docs && \
-    rm -r /opt/snpe/examples && \
-    rm -r /opt/snpe/lib/hexagon* && \
-    rm -r /opt/snpe/lib/*android* && \
-    rm -r /opt/snpe/lib/*ubuntu* && \
-    rm -r /opt/snpe/lib/*windows* && \
-    rm -r /opt/snpe/bin/*windows* && \
-    rm -r /opt/snpe/bin/*android* && \
-    rm -r /opt/snpe/bin/*ubuntu*
+RUN rm -rf /opt/snpe/Uninstall && \
+    rm -rf /opt/snpe/docs && \
+    rm -rf /opt/snpe/examples && \
+    rm -rf /opt/snpe/lib/hexagon* && \
+    rm -rf /opt/snpe/lib/*android* && \
+    rm -rf /opt/snpe/lib/*ubuntu* && \
+    rm -rf /opt/snpe/lib/*windows* && \
+    rm -rf /opt/snpe/bin/*windows* && \
+    rm -rf /opt/snpe/bin/*android* && \
+    rm -rf /opt/snpe/bin/*ubuntu*
 
 RUN pip install --upgrade pip
 COPY --link requirements.txt .

@@ -12,7 +12,7 @@ RUN pip install --upgrade pip && \
     https://developer.download.nvidia.com/compute/redist \
     nvidia-dali-tf-plugin-cuda110
 
-RUN rm -r \
+RUN rm -rf \
     /local/workspace/tappas \
     /opt/google \
     /local/workspace/doc \
@@ -27,7 +27,7 @@ RUN pip install pip-autoremove && \
     tensorboard pip-autoremove && \
     pip install psutil && \
     pip cache purge  && \
-    rm -r ~/.cache
+    rm -rf ~/.cache
 
 WORKDIR /app
 COPY docker/hailo/entrypoint.sh /app/entrypoint.sh
