@@ -8,6 +8,8 @@ RUN apt-get update && \
 COPY --link docker/extra_packages/snpe.zip .
 RUN unzip snpe.zip -d /opt
 
+RUN ls /opt/quairt && mv /opt/qairt/* /opt/snpe || true
+
 RUN rm -rf /opt/snpe/Uninstall && \
     rm -rf /opt/snpe/docs && \
     rm -rf /opt/snpe/examples && \
