@@ -96,7 +96,7 @@ def get_docker_image(target: str, tag: str) -> str:
         image.tag(repository, tag)
 
     except (docker.errors.APIError, docker.errors.DockerException):
-        logger.warning(f"Image {repository} not found, building image...")
+        logger.error("Failed to pull image, building it locally...")
         docker_build(target, tag)
 
     return image_name
