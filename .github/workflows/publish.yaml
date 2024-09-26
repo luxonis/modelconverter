@@ -118,14 +118,16 @@ jobs:
         docker build -f $DOCKERFILE -t $NAME:latest .
 
         VERSION=${{ steps.commit.outputs.sha }}
-        GAR_TAG="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/internal/$STEM:$VERSION"
+        GAR_NAME="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/internal/$STEM"
 
-        docker tag $NAME:latest $GAR_TAG
-        docker push $GAR_TAG
+        for tag in latest $VERSION; do
+            docker tag "$NAME:latest" "$GAR_NAME:$tag"
+            docker push "$GAR_NAME:$tag"
+        done
 
         IFS=' ' read -r -a REPO_ARRAY <<< "${{ vars.EXTERNAL_CLIENTS }}"
         for REPO in "${REPO_ARRAY[@]}"; do
           GAR_CLIENT_TAG="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPO/$STEM:$VERSION"
-            docker tag $GAR_TAG $GAR_CLIENT_TAG
-            docker push $GAR_CLIENT_TAG
+            docker tag "$NAME:latest" "$GAR_CLIENT_TAG"
+            docker push "$GAR_CLIENT_TAG"
         done
