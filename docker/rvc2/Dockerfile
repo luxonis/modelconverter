@@ -6,45 +6,78 @@ ENV VERSION=${VERSION}
 
 RUN <<EOF
 
-apt-get update
-apt-get install -y cmake unzip perl libatomic1 \
-    libc++-dev ffmpeg libcurl4 libncurses5 llvm-14-runtime patch git
+    apt-get update
+    apt-get install -y  \
+        cmake           \
+        unzip           \
+        perl            \
+        libatomic1      \
+        libc++-dev      \
+        ffmpeg libcurl4 \
+        libncurses5     \
+        llvm-14-runtime \
+        patch           \
+        git
 
 EOF
 
-COPY --link requirements.txt .
-COPY docker/rvc2/requirements.txt requirements-rvc2.txt
+COPY --link requirements.txt requirements.txt
+COPY --link docker/rvc2/requirements.txt requirements-rvc2.txt
 COPY --link docker/extra_packages/openvino-${VERSION}.tar.gz .
 COPY --link docker/extra_packages/mo_patch.diff .
 
 RUN <<EOF
 
-pip install --no-cache-dir --upgrade pip
-pip install --no-cache-dir -r requirements.txt
-pip install --no-cache-dir -r requirements-rvc2.txt
-if [ "${VERSION}" = "2021.4.0" ]; then
-    pip install --no-cache-dir onnxruntime 'numpy<1.20'
-fi
-mkdir /opt/intel
+    mkdir -p /opt/intel
+    if [ "${VERSION}" = "2022.3.0" ]; then
+        STRIP_COMPONENTS=1
+    else
+        STRIP_COMPONENTS=2
+    fi
+    tar xvf "openvino-${VERSION}.tar.gz" \
+        -C /opt/intel --strip-components=${STRIP_COMPONENTS}
 
-if [ "${VERSION}" = "2022.3.0" ]; then
-    tar xvf "openvino-${VERSION}.tar.gz" -C /opt/intel --strip-components 1
-    patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py < /mo_patch.diff
-else
-    tar xvf "openvino-${VERSION}.tar.gz" -C /opt/intel
-fi
+
+    if [ "${VERSION}" = "2022.3.0" ]; then
+        rm -r /opt/intel/tools/*.whl
+    else
+        rm -r /opt/intel/deployment_tools/open_model_zoo
+        rm -r /opt/intel/deployment_tools/inference_engine
+    fi
+
+EOF
+
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
+RUN pip install -r requirements-rvc2.txt
+
+RUN <<EOF
+
+    # ONNX Runtime needs to be installed together with
+    # numpy<1.20 to prevent it from installing higher
+    # versions of numpy that are incompatible with OpenVINO 2021.4.0
+    if [ "${VERSION}" = "2021.4.0" ]; then
+        pip install --no-cache-dir onnxruntime 'numpy<1.20'
+    fi
+
+EOF
+
+RUN <<EOF
+
+    # Model Optimizer contains a bug in
+    # version 2022.3.0 that needs to be patched
+    if [ "${VERSION}" = "2022.3.0" ]; then
+        patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py < /mo_patch.diff
+    fi
 
 EOF
 
 
-# RUN sed -i 's/libtbb2/libtbbmalloc2/g' \
-#     /opt/intel/install_dependencies/install_openvino_dependencies.sh && \
-#     bash /opt/intel/install_dependencies/install_openvino_dependencies.sh -y
-
-
 FROM python:3.8-slim
 
+ARG VERSION
 ENV IN_DOCKER=
+ENV VERSION=${VERSION}
 
 WORKDIR /app
 
@@ -77,16 +110,16 @@ COPY --link --from=BASE /usr/local/bin /usr/local/bin
 COPY --link --from=BASE /usr/local/lib /usr/local/lib
 
 COPY --link docker/rvc2/entrypoint.sh /app/entrypoint.sh
+COPY --link modelconverter pyproject.toml /app/modelconverter/
 
 RUN <<EOF
 
-COMPILE_TOOL=$(find /opt/intel -name compile_tool -type f)
-echo "alias compile_tool=${COMPILE_TOOL}"  >> ~/.bashrc
-chmod +x /app/entrypoint.sh
-mkdir /app/modelconverter
+    COMPILE_TOOL=$(find /opt/intel -name compile_tool -type f)
+    echo "alias compile_tool=${COMPILE_TOOL}"  >> ~/.bashrc
+    chmod +x /app/entrypoint.sh
+    pip install -e ./modelconverter --no-deps --no-cache-dir
+
 EOF
 
-COPY --link modelconverter pyproject.toml /app/modelconverter/
-RUN cd modelconverter && pip install -e . --no-deps --no-cache-dir
 
 ENTRYPOINT ["/app/entrypoint.sh"]

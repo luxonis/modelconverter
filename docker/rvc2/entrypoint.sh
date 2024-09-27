@@ -7,10 +7,11 @@ for arg in "${args[@]}"; do
 done
 
 set --
-if [ -f /opt/intel/setupvars.sh ]; then
+
+if [ ${VERSION} = "2021.4.0" ]; then
+    source /opt/intel/bin/setupvars.sh
+else
     source /opt/intel/setupvars.sh
-elif [ -f /opt/intel/*openvino*/bin/setupvars.sh ]; then
-    source /opt/intel/*openvino*/bin/setupvars.sh
 fi
 
 if [[ $PYTHONPATH != *: ]]; then
