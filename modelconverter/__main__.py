@@ -317,7 +317,9 @@ def shell(
     """Boots up a shell inside a docker container for the specified target platform."""
     if dev:
         image = docker_build(target.value, tag="dev", version=version)
-    docker_exec(target.value, tag="dev" if dev else "latest", use_gpu=gpu)
+    docker_exec(
+        target.value, tag="dev" if dev else "latest", use_gpu=gpu, image=image
+    )
 
 
 @app.command(
