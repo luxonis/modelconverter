@@ -1,32 +1,60 @@
 FROM python:3.8-slim as BASE
 
-RUN apt-get update && \
-    apt-get install -y \
-    cmake unzip perl libatomic1 libc++-dev ffmpeg libcurl4 libncurses5 llvm-14-runtime patch git
+RUN <<EOF
 
-COPY --link docker/scripts /scripts
-RUN bash /scripts/install_openssl.sh
+    apt-get update
+    apt-get install -y  \
+        cmake           \
+        unzip           \
+        perl            \
+        libatomic1      \
+        libc++-dev      \
+        ffmpeg libcurl4 \
+        libncurses5     \
+        llvm-14-runtime \
+        patch           \
+        git
 
-COPY --link docker/extra_packages/openvino_2022_3_vpux_drop_patched.tar.gz .
-RUN mkdir /opt/intel
-RUN tar xvf openvino_2022_3_vpux_drop_patched.tar.gz \
-    -C /opt/intel/ --strip-components 1
-RUN sed -i 's/libtbb2/libtbbmalloc2/g' \
-    /opt/intel/install_dependencies/install_openvino_dependencies.sh && \
-    bash /opt/intel/install_dependencies/install_openvino_dependencies.sh -y
+EOF
+
+# COPY --link docker/scripts /scripts
+# RUN bash /scripts/install_openssl.sh
+
+COPY --link docker/extra_packages/openvino-2022.3.0.tar.gz .
+
+COPY --link requirements.txt requirements.txt
+COPY --link docker/rvc3/requirements.txt requirements-rvc3.txt
+
+COPY --link docker/extra_packages/mo_patch.diff .
+
+RUN <<EOF
+    mkdir /opt/intel
+    tar xvf openvino-2022.3.0.tar.gz -C /opt/intel/ --strip-components 1
+EOF
+# RUN sed -i 's/libtbb2/libtbbmalloc2/g' \
+#     /opt/intel/install_dependencies/install_openvino_dependencies.sh && \
+#     bash /opt/intel/install_dependencies/install_openvino_dependencies.sh -y
 
 RUN pip install --upgrade pip
-COPY --link requirements.txt .
 RUN pip install -r requirements.txt
 RUN pip install /opt/intel/tools/*.whl
-COPY --link docker/extra_packages/mo_patch.diff .
-RUN patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py < /mo_patch.diff
+RUN pip install -r requirements-rvc3.txt
 
-COPY docker/rvc3/requirements.txt .
+RUN <<EOF
 
-RUN pip install -r requirements.txt
+    # Model Optimizer contains a bug in
+    # version 2022.3.0 that needs to be patched
+    patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py < /mo_patch.diff
+
+    rm -r /opt/intel/tools/*.whl
+
+EOF
+
+
 
 FROM python:3.8-slim
+
+ENV IN_DOCKER=
 
 WORKDIR /app
 
@@ -60,14 +88,18 @@ COPY --link --from=BASE /usr/local/lib /usr/local/lib
 
 
 COPY --link docker/rvc3/entrypoint.sh /app/entrypoint.sh
-
-RUN echo "alias compile_tool='/opt/intel/tools/compile_tool/compile_tool'"  \
-    >> ~/.bashrc && \
-    chmod +x /app/entrypoint.sh && \
-    mkdir /app/modelconverter
-
 COPY --link modelconverter pyproject.toml /app/modelconverter/
-RUN cd modelconverter && pip install -e . --no-deps --no-cache-dir
 
-ENV IN_DOCKER=
+RUN <<EOF
+
+    COMPILE_TOOL=/opt/intel/tools/compile_tool/compile_tool
+
+    pip install -e ./modelconverter --no-deps --no-cache-dir
+
+    echo "alias compile_tool=${COMPILE_TOOL}" >> ~/.bashrc
+    chmod +x /app/entrypoint.sh
+
+EOF
+
+
 ENTRYPOINT ["/app/entrypoint.sh"]

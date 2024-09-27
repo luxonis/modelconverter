@@ -21,9 +21,11 @@ RUN <<EOF
 
 EOF
 
+COPY --link docker/extra_packages/openvino-${VERSION}.tar.gz .
+
 COPY --link requirements.txt requirements.txt
 COPY --link docker/rvc2/requirements.txt requirements-rvc2.txt
-COPY --link docker/extra_packages/openvino-${VERSION}.tar.gz .
+
 COPY --link docker/extra_packages/mo_patch.diff .
 
 RUN <<EOF
@@ -114,9 +116,11 @@ COPY --link modelconverter pyproject.toml /app/modelconverter/
 RUN <<EOF
 
     COMPILE_TOOL=$(find /opt/intel -name compile_tool -type f)
+
+    pip install -e ./modelconverter --no-deps --no-cache-dir
+
     echo "alias compile_tool=${COMPILE_TOOL}"  >> ~/.bashrc
     chmod +x /app/entrypoint.sh
-    pip install -e ./modelconverter --no-deps --no-cache-dir
 
 EOF
 
