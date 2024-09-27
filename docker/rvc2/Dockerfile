@@ -42,7 +42,6 @@ RUN <<EOF
         rm -r /opt/intel/tools/*.whl
     else
         rm -r /opt/intel/deployment_tools/open_model_zoo
-        rm -r /opt/intel/deployment_tools/inference_engine
     fi
 
 EOF
