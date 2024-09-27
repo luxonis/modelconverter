@@ -17,9 +17,6 @@ RUN <<EOF
 
 EOF
 
-# COPY --link docker/scripts /scripts
-# RUN bash /scripts/install_openssl.sh
-
 COPY --link docker/extra_packages/openvino-2022.3.0.tar.gz .
 
 COPY --link requirements.txt requirements.txt
@@ -31,9 +28,6 @@ RUN <<EOF
     mkdir /opt/intel
     tar xvf openvino-2022.3.0.tar.gz -C /opt/intel/ --strip-components 1
 EOF
-# RUN sed -i 's/libtbb2/libtbbmalloc2/g' \
-#     /opt/intel/install_dependencies/install_openvino_dependencies.sh && \
-#     bash /opt/intel/install_dependencies/install_openvino_dependencies.sh -y
 
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
@@ -49,7 +43,6 @@ RUN <<EOF
     rm -r /opt/intel/tools/*.whl
 
 EOF
-
 
 
 FROM python:3.8-slim
