@@ -1,33 +1,50 @@
 FROM python:3.8-slim as BASE
 
-RUN apt-get update && \
-    apt-get install -y \
-    cmake unzip perl libatomic1 libc++-dev ffmpeg libcurl4 libncurses5 llvm-14-runtime patch git
+ARG VERSION=2022.3.0
+ENV VERSION=${VERSION}
 
-COPY --link docker/scripts /scripts
-RUN bash /scripts/install_openssl.sh
 
-COPY --link docker/extra_packages/openvino_2022_3_vpux_drop_patched.tar.gz .
-RUN mkdir /opt/intel
-RUN tar xvf openvino_2022_3_vpux_drop_patched.tar.gz \
-    -C /opt/intel/ --strip-components 1
-RUN sed -i 's/libtbb2/libtbbmalloc2/g' \
-    /opt/intel/install_dependencies/install_openvino_dependencies.sh && \
-    bash /opt/intel/install_dependencies/install_openvino_dependencies.sh -y
+RUN <<EOF
 
-RUN pip install --upgrade pip
+apt-get update
+apt-get install -y cmake unzip perl libatomic1 \
+    libc++-dev ffmpeg libcurl4 libncurses5 llvm-14-runtime patch git
+
+EOF
+
 COPY --link requirements.txt .
-RUN pip install -r requirements.txt
-RUN pip install /opt/intel/tools/*.whl
-RUN pip uninstall pot -y
+COPY docker/rvc2/requirements.txt requirements-rvc2.txt
+COPY --link docker/extra_packages/openvino-${VERSION}.tar.gz .
 COPY --link docker/extra_packages/mo_patch.diff .
-RUN patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py < /mo_patch.diff
 
-COPY docker/rvc2/requirements.txt .
+RUN <<EOF
 
-RUN pip install --no-cache-dir -r requirements.txt
+pip install --no-cache-dir --upgrade pip
+pip install --no-cache-dir -r requirements.txt
+pip install --no-cache-dir -r requirements-rvc2.txt
+if [ "${VERSION}" = "2021.4.0" ]; then
+    pip install --no-cache-dir onnxruntime 'numpy<1.20'
+fi
+mkdir /opt/intel
+
+if [ "${VERSION}" = "2022.3.0" ]; then
+    tar xvf "openvino-${VERSION}.tar.gz" -C /opt/intel --strip-components 1
+    patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py < /mo_patch.diff
+else
+    tar xvf "openvino-${VERSION}.tar.gz" -C /opt/intel
+fi
+
+EOF
+
+
+# RUN sed -i 's/libtbb2/libtbbmalloc2/g' \
+#     /opt/intel/install_dependencies/install_openvino_dependencies.sh && \
+#     bash /opt/intel/install_dependencies/install_openvino_dependencies.sh -y
+
 
 FROM python:3.8-slim
+
+ENV IN_DOCKER=
 
 WORKDIR /app
 
@@ -61,13 +78,15 @@ COPY --link --from=BASE /usr/local/lib /usr/local/lib
 
 COPY --link docker/rvc2/entrypoint.sh /app/entrypoint.sh
 
-RUN echo "alias compile_tool='/opt/intel/tools/compile_tool/compile_tool'"  \
-    >> ~/.bashrc && \
-    chmod +x /app/entrypoint.sh && \
-    mkdir /app/modelconverter
+RUN <<EOF
+
+COMPILE_TOOL=$(find /opt/intel -name compile_tool -type f)
+echo "alias compile_tool=${COMPILE_TOOL}"  >> ~/.bashrc
+chmod +x /app/entrypoint.sh
+mkdir /app/modelconverter
+EOF
 
 COPY --link modelconverter pyproject.toml /app/modelconverter/
 RUN cd modelconverter && pip install -e . --no-deps --no-cache-dir
 
-ENV IN_DOCKER=
 ENTRYPOINT ["/app/entrypoint.sh"]

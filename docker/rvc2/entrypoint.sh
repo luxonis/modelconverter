@@ -7,7 +7,15 @@ for arg in "${args[@]}"; do
 done
 
 set --
-source /opt/intel/setupvars.sh
+if [ -f /opt/intel/setupvars.sh ]; then
+    source /opt/intel/setupvars.sh
+elif [ -f /opt/intel/*openvino*/bin/setupvars.sh ]; then
+    source /opt/intel/*openvino*/bin/setupvars.sh
+fi
+
+if [[ $PYTHONPATH != *: ]]; then
+    export PYTHONPATH=$PYTHONPATH:
+fi
 
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/python3.8/site-packages/openvino/libs/
 

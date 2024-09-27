@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import cast
+from typing import Literal, Optional, cast
 
 import yaml
 from luxonis_ml.utils import environ
@@ -14,6 +14,17 @@ import docker.errors
 from docker.models.images import Image
 
 logger = logging.getLogger(__name__)
+
+
+def get_default_target_version(
+    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+) -> str:
+    return {
+        "rvc2": "2022.3.0",
+        "rvc3": "2022.3.0",
+        "rvc4": "2.23.0",
+        "hailo": "2024.04",
+    }[target]
 
 
 def generate_compose_config(image: str, gpu: bool = False) -> str:
@@ -65,20 +76,38 @@ def check_docker() -> None:
 
 
 # NOTE: docker SDK is not used here because it's too slow
-def docker_build(target: str, tag: str) -> str:
+def docker_build(
+    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+    tag: str,
+    version: Optional[str] = None,
+) -> str:
     check_docker()
+    if version is None:
+        version = get_default_target_version(target)
+
+    tag = f"{tag}-{version}"
 
     repository = f"luxonis/modelconverter-{target}:{tag}"
-    result = subprocess.run(
-        f"docker build -f docker/{target}/Dockerfile "
-        f"-t {repository} .".split(),
-    )
+    args = [
+        "docker",
+        "build",
+        "-f",
+        f"docker/{target}/Dockerfile",
+        "-t",
+        repository,
+        ".",
+    ]
+    if version is not None:
+        args += ["--build-arg", f"VERSION={version}"]
+    result = subprocess.run(args)
     if result.returncode != 0:
         raise RuntimeError("Failed to build the docker image")
     return repository
 
 
-def get_docker_image(target: str, tag: str) -> str:
+def get_docker_image(
+    target: Literal["rvc2", "rvc3", "rvc4", "hailo"], tag: str
+) -> str:
     check_docker()
 
     client = docker.from_env()
@@ -102,8 +131,14 @@ def get_docker_image(target: str, tag: str) -> str:
     return image_name
 
 
-def docker_exec(target: str, *args: str, tag: str, use_gpu: bool) -> None:
-    image = get_docker_image(target, tag)
+def docker_exec(
+    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+    *args: str,
+    tag: str,
+    use_gpu: bool,
+    image: Optional[str] = None,
+) -> None:
+    image = image or get_docker_image(target, tag)
 
     with tempfile.NamedTemporaryFile(delete=False) as f:
         f.write(
