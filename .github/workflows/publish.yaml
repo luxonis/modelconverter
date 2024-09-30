@@ -31,7 +31,7 @@ jobs:
   ghcr-publish:
     runs-on: ubuntu-latest
     env:
-      LOCAL_NAME: ${NAME}:${VERSION}-latest"
+      LOCAL_NAME: ${NAME}:${VERSION}-latest
 
     steps:
     - name: Checkout code
