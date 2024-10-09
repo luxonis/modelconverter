@@ -55,7 +55,7 @@ To build the images, you need to download additional packages depending on the s
 
 **RVC2**
 
-Requires `openvino-<version>`.tar.gz` to be present in `docker/extra_packages`.
+Requires `openvino-<version>.tar.gz` to be present in `docker/extra_packages/`.
 
 - Version `2023.2.0` archive can be downloaded from [here](https://drive.google.com/file/d/1IXtYi1Mwpsg3pr5cDXlEHdSUZlwJRTVP/view?usp=share_link).
 
