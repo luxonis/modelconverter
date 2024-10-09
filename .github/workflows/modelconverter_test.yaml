@@ -23,6 +23,7 @@ env:
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   AWS_S3_ENDPOINT_URL: ${{ secrets.AWS_S3_ENDPOINT_URL }}
   PACKAGE: ${{ inputs.package }}
+  VERSION: ${{ inputs.version }}
 
 jobs:
   tests:
@@ -61,6 +62,8 @@ jobs:
 
     - name: Download build files from GCS
       if: ${{ inputs.package }} != hailo
+      env:
+        GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
       run: |
         cd docker/extra_packages
         if [ "$PACKAGE" = "rvc4" ]; then
