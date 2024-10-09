@@ -315,6 +315,7 @@ def shell(
     gpu: GPUOption = True,
 ):
     """Boots up a shell inside a docker container for the specified target platform."""
+    image = None
     if dev:
         image = docker_build(target.value, tag="dev", version=version)
     docker_exec(
@@ -606,7 +607,7 @@ def archive(
 
 def version_callback(value: bool):
     if value:
-        typer.echo(f"ModelConverter Version: {version(__package__)}")
+        typer.echo(f"ModelConverter Version: {version('modelconverter')}")
         raise typer.Exit()
 
 
