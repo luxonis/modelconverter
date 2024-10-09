@@ -22,10 +22,10 @@ from .image import read_calib_dir, read_image
 from .layout import guess_new_layout, make_default_layout
 from .metadata import Metadata, get_metadata
 from .nn_archive import (
+    archive_from_model,
     get_archive_input,
     modelconverter_config_to_nn,
     process_nn_archive,
-    archive_from_model,
 )
 from .onnx_tools import onnx_attach_normalization_to_inputs
 from .subprocess import subprocess_run
@@ -56,5 +56,5 @@ __all__ = [
     "make_default_layout",
     "Metadata",
     "get_metadata",
-    "archive_from_model"
+    "archive_from_model",
 ]
