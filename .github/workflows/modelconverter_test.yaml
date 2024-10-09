@@ -8,6 +8,12 @@ on:
         type: string
         description: Which package to test
 
+      version:
+        required: true
+        type: string
+        description: >
+          Which version of underlying conversion tools to use
+
 permissions:
   contents: read
   packages: read
@@ -52,6 +58,20 @@ jobs:
       with:
         credentials_json: ${{ secrets.GCP_CREDENTIALS }}
         token_format: access_token
+
+    - name: Download build files from GCS
+      if: ${{ inputs.package }} != hailo
+      run: |
+        cd docker/extra_packages
+        if [ "$PACKAGE" = "rvc4" ]; then
+            gcloud storage cp                             \
+              "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
+              "snpe-${VERSION}.zip"
+        elif [ "$PACKAGE" = "rvc2" ] || [ "$PACKAGE" = "rvc3" ]; then
+            gcloud storage cp                                    \
+              "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
+              "openvino-${VERSION}.tar.gz"
+        fi
 
     - name: Run Tests
       run: |
