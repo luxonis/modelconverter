@@ -1,17 +1,6 @@
 FROM hailo_ai_sw_suite_2024-07:1
 USER root
 
-COPY requirements.txt .
-
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt && \
-    pip install --extra-index-url \
-    https://developer.download.nvidia.com/compute/redist \
-    nvidia-dali-cuda110 && \
-    pip install --extra-index-url \
-    https://developer.download.nvidia.com/compute/redist \
-    nvidia-dali-tf-plugin-cuda110
-
 RUN rm -rf \
     /local/workspace/tappas \
     /opt/google \
@@ -22,22 +11,51 @@ RUN rm -rf \
     /usr/bin/containerd* \
     /local/workspace/hailo_virtualenv/lib/python3.8/site-packages/hailo_tutorials
 
-RUN pip install pip-autoremove && \
-    pip-autoremove -y torch jupyter plotly matplotlib ipython \
-    tensorboard pip-autoremove && \
-    pip install psutil && \
-    pip cache purge  && \
+COPY requirements.txt .
+
+RUN <<EOF
+
+    pip install --upgrade pip
+    pip install -r requirements.txt
+    pip install --extra-index-url
+        https://developer.download.nvidia.com/compute/redist \
+        nvidia-dali-cuda110
+    pip install --extra-index-url \
+        https://developer.download.nvidia.com/compute/redist \
+        nvidia-dali-tf-plugin-cuda110
+
+EOF
+
+RUN <<EOF
+
+    pip install pip-autoremove
+
+    pip-autoremove -y \
+        torch         \
+        jupyter       \
+        plotly        \
+        matplotlib    \
+        ipython       \
+        tensorboard   \
+        pip-autoremove
+
+    pip install psutil
     rm -rf ~/.cache
 
+EOF
+
 WORKDIR /app
+
 COPY docker/hailo/entrypoint.sh /app/entrypoint.sh
+COPY modelconverter pyproject.toml /app/modelconverter/
 
-RUN chmod +x /app/entrypoint.sh
+RUN <<EOF
 
-COPY modelconverter pyproject.toml requirements.txt /app/modelconverter/
-RUN cd modelconverter
-RUN cd modelconverter && pip install -e . --no-deps
+    pip install -e ./modelconverter --no-deps --no-cache-dir
+    echo "export SSL_CERT_FILE=$(python -m certifi)" > /etc/profile.d/certifi.sh
+    chmod +x /app/entrypoint.sh
 
-RUN echo "export SSL_CERT_FILE=$(python -m certifi)" > /etc/profile.d/certifi.sh
+EOF
+
 
 ENTRYPOINT ["/app/entrypoint.sh"]
