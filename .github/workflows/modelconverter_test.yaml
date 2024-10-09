@@ -53,6 +53,18 @@ jobs:
         credentials_json: ${{ secrets.GCP_CREDENTIALS }}
         token_format: access_token
 
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+
+    - name: Download file from GCS
+      run: |
+        cd docker/extra_packages
+        if [ "$PACKAGE" = "rvc4" ]; then
+            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/snpe.zip .
+        elif [ "$PACKAGE" = "rvc2" ] || [ "$PACKAGE" = "rvc3" ]; then
+            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/openvino_2022_3_vpux_drop_patched.tar.gz .
+        fi
+
     - name: Run Tests
       run: |
         pytest -s --verbose "tests/test_packages/test_$PACKAGE.py"

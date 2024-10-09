@@ -76,32 +76,8 @@ class Exporter(ABC):
             logger.warning("Calibration has been disabled.")
             logger.warning("The quantization step will be skipped.")
 
-        for name, inp in self.inputs.items():
-            calib = inp.calibration
-            if calib is None:
-                continue
-            if not isinstance(calib, RandomCalibrationConfig):
-                continue
-            logger.warning(
-                f"Random calibration is being used for input '{name}'."
-            )
-            dest = self.intermediate_outputs_dir / "random" / name
-            dest.mkdir(parents=True)
-            if inp.shape is None:
-                exit_with(
-                    ValueError(
-                        f"Random calibration requires shape to be specified for input '{name}'."
-                    )
-                )
-
-            for i in range(calib.max_images):
-                arr = np.random.normal(calib.mean, calib.std, inp.shape)
-                arr = np.clip(arr, calib.min_value, calib.max_value)
-
-                arr = arr.astype(calib.data_type.as_numpy_dtype())
-                np.save(dest / f"{i}.npy", arr)
-
-            self.inputs[name].calibration = ImageCalibrationConfig(path=dest)
+        if self.target != Target.RVC2:
+            self._prepare_random_calibration_data()
 
     @property
     def inference_model_path(self) -> Path:
@@ -179,6 +155,34 @@ class Exporter(ABC):
             )
             imgs = imgs[:max_images]
         return imgs
+
+    def _prepare_random_calibration_data(self) -> None:
+        for name, inp in self.inputs.items():
+            calib = inp.calibration
+            if calib is None:
+                continue
+            if not isinstance(calib, RandomCalibrationConfig):
+                continue
+            logger.warning(
+                f"Random calibration is being used for input '{name}'."
+            )
+            dest = self.intermediate_outputs_dir / "random" / name
+            dest.mkdir(parents=True)
+            if inp.shape is None:
+                exit_with(
+                    ValueError(
+                        f"Random calibration requires shape to be specified for input '{name}'."
+                    )
+                )
+
+            for i in range(calib.max_images):
+                arr = np.random.normal(calib.mean, calib.std, inp.shape)
+                arr = np.clip(arr, calib.min_value, calib.max_value)
+
+                arr = arr.astype(calib.data_type.as_numpy_dtype())
+                np.save(dest / f"{i}.npy", arr)
+
+            self.inputs[name].calibration = ImageCalibrationConfig(path=dest)
 
     @staticmethod
     def _attach_suffix(path: Union[Path, str], suffix: str) -> Path:

@@ -108,9 +108,9 @@ jobs:
       run: |
         cd docker/extra_packages
         if [ "$PACKAGE" = "rvc4" ]; then
-            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/snpe.zip snpe.zip
+            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/snpe.zip .
         elif [ "$PACKAGE" = "rvc2" ] || [ "$PACKAGE" = "rvc3" ]; then
-            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/openvino_2022_3_vpux_drop_patched.tar.gz openvino_2022_3_vpux_drop_patched.tar.gz
+            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/openvino_2022_3_vpux_drop_patched.tar.gz .
         fi
 
     - name: Publish

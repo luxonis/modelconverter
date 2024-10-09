@@ -1,6 +1,7 @@
 import subprocess
 import tempfile
 from functools import partial
+from importlib.metadata import version
 from logging import getLogger
 from multiprocessing import Pool, cpu_count
 from os import environ as env
