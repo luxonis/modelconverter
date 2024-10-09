@@ -85,7 +85,7 @@ def docker_build(
     if version is None:
         version = get_default_target_version(target)
 
-    tag = f"{tag}-{version}"
+    tag = f"{version}-{tag}"
 
     repository = f"luxonis/modelconverter-{target}:{tag}"
     args = [
