@@ -3,20 +3,6 @@ ARG VERSION=2024.07
 FROM hailo_ai_sw_suite_${VERSION/./-}:1 as BASE
 USER root
 
-
-RUN pip install --upgrade pip
-
-COPY requirements.txt requirements.txt
-
-RUN pip install -r requirements.txt
-RUN pip install --extra-index-url \
-    https://developer.download.nvidia.com/compute/redist \
-    nvidia-dali-cuda110
-
-RUN pip install --extra-index-url \
-    https://developer.download.nvidia.com/compute/redist \
-    nvidia-dali-tf-plugin-cuda110
-
 RUN rm -rf \
     /local/workspace/tappas \
     /opt/google \
@@ -26,6 +12,20 @@ RUN rm -rf \
     /usr/bin/docker* \
     /usr/bin/containerd* \
     /local/workspace/hailo_virtualenv/lib/python3.8/site-packages/hailo_tutorials
+
+
+COPY requirements.txt requirements.txt
+
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
+RUN pip install --extra-index-url \
+    https://developer.download.nvidia.com/compute/redist \
+    nvidia-dali-cuda110
+
+RUN pip install --extra-index-url \
+    https://developer.download.nvidia.com/compute/redist \
+    nvidia-dali-tf-plugin-cuda110
+
 
 RUN pip install pip-autoremove
 RUN pip-autoremove -y torch jupyter plotly matplotlib \

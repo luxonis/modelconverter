@@ -4,7 +4,7 @@
 
 ARG VERSION=2.23.0
 
-FROM ghcr.io/luxonis/modelconverter-base-hailo:${VERSION}-latest
+FROM ghcr.io/luxonis/modelconverter-hailo:${VERSION}-base
 
 ENV IN_DOCKER=
 ENV VERSION=${VERSION}
