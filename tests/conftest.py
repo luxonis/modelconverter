@@ -95,7 +95,8 @@ def pytest_addoption(parser):
     parser.addoption(
         "--tool-version",
         action="store",
-        required=True,
+        required=False,
+        default="0.0.0",
         help="Version of the internal conversion tool",
     )
 
