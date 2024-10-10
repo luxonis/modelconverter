@@ -479,9 +479,7 @@ def convert(
                     archive_cfg,
                     preprocessing,
                     main_stage,
-                    exporter.inference_model_path
-                    if isinstance(exporter, Exporter)
-                    else exporter.exporters[main_stage].inference_model_path,
+                    out_models[0],
                 )
                 generator = ArchiveGenerator(
                     archive_name=f"{cfg.name}.{target.value.lower()}",
@@ -607,7 +605,7 @@ def archive(
 
 def version_callback(value: bool):
     if value:
-        typer.echo(f"ModelConverter Version: {version('modelconverter')}")
+        typer.echo(f"ModelConverter Version: {version('modelconv')}")
         raise typer.Exit()
 
 
@@ -616,6 +614,7 @@ def common(
     _: Annotated[
         bool,
         typer.Option(
+            "-v",
             "--version",
             callback=version_callback,
             help="Show version and exit.",
