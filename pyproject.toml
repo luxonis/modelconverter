@@ -1,13 +1,12 @@
 [project]
 name = "modelconv"
-version = "0.1.2"
 description = "Converter for neural models into various formats."
 readme = "README.md"
 requires-python = ">=3.8"
 authors = [{ name = "Luxonis", email = "support@luxonis.com" }]
 maintainers = [{ name = "Luxonis", email = "support@luxonis.com" }]
 keywords = ["ml", "onnx", "openvino", "nn", "ai", "embedded"]
-dynamic = ["dependencies", "optional-dependencies"]
+dynamic = ["dependencies", "optional-dependencies", "version"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3.8",
@@ -32,6 +31,7 @@ where = ["."]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
+version = {attr = "luxonis_train.__version__"}
 
 [tool.setuptools.dynamic.optional-dependencies]
 bench = { file = ["requirements-bench.txt"] }

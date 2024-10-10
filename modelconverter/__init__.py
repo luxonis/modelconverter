@@ -1,6 +1,8 @@
 import pkg_resources
 from luxonis_ml.utils import PUT_FILE_REGISTRY
 
+__version__ = "0.2.0"
+
 
 def load_put_file_plugins() -> None:
     """Registers any external put file plugins."""
