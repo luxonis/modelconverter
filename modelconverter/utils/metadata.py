@@ -1,6 +1,6 @@
 import io
-from importlib.metadata import version
 from dataclasses import dataclass
+from importlib.metadata import version
 from pathlib import Path
 from typing import Dict, List
 
@@ -83,8 +83,7 @@ def _get_metadata_ir(bin_path: Path, xml_path: Path) -> Metadata:
 
 
 def _get_metadata_ir_ie(bin_path: Path, xml_path: Path) -> Metadata:
-    """
-    Extracts metadata from an OpenVINO IR model using the Inference Engine API.
+    """Extracts metadata from an OpenVINO IR model using the Inference Engine API.
 
     Args:
         bin_path (Path): Path to the model's .bin file.
