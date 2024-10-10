@@ -13,6 +13,8 @@ COPY requirements.txt requirements.txt
 
 RUN <<EOF
 
+    set -e
+
     pip install --upgrade pip
     pip install -r requirements.txt
 
@@ -21,14 +23,17 @@ EOF
 WORKDIR /app
 
 COPY --link docker/hailo/entrypoint.sh /app/entrypoint.sh
-COPY --link modelconverter pyproject.toml /app/modelconverter/
+COPY --link modelconverter /app/modelconverter/
+COPY --link pyproject.toml /app/pyproject.toml
 
 RUN <<EOF
+
+    set -e
 
     echo "export SSL_CERT_FILE=$(python -m certifi)" \
         > /etc/profile.d/certifi.sh
 
-    pip install -e ./modelconverter --no-deps --no-cache-dir
+    pip install -e . --no-deps --no-cache-dir
     chmod +x /app/entrypoint.sh
 
 EOF

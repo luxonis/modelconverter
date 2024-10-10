@@ -5,6 +5,8 @@ ENV VERSION=${VERSION}
 
 RUN <<EOF
 
+    set -e
+
     apt-get update
     apt-get install -y  \
         cmake           \
@@ -23,6 +25,8 @@ EOF
 COPY --link docker/extra_packages/snpe-${VERSION}.zip snpe.zip
 
 RUN <<EOF
+
+    set -e
 
     unzip snpe.zip -d /opt
 
@@ -100,12 +104,17 @@ COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libicudata.so.72 \
     /usr/lib/
 
+RUN pip install --upgrade pip
+
 COPY --link docker/rvc4/entrypoint.sh /app/entrypoint.sh
-COPY --link modelconverter pyproject.toml /app/modelconverter/
+COPY --link modelconverter /app/modelconverter/
+COPY --link pyproject.toml /app/pyproject.toml
 
 RUN <<EOF
 
-    pip install -e ./modelconverter --no-deps --no-cache-dir
+    set -e
+
+    pip install -e . --no-deps --no-cache-dir
     chmod +x /app/entrypoint.sh
 
 EOF

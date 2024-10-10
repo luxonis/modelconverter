@@ -2,6 +2,8 @@ FROM python:3.8-slim AS base
 
 RUN <<EOF
 
+    set -e
+
     apt-get update
     apt-get install -y  \
         cmake           \
@@ -25,8 +27,12 @@ COPY --link docker/rvc3/requirements.txt requirements-rvc3.txt
 COPY --link docker/extra_packages/mo_patch.diff .
 
 RUN <<EOF
+
+    set -e
+
     mkdir /opt/intel
     tar xvf openvino-2022.3.0.tar.gz -C /opt/intel/ --strip-components 1
+
 EOF
 
 RUN pip install --upgrade pip
@@ -35,6 +41,8 @@ RUN pip install /opt/intel/tools/*.whl
 RUN pip install -r requirements-rvc3.txt
 
 RUN <<EOF
+
+    set -e
 
     # Model Optimizer contains a bug in
     # version 2022.3.0 that needs to be patched
@@ -79,15 +87,19 @@ COPY --link --from=base /opt/intel /opt/intel
 COPY --link --from=base /usr/local/bin /usr/local/bin
 COPY --link --from=base /usr/local/lib /usr/local/lib
 
+RUN pip install --upgrade pip
 
 COPY --link docker/rvc3/entrypoint.sh /app/entrypoint.sh
-COPY --link modelconverter pyproject.toml /app/modelconverter/
+COPY --link modelconverter /app/modelconverter/
+COPY --link pyproject.toml /app/pyproject.toml
 
 RUN <<EOF
 
+    set -e
+
     COMPILE_TOOL=/opt/intel/tools/compile_tool/compile_tool
 
-    pip install -e ./modelconverter --no-deps --no-cache-dir
+    pip install -e . --no-deps --no-cache-dir
 
     echo "alias compile_tool=${COMPILE_TOOL}" >> ~/.bashrc
     chmod +x /app/entrypoint.sh

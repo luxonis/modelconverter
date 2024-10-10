@@ -30,6 +30,8 @@ COPY --link docker/extra_packages/mo_patch.diff .
 
 RUN <<EOF
 
+    set -e
+
     mkdir -p /opt/intel
     if [ "${VERSION}" = "2022.3.0" ]; then
         STRIP_COMPONENTS=1
@@ -54,6 +56,8 @@ RUN pip install -r requirements-rvc2.txt
 
 RUN <<EOF
 
+    set -e
+
     # ONNX Runtime needs to be installed together with
     # numpy<1.20 to prevent it from installing higher
     # versions of numpy that are incompatible with OpenVINO 2021.4.0
@@ -64,6 +68,8 @@ RUN <<EOF
 EOF
 
 RUN <<EOF
+
+    set -e
 
     # Model Optimizer contains a bug in
     # version 2022.3.0 that needs to be patched
@@ -110,15 +116,19 @@ COPY --link --from=base /opt/intel /opt/intel
 COPY --link --from=base /usr/local/bin /usr/local/bin
 COPY --link --from=base /usr/local/lib /usr/local/lib
 
+RUN pip install --upgrade pip
+
 COPY --link docker/rvc2/entrypoint.sh /app/entrypoint.sh
-COPY --link modelconverter pyproject.toml /app/modelconverter/
+COPY --link modelconverter /app/modelconverter/
+COPY --link pyproject.toml /app/pyproject.toml
 
 RUN <<EOF
 
+    set -e
+
     COMPILE_TOOL=$(find /opt/intel -name compile_tool -type f)
 
-    pip install --upgrade pip
-    pip install -e ./modelconverter --no-deps --no-cache-dir
+    pip install -e . --no-deps --no-cache-dir
 
     echo "alias compile_tool=${COMPILE_TOOL}"  >> ~/.bashrc
     chmod +x /app/entrypoint.sh
