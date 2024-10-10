@@ -3,6 +3,7 @@ import tarfile
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from luxonis_ml.nn_archive.config import CONFIG_VERSION
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import (
     Input as NNArchiveInput,
@@ -133,7 +134,7 @@ def modelconverter_config_to_nn(
     cfg = config.stages[main_stage_key]
 
     archive_cfg = {
-        "config_version": "1.0",
+        "config_version": CONFIG_VERSION.__args__[-1],  # type: ignore
         "model": {
             "metadata": {
                 "name": model_name.stem,
