@@ -24,7 +24,7 @@ def check_convert(convert_env):
     assert result.returncode == 0
 
 
-def mnist_infer(mnist_env):
+def mnist_infer(mnist_env, tool_version: str):
     (
         config_url,
         converted_model_path,
@@ -46,6 +46,7 @@ def mnist_infer(mnist_env):
         f"--input-path {input_files_dir.parent} "
         f"--path {config_url} "
         "--dev "
+        f"--version {tool_version} "
         "--no-gpu"
     )
     assert result.returncode == 0, result.stderr + result.stdout
@@ -60,7 +61,7 @@ def mnist_infer(mnist_env):
     compare_metrics(metric.get_result(), expected_metric)
 
 
-def resnet18_infer(resnet18_env):
+def resnet18_infer(resnet18_env, tool_version: str):
     (
         config_url,
         converted_model_path,
@@ -87,6 +88,7 @@ def resnet18_infer(resnet18_env):
         f"--input-path {input_files_dir.parent} "
         f"--path {config_url} "
         "--dev "
+        f"--version {tool_version} "
         "--no-gpu"
     )
     assert result.returncode == 0, result.stderr + result.stdout
@@ -101,7 +103,7 @@ def resnet18_infer(resnet18_env):
     compare_metrics(metric.get_result(), expected_metric)
 
 
-def yolov6n_infer(yolov6n_env):
+def yolov6n_infer(yolov6n_env, tool_version: str):
     output_names = [f"output{i}_yolov6r2" for i in range(1, 4)]
     (
         config_url,
@@ -132,6 +134,7 @@ def yolov6n_infer(yolov6n_env):
         f"--input-path {input_files_dir.parent} "
         f"--path {config_url} "
         "--dev "
+        f"--version {tool_version} "
         "--no-gpu"
     )
     assert result.returncode == 0, result.stderr + result.stdout

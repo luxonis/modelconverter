@@ -79,5 +79,5 @@ jobs:
 
     - name: Run Tests
       run: |
-        pytest -s --verbose "tests/test_packages/test_${PACKAGE}.py" --tool-version "$VERSION"
+        pytest -s --verbose "tests/test_packages/test_${PACKAGE}.py" --tool-version "${VERSION}"
 
