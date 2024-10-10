@@ -1,7 +1,7 @@
 from enum import Enum
 from pathlib import Path
-
 from typing import Union
+
 import numpy as np
 from onnx.onnx_pb import TensorProto
 
@@ -131,7 +131,27 @@ class DataType(Enum):
         return cls(dtype_map[dtype])
 
     @classmethod
-    def from_ir_dtype(cls, dtype: str) -> "DataType":
+    def from_ir_ie_dtype(cls, dtype: str) -> "DataType":
+        dtype_map = {
+            "FP16": "float16",
+            "FP32": "float32",
+            "FP64": "float64",
+            "I8": "int8",
+            "I16": "int16",
+            "I32": "int32",
+            "I64": "int64",
+            "U8": "uint8",
+            "U16": "uint16",
+            "U32": "uint32",
+            "U64": "uint64",
+            "BOOL": "boolean",
+        }
+        if dtype not in dtype_map:
+            raise ValueError(f"Unsupported IR data type: `{dtype}`")
+        return cls(dtype_map[dtype])
+
+    @classmethod
+    def from_ir_runtime_dtype(cls, dtype: str) -> "DataType":
         dtype_map = {
             "f16": "float16",
             "f32": "float32",
@@ -147,7 +167,7 @@ class DataType(Enum):
             "boolean": "boolean",
         }
         if dtype not in dtype_map:
-            raise ValueError(f"Unsupported IR data type: `{dtype}`")
+            raise ValueError(f"Unsupported IR runtime data type: `{dtype}`")
         return cls(dtype_map[dtype])
 
     def as_numpy_dtype(self) -> np.dtype:

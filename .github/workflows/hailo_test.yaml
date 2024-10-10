@@ -16,8 +16,15 @@ on:
 
 jobs:
   hailo-test:
+
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["2024.04", "2024.07"]
+
     uses: ./.github/workflows/modelconverter_test.yaml
     secrets: inherit
     with:
       package: hailo
+      version: ${{ matrix.version }}
 

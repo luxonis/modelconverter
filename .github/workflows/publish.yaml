@@ -8,77 +8,35 @@ on:
         type: string
         description: Which package to publish
 
+      version:
+        required: true
+        type: string
+        description: >
+          Which version of underlying conversion tools to use
+
 permissions:
   contents: read
   packages: write
 
 env:
-  PROJECT_ID: easyml-394818
   GAR_LOCATION: us-central1
   DOCKERFILE: docker/${{ inputs.package }}/Dockerfile
   PACKAGE: ${{ inputs.package }}
   NAME: luxonis/modelconverter-${{ inputs.package }}
   STEM: modelconverter-${{ inputs.package }}
+  VERSION: ${{ inputs.version }}
+  GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
+  GAR_STEM: us-central1-docker.pkg.dev/easyml-394818
 
 jobs:
   ghcr-publish:
     runs-on: ubuntu-latest
+    env:
+      LOCAL_NAME: ${NAME}:${VERSION}-latest
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
-    - name: Authenticate to Google Cloud
-      id: google-auth
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: ${{ secrets.GCP_CREDENTIALS }}
-        token_format: access_token
-
-    - name: Docker login to GHCR
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Get modelconverter version
-      id: commit
-      run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
-
-    - name: Download file from GCS
-      run: |
-        cd docker/extra_packages
-        if [ "$PACKAGE" = "rvc4" ]; then
-            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/snpe.zip snpe.zip
-        elif [ "$PACKAGE" = "rvc2" ] || [ "$PACKAGE" = "rvc3" ]; then
-            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/openvino_2022_3_vpux_drop_patched.tar.gz openvino_2022_3_vpux_drop_patched.tar.gz
-        fi
-    - name: Publish latest
-      run: |
-        docker build -f $DOCKERFILE -t $NAME:latest .
-        docker tag $NAME:latest ghcr.io/$NAME:latest
-        docker push ghcr.io/$NAME:latest
-
-    - name: Publish tagged
-      run: |
-        VERSION=${{ steps.commit.outputs.sha }}
-        docker tag $NAME:latest ghcr.io/$NAME:$VERSION
-        docker push ghcr.io/$NAME:$VERSION
-
-  gar-publish:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Get modelconverter version
-      id: commit
-      run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
     - name: Authenticate to Google Cloud
       id: google-auth
@@ -104,30 +62,56 @@ jobs:
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v1
 
-    - name: Download file from GCS
+    - name: Download build files from GCS
+      if: ${{ inputs.package }} != hailo
       run: |
         cd docker/extra_packages
         if [ "$PACKAGE" = "rvc4" ]; then
-            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/snpe.zip .
-        elif [ "$PACKAGE" = "rvc2" ] || [ "$PACKAGE" = "rvc3" ]; then
-            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/openvino_2022_3_vpux_drop_patched.tar.gz .
+            gcloud storage cp                             \
+              "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
+              "snpe-${VERSION}.zip"
+        elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
+            gcloud storage cp                                    \
+              "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
+              "openvino-${VERSION}.tar.gz"
         fi
 
-    - name: Publish
+    - name: Build image
       run: |
-        docker build -f $DOCKERFILE -t $NAME:latest .
+        docker build -f "${DOCKERFILE}" -t "${LOCAL_NAME}" .
 
-        VERSION=${{ steps.commit.outputs.sha }}
-        GAR_NAME="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/internal/$STEM"
+    - name: GHCR publish latest
+      run: |
+        GHCR_NAME="ghcr.io/${LOCAL_NAME}"
+        docker tag "${LOCAL_NAME}" "${GHCR_NAME}"
+        docker push "${GHCR_NAME}"
 
-        for tag in latest $VERSION; do
-            docker tag "$NAME:latest" "$GAR_NAME:$tag"
-            docker push "$GAR_NAME:$tag"
-        done
+    - name: GHCR publish SHA
+      run: |
+        SHA=$(git rev-parse --short HEAD)
+        GHCR_NAME="ghcr.io/${NAME}:${VERSION}-${SHA}"
+        docker tag "${LOCAL_NAME}" "${GHCR_NAME}"
+        docker push "${GHCR_NAME}"
 
-        IFS=' ' read -r -a REPO_ARRAY <<< "${{ vars.EXTERNAL_CLIENTS }}"
+    - name: GAR publish latest
+      run: |
+        GAR_NAME="${GAR_STEM}/internal/${STEM}:${VERSION}-latest"
+        docker tag "${LOCAL_NAME}" "${GAR_NAME}"
+        docker push "${GAR_NAME}"
+
+    - name: GAR publish SHA
+      run: |
+        SHA=$(git rev-parse --short HEAD)
+        GAR_NAME="${GAR_STEM}/internal/${STEM}:${VERSION}-${SHA}"
+        docker tag "${LOCAL_NAME}" "${GAR_NAME}"
+        docker push "${GAR_NAME}"
+
+    - name: GAR publish clients
+      run: |
+        read -r -a REPO_ARRAY <<< "${{ vars.EXTERNAL_CLIENTS }}"
+
         for REPO in "${REPO_ARRAY[@]}"; do
-          GAR_CLIENT_TAG="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPO/$STEM:$VERSION"
-            docker tag "$NAME:latest" "$GAR_CLIENT_TAG"
-            docker push "$GAR_CLIENT_TAG"
+          GAR_CLIENT_NAME="${GAR_STEM}/${REPO}/${STEM}:${VERSION}-${SHA}"
+          docker tag "${LOCAL_NAME}" "${GAR_CLIENT_NAME}"
+          docker push "${GAR_CLIENT_NAME}"
         done
