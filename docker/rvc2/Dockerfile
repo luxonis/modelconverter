@@ -26,8 +26,6 @@ COPY --link docker/extra_packages/openvino-${VERSION}.tar.gz .
 COPY --link requirements.txt requirements.txt
 COPY --link docker/rvc2/requirements.txt requirements-rvc2.txt
 
-COPY --link docker/extra_packages/mo_patch.diff .
-
 RUN <<EOF
 
     set -e
@@ -67,14 +65,20 @@ RUN <<EOF
 
 EOF
 
+COPY --link docker/patches /patches
+
 RUN <<EOF
 
     set -e
 
-    # Model Optimizer contains a bug in
-    # version 2022.3.0 that needs to be patched
+    # Model Optimizer contains a bug in both versions
+    # that needs to be patched
     if [ "${VERSION}" = "2022.3.0" ]; then
-        patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py < /mo_patch.diff
+        patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py \
+            < /patches/mo-2022.3.patch
+    else
+        patch /opt/intel/deployment_tools/model_optimizer/mo/main.py \
+            < /patches/mo-2021.4.patch
     fi
 
 EOF
