@@ -67,11 +67,11 @@ jobs:
       run: |
         mkdir -p docker/extra_packages
         cd docker/extra_packages
-        if [ "$PACKAGE" = "rvc4" ]; then
+        if [ "${PACKAGE}" = "rvc4" ]; then
             gcloud storage cp                             \
               "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
               "snpe-${VERSION}.zip"
-        elif [ "$PACKAGE" = "rvc2" ] || [ "$PACKAGE" = "rvc3" ]; then
+        elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
             gcloud storage cp                                    \
               "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
               "openvino-${VERSION}.tar.gz"
@@ -79,5 +79,5 @@ jobs:
 
     - name: Run Tests
       run: |
-        pytest -s --verbose "tests/test_packages/test_$PACKAGE.py"
+        pytest -s --verbose "tests/test_packages/test_${PACKAGE}.py" --tool-version "$VERSION"
 

@@ -70,7 +70,7 @@ jobs:
             gcloud storage cp                             \
               "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
               "snpe-${VERSION}.zip"
-        elif [ "$PACKAGE" = "rvc2" ] || [ "$PACKAGE" = "rvc3" ]; then
+        elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
             gcloud storage cp                                    \
               "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
               "openvino-${VERSION}.tar.gz"
