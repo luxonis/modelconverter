@@ -1,6 +1,5 @@
 import subprocess
 import tempfile
-from importlib.metadata import version
 from functools import partial
 from importlib.metadata import version
 from logging import getLogger
@@ -8,7 +7,7 @@ from multiprocessing import Pool, cpu_count
 from os import environ as env
 from os import path
 from pathlib import Path
-from typing import Any, Dict, Final
+from typing import Any, Dict, Final, Iterable
 
 import tflite2onnx
 from rich.progress import track
@@ -68,9 +67,7 @@ class RVC2Exporter(Exporter):
     def _export_openvino_ir(self) -> Path:
         args = self.mo_args
         self._add_args(args, ["--output_dir", self.intermediate_outputs_dir])
-        self._add_args(
-            args, ["--output", ",".join(name for name in self.outputs)]
-        )
+        self._add_args(args, ["--output", ",".join(self.outputs)])
         if self.compress_to_fp16:
             if OV_2021:
                 self._add_args(args, ["--data_type", "FP16"])
@@ -84,7 +81,7 @@ class RVC2Exporter(Exporter):
                     inp_str += ","
                 inp_str += name
                 if inp.shape is not None:
-                    inp_str += f'[{" ".join(map(str, inp.shape))}]'
+                    inp_str += f"{_lst_join(inp.shape, sep=' ')}"
                 if inp.data_type is not None:
                     if OV_2021 and self.compress_to_fp16:
                         data_type = DataType("float16")
@@ -95,7 +92,7 @@ class RVC2Exporter(Exporter):
                     if len(inp.frozen_value) == 1:
                         value = inp.frozen_value[0]
                     else:
-                        value = f'[{",".join(map(str, inp.frozen_value))}]'
+                        value = f"{_lst_join(inp.frozen_value)}"
                     inp_str += f"->{value}"
             args.extend(["--input", inp_str])
 
@@ -121,11 +118,13 @@ class RVC2Exporter(Exporter):
         for name, inp in self.inputs.items():
             if inp.mean_values is not None:
                 self._add_args(
-                    args, ["--mean_values", f"{name}{inp.mean_values}"]
+                    args,
+                    ["--mean_values", f"{name}{_lst_join(inp.mean_values)}"],
                 )
             if inp.scale_values is not None:
                 self._add_args(
-                    args, ["--scale_values", f"{name}{inp.scale_values}"]
+                    args,
+                    ["--scale_values", f"{name}{_lst_join(inp.scale_values)}"],
                 )
             if inp.reverse_input_channels:
                 self._add_args(args, ["--reverse_input_channels"])
@@ -353,3 +352,7 @@ class RVC2Exporter(Exporter):
             "target_devices": [self.device],
             **self._device_specific_buildinfo,
         }
+
+
+def _lst_join(args: Iterable[Any], sep: str = ",") -> str:
+    return f"[{sep.join(map(str, args))}]"
