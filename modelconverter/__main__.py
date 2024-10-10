@@ -479,7 +479,9 @@ def convert(
                     archive_cfg,
                     preprocessing,
                     main_stage,
-                    out_models[0],
+                    exporter.inference_model_path
+                    if isinstance(exporter, Exporter)
+                    else exporter.exporters[main_stage].inference_model_path,
                 )
                 generator = ArchiveGenerator(
                     archive_name=f"{cfg.name}.{target.value.lower()}",
