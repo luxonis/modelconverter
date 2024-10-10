@@ -1,4 +1,4 @@
-FROM python:3.10-slim as BASE
+FROM python:3.10-slim AS base
 
 ARG VERSION=2.23.0
 ENV VERSION=${VERSION}
@@ -64,9 +64,9 @@ ENV VERSION=${VERSION}
 
 WORKDIR /app
 
-COPY --link --from=BASE /opt/ /opt/
-COPY --link --from=BASE /usr/local/lib /usr/local/lib
-COPY --link --from=BASE \
+COPY --link --from=base /opt/ /opt/
+COPY --link --from=base /usr/local/lib /usr/local/lib
+COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libcurl.so.4 \
     /usr/lib/x86_64-linux-gnu/libnghttp2.so.14 \
     /usr/lib/x86_64-linux-gnu/librtmp.so.1 \
@@ -105,8 +105,8 @@ COPY --link modelconverter pyproject.toml /app/modelconverter/
 
 RUN <<EOF
 
-    chmod +x /app/entrypoint.sh
     pip install -e ./modelconverter --no-deps --no-cache-dir
+    chmod +x /app/entrypoint.sh
 
 EOF
 

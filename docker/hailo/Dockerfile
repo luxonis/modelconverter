@@ -9,6 +9,15 @@ FROM ghcr.io/luxonis/modelconverter-hailo:${VERSION}-base
 ENV IN_DOCKER=
 ENV VERSION=${VERSION}
 
+COPY requirements.txt requirements.txt
+
+RUN <<EOF
+
+    pip install --upgrade pip
+    pip install -r requirements.txt
+
+EOF
+
 WORKDIR /app
 
 COPY --link docker/hailo/entrypoint.sh /app/entrypoint.sh

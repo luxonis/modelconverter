@@ -1,4 +1,4 @@
-FROM python:3.8-slim as BASE
+FROM python:3.8-slim AS base
 
 RUN <<EOF
 
@@ -51,7 +51,7 @@ ENV IN_DOCKER=
 
 WORKDIR /app
 
-COPY --link --from=BASE \
+COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libcurl.so.4 \
     /usr/lib/x86_64-linux-gnu/libnghttp2.so.14 \
     /usr/lib/x86_64-linux-gnu/librtmp.so.1 \
@@ -75,9 +75,9 @@ COPY --link --from=BASE \
     /usr/lib/x86_64-linux-gnu/libusb-1.0.so.0 \
     /usr/lib/
 
-COPY --link --from=BASE /opt/intel /opt/intel
-COPY --link --from=BASE /usr/local/bin /usr/local/bin
-COPY --link --from=BASE /usr/local/lib /usr/local/lib
+COPY --link --from=base /opt/intel /opt/intel
+COPY --link --from=base /usr/local/bin /usr/local/bin
+COPY --link --from=base /usr/local/lib /usr/local/lib
 
 
 COPY --link docker/rvc3/entrypoint.sh /app/entrypoint.sh
