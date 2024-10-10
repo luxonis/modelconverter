@@ -31,7 +31,7 @@ where = ["."]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
-version = {attr = "luxonis_train.__version__"}
+version = {attr = "modelconverter.__version__"}
 
 [tool.setuptools.dynamic.optional-dependencies]
 bench = { file = ["requirements-bench.txt"] }
