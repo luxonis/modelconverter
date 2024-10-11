@@ -25,14 +25,13 @@ env:
   NAME: luxonis/modelconverter-${{ inputs.package }}
   STEM: modelconverter-${{ inputs.package }}
   VERSION: ${{ inputs.version }}
-  GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
   GAR_STEM: us-central1-docker.pkg.dev/easyml-394818
 
 jobs:
-  ghcr-publish:
+  publish:
     runs-on: ubuntu-latest
     env:
-      LOCAL_NAME: ${NAME}:${VERSION}-latest
+      LOCAL_NAME: luxonis/modelconverter-${{ inputs.package }}:${{ inputs.version }}-latest
 
     steps:
     - name: Checkout code
@@ -64,10 +63,12 @@ jobs:
 
     - name: Download build files from GCS
       if: ${{ inputs.package }} != hailo
+      env:
+        GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
       run: |
         mkdir -p docker/extra_packages
         cd docker/extra_packages
-        if [ "$PACKAGE" = "rvc4" ]; then
+        if [ "${PACKAGE}" = "rvc4" ]; then
             gcloud storage cp                             \
               "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
               "snpe-${VERSION}.zip"
@@ -79,7 +80,7 @@ jobs:
 
     - name: Build image
       run: |
-        docker build -f "${DOCKERFILE}" -t "${LOCAL_NAME}" .
+        docker build -f "${DOCKERFILE}" -t "${LOCAL_NAME}" . --build-arg VERSION="${VERSION}"
 
     - name: GHCR publish latest
       run: |
