@@ -62,6 +62,8 @@ FormatOption: TypeAlias = Annotated[
 VersionOption: TypeAlias = Annotated[
     Optional[str],
     typer.Option(
+        "-v",
+        "--version",
         help="""Version of the underlying conversion tools to use.
         Only takes effect when --dev is used.
         Available options differ based on the target platform:
@@ -74,14 +76,15 @@ VersionOption: TypeAlias = Annotated[
             - `2022.3.0` (default)
 
           - `RVC4`:
-            - `2.22.10`
             - `2.23.0` (default)
             - `2.24.0`
             - `2.25.0`
             - `2.26.2`
+            - `2.27.0`
 
           - `HAILO`:
-              - `2024.04` (default)""",
+              - `2024.04` (default),
+              - `2024.07` (default)""",
         show_default=False,
     ),
 ]
