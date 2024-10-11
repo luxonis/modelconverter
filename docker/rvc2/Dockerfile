@@ -76,12 +76,12 @@ RUN <<EOF
     if [ "${VERSION}" = "2022.3.0" ]; then
         patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py \
             < /patches/mo-2022.3.patch
+        rm -r /opt/intel/tools/*.whl
     else
         patch /opt/intel/deployment_tools/model_optimizer/mo/main.py \
             < /patches/mo-2021.4.patch
     fi
 
-    rm -r /opt/intel/tools/*.whl
 
 EOF
 
