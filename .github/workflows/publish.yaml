@@ -65,7 +65,7 @@ jobs:
     - name: Download build files from GCS
       if: ${{ inputs.package }} != hailo
       run: |
-        mkdir -p docer/extra_packages
+        mkdir -p docker/extra_packages
         cd docker/extra_packages
         if [ "$PACKAGE" = "rvc4" ]; then
             gcloud storage cp                             \
