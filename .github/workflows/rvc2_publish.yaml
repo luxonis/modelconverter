@@ -20,4 +20,4 @@ jobs:
     secrets: inherit
     with:
       package: rvc2
-      verison: ${{ matrix.version }}
+      version: ${{ matrix.version }}
