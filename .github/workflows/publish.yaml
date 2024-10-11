@@ -29,10 +29,10 @@ env:
   GAR_STEM: us-central1-docker.pkg.dev/easyml-394818
 
 jobs:
-  ghcr-publish:
+  publish:
     runs-on: ubuntu-latest
     env:
-      LOCAL_NAME: ${NAME}:${VERSION}-latest
+      LOCAL_NAME: luxonis/modelconverter-${{ inputs.package }}:${{ inputs.version }}-latest
 
     steps:
     - name: Checkout code
