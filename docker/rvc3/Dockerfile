@@ -1,36 +1,65 @@
-FROM python:3.8-slim as BASE
+FROM python:3.8-slim AS base
 
-RUN apt-get update && \
-    apt-get install -y \
-    cmake unzip perl libatomic1 libc++-dev ffmpeg libcurl4 libncurses5 llvm-14-runtime patch git
+RUN <<EOF
 
-COPY --link docker/scripts /scripts
-RUN bash /scripts/install_openssl.sh
+    set -e
 
-COPY --link docker/extra_packages/openvino_2022_3_vpux_drop_patched.tar.gz .
-RUN mkdir /opt/intel
-RUN tar xvf openvino_2022_3_vpux_drop_patched.tar.gz \
-    -C /opt/intel/ --strip-components 1
-RUN sed -i 's/libtbb2/libtbbmalloc2/g' \
-    /opt/intel/install_dependencies/install_openvino_dependencies.sh && \
-    bash /opt/intel/install_dependencies/install_openvino_dependencies.sh -y
+    apt-get update
+    apt-get install -y  \
+        cmake           \
+        unzip           \
+        perl            \
+        libatomic1      \
+        libc++-dev      \
+        ffmpeg libcurl4 \
+        libncurses5     \
+        llvm-14-runtime \
+        patch           \
+        git
+
+EOF
+
+COPY --link docker/extra_packages/openvino-2022.3.0.tar.gz .
+
+COPY --link requirements.txt requirements.txt
+COPY --link docker/rvc3/requirements.txt requirements-rvc3.txt
+
+RUN <<EOF
+
+    set -e
+
+    mkdir /opt/intel
+    tar xvf openvino-2022.3.0.tar.gz -C /opt/intel/ --strip-components 1
+
+EOF
 
 RUN pip install --upgrade pip
-COPY --link requirements.txt .
 RUN pip install -r requirements.txt
 RUN pip install /opt/intel/tools/*.whl
-COPY --link docker/extra_packages/mo_patch.diff .
-RUN patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py < /mo_patch.diff
+RUN pip install -r requirements-rvc3.txt
 
-COPY docker/rvc3/requirements.txt .
+COPY --link docker/patches /patches
 
-RUN pip install -r requirements.txt
+RUN <<EOF
+
+    set -e
+
+    # Model Optimizer contains a bug that needs to be patched
+    patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py \
+        < /patches/mo-2022.3.patch
+
+    rm -r /opt/intel/tools/*.whl
+
+EOF
+
 
 FROM python:3.8-slim
 
+ENV IN_DOCKER=
+
 WORKDIR /app
 
-COPY --link --from=BASE \
+COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libcurl.so.4 \
     /usr/lib/x86_64-linux-gnu/libnghttp2.so.14 \
     /usr/lib/x86_64-linux-gnu/librtmp.so.1 \
@@ -54,20 +83,28 @@ COPY --link --from=BASE \
     /usr/lib/x86_64-linux-gnu/libusb-1.0.so.0 \
     /usr/lib/
 
-COPY --link --from=BASE /opt/intel /opt/intel
-COPY --link --from=BASE /usr/local/bin /usr/local/bin
-COPY --link --from=BASE /usr/local/lib /usr/local/lib
+COPY --link --from=base /opt/intel /opt/intel
+COPY --link --from=base /usr/local/bin /usr/local/bin
+COPY --link --from=base /usr/local/lib /usr/local/lib
 
+RUN pip install --upgrade pip
 
 COPY --link docker/rvc3/entrypoint.sh /app/entrypoint.sh
+COPY --link modelconverter /app/modelconverter/
+COPY --link pyproject.toml /app/pyproject.toml
 
-RUN echo "alias compile_tool='/opt/intel/tools/compile_tool/compile_tool'"  \
-    >> ~/.bashrc && \
-    chmod +x /app/entrypoint.sh && \
-    mkdir /app/modelconverter
+RUN <<EOF
 
-COPY --link modelconverter pyproject.toml /app/modelconverter/
-RUN cd modelconverter && pip install -e . --no-deps --no-cache-dir
+    set -e
 
-ENV IN_DOCKER=
+    COMPILE_TOOL=/opt/intel/tools/compile_tool/compile_tool
+
+    pip install -e . --no-deps --no-cache-dir
+
+    echo "alias compile_tool=${COMPILE_TOOL}" >> ~/.bashrc
+    chmod +x /app/entrypoint.sh
+
+EOF
+
+
 ENTRYPOINT ["/app/entrypoint.sh"]

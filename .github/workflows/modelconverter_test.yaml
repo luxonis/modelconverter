@@ -8,6 +8,12 @@ on:
         type: string
         description: Which package to test
 
+      version:
+        required: true
+        type: string
+        description: >
+          Which version of underlying conversion tools to use
+
 permissions:
   contents: read
   packages: read
@@ -17,6 +23,7 @@ env:
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   AWS_S3_ENDPOINT_URL: ${{ secrets.AWS_S3_ENDPOINT_URL }}
   PACKAGE: ${{ inputs.package }}
+  VERSION: ${{ inputs.version }}
 
 jobs:
   tests:
@@ -53,19 +60,24 @@ jobs:
         credentials_json: ${{ secrets.GCP_CREDENTIALS }}
         token_format: access_token
 
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
-
-    - name: Download file from GCS
+    - name: Download build files from GCS
+      if: ${{ inputs.package }} != hailo
+      env:
+        GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
       run: |
+        mkdir -p docker/extra_packages
         cd docker/extra_packages
-        if [ "$PACKAGE" = "rvc4" ]; then
-            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/snpe.zip .
-        elif [ "$PACKAGE" = "rvc2" ] || [ "$PACKAGE" = "rvc3" ]; then
-            gsutil cp gs://luxonis-test-bucket/modelconverter/build-artifacts/openvino_2022_3_vpux_drop_patched.tar.gz .
+        if [ "${PACKAGE}" = "rvc4" ]; then
+            gcloud storage cp                             \
+              "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
+              "snpe-${VERSION}.zip"
+        elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
+            gcloud storage cp                                    \
+              "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
+              "openvino-${VERSION}.tar.gz"
         fi
 
     - name: Run Tests
       run: |
-        pytest -s --verbose "tests/test_packages/test_$PACKAGE.py"
+        pytest -s --verbose "tests/test_packages/test_${PACKAGE}.py" --tool-version "${VERSION}"
 

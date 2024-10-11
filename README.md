@@ -51,20 +51,33 @@ Otherwise follow the installation instructions for your OS from the [official we
 
 `ModelConverter` is in an experimental public beta stage. Some parts might change in the future.
 
-To build the images, you need to download additional packages depending on the selected target.
+To build the images, you need to download additional packages depending on the selected target and the desired version of the underlying conversion tools.
 
-**RVC2 and RVC3**
+**RVC2**
 
-Requires `openvino_2022_3_vpux_drop_patched.tar.gz` to be present in `docker/extra_packages`.
-You can download the archive [here](https://drive.google.com/file/d/1IXtYi1Mwpsg3pr5cDXlEHdSUZlwJRTVP/view?usp=share_link).
+Requires `openvino-<version>.tar.gz` to be present in `docker/extra_packages/`.
+
+- Version `2023.2.0` archive can be downloaded from [here](https://drive.google.com/file/d/1IXtYi1Mwpsg3pr5cDXlEHdSUZlwJRTVP/view?usp=share_link).
+
+- Version `2021.4.0` archive can be downloaded from [here](https://storage.openvinotoolkit.org/repositories/openvino/packages/2021.4/l_openvino_toolkit_dev_ubuntu20_p_2021.4.582.tgz)
+
+You only need to rename the archive to either `openvino-2023.2.0.tar.gz` or `openvino-2021.4.0.tar.gz` and place it in the `docker/extra_packages` directory.
+
+**RVC3**
+
+Only the version `2023.2.0` of `OpenVino` is supported for `RVC3`. Follow the instructions for `RVC2` to use the correct archive.
 
 **RVC4**
 
-Requires `snpe.zip` archive to be present in `docker/extra_packages`. You can download an archive with the current version [here](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.23.0.24.06.24.zip). You only need to rename it to `snpe.zip` and place it in the `docker/extra_packages` directory.
+Requires `snpe-<version>.zip` archive to be present in `docker/extra_packages`. You can download version `2.23.0` from [here](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.23.0.24.06.24.zip). You only need to rename it to `snpe-2.23.0.zip` and place it in the `docker/extra_packages` directory.
 
 **HAILO**
 
-Requires `hailo_ai_sw_suite_2024-04:1` docker image to be present on the system. You can download the image from the [Hailo website](https://developer.hailo.ai/developer-zone/sw-downloads/). Furthermore, you need to use the `docker/hailo/Dockerfile.public` file to build the image. The `docker/hailo/Dockerfile` is for internal use only.
+Requires `hailo_ai_sw_suite_<version>:1` docker image to be present on the system. You can obtain the image by following the instructions on [Hailo website](https://developer.hailo.ai/developer-zone/sw-downloads/).
+
+After you obtain the image, you need to rename it to `hailo_ai_sw_suite_<version>:1` using `docker tag <old_name> hailo_ai_sw_suite_<version>:1`.
+
+Furthermore, you need to use the `docker/hailo/Dockerfile.public` file to build the image. The `docker/hailo/Dockerfile` is for internal use only.
 
 ### Instructions
 

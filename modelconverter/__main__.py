@@ -59,6 +59,35 @@ FormatOption: TypeAlias = Annotated[
         help="One of the supported formats.",
     ),
 ]
+VersionOption: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option(
+        "-v",
+        "--version",
+        help="""Version of the underlying conversion tools to use.
+        Only takes effect when --dev is used.
+        Available options differ based on the target platform:
+
+          - `RVC2`:
+            - `2021.4.0`
+            - `2022.3.0` (default)
+
+          - `RVC3`:
+            - `2022.3.0` (default)
+
+          - `RVC4`:
+            - `2.23.0` (default)
+            - `2.24.0`
+            - `2.25.0`
+            - `2.26.2`
+            - `2.27.0`
+
+          - `HAILO`:
+              - `2024.04` (default),
+              - `2024.07` (default)""",
+        show_default=False,
+    ),
+]
 PathOption: TypeAlias = Annotated[
     Optional[str],
     typer.Option(
@@ -234,6 +263,7 @@ def infer(
         ),
     ] = None,
     dev: DevOption = False,
+    version: VersionOption = None,
     gpu: Annotated[
         bool,
         typer.Option(help="Use GPU for conversion. Only relevant for HAILO."),
@@ -243,8 +273,6 @@ def infer(
     """Runs inference on the specified target platform."""
 
     tag = "dev" if dev else "latest"
-    if dev:
-        docker_build(target.value, tag=tag)
 
     if in_docker():
         setup_logging(file="modelconverter.log", use_rich=True)
@@ -262,6 +290,9 @@ def infer(
             logger.exception("Encountered an unexpected error!")
             exit(2)
     else:
+        image = None
+        if dev:
+            image = docker_build(target.value, tag=tag, version=version)
         args = [
             "infer",
             target.value,
@@ -276,17 +307,23 @@ def infer(
             args.extend(["--output-dir", output_dir])
         if opts is not None:
             args.extend(opts)
-        docker_exec(target.value, *args, tag=tag, use_gpu=gpu)
+        docker_exec(target.value, *args, tag=tag, use_gpu=gpu, image=image)
 
 
 @app.command()
 def shell(
-    target: TargetArgument, dev: DevOption = False, gpu: GPUOption = True
+    target: TargetArgument,
+    dev: DevOption = False,
+    version: VersionOption = None,
+    gpu: GPUOption = True,
 ):
     """Boots up a shell inside a docker container for the specified target platform."""
+    image = None
     if dev:
-        docker_build(target.value, tag="dev")
-    docker_exec(target.value, tag="dev" if dev else "latest", use_gpu=gpu)
+        image = docker_build(target.value, tag="dev", version=version)
+    docker_exec(
+        target.value, tag="dev" if dev else "latest", use_gpu=gpu, image=image
+    )
 
 
 @app.command(
@@ -360,6 +397,7 @@ def convert(
     dev: DevOption = False,
     to: FormatOption = Format.NATIVE,
     gpu: GPUOption = True,
+    version: VersionOption = None,
     main_stage: Annotated[
         Optional[str],
         typer.Option(
@@ -385,8 +423,6 @@ def convert(
     """Exports the model for the specified target platform."""
 
     tag = "dev" if dev else "latest"
-    if dev:
-        docker_build(target.value.lower(), tag=tag)
 
     if archive_preprocess and to != Format.NN_ARCHIVE:
         raise ValueError(
@@ -489,6 +525,10 @@ def convert(
             logger.exception("Encountered an unexpected error!")
             exit(2)
     else:
+        image = None
+        if dev:
+            image = docker_build(target.value, tag=tag, version=version)
+
         args = [
             "convert",
             target.value,
@@ -506,7 +546,7 @@ def convert(
             args.extend(["--path", path])
         if opts is not None:
             args.extend(opts)
-        docker_exec(target.value, *args, tag=tag, use_gpu=gpu)
+        docker_exec(target.value, *args, tag=tag, use_gpu=gpu, image=image)
 
 
 @app.command()
@@ -570,7 +610,7 @@ def archive(
 
 def version_callback(value: bool):
     if value:
-        typer.echo(f"ModelConverter Version: {version(__package__)}")
+        typer.echo(f"ModelConverter Version: {version('modelconv')}")
         raise typer.Exit()
 
 
@@ -579,6 +619,7 @@ def common(
     _: Annotated[
         bool,
         typer.Option(
+            "-v",
             "--version",
             callback=version_callback,
             help="Show version and exit.",

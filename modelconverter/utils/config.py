@@ -534,7 +534,6 @@ class Config(LuxonisConfig):
         return self
 
 
-
 def _extract_bin_xml_from_ir(ir_path: Any) -> Tuple[Path, Path]:
     """Extracts the corresponding second path from a single IR path.
 

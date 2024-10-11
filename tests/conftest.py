@@ -91,11 +91,26 @@ MODEL_CONFIGS = chain(
 setup_logging(use_rich=True)
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--tool-version",
+        action="store",
+        required=False,
+        default="0.0.0",
+        help="Version of the internal conversion tool",
+    )
+
+
+@pytest.fixture(scope="session")
+def tool_version(request):
+    return request.config.getoption("--tool-version")
+
+
 def prepare_fixture(
     service, model_name, dataset_url, metric, input_names, extra_args
 ):
     @pytest.fixture(scope="session")
-    def _fixture():
+    def _fixture(tool_version):
         return prepare(
             service=service,
             model_name=model_name,
@@ -103,6 +118,7 @@ def prepare_fixture(
             metric=metric,
             input_names=input_names,
             extra_args=extra_args,
+            tool_version=tool_version,
         )
 
     return _fixture
@@ -130,6 +146,7 @@ def prepare(
     dataset_url: str,
     metric: Type[Metric],
     input_names: List[str],
+    tool_version: str,
     model_type: str = "onnx",
     extra_args: str = "",
 ) -> Tuple[
@@ -195,6 +212,7 @@ def prepare(
             f"--path {config_url} "
             f"--output-dir _{model_name}-test "
             "--dev "
+            f"--version {tool_version} "
             "--no-gpu "
             f"input_model {file_url} "
             "hailo.compression_level 0 "

@@ -7,8 +7,8 @@ def test_mnist_convert(rvc2_mnist_onnx_env):
     check_convert(rvc2_mnist_onnx_env)
 
 
-def test_mnist_infer(rvc2_mnist_onnx_env):
-    mnist_infer(rvc2_mnist_onnx_env)
+def test_mnist_infer(rvc2_mnist_onnx_env, tool_version):
+    mnist_infer(rvc2_mnist_onnx_env, tool_version)
 
 
 def test_resnet18_convert(rvc2_resnet18_onnx_env):
@@ -23,20 +23,20 @@ def test_resnet18_archive_convert(rvc2_resnet18_archive_env):
     check_convert(rvc2_resnet18_archive_env)
 
 
-def test_resnet18_infer(rvc2_resnet18_onnx_env):
-    resnet18_infer(rvc2_resnet18_onnx_env)
+def test_resnet18_infer(rvc2_resnet18_onnx_env, tool_version):
+    resnet18_infer(rvc2_resnet18_onnx_env, tool_version)
 
 
-def test_resnet18_archive_infer(rvc2_resnet18_archive_env):
-    resnet18_infer(rvc2_resnet18_archive_env)
+def test_resnet18_archive_infer(rvc2_resnet18_archive_env, tool_version):
+    resnet18_infer(rvc2_resnet18_archive_env, tool_version)
 
 
 def test_yolov6_convert(rvc2_yolov6n_onnx_env):
     check_convert(rvc2_yolov6n_onnx_env)
 
 
-def test_yolov6n_infer(rvc2_yolov6n_onnx_env):
-    yolov6n_infer(rvc2_yolov6n_onnx_env)
+def test_yolov6n_infer(rvc2_yolov6n_onnx_env, tool_version):
+    yolov6n_infer(rvc2_yolov6n_onnx_env, tool_version)
 
 
 def test_resnet18_superblob_convert(rvc2_superblob_resnet18_onnx_env):

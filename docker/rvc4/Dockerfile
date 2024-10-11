@@ -1,40 +1,76 @@
-FROM python:3.10-slim as BASE
+FROM python:3.10-slim AS base
 
-RUN apt-get update && \
-    apt-get install -y \
-    cmake unzip perl libatomic1 libc++-dev ffmpeg \
-    libcurl4 libncurses5 llvm-14-runtime git
+ARG VERSION=2.23.0
+ENV VERSION=${VERSION}
 
-COPY --link docker/extra_packages/snpe.zip .
-RUN unzip snpe.zip -d /opt
+RUN <<EOF
 
-RUN ls /opt/quairt && mv /opt/qairt/* /opt/snpe || true
+    set -e
 
-RUN rm -rf /opt/snpe/Uninstall && \
-    rm -rf /opt/snpe/docs && \
-    rm -rf /opt/snpe/examples && \
-    rm -rf /opt/snpe/lib/hexagon* && \
-    rm -rf /opt/snpe/lib/*android* && \
-    rm -rf /opt/snpe/lib/*ubuntu* && \
-    rm -rf /opt/snpe/lib/*windows* && \
-    rm -rf /opt/snpe/bin/*windows* && \
-    rm -rf /opt/snpe/bin/*android* && \
+    apt-get update
+    apt-get install -y  \
+        cmake           \
+        unzip           \
+        perl            \
+        libatomic1      \
+        libc++-dev      \
+        ffmpeg          \
+        libcurl4        \
+        libncurses5     \
+        llvm-14-runtime \
+        git
+
+EOF
+
+COPY --link docker/extra_packages/snpe-${VERSION}.zip snpe.zip
+
+RUN <<EOF
+
+    set -e
+
+    unzip snpe.zip -d /opt
+
+    # The SNPE archive from README.md contains an extra directory
+    if [ -d /opt/qairt ]; then
+        mv /opt/qairt/* /opt/
+        rmdir /opt/qairt
+    fi
+
+    mv /opt/* /opt/snpe
+
+    rm -rf /opt/snpe/Uninstall
+    rm -rf /opt/snpe/docs
+    rm -rf /opt/snpe/share
+    rm -rf /opt/snpe/examples
+    rm -rf /opt/snpe/benchmarks
+    rm -rf /opt/snpe/lib/hexagon*
+    rm -rf /opt/snpe/lib/*android*
+    rm -rf /opt/snpe/lib/*ubuntu*
+    rm -rf /opt/snpe/lib/*windows*
+    rm -rf /opt/snpe/bin/*windows*
+    rm -rf /opt/snpe/bin/*android*
     rm -rf /opt/snpe/bin/*ubuntu*
 
-RUN pip install --upgrade pip
-COPY --link requirements.txt .
-RUN pip install -r requirements.txt
+EOF
 
-COPY --link docker/rvc4/requirements.txt .
-RUN pip install --upgrade -r requirements.txt
+COPY --link requirements.txt requirements.txt
+COPY --link docker/rvc4/requirements.txt requirements-rvc4.txt
+
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
+RUN pip install --upgrade -r requirements-rvc4.txt
 
 FROM python:3.10-slim
 
+ARG VERSION
+ENV IN_DOCKER=
+ENV VERSION=${VERSION}
+
 WORKDIR /app
 
-COPY --link --from=BASE /opt/snpe /opt/snpe
-COPY --link --from=BASE /usr/local/lib /usr/local/lib
-COPY --link --from=BASE \
+COPY --link --from=base /opt/ /opt/
+COPY --link --from=base /usr/local/lib /usr/local/lib
+COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libcurl.so.4 \
     /usr/lib/x86_64-linux-gnu/libnghttp2.so.14 \
     /usr/lib/x86_64-linux-gnu/librtmp.so.1 \
@@ -68,13 +104,19 @@ COPY --link --from=BASE \
     /usr/lib/x86_64-linux-gnu/libicudata.so.72 \
     /usr/lib/
 
-COPY docker/rvc4/entrypoint.sh /app/entrypoint.sh
+RUN pip install --upgrade pip
 
-RUN chmod +x /app/entrypoint.sh  && \
-    mkdir /app/modelconverter
+COPY --link docker/rvc4/entrypoint.sh /app/entrypoint.sh
+COPY --link modelconverter /app/modelconverter/
+COPY --link pyproject.toml /app/pyproject.toml
 
-COPY --link modelconverter pyproject.toml /app/modelconverter/
-RUN cd modelconverter && pip install -e . --no-deps
+RUN <<EOF
 
-ENV IN_DOCKER=
+    set -e
+
+    pip install -e . --no-deps --no-cache-dir
+    chmod +x /app/entrypoint.sh
+
+EOF
+
 ENTRYPOINT ["/app/entrypoint.sh"]

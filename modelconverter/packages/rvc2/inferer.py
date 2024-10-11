@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Dict
 
 import numpy as np
-from openvino.inference_engine.ie_api import IECore
 
 from modelconverter.utils import read_image
 
@@ -11,6 +10,8 @@ from ..base_inferer import Inferer
 
 class RVC2Inferer(Inferer):
     def setup(self):
+        from openvino.inference_engine.ie_api import IECore
+
         self.xml_path = self.model_path
         self.bin_path = self.model_path.with_suffix(".bin")
         ie = IECore()

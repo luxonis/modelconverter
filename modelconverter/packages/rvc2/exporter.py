@@ -7,7 +7,7 @@ from multiprocessing import Pool, cpu_count
 from os import environ as env
 from os import path
 from pathlib import Path
-from typing import Any, Dict, Final
+from typing import Any, Dict, Final, Iterable
 
 import tflite2onnx
 from rich.progress import track
@@ -17,15 +17,28 @@ from modelconverter.utils import (
     subprocess_run,
 )
 from modelconverter.utils.config import SingleStageConfig
-from modelconverter.utils.types import Encoding, InputFileType, Target
+from modelconverter.utils.types import (
+    DataType,
+    Encoding,
+    InputFileType,
+    Target,
+)
 
 from ..base_exporter import Exporter
 
 logger = getLogger(__name__)
 
-COMPILE_TOOL: Final[
-    str
-] = f'{env["INTEL_OPENVINO_DIR"]}/tools/compile_tool/compile_tool'
+OV_VERSION: Final[str] = version("openvino")
+COMPILE_TOOL: str
+
+OV_2021: Final[bool] = OV_VERSION.startswith("2021")
+
+if OV_2021:
+    COMPILE_TOOL = f'{env["INTEL_OPENVINO_DIR"]}/deployment_tools/tools/compile_tool/compile_tool'
+else:
+    COMPILE_TOOL = (
+        f'{env["INTEL_OPENVINO_DIR"]}/tools/compile_tool/compile_tool'
+    )
 
 DEFAULT_SUPER_SHAVES: Final[int] = 8
 
@@ -54,11 +67,12 @@ class RVC2Exporter(Exporter):
     def _export_openvino_ir(self) -> Path:
         args = self.mo_args
         self._add_args(args, ["--output_dir", self.intermediate_outputs_dir])
-        self._add_args(
-            args, ["--output", ",".join(name for name in self.outputs)]
-        )
+        self._add_args(args, ["--output", ",".join(self.outputs)])
         if self.compress_to_fp16:
-            self._add_args(args, ["--compress_to_fp16"])
+            if OV_2021:
+                self._add_args(args, ["--data_type", "FP16"])
+            else:
+                self._add_args(args, ["--compress_to_fp16"])
 
         if "--input" not in args:
             inp_str = ""
@@ -67,14 +81,18 @@ class RVC2Exporter(Exporter):
                     inp_str += ","
                 inp_str += name
                 if inp.shape is not None:
-                    inp_str += f'[{",".join(map(str, inp.shape))}]'
+                    inp_str += f"{_lst_join(inp.shape, sep=' ')}"
                 if inp.data_type is not None:
-                    inp_str += f"{{{inp.data_type.as_openvino_dtype()}}}"
+                    if OV_2021 and self.compress_to_fp16:
+                        data_type = DataType("float16")
+                    else:
+                        data_type = inp.data_type
+                    inp_str += f"{{{data_type.as_openvino_dtype()}}}"
                 if inp.frozen_value is not None:
                     if len(inp.frozen_value) == 1:
                         value = inp.frozen_value[0]
                     else:
-                        value = f'[{",".join(map(str, inp.frozen_value))}]'
+                        value = f"{_lst_join(inp.frozen_value)}"
                     inp_str += f"->{value}"
             args.extend(["--input", inp_str])
 
@@ -100,11 +118,13 @@ class RVC2Exporter(Exporter):
         for name, inp in self.inputs.items():
             if inp.mean_values is not None:
                 self._add_args(
-                    args, ["--mean_values", f"{name}{inp.mean_values}"]
+                    args,
+                    ["--mean_values", f"{name}{_lst_join(inp.mean_values)}"],
                 )
             if inp.scale_values is not None:
                 self._add_args(
-                    args, ["--scale_values", f"{name}{inp.scale_values}"]
+                    args,
+                    ["--scale_values", f"{name}{_lst_join(inp.scale_values)}"],
                 )
             if inp.reverse_input_channels:
                 self._add_args(args, ["--reverse_input_channels"])
@@ -123,7 +143,8 @@ class RVC2Exporter(Exporter):
     @staticmethod
     def _write_config(shaves: int, slices: int) -> str:
         with tempfile.NamedTemporaryFile(suffix=".conf", delete=False) as conf:
-            conf.write(b"MYRIAD_ENABLE_MX_BOOT NO\n")
+            if not OV_2021:
+                conf.write(b"MYRIAD_ENABLE_MX_BOOT NO\n")
             conf.write(f"MYRIAD_NUMBER_OF_SHAVES {shaves}\n".encode())
             conf.write(f"MYRIAD_NUMBER_OF_CMX_SLICES {slices}\n".encode())
             conf.write(b"MYRIAD_THROUGHPUT_STREAMS 1\n")
@@ -152,16 +173,18 @@ class RVC2Exporter(Exporter):
 
             if lt[-1] == "C":
                 if len(lt) == 4 and lt[0] == "N":
-                    self._add_args(
-                        self.mo_args, ["--layout", f"{name}(nchw->nhwc)"]
-                    )
+                    if not OV_2021:
+                        self._add_args(
+                            self.mo_args, ["--layout", f"{name}(nchw->nhwc)"]
+                        )
                     inp.shape = [sh[0], sh[3], sh[1], sh[2]]
                     inp.layout = f"{lt[0]}{lt[3]}{lt[1]}{lt[2]}"
 
                 elif len(inp.layout) == 3:
-                    self._add_args(
-                        self.mo_args, ["--layout", f"{name}(chw->hwc)"]
-                    )
+                    if not OV_VERSION.startswith("2021.4"):
+                        self._add_args(
+                            self.mo_args, ["--layout", f"{name}(chw->hwc)"]
+                        )
                     inp.shape = [sh[2], sh[0], sh[1]]
                     inp.layout = f"{lt[2]}{lt[0]}{lt[1]}"
 
@@ -329,3 +352,7 @@ class RVC2Exporter(Exporter):
             "target_devices": [self.device],
             **self._device_specific_buildinfo,
         }
+
+
+def _lst_join(args: Iterable[Any], sep: str = ",") -> str:
+    return f"[{sep.join(map(str, args))}]"

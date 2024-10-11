@@ -1,2 +1,4 @@
 tflite2onnx
 bsdiff4
+openvino==${VERSION}
+openvino-dev==${VERSION}
