@@ -81,6 +81,8 @@ RUN <<EOF
             < /patches/mo-2021.4.patch
     fi
 
+    rm -r /opt/intel/tools/*.whl
+
 EOF
 
 
