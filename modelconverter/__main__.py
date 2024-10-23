@@ -65,7 +65,6 @@ VersionOption: TypeAlias = Annotated[
         "-v",
         "--version",
         help="""Version of the underlying conversion tools to use.
-        Only takes effect when --dev is used.
         Available options differ based on the target platform:
 
           - `RVC2`:
@@ -119,13 +118,6 @@ DevOption: TypeAlias = Annotated[
     ),
 ]
 
-BuildOption: TypeAlias = Annotated[
-    bool,
-    typer.Option(
-        help="Builds the docker image before running the command."
-        "Can only be used together with --dev and --docker.",
-    ),
-]
 ModelPathOption: TypeAlias = Annotated[
     str, typer.Option(help="A URL or a path to the model file.")
 ]
