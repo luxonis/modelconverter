@@ -138,6 +138,10 @@ RUN <<EOF
     echo "alias compile_tool=${COMPILE_TOOL}"  >> ~/.bashrc
     chmod +x /app/entrypoint.sh
 
+    if [ "${VERSION}" = "2022.3.0" ]; then
+        opt_in_out --opt_out
+    fi
+
 EOF
 
 
