@@ -290,9 +290,8 @@ def infer(
             logger.exception("Encountered an unexpected error!")
             exit(2)
     else:
-        image = None
         if dev:
-            image = docker_build(target.value, tag=tag, version=version)
+            docker_build(target.value, bare_tag=tag, version=version)
         args = [
             "infer",
             target.value,
@@ -307,7 +306,9 @@ def infer(
             args.extend(["--output-dir", output_dir])
         if opts is not None:
             args.extend(opts)
-        docker_exec(target.value, *args, tag=tag, use_gpu=gpu, image=image)
+        docker_exec(
+            target.value, *args, bare_tag=tag, use_gpu=gpu, version=version
+        )
 
 
 @app.command()
@@ -318,11 +319,13 @@ def shell(
     gpu: GPUOption = True,
 ):
     """Boots up a shell inside a docker container for the specified target platform."""
-    image = None
     if dev:
-        image = docker_build(target.value, tag="dev", version=version)
+        docker_build(target.value, bare_tag="dev", version=version)
     docker_exec(
-        target.value, tag="dev" if dev else "latest", use_gpu=gpu, image=image
+        target.value,
+        bare_tag="dev" if dev else "latest",
+        version=version,
+        use_gpu=gpu,
     )
 
 
@@ -525,9 +528,8 @@ def convert(
             logger.exception("Encountered an unexpected error!")
             exit(2)
     else:
-        image = None
         if dev:
-            image = docker_build(target.value, tag=tag, version=version)
+            docker_build(target.value, bare_tag=tag, version=version)
 
         args = [
             "convert",
@@ -546,7 +548,9 @@ def convert(
             args.extend(["--path", path])
         if opts is not None:
             args.extend(opts)
-        docker_exec(target.value, *args, tag=tag, use_gpu=gpu, image=image)
+        docker_exec(
+            target.value, *args, bare_tag=tag, use_gpu=gpu, version=version
+        )
 
 
 @app.command()
