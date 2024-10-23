@@ -13,6 +13,7 @@ from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
 from luxonis_ml.utils import LuxonisFileSystem, reset_logging, setup_logging
 from typing_extensions import Annotated, TypeAlias
 
+from modelconverter.hub.__main__ import app as hub_app
 from modelconverter.packages import (
     get_benchmark,
     get_exporter,
@@ -628,6 +629,8 @@ def common(
 ):
     pass
 
+
+app.add_typer(hub_app, name="hub", help="HubAI utilities.")
 
 if __name__ == "__main__":
     app()

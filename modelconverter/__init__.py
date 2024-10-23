@@ -1,6 +1,8 @@
 import pkg_resources
 from luxonis_ml.utils import PUT_FILE_REGISTRY
 
+from .hub import *
+
 __version__ = "0.3.0"
 
 
