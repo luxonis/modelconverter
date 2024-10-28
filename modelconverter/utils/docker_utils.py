@@ -78,23 +78,23 @@ def check_docker() -> None:
 # NOTE: docker SDK is not used here because it's too slow
 def docker_build(
     target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
-    tag: str,
+    bare_tag: str,
     version: Optional[str] = None,
 ) -> str:
     check_docker()
     if version is None:
         version = get_default_target_version(target)
 
-    tag = f"{version}-{tag}"
+    tag = f"{version}-{bare_tag}"
 
-    repository = f"luxonis/modelconverter-{target}:{tag}"
+    image = f"luxonis/modelconverter-{target}:{tag}"
     args = [
         "docker",
         "build",
         "-f",
         f"docker/{target}/Dockerfile",
         "-t",
-        repository,
+        image,
         ".",
     ]
     if version is not None:
@@ -102,43 +102,52 @@ def docker_build(
     result = subprocess.run(args)
     if result.returncode != 0:
         raise RuntimeError("Failed to build the docker image")
-    return repository
+    return image
 
 
 def get_docker_image(
-    target: Literal["rvc2", "rvc3", "rvc4", "hailo"], tag: str
+    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+    bare_tag: str,
+    version: Optional[str] = None,
 ) -> str:
     check_docker()
 
     client = docker.from_env()
-    repository = f"luxonis/modelconverter-{target}"
-    image_name = f"{repository}:{tag}"
-    for image in client.images.list():
-        image = cast(Image, image)
-        if image_name in image.tags:
-            return image_name
+    if version is not None:
+        tag = f"{version}-{bare_tag}"
+    else:
+        tag = bare_tag
 
-    logger.warning(f"Image {repository} not found, pulling latest image...")
+    image = f"luxonis/modelconverter-{target}:{tag}"
+
+    for docker_image in client.images.list():
+        docker_image = cast(Image, docker_image)
+        if image in docker_image.tags:
+            return image
+
+    logger.warning(f"Image '{image}' not found, pulling latest image...")
 
     try:
-        image = cast(Image, client.images.pull(f"ghcr.io/{repository}", tag))
-        image.tag(repository, tag)
+        docker_image = cast(
+            Image, client.images.pull(f"ghcr.io/{image}", bare_tag)
+        )
+        docker_image.tag(image, tag)
 
     except (docker.errors.APIError, docker.errors.DockerException):
         logger.error("Failed to pull image, building it locally...")
-        docker_build(target, tag)
+        docker_build(target, bare_tag, version)
 
-    return image_name
+    return image
 
 
 def docker_exec(
     target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
     *args: str,
-    tag: str,
+    bare_tag: str,
     use_gpu: bool,
-    image: Optional[str] = None,
+    version: Optional[str] = None,
 ) -> None:
-    image = image or get_docker_image(target, tag)
+    image = get_docker_image(target, bare_tag, version)
 
     with tempfile.NamedTemporaryFile(delete=False) as f:
         f.write(
