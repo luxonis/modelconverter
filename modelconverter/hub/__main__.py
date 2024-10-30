@@ -82,6 +82,17 @@ SlugArgument: TypeAlias = Annotated[
     ),
 ]
 
+JSONOption: TypeAlias = Annotated[
+    bool,
+    typer.Option(
+        "--json",
+        "-j",
+        help="Output as JSON.",
+        show_default=False,
+        is_flag=True,
+    ),
+]
+
 
 @app.command()
 def download(platform: PlatformOption, slug: SlugArgument):
@@ -93,7 +104,7 @@ def download(platform: PlatformOption, slug: SlugArgument):
     print(f"Response: {res.json()}")
 
 
-def print_model_info(model: Dict[str, Any]):
+def _print_info(model: Dict[str, Any], keys: List[str], **kwargs):
     console = Console()
 
     if model.get("description_short"):
@@ -105,41 +116,46 @@ def print_model_info(model: Dict[str, Any]):
     else:
         description_short_panel = None
 
-    info_table = Table(show_header=False, box=None)
-    info_table.add_column(justify="right", style="bold")
-    info_table.add_column()
+    table = Table(show_header=False, box=None)
+    table.add_column(justify="right", style="bold")
+    table.add_column()
+    for key in keys:
+        if key in ["created", "updated", "last_version_added"]:
+            value = model.get(key, "N/A")
 
-    info_table.add_row("Name:", model.get("name", "N/A"))
-    info_table.add_row("Slug:", model.get("slug", "N/A"))
-    info_table.add_row("Versions:", str(model.get("versions", 0)))
-    created_str = model.get("created", "N/A")
-    updated_str = model.get("updated", "N/A")
+            def format_date(date_str):
+                try:
+                    date_obj = datetime.strptime(
+                        date_str, "%Y-%m-%dT%H:%M:%S.%f"
+                    )
+                    return date_obj.strftime("%B %d, %Y %H:%M:%S")
+                except (ValueError, TypeError):
+                    return Pretty("N/A")
 
-    def format_date(date_str):
-        try:
-            date_obj = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%f")
-            return date_obj.strftime("%B %d, %Y %H:%M:%S")
-        except (ValueError, TypeError):
-            return "N/A"
+            formatted_value = format_date(value)
 
-    created_formatted = format_date(created_str)
-    updated_formatted = format_date(updated_str)
-
-    info_table.add_row("Created:", created_formatted)
-    info_table.add_row("Updated:", updated_formatted)
-    info_table.add_row("Tasks:", ", ".join(model.get("tasks", [])) or "N/A")
-    platforms = ", ".join(model.get("platforms", [])) or "N/A"
-    info_table.add_row("Platforms:", platforms)
-    visibility = "Public" if model.get("is_public") else "Private"
-    usage = "Commercial" if model.get("is_commercial") else "Non-Commercial"
-    info_table.add_row("Visibility:", visibility)
-    info_table.add_row("Usage:", usage)
-    info_table.add_row("License:", model.get("license_type", "Unknown"))
-    info_table.add_row("Likes:", str(model.get("likes", 0)))
-    info_table.add_row("Downloads:", str(model.get("downloads", 0)))
+            table.add_row(f"{key.replace('_', ' ').title()}:", formatted_value)
+        elif key == "is_public":
+            if key not in model:
+                value = "N/A"
+            else:
+                value = "Public" if model[key] else "Private"
+            table.add_row("Visibility", Pretty(value))
+        elif key == "is_commercial":
+            # TODO: Is Usage the right term?
+            if key not in model:
+                value = "N/A"
+            else:
+                value = "Commercial" if model[key] else "Non-Commercial"
+            table.add_row("Usage:", Pretty(value))
+        else:
+            table.add_row(
+                f"{key.replace('_', ' ').title()}:",
+                Pretty(model.get(key, "N/A")),
+            )
 
     info_panel = Panel(
-        info_table, title="Model Information", border_style="cyan", box=ROUNDED
+        table, title="Model Information", border_style="cyan", box=ROUNDED
     )
 
     if model.get("description"):
@@ -174,9 +190,80 @@ def print_model_info(model: Dict[str, Any]):
 
 
 @model.command(name="info")
-def model_info(model_id: str):
-    res = Request.get(f"/api/v1/models/{model_id}")
-    print_model_info(res.json())
+def model_info(model_id: str, json: JSONOption = False):
+    res = Request.get(f"/api/v1/models/{model_id}").json()
+    if json:
+        print(res)
+    else:
+        _print_info(
+            res,
+            keys=[
+                "name",
+                "slug",
+                "id",
+                "created",
+                "updated",
+                "tasks",
+                "platforms",
+                "is_public",
+                "is_commercial",
+                "license_type",
+                "versions",
+                "likes",
+                "downloads",
+            ],
+        )
+
+
+@version.command(name="info")
+def version_info(model_id: str, json: JSONOption = False):
+    res = Request.get(
+        f"/api/v1/modelVersions/{model_id}",
+        params={"team_id": "0192af5f-719d-7b10-8fe6-6d73647dc61a"},
+    )
+    res = res.json()
+    if json:
+        print(res)
+    else:
+        _print_info(
+            res,
+            keys=[
+                "name",
+                "slug",
+                "version",
+                "model_id",
+                "id",
+                "created",
+                "updated",
+                "platforms",
+                "exportable_to",
+                "is_public",
+            ],
+        )
+
+
+@instance.command(name="info")
+def instance_info(model_id: str, json: JSONOption = False):
+    res = Request.get(f"/api/v1/modelInstances/{model_id}").json()
+    if json:
+        print(res)
+    else:
+        _print_info(
+            res.json(),
+            keys=[
+                "name",
+                "slug",
+                "id",
+                "last_version_added",
+                "platforms",
+                "is_public",
+                "is_commercial",
+                "license_type",
+                "versions",
+                "likes",
+                "downloads",
+            ],
+        )
 
 
 @model.command(name="create")
@@ -227,41 +314,50 @@ def _get_table(data: List[Dict[str, Any]], keys: List[str], **kwargs) -> Table:
     return table
 
 
-@model.command(name="ls")
-def model_ls(team_id: Optional[str] = None, is_public: bool = True):
+def _ls(
+    team_id: Optional[str], is_public: bool, endpoint: str, **kwargs
+) -> None:
     data = {
         "is_public": is_public,
     }
-    res = Request.get(f"/api/v1/models/{team_id or ''}", params=data).json()
+    res = Request.get(
+        f"/api/v1/{endpoint}/{team_id or ''}", params=data
+    ).json()
+    print(res[0])
+    exit()
     print(
         _get_table(
             res,
-            ["name", "team_id", "slug"],
-            title="Models",
-            box=rich.box.ROUNDED,
+            **kwargs,
             row_styles=["yellow", "cyan"],
+            box=rich.box.ROUNDED,
             width=74,
         )
     )
 
 
+@model.command(name="ls")
+def model_ls(team_id: Optional[str] = None, is_public: bool = True):
+    _ls(team_id, is_public, "models", keys=["name", "id", "slug"])
+
+
 @version.command(name="ls")
 def version_ls(team_id: Optional[str] = None, is_public: bool = True):
-    data = {
-        "is_public": is_public,
-    }
-    res = Request.get(
-        f"/api/v1/modelVersions/{team_id or ''}", params=data
-    ).json()
-    print(
-        _get_table(
-            res,
-            ["model_id", "version", "slug", "platforms"],
-            title="Versions",
-            box=rich.box.ROUNDED,
-            row_styles=["yellow", "cyan"],
-            width=74,
-        )
+    _ls(
+        team_id,
+        is_public,
+        "modelVersions",
+        keys=["id", "model_id", "version", "slug", "platforms"],
+    )
+
+
+@instance.command(name="ls")
+def instance_ls(team_id: Optional[str] = None, is_public: bool = True):
+    _ls(
+        team_id,
+        is_public,
+        "modelInstances",
+        keys=["id", "instance_id", "slug", "platforms"],
     )
 
 

@@ -3,12 +3,12 @@ from typing import Dict, Final
 
 import requests
 
-# assert HUBAI_API_KEY, "HUBAI_API_KEY is not set"
-
 
 class Request:
-    URL: Final[str] = "https://easyml.stg.hubcloud/models"
+    # URL: Final[str] = "https://easyml.stg.hubcloud/models"
+    URL: Final[str] = "http://hub-stg.luxonis.com"
     HUBAI_API_KEY: Final[str] = os.getenv("HUBAI_API_KEY")
+    assert HUBAI_API_KEY, "HUBAI_API_KEY is not set"
     HEADERS: Final[Dict[str, str]] = {
         "Content-Type": "application/json",
         "accept": "application/json",
