@@ -188,3 +188,11 @@ stages:
       # Whether to include the raw images in the intermediate outputs.
       # Warning: the raw images can get very large.
       keep_raw_images: False
+
+      # Selects per-axis-element quantization for the weights
+      # and biases of certain layer types.
+      # Only Convolution, Deconvolution, and FullyConnected are supported.
+      use_per_channel_quantization: True
+
+      # Enables row wise quantization of Matmul and FullyConnected ops.
+      use_per_row_quantization: True
