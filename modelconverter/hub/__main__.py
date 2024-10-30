@@ -16,6 +16,7 @@ from typing_extensions import Annotated, TypeAlias
 
 from modelconverter.utils.types import Target
 
+from .enums import License, Order, Task
 from .hub_requests import Request
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,68 @@ JSONOption: TypeAlias = Annotated[
         show_default=False,
         is_flag=True,
     ),
+]
+
+TeamIDOption: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option(help="Filter by the team ID", show_default=False),
+]
+TasksOption: TypeAlias = Annotated[
+    Optional[List[Task]],
+    typer.Option(
+        help="Filter by tasks",
+        show_default=False,
+    ),
+]
+UserIDOption: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option(help="Filter by user ID", show_default=False),
+]
+SearchOption: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option(help="Search", show_default=False),
+]
+LicenseTypeOption: TypeAlias = Annotated[
+    Optional[License],
+    typer.Option(help="Filter by license type", show_default=False),
+]
+IsPublicOption: TypeAlias = Annotated[
+    bool,
+    typer.Option(help="Filter by public models", show_default=False),
+]
+SlugOption: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option(help="Filter by slug", show_default=False),
+]
+ProjectIDOption: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option(help="Filter by project ID", show_default=False),
+]
+FilterPublicEntityByTeamIDOption: TypeAlias = Annotated[
+    Optional[bool],
+    typer.Option(
+        help="Whether to filter public entity by team ID", show_default=False
+    ),
+]
+LuxonisOnlyOption: TypeAlias = Annotated[
+    bool,
+    typer.Option(help="Filter by Luxonis only", show_default=False),
+]
+CursorOption: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option(help="Cursor", show_default=False),
+]
+LimitOption: TypeAlias = Annotated[
+    Optional[int],
+    typer.Option(help="How many records to display"),
+]
+SortOption: TypeAlias = Annotated[
+    str,
+    typer.Option(help="How to sort the results", show_default=False),
+]
+OrderOption: TypeAlias = Annotated[
+    Order,
+    typer.Option(help="Order of the sorted results", show_default=False),
 ]
 
 
@@ -191,12 +254,17 @@ def _print_info(model: Dict[str, Any], keys: List[str], **kwargs):
 
 @model.command(name="info")
 def model_info(model_id: str, json: JSONOption = False):
-    res = Request.get(f"/api/v1/models/{model_id}").json()
+    res = Request.get(f"/api/v1/models/{model_id}")
+
+    if res.status_code != 200:
+        print(f"Model with ID '{model_id}' not found.")
+        exit(1)
+
     if json:
-        print(res)
+        print(res.json())
     else:
         _print_info(
-            res,
+            res.json(),
             keys=[
                 "name",
                 "slug",
@@ -315,48 +383,160 @@ def _get_table(data: List[Dict[str, Any]], keys: List[str], **kwargs) -> Table:
 
 
 def _ls(
-    team_id: Optional[str], is_public: bool, endpoint: str, **kwargs
+    endpoint: str,
+    team_id: Optional[str],
+    tasks: Optional[List[Task]] = None,
+    user_id: Optional[str] = None,
+    search: Optional[str] = None,
+    license_type: Optional[License] = None,
+    is_public: bool = True,
+    slug: Optional[str] = None,
+    project_id: Optional[str] = None,
+    filter_public_entity_by_team_id: Optional[bool] = None,
+    luxonis_only: bool = False,
+    cursor: Optional[str] = None,
+    limit: Optional[int] = 50,
+    sort: str = "updated",
+    order: Order = Order.DESC,
+    **kwargs,
 ) -> None:
-    data = {
+    params = {
+        "team_id": team_id,
+        "tasks": [task.name for task in tasks] if tasks else None,
+        "user_id": user_id,
+        "search": search,
+        "license_type": license_type,
         "is_public": is_public,
+        "slug": slug,
+        "project_id": project_id,
+        "filter_public_entity_by_team_id": filter_public_entity_by_team_id,
+        "luxonis_only": luxonis_only,
+        "cursor": cursor,
+        "limit": limit,
+        "sort": sort,
+        "order": order,
     }
     res = Request.get(
-        f"/api/v1/{endpoint}/{team_id or ''}", params=data
+        f"/api/v1/{endpoint}/{team_id or ''}", params=params
     ).json()
-    print(res[0])
-    exit()
-    print(
+    console = Console()
+    console.print(
         _get_table(
             res,
             **kwargs,
             row_styles=["yellow", "cyan"],
             box=rich.box.ROUNDED,
-            width=74,
-        )
+        ),
     )
 
 
 @model.command(name="ls")
-def model_ls(team_id: Optional[str] = None, is_public: bool = True):
-    _ls(team_id, is_public, "models", keys=["name", "id", "slug"])
+def model_ls(
+    team_id: TeamIDOption = None,
+    tasks: TasksOption = None,
+    user_id: UserIDOption = None,
+    search: SearchOption = None,
+    license_type: LicenseTypeOption = None,
+    is_public: IsPublicOption = True,
+    slug: SlugOption = None,
+    project_id: ProjectIDOption = None,
+    filter_public_entity_by_team_id: FilterPublicEntityByTeamIDOption = None,
+    luxonis_only: LuxonisOnlyOption = False,
+    cursor: CursorOption = None,
+    limit: LimitOption = 50,
+    sort: SortOption = "updated",
+    order: OrderOption = Order.DESC,
+):
+    _ls(
+        "models",
+        team_id=team_id,
+        tasks=tasks,
+        user_id=user_id,
+        search=search,
+        license_type=license_type,
+        is_public=is_public,
+        slug=slug,
+        project_id=project_id,
+        filter_public_entity_by_team_id=filter_public_entity_by_team_id,
+        luxonis_only=luxonis_only,
+        cursor=cursor,
+        limit=limit,
+        sort=sort,
+        order=order,
+        keys=["name", "id", "slug"],
+    )
 
 
 @version.command(name="ls")
-def version_ls(team_id: Optional[str] = None, is_public: bool = True):
+def version_ls(
+    team_id: TeamIDOption = None,
+    tasks: TasksOption = None,
+    user_id: UserIDOption = None,
+    search: SearchOption = None,
+    license_type: LicenseTypeOption = None,
+    is_public: IsPublicOption = True,
+    slug: SlugOption = None,
+    project_id: ProjectIDOption = None,
+    filter_public_entity_by_team_id: FilterPublicEntityByTeamIDOption = None,
+    luxonis_only: LuxonisOnlyOption = False,
+    cursor: CursorOption = None,
+    limit: LimitOption = 50,
+    sort: SortOption = "updated",
+    order: OrderOption = Order.DESC,
+):
     _ls(
-        team_id,
-        is_public,
         "modelVersions",
+        team_id=team_id,
+        tasks=tasks,
+        user_id=user_id,
+        search=search,
+        license_type=license_type,
+        is_public=is_public,
+        slug=slug,
+        project_id=project_id,
+        filter_public_entity_by_team_id=filter_public_entity_by_team_id,
+        luxonis_only=luxonis_only,
+        cursor=cursor,
+        limit=limit,
+        sort=sort,
+        order=order,
         keys=["id", "model_id", "version", "slug", "platforms"],
     )
 
 
 @instance.command(name="ls")
-def instance_ls(team_id: Optional[str] = None, is_public: bool = True):
+def instance_ls(
+    team_id: TeamIDOption = None,
+    tasks: TasksOption = None,
+    user_id: UserIDOption = None,
+    search: SearchOption = None,
+    license_type: LicenseTypeOption = None,
+    is_public: IsPublicOption = True,
+    slug: SlugOption = None,
+    project_id: ProjectIDOption = None,
+    filter_public_entity_by_team_id: FilterPublicEntityByTeamIDOption = None,
+    luxonis_only: LuxonisOnlyOption = False,
+    cursor: CursorOption = None,
+    limit: LimitOption = 50,
+    sort: SortOption = "updated",
+    order: OrderOption = Order.DESC,
+):
     _ls(
-        team_id,
-        is_public,
         "modelInstances",
+        team_id=team_id,
+        tasks=tasks,
+        user_id=user_id,
+        search=search,
+        license_type=license_type,
+        is_public=is_public,
+        slug=slug,
+        project_id=project_id,
+        filter_public_entity_by_team_id=filter_public_entity_by_team_id,
+        luxonis_only=luxonis_only,
+        cursor=cursor,
+        limit=limit,
+        sort=sort,
+        order=order,
         keys=["id", "instance_id", "slug", "platforms"],
     )
 

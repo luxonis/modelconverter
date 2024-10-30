@@ -5,14 +5,14 @@ import requests
 
 
 class Request:
-    # URL: Final[str] = "https://easyml.stg.hubcloud/models"
-    URL: Final[str] = "http://hub-stg.luxonis.com"
+    URL: Final[str] = "http://models.stg.hubai/models"
+    # URL: Final[str] = "http://hub-stg.luxonis.com"
     HUBAI_API_KEY: Final[str] = os.getenv("HUBAI_API_KEY")
     assert HUBAI_API_KEY, "HUBAI_API_KEY is not set"
     HEADERS: Final[Dict[str, str]] = {
         "Content-Type": "application/json",
         "accept": "application/json",
-        "Authorization": f"Bearer {HUBAI_API_KEY}",
+        # "Authorization": f"Bearer {HUBAI_API_KEY}",
     }
 
     @staticmethod
