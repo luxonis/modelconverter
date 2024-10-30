@@ -195,4 +195,4 @@ stages:
       use_per_channel_quantization: True
 
       # Enables row wise quantization of Matmul and FullyConnected ops.
-      use_per_row_quantization: True
+      use_per_row_quantization: False

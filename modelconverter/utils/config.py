@@ -330,7 +330,7 @@ class RVC4Config(TargetConfig):
     snpe_dlc_graph_prepare_args: List[str] = []
     keep_raw_images: bool = False
     use_per_channel_quantization: bool = True
-    use_per_row_quantization: bool = True
+    use_per_row_quantization: bool = False
     htp_socs: List[
         Literal["sm8350", "sm8450", "sm8550", "sm8650", "qcs6490", "qcs8550"]
     ] = ["sm8550"]
