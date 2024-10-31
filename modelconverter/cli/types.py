@@ -179,6 +179,13 @@ ArchivePreprocessOption: TypeAlias = Annotated[
         "preprocessing to the new archive.",
     ),
 ]
+
+IdentifierArgument: TypeAlias = Annotated[
+    str,
+    typer.Argument(
+        help="The identifier of the resource. Can be either the ID or the slug.",
+    ),
+]
 ModelIDArgument: TypeAlias = Annotated[
     str,
     typer.Argument(
@@ -265,7 +272,7 @@ IsPublicOption: TypeAlias = Annotated[
 ]
 SlugOption: TypeAlias = Annotated[
     Optional[str],
-    typer.Option(help="Filter by slug", show_default=False),
+    typer.Option(help="Slug of the model", show_default=False),
 ]
 ProjectIDOption: TypeAlias = Annotated[
     Optional[str],

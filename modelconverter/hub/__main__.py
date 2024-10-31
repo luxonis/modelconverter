@@ -1,24 +1,17 @@
 import logging
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
 import requests
-import rich.box
 import typer
 from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
-from rich.box import ROUNDED
-from rich.console import Console, Group
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.pretty import Pretty
-from rich.table import Table
 
 from modelconverter.cli import (
     FilterPublicEntityByTeamIDOption,
+    IdentifierArgument,
     IsPublicOption,
     JSONOption,
     LicenseTypeOption,
@@ -46,6 +39,9 @@ from modelconverter.cli import (
     TeamIDOption,
     UserIDOption,
     get_configs,
+    hub_ls,
+    print_hub_resource_info,
+    request_info,
 )
 
 from .hub_requests import Request
@@ -85,104 +81,48 @@ app.add_typer(version, name="version", help="Hub Versions Interactions")
 app.add_typer(instance, name="instance", help="Hub Instances Interactions")
 
 
-def _print_info(
-    model: Dict[str, Any], keys: List[str], json: bool, **kwargs
-) -> Dict[str, Any]:
-    if json:
-        print(model)
-        return model
-
-    console = Console()
-
-    if model.get("description_short"):
-        description_short_panel = Panel(
-            f"[italic]{model['description_short']}[/italic]",
-            border_style="dim",
-            box=ROUNDED,
-        )
-    else:
-        description_short_panel = None
-
-    table = Table(show_header=False, box=None)
-    table.add_column(justify="right", style="bold")
-    table.add_column()
-    for key in keys:
-        if key in ["created", "updated", "last_version_added"]:
-            value = model.get(key, "N/A")
-
-            def format_date(date_str):
-                try:
-                    date_obj = datetime.strptime(
-                        date_str, "%Y-%m-%dT%H:%M:%S.%f"
-                    )
-                    return date_obj.strftime("%B %d, %Y %H:%M:%S")
-                except (ValueError, TypeError):
-                    return Pretty("N/A")
-
-            formatted_value = format_date(value)
-
-            table.add_row(f"{key.replace('_', ' ').title()}:", formatted_value)
-        elif key == "is_public":
-            if key not in model:
-                value = "N/A"
-            else:
-                value = "Public" if model[key] else "Private"
-            table.add_row("Visibility", Pretty(value))
-        elif key == "is_commercial":
-            # TODO: Is Usage the right term?
-            if key not in model:
-                value = "N/A"
-            else:
-                value = "Commercial" if model[key] else "Non-Commercial"
-            table.add_row("Usage:", Pretty(value))
-        elif key == "is_nn_archive":
-            table.add_row("NN Archive:", Pretty(model.get(key, False)))
-        else:
-            table.add_row(
-                f"{key.replace('_', ' ').title()}:",
-                Pretty(model.get(key, "N/A")),
-            )
-
-    info_panel = Panel(table, border_style="cyan", box=ROUNDED, **kwargs)
-
-    if model.get("description"):
-        description_panel = Panel(
-            Markdown(model["description"]),
-            title="Description",
-            border_style="green",
-            box=ROUNDED,
-        )
-    else:
-        description_panel = None
-
-    nested_panels = []
-    if description_short_panel:
-        nested_panels.append(description_short_panel)
-    nested_panels.append(info_panel)
-    if description_panel:
-        nested_panels.append(description_panel)
-
-    content = Group(*nested_panels)
-
-    main_panel = Panel(
-        content,
-        title=f"[bold magenta]{model.get('name', 'N/A')}[/bold magenta]",
-        width=74,
-        border_style="magenta",
-        box=ROUNDED,
+@model.command(name="ls")
+def model_ls(
+    team_id: TeamIDOption = None,
+    tasks: TasksOption = None,
+    user_id: UserIDOption = None,
+    search: SearchOption = None,
+    license_type: LicenseTypeOption = None,
+    is_public: IsPublicOption = True,
+    slug: SlugOption = None,
+    project_id: ProjectIDOption = None,
+    filter_public_entity_by_team_id: FilterPublicEntityByTeamIDOption = None,
+    luxonis_only: LuxonisOnlyOption = False,
+    limit: LimitOption = 50,
+    sort: SortOption = "updated",
+    order: OrderOption = Order.DESC,
+):
+    hub_ls(
+        "models",
+        team_id=team_id,
+        tasks=[task.name for task in tasks] if tasks else [],
+        user_id=user_id,
+        search=search,
+        license_type=license_type,
+        is_public=is_public,
+        slug=slug,
+        project_id=project_id,
+        filter_public_entity_by_team_id=filter_public_entity_by_team_id,
+        luxonis_only=luxonis_only,
+        limit=limit,
+        sort=sort,
+        order=order,
+        keys=["name", "id", "slug"],
     )
-
-    console.print(main_panel)
-    console.rule()
-    return model
 
 
 @model.command(name="info")
-def model_info(model_id: ModelIDArgument, json: JSONOption = False):
-    res = Request.get(f"/api/v1/models/{model_id}")
-
-    return _print_info(
-        res.json(),
+def model_info(
+    identifier: IdentifierArgument,
+    json: JSONOption = False,
+):
+    return print_hub_resource_info(
+        request_info(identifier, "models"),
         title="Model Info",
         json=json,
         keys=[
@@ -232,36 +172,6 @@ def model_delete(model_id: ModelIDArgument):
     Request.delete(f"/api/v1/models/{model_id}")
 
 
-def _get_table(data: List[Dict[str, Any]], keys: List[str], **kwargs) -> Table:
-    table = Table(**kwargs)
-    for key in keys:
-        table.add_column(key, header_style="magenta i")
-
-    for model in data:
-        renderables = []
-        for key in keys:
-            value = model.get(key, "N/A")
-            if isinstance(value, list):
-                value = ", ".join(value)
-            renderables.append(value)
-        table.add_row(*renderables)
-
-    return table
-
-
-def _ls(endpoint: str, keys: List[str], **kwargs) -> None:
-    res = Request.get(f"/api/v1/{endpoint}/", params=kwargs).json()
-    console = Console()
-    console.print(
-        _get_table(
-            res,
-            keys=keys,
-            row_styles=["yellow", "cyan"],
-            box=rich.box.ROUNDED,
-        ),
-    )
-
-
 @model.command(name="download")
 def model_download(platform: PlatformOption, slug: SlugArgument):
     params = {"platform": platform.value}
@@ -270,41 +180,6 @@ def model_download(platform: PlatformOption, slug: SlugArgument):
     res = Request.get("/api/v1/models/download", params=params)
     print(f"Status code: {res.status_code}")
     print(f"Response: {res.json()}")
-
-
-@model.command(name="ls")
-def model_ls(
-    team_id: TeamIDOption = None,
-    tasks: TasksOption = None,
-    user_id: UserIDOption = None,
-    search: SearchOption = None,
-    license_type: LicenseTypeOption = None,
-    is_public: IsPublicOption = True,
-    slug: SlugOption = None,
-    project_id: ProjectIDOption = None,
-    filter_public_entity_by_team_id: FilterPublicEntityByTeamIDOption = None,
-    luxonis_only: LuxonisOnlyOption = False,
-    limit: LimitOption = 50,
-    sort: SortOption = "updated",
-    order: OrderOption = Order.DESC,
-):
-    _ls(
-        "models",
-        team_id=team_id,
-        tasks=[task.name for task in tasks] if tasks else [],
-        user_id=user_id,
-        search=search,
-        license_type=license_type,
-        is_public=is_public,
-        slug=slug,
-        project_id=project_id,
-        filter_public_entity_by_team_id=filter_public_entity_by_team_id,
-        luxonis_only=luxonis_only,
-        limit=limit,
-        sort=sort,
-        order=order,
-        keys=["name", "id", "slug"],
-    )
 
 
 @version.command(name="ls")
@@ -321,7 +196,7 @@ def version_ls(
     order: OrderOption = Order.DESC,
 ):
     """Lists model versions."""
-    _ls(
+    hub_ls(
         "modelVersions",
         team_id=team_id,
         user_id=user_id,
@@ -339,12 +214,10 @@ def version_ls(
 
 @version.command(name="info")
 def version_info(
-    version_id: ModelIDArgument, json: JSONOption = False
+    identifier: IdentifierArgument, json: JSONOption = False
 ) -> Dict[str, Any]:
-    res = Request.get(f"/api/v1/modelVersions/{version_id}")
-    res = res.json()
-    return _print_info(
-        res,
+    return print_hub_resource_info(
+        request_info(identifier, "modelVersions"),
         title="Model Version Info",
         json=json,
         keys=[
@@ -414,7 +287,7 @@ def instance_ls(
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
 ):
-    _ls(
+    hub_ls(
         "modelInstances",
         platforms=[platform.name for platform in platforms]
         if platforms
@@ -443,11 +316,10 @@ def instance_ls(
 
 @instance.command(name="info")
 def instance_info(
-    model_instance_id: str, json: JSONOption = False
+    identifier: IdentifierArgument, json: JSONOption = False
 ) -> Dict[str, Any]:
-    res = Request.get(f"/api/v1/modelInstances/{model_instance_id}").json()
-    return _print_info(
-        res,
+    return print_hub_resource_info(
+        request_info(identifier, "modelInstances"),
         title="Model Instance Info",
         json=json,
         keys=[
