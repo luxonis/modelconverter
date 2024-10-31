@@ -1,12 +1,10 @@
 import logging
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
 import requests
 import typer
-from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
 
 from modelconverter.cli import (
@@ -403,6 +401,19 @@ def config(model_instance_id: ModelInstanceIDArgument):
     print(res.json)
 
 
+@instance.command()
+def upload(file: Path, model_instance_id: ModelInstanceIDArgument):
+    content_length = file.stat().st_size
+    Request.post(
+        f"/api/v1/modelInstances/{model_instance_id}/upload/",
+        json={"files": [file]},
+        headers={
+            "Content-Type": "multipart/form-data",
+            "Content-Length": str(content_length),
+        },
+    )
+
+
 @app.command()
 def convert(
     target: TargetArgument,
@@ -462,17 +473,10 @@ def convert(
     assert model_id is not None
     instance_id = instance_create(name, model_id, ModelType(target.name))["id"]
 
-    if path is not None and is_nn_archive(path):
-        content_length = os.stat(path).st_size
-        Request.post(
-            f"/api/v1/modelInstances/{instance_id}/upload/",
-            json={"files": [path]},
-            headers={
-                "Content-Type": "multipart/form-data",
-                "Content-Length": str(content_length),
-            },
-        )
-    cfg, *_ = get_configs(path, opts)
+    if path is not None:
+        upload(path, instance_id)
+
+    cfg, *_ = get_configs(str(path), opts)
     Request.post(
         f"/api/v1/modelInstances/{instance_id}/upload/",
         json=cfg,

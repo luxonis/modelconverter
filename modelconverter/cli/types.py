@@ -1,4 +1,5 @@
 from enum import Enum
+from pathlib import Path
 from typing import List, Optional
 
 import typer
@@ -106,9 +107,10 @@ VersionOption = Annotated[
     ),
 ]
 PathOption = Annotated[
-    Optional[str],
+    Optional[Path],
     typer.Option(
         help="Path to the configuration file or nn archive.",
+        metavar="PATH",
         show_default=False,
     ),
 ]
