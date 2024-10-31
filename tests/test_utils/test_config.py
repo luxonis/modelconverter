@@ -51,6 +51,8 @@ DEFAULT_TARGET_CONFIGS = {
         "keep_raw_images": False,
         "htp_socs": ["sm8550"],
         "disable_calibration": False,
+        "use_per_channel_quantization": True,
+        "use_per_row_quantization": False,
     },
     "hailo": {
         "optimization_level": 2,
