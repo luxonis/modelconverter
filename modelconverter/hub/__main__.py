@@ -26,10 +26,7 @@ from modelconverter.cli import (
     Order,
     OrderOption,
     PathOption,
-    PlatformOption,
     ProjectIDOption,
-    SearchOption,
-    SlugArgument,
     SlugOption,
     SortOption,
     Status,
@@ -86,7 +83,6 @@ def model_ls(
     team_id: TeamIDOption = None,
     tasks: TasksOption = None,
     user_id: UserIDOption = None,
-    search: SearchOption = None,
     license_type: LicenseTypeOption = None,
     is_public: IsPublicOption = True,
     slug: SlugOption = None,
@@ -102,7 +98,6 @@ def model_ls(
         team_id=team_id,
         tasks=[task.name for task in tasks] if tasks else [],
         user_id=user_id,
-        search=search,
         license_type=license_type,
         is_public=is_public,
         slug=slug,
@@ -170,16 +165,6 @@ def model_create(
 @model.command(name="delete")
 def model_delete(model_id: ModelIDArgument):
     Request.delete(f"/api/v1/models/{model_id}")
-
-
-@model.command(name="download")
-def model_download(platform: PlatformOption, slug: SlugArgument):
-    params = {"platform": platform.value}
-    if slug is not None:
-        params["slug"] = slug
-    res = Request.get("/api/v1/models/download", params=params)
-    print(f"Status code: {res.status_code}")
-    print(f"Response: {res.json()}")
 
 
 @version.command(name="ls")
@@ -281,7 +266,6 @@ def instance_ls(
     is_public: IsPublicOption = True,
     compression_level: Optional[int] = None,
     optimization_level: Optional[int] = None,
-    search: SearchOption = None,
     slug: SlugOption = None,
     limit: LimitOption = 50,
     sort: SortOption = "updated",
@@ -304,7 +288,6 @@ def instance_ls(
         optimization_level=optimization_level,
         team_id=team_id,
         user_id=user_id,
-        search=search,
         is_public=is_public,
         slug=slug,
         limit=limit,

@@ -2,7 +2,7 @@ from enum import Enum
 from typing import List, Optional
 
 import typer
-from typing_extensions import Annotated, TypeAlias
+from typing_extensions import Annotated
 
 from modelconverter.utils.types import Target
 
@@ -74,13 +74,10 @@ class ModelPrecision(str, Enum):
     INT8 = "INT8"
 
 
-FormatOption: TypeAlias = Annotated[
-    Format,
-    typer.Option(
-        help="One of the supported formats.",
-    ),
+FormatOption = Annotated[
+    Format, typer.Option(help="One of the supported formats.")
 ]
-VersionOption: TypeAlias = Annotated[
+VersionOption = Annotated[
     Optional[str],
     typer.Option(
         "-v",
@@ -104,18 +101,18 @@ VersionOption: TypeAlias = Annotated[
 
           - `HAILO`:
               - `2024.04` (default),
-              - `2024.07` (default)""",
+              - `2024.07`""",
         show_default=False,
     ),
 ]
-PathOption: TypeAlias = Annotated[
+PathOption = Annotated[
     Optional[str],
     typer.Option(
         help="Path to the configuration file or nn archive.",
         show_default=False,
     ),
 ]
-OptsArgument: TypeAlias = Annotated[
+OptsArgument = Annotated[
     Optional[List[str]],
     typer.Argument(
         help="A list of optional CLI overrides of the config file.",
@@ -123,7 +120,7 @@ OptsArgument: TypeAlias = Annotated[
     ),
 ]
 
-TargetArgument: TypeAlias = Annotated[
+TargetArgument = Annotated[
     Target,
     typer.Argument(
         case_sensitive=False,
@@ -132,25 +129,25 @@ TargetArgument: TypeAlias = Annotated[
     ),
 ]
 
-DevOption: TypeAlias = Annotated[
+DevOption = Annotated[
     bool,
     typer.Option(
         help="Builds a new iamge and uses the development docker-compose file."
     ),
 ]
 
-BuildOption: TypeAlias = Annotated[
+BuildOption = Annotated[
     bool,
     typer.Option(
         help="Builds the docker image before running the command."
         "Can only be used together with --dev and --docker.",
     ),
 ]
-ModelPathOption: TypeAlias = Annotated[
+ModelPathOption = Annotated[
     str, typer.Option(help="A URL or a path to the model file.")
 ]
 
-DockerOption: TypeAlias = Annotated[
+DockerOption = Annotated[
     bool,
     typer.Option(
         help="Runs the conversion in a docker container. "
@@ -159,19 +156,19 @@ DockerOption: TypeAlias = Annotated[
     ),
 ]
 
-GPUOption: TypeAlias = Annotated[
+GPUOption = Annotated[
     bool,
     typer.Option(help="Use GPU for conversion. Only relevant for HAILO."),
 ]
 
-OutputDirOption: TypeAlias = Annotated[
+OutputDirOption = Annotated[
     Optional[str],
     typer.Option(
         ..., "--output-dir", "-o", help="Name of the output directory."
     ),
 ]
 
-ArchivePreprocessOption: TypeAlias = Annotated[
+ArchivePreprocessOption = Annotated[
     bool,
     typer.Option(
         help="Add the pre-processing to the NN archive instead of the model. "
@@ -180,42 +177,28 @@ ArchivePreprocessOption: TypeAlias = Annotated[
     ),
 ]
 
-IdentifierArgument: TypeAlias = Annotated[
+IdentifierArgument = Annotated[
     str,
     typer.Argument(
-        help="The identifier of the resource. Can be either the ID or the slug.",
+        help="The identifier of the resource. Can be either the ID or the slug."
     ),
 ]
-ModelIDArgument: TypeAlias = Annotated[
-    str,
-    typer.Argument(
-        help="The model ID",
-    ),
+ModelIDArgument = Annotated[str, typer.Argument(help="The model ID")]
+
+ModelIDOption = Annotated[
+    Optional[str], typer.Argument(help="The ID of the model")
 ]
 
-ModelIDOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Argument(
-        help="The ID of the model",
-    ),
+ModelVersionIDOption = Annotated[
+    Optional[str], typer.Option(help="The ID of the model version")
 ]
 
-ModelVersionIDOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(
-        help="The ID of the model version",
-    ),
-]
-
-ModelInstanceIDOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(
-        help="The ID of the model instance",
-    ),
+ModelInstanceIDOption = Annotated[
+    Optional[str], typer.Option(help="The ID of the model instance")
 ]
 
 
-PlatformOption: TypeAlias = Annotated[
+PlatformOption = Annotated[
     Target,
     typer.Option(
         case_sensitive=False,
@@ -224,15 +207,12 @@ PlatformOption: TypeAlias = Annotated[
     ),
 ]
 
-SlugArgument: TypeAlias = Annotated[
+SlugArgument = Annotated[
     Optional[str],
-    typer.Argument(
-        show_default=False,
-        help="The model slug",
-    ),
+    typer.Argument(show_default=False, help="The model slug"),
 ]
 
-JSONOption: TypeAlias = Annotated[
+JSONOption = Annotated[
     bool,
     typer.Option(
         "--json",
@@ -243,60 +223,55 @@ JSONOption: TypeAlias = Annotated[
     ),
 ]
 
-TeamIDOption: TypeAlias = Annotated[
+TeamIDOption = Annotated[
     Optional[str],
-    typer.Option(help="Filter by the team ID", show_default=False),
+    typer.Option(help="The team ID", show_default=False),
 ]
-TasksOption: TypeAlias = Annotated[
+TasksOption = Annotated[
     Optional[List[Task]],
+    typer.Option(help="Tasks supported by the model", show_default=False),
+]
+UserIDOption = Annotated[
+    Optional[str],
+    typer.Option(help="The user ID", show_default=False),
+]
+LicenseTypeOption = Annotated[
+    Optional[License],
+    typer.Option(help="License type.", show_default=False),
+]
+IsPublicOption = Annotated[
+    bool,
     typer.Option(
-        help="Filter by tasks",
-        show_default=False,
+        help="Whether to query public or private models", show_default=False
     ),
 ]
-UserIDOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(help="Filter by user ID", show_default=False),
-]
-SearchOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(help="Search", show_default=False),
-]
-LicenseTypeOption: TypeAlias = Annotated[
-    Optional[License],
-    typer.Option(help="Filter by license type", show_default=False),
-]
-IsPublicOption: TypeAlias = Annotated[
-    bool,
-    typer.Option(help="Filter by public models", show_default=False),
-]
-SlugOption: TypeAlias = Annotated[
+SlugOption = Annotated[
     Optional[str],
     typer.Option(help="Slug of the model", show_default=False),
 ]
-ProjectIDOption: TypeAlias = Annotated[
+ProjectIDOption = Annotated[
     Optional[str],
-    typer.Option(help="Filter by project ID", show_default=False),
+    typer.Option(help="The project ID", show_default=False),
 ]
-FilterPublicEntityByTeamIDOption: TypeAlias = Annotated[
+FilterPublicEntityByTeamIDOption = Annotated[
     Optional[bool],
     typer.Option(
         help="Whether to filter public entity by team ID", show_default=False
     ),
 ]
-LuxonisOnlyOption: TypeAlias = Annotated[
+LuxonisOnlyOption = Annotated[
     bool,
-    typer.Option(help="Filter by Luxonis only", show_default=False),
+    typer.Option(help="Whether Luxonis only models", show_default=False),
 ]
-LimitOption: TypeAlias = Annotated[
+LimitOption = Annotated[
     Optional[int],
     typer.Option(help="How many records to display"),
 ]
-SortOption: TypeAlias = Annotated[
+SortOption = Annotated[
     str,
     typer.Option(help="How to sort the results", show_default=False),
 ]
-OrderOption: TypeAlias = Annotated[
+OrderOption = Annotated[
     Order,
     typer.Option(help="Order of the sorted results", show_default=False),
 ]
