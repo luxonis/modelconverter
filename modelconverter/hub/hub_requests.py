@@ -1,19 +1,17 @@
-import os
 from typing import Dict, Final
 
 import requests
 from requests import Response
 
+from modelconverter.utils import environ
+
 
 class Request:
-    URL: Final[str] = "http://models.stg.hubai/models"
-    # URL: Final[str] = "http://hub-stg.luxonis.com"
-    HUBAI_API_KEY: Final[str] = os.getenv("HUBAI_API_KEY")
-    assert HUBAI_API_KEY, "HUBAI_API_KEY is not set"
+    URL: Final[str] = environ.HUBAI_URL
     HEADERS: Final[Dict[str, str]] = {
         "Content-Type": "application/json",
         "accept": "application/json",
-        # "Authorization": f"Bearer {HUBAI_API_KEY}",
+        # "Authorization": f"Bearer {environ.HUBAI_API_KEY}",
     }
 
     @staticmethod
