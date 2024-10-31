@@ -86,7 +86,6 @@ VersionOption: TypeAlias = Annotated[
         "-v",
         "--version",
         help="""Version of the underlying conversion tools to use.
-        Only takes effect when --dev is used.
         Available options differ based on the target platform:
 
           - `RVC2`:

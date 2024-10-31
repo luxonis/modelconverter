@@ -54,6 +54,162 @@ app = typer.Typer(
 
 
 @app.command()
+def infer(
+    target: TargetArgument,
+    model_path: ModelPathOption,
+    input_path: Annotated[
+        Path,
+        typer.Option(
+            ...,
+            "--input-path",
+            "-i",
+            help="Path to the directory with data for inference."
+            "The directory must contain one subdirectory per input, named the same as the input."
+            "Inference data must be provided in the NPY format.",
+        ),
+    ],
+    path: PathOption,
+    output_dir: OutputDirOption,
+    stage: Annotated[
+        Optional[str],
+        typer.Option(
+            ...,
+            "--stage",
+            "-s",
+            help="Name of the stage to run. Only needed for multistage configs.",
+        ),
+    ] = None,
+    dev: DevOption = False,
+    version: VersionOption = None,
+    gpu: Annotated[
+        bool,
+        typer.Option(help="Use GPU for conversion. Only relevant for HAILO."),
+    ] = True,
+    opts: OptsArgument = None,
+):
+    """Runs inference on the specified target platform."""
+
+    tag = "dev" if dev else "latest"
+
+    if in_docker():
+        setup_logging(file="modelconverter.log", use_rich=True)
+        logger = logging.getLogger(__name__)
+        logger.info("Starting inference")
+        try:
+            mult_cfg, _, _ = get_configs(path, opts)
+            cfg = mult_cfg.get_stage_config(stage)
+            Inferer = get_inferer(target)
+            assert output_dir is not None
+            Inferer.from_config(
+                model_path, input_path, Path(output_dir), cfg
+            ).run()
+        except Exception:
+            logger.exception("Encountered an unexpected error!")
+            exit(2)
+    else:
+        if dev:
+            docker_build(target.value, bare_tag=tag, version=version)
+        args = [
+            "infer",
+            target.value,
+            "--model-path",
+            str(model_path),
+            "--input-path",
+            str(input_path),
+            "--path",
+            str(path),
+        ]
+        if output_dir is not None:
+            args.extend(["--output-dir", output_dir])
+        if opts is not None:
+            args.extend(opts)
+        docker_exec(
+            target.value, *args, bare_tag=tag, use_gpu=gpu, version=version
+        )
+
+
+@app.command()
+def shell(
+    target: TargetArgument,
+    dev: DevOption = False,
+    version: VersionOption = None,
+    gpu: GPUOption = True,
+):
+    """Boots up a shell inside a docker container for the specified target platform."""
+    if dev:
+        docker_build(target.value, bare_tag="dev", version=version)
+    docker_exec(
+        target.value,
+        bare_tag="dev" if dev else "latest",
+        version=version,
+        use_gpu=gpu,
+    )
+
+
+@app.command(
+    context_settings={
+        "allow_extra_args": True,
+        "ignore_unknown_options": True,
+    },
+)
+def benchmark(
+    target: TargetArgument,
+    model_path: ModelPathOption,
+    ctx: typer.Context,
+    full: Annotated[
+        bool,
+        typer.Option(
+            ..., help="Runs the full benchmark using all configurations."
+        ),
+    ] = False,
+    save: Annotated[
+        bool, typer.Option(..., help="Saves the benchmark results to a file.")
+    ] = False,
+):
+    """Runs benchmark on the specified target platform.
+
+    Specific target options:
+
+
+
+
+    **RVC2**
+
+    - `--repetitions`: The number of repetitions to perform. Default: `1`
+
+    - `--num-threads`: The number of threads to use for inference. Default: `2`
+
+    ---
+
+    **RVC3**
+
+    - `--requests`: The number of requests to perform. Default: `1`
+
+    ---
+
+    **RVC4**
+
+    - `--profile`: The SNPE profile to use for inference. Default: `"default"`
+
+    - `--num-images`: The number of images to use for inference. Default: `1000`
+
+    ---
+    """
+
+    setup_logging(use_rich=True)
+    kwargs = {}
+    for key, value in zip(ctx.args[::2], ctx.args[1::2]):
+        if key.startswith("--"):
+            key = key[2:].replace("-", "_")
+        else:
+            raise typer.BadParameter(f"Unknown argument: {key}")
+        kwargs[key] = value
+    Benchmark = get_benchmark(target)
+    benchmark = Benchmark(str(model_path))
+    benchmark.run(full=full, save=save, **kwargs)
+
+
+@app.command()
 def convert(
     target: TargetArgument,
     path: PathOption = None,
@@ -183,9 +339,8 @@ def convert(
             logger.exception("Encountered an unexpected error!")
             exit(2)
     else:
-        image = None
         if dev:
-            image = docker_build(target.value, tag=tag, version=version)
+            docker_build(target.value, bare_tag=tag, version=version)
 
         args = [
             "convert",
@@ -204,161 +359,9 @@ def convert(
             args.extend(["--path", path])
         if opts is not None:
             args.extend(opts)
-        docker_exec(target.value, *args, tag=tag, use_gpu=gpu, image=image)
-
-
-@app.command()
-def infer(
-    target: TargetArgument,
-    model_path: ModelPathOption,
-    input_path: Annotated[
-        Path,
-        typer.Option(
-            ...,
-            "--input-path",
-            "-i",
-            help="Path to the directory with data for inference."
-            "The directory must contain one subdirectory per input, named the same as the input."
-            "Inference data must be provided in the NPY format.",
-        ),
-    ],
-    path: PathOption,
-    output_dir: OutputDirOption,
-    stage: Annotated[
-        Optional[str],
-        typer.Option(
-            ...,
-            "--stage",
-            "-s",
-            help="Name of the stage to run. Only needed for multistage configs.",
-        ),
-    ] = None,
-    dev: DevOption = False,
-    version: VersionOption = None,
-    gpu: Annotated[
-        bool,
-        typer.Option(help="Use GPU for conversion. Only relevant for HAILO."),
-    ] = True,
-    opts: OptsArgument = None,
-):
-    """Runs inference on the specified target platform."""
-
-    tag = "dev" if dev else "latest"
-
-    if in_docker():
-        setup_logging(file="modelconverter.log", use_rich=True)
-        logger = logging.getLogger(__name__)
-        logger.info("Starting inference")
-        try:
-            init_dirs()
-            mult_cfg, _, _ = get_configs(path, opts)
-            cfg = mult_cfg.get_stage_config(stage)
-            Inferer = get_inferer(target)
-            assert output_dir is not None
-            Inferer.from_config(
-                model_path, input_path, Path(output_dir), cfg
-            ).run()
-        except Exception:
-            logger.exception("Encountered an unexpected error!")
-            exit(2)
-    else:
-        image = None
-        if dev:
-            image = docker_build(target.value, tag=tag, version=version)
-        args = [
-            "infer",
-            target.value,
-            "--model-path",
-            str(model_path),
-            "--input-path",
-            str(input_path),
-            "--path",
-            str(path),
-        ]
-        if output_dir is not None:
-            args.extend(["--output-dir", output_dir])
-        if opts is not None:
-            args.extend(opts)
-        docker_exec(target.value, *args, tag=tag, use_gpu=gpu, image=image)
-
-
-@app.command()
-def shell(
-    target: TargetArgument,
-    dev: DevOption = False,
-    version: VersionOption = None,
-    gpu: GPUOption = True,
-):
-    """Boots up a shell inside a docker container for the specified target platform."""
-    image = None
-    if dev:
-        image = docker_build(target.value, tag="dev", version=version)
-    docker_exec(
-        target.value, tag="dev" if dev else "latest", use_gpu=gpu, image=image
-    )
-
-
-@app.command(
-    context_settings={
-        "allow_extra_args": True,
-        "ignore_unknown_options": True,
-    },
-)
-def benchmark(
-    target: TargetArgument,
-    model_path: ModelPathOption,
-    ctx: typer.Context,
-    full: Annotated[
-        bool,
-        typer.Option(
-            ..., help="Runs the full benchmark using all configurations."
-        ),
-    ] = False,
-    save: Annotated[
-        bool, typer.Option(..., help="Saves the benchmark results to a file.")
-    ] = False,
-):
-    """Runs benchmark on the specified target platform.
-
-    Specific target options:
-
-
-
-
-    **RVC2**
-
-    - `--repetitions`: The number of repetitions to perform. Default: `1`
-
-    - `--num-threads`: The number of threads to use for inference. Default: `2`
-
-    ---
-
-    **RVC3**
-
-    - `--requests`: The number of requests to perform. Default: `1`
-
-    ---
-
-    **RVC4**
-
-    - `--profile`: The SNPE profile to use for inference. Default: `"default"`
-
-    - `--num-images`: The number of images to use for inference. Default: `1000`
-
-    ---
-    """
-
-    setup_logging(use_rich=True)
-    kwargs = {}
-    for key, value in zip(ctx.args[::2], ctx.args[1::2]):
-        if key.startswith("--"):
-            key = key[2:].replace("-", "_")
-        else:
-            raise typer.BadParameter(f"Unknown argument: {key}")
-        kwargs[key] = value
-    Benchmark = get_benchmark(target)
-    benchmark = Benchmark(str(model_path))
-    benchmark.run(full=full, save=save, **kwargs)
+        docker_exec(
+            target.value, *args, bare_tag=tag, use_gpu=gpu, version=version
+        )
 
 
 @app.command()
