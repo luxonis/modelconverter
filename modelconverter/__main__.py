@@ -1,18 +1,30 @@
 import logging
-import shutil
-from datetime import datetime
-from enum import Enum
 from importlib.metadata import version
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import typer
-from luxonis_ml.nn_archive import ArchiveGenerator, is_nn_archive
-from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
-from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
+from luxonis_ml.nn_archive import ArchiveGenerator
 from luxonis_ml.utils import LuxonisFileSystem, reset_logging, setup_logging
-from typing_extensions import Annotated, TypeAlias
+from typing_extensions import Annotated
 
+from modelconverter.cli import (
+    ArchivePreprocessOption,
+    DevOption,
+    Format,
+    FormatOption,
+    GPUOption,
+    ModelPathOption,
+    OptsArgument,
+    OutputDirOption,
+    PathOption,
+    TargetArgument,
+    VersionOption,
+    extract_preprocessing,
+    get_configs,
+    get_output_dir_name,
+    init_dirs,
+)
 from modelconverter.hub.__main__ import app as hub_app
 from modelconverter.packages import (
     get_benchmark,
@@ -26,19 +38,11 @@ from modelconverter.utils import (
     docker_exec,
     in_docker,
     modelconverter_config_to_nn,
-    process_nn_archive,
     resolve_path,
     upload_file_to_remote,
 )
-from modelconverter.utils.config import Config, SingleStageConfig
-from modelconverter.utils.constants import (
-    CALIBRATION_DIR,
-    CONFIGS_DIR,
-    MISC_DIR,
-    MODELS_DIR,
-    OUTPUTS_DIR,
-)
-from modelconverter.utils.types import Target
+from modelconverter.utils.config import SingleStageConfig
+from modelconverter.utils.constants import MODELS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -47,347 +51,6 @@ app = typer.Typer(
     add_completion=False,
     rich_markup_mode="markdown",
 )
-
-
-class Format(str, Enum):
-    NATIVE = "native"
-    NN_ARCHIVE = "nn_archive"
-
-
-FormatOption: TypeAlias = Annotated[
-    Format,
-    typer.Option(
-        help="One of the supported formats.",
-    ),
-]
-VersionOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(
-        "-v",
-        "--version",
-        help="""Version of the underlying conversion tools to use.
-        Only takes effect when --dev is used.
-        Available options differ based on the target platform:
-
-          - `RVC2`:
-            - `2021.4.0`
-            - `2022.3.0` (default)
-
-          - `RVC3`:
-            - `2022.3.0` (default)
-
-          - `RVC4`:
-            - `2.23.0` (default)
-            - `2.24.0`
-            - `2.25.0`
-            - `2.26.2`
-            - `2.27.0`
-
-          - `HAILO`:
-              - `2024.04` (default),
-              - `2024.07` (default)""",
-        show_default=False,
-    ),
-]
-PathOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(
-        help="Path to the configuration file or nn archive.",
-        show_default=False,
-    ),
-]
-OptsArgument: TypeAlias = Annotated[
-    Optional[List[str]],
-    typer.Argument(
-        help="A list of optional CLI overrides of the config file.",
-        show_default=False,
-    ),
-]
-
-TargetArgument: TypeAlias = Annotated[
-    Target,
-    typer.Argument(
-        case_sensitive=False,
-        help="Target platform to convert to.",
-        show_default=False,
-    ),
-]
-
-DevOption: TypeAlias = Annotated[
-    bool,
-    typer.Option(
-        help="Builds a new iamge and uses the development docker-compose file."
-    ),
-]
-
-BuildOption: TypeAlias = Annotated[
-    bool,
-    typer.Option(
-        help="Builds the docker image before running the command."
-        "Can only be used together with --dev and --docker.",
-    ),
-]
-ModelPathOption: TypeAlias = Annotated[
-    str, typer.Option(help="A URL or a path to the model file.")
-]
-
-DockerOption: TypeAlias = Annotated[
-    bool,
-    typer.Option(
-        help="Runs the conversion in a docker container. "
-        "Ensure that all the necessary tools are available in "
-        "PATH if you disable this option.",
-    ),
-]
-
-GPUOption: TypeAlias = Annotated[
-    bool,
-    typer.Option(help="Use GPU for conversion. Only relevant for HAILO."),
-]
-
-OutputDirOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(
-        ..., "--output-dir", "-o", help="Name of the output directory."
-    ),
-]
-
-
-def get_output_dir_name(
-    target: Target, name: str, output_dir: Optional[str]
-) -> Path:
-    date = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    if output_dir is not None:
-        if (OUTPUTS_DIR / output_dir).exists():
-            shutil.rmtree(OUTPUTS_DIR / output_dir)
-    else:
-        output_dir = f"{name}_to_{target.name.lower()}_{date}"
-    return OUTPUTS_DIR / output_dir
-
-
-def get_configs(
-    path: Optional[str], opts: OptsArgument = None
-) -> Tuple[Config, Optional[NNArchiveConfig], Optional[str]]:
-    """Sets up the configuration.
-
-    @type path: Optional[str]
-    @param path: Path to the configuration file or NN Archive.
-    @type opts: Optional[List[str]]
-    @param opts: Optional CLI overrides of the config file.
-    @rtype: Tuple[Config, Optional[NNArchiveConfig], Optional[str]]
-    @return: Tuple of the parsed modelconverter L{Config}, L{NNArchiveConfig} and the
-        main stage key.
-    """
-
-    for p in [CONFIGS_DIR, MODELS_DIR, OUTPUTS_DIR, CALIBRATION_DIR]:
-        logger.debug(f"Creating {p}")
-        p.mkdir(parents=True, exist_ok=True)
-
-    opts = opts or []
-    if len(opts) % 2 != 0:
-        raise ValueError(
-            "Invalid number of overrides. See --help for more information."
-        )
-    overrides = {opts[i]: opts[i + 1] for i in range(0, len(opts), 2)}
-    if path is not None:
-        path_ = resolve_path(path, MISC_DIR)
-        if path_.is_dir() or is_nn_archive(path_):
-            return process_nn_archive(path_, overrides)
-        shutil.move(str(path_), CONFIGS_DIR / path_.name)
-    cfg = Config.get_config(path, overrides)
-
-    main_stage_key = None
-    if len(cfg.stages) > 1:
-        for key in cfg.stages:
-            if "yolov8" in key and "seg" in key:
-                logger.info(f"Detected main stage key: {key}")
-                main_stage_key = key
-                break
-    else:
-        main_stage_key = next(iter(cfg.stages.keys()))
-
-    return cfg, None, main_stage_key
-
-
-def extract_preprocessing(
-    cfg: Config,
-) -> Tuple[Config, Dict[str, PreprocessingBlock]]:
-    if len(cfg.stages) > 1:
-        raise ValueError(
-            "Only single-stage models are supported with NN archive."
-        )
-    stage_cfg = next(iter(cfg.stages.values()))
-    preprocessing = {}
-    for inp in stage_cfg.inputs:
-        mean = inp.mean_values or [0, 0, 0]
-        scale = inp.scale_values or [1, 1, 1]
-
-        preproc_block = PreprocessingBlock(
-            reverse_channels=inp.reverse_input_channels,
-            mean=mean,
-            scale=scale,
-            interleaved_to_planar=False,
-        )
-        preprocessing[inp.name] = preproc_block
-
-        inp.mean_values = None
-        inp.scale_values = None
-        inp.reverse_input_channels = False
-
-    return cfg, preprocessing
-
-
-@app.command()
-def infer(
-    target: TargetArgument,
-    model_path: ModelPathOption,
-    input_path: Annotated[
-        Path,
-        typer.Option(
-            ...,
-            "--input-path",
-            "-i",
-            help="Path to the directory with data for inference."
-            "The directory must contain one subdirectory per input, named the same as the input."
-            "Inference data must be provided in the NPY format.",
-        ),
-    ],
-    path: PathOption,
-    output_dir: OutputDirOption,
-    stage: Annotated[
-        Optional[str],
-        typer.Option(
-            ...,
-            "--stage",
-            "-s",
-            help="Name of the stage to run. Only needed for multistage configs.",
-        ),
-    ] = None,
-    dev: DevOption = False,
-    version: VersionOption = None,
-    gpu: Annotated[
-        bool,
-        typer.Option(help="Use GPU for conversion. Only relevant for HAILO."),
-    ] = True,
-    opts: OptsArgument = None,
-):
-    """Runs inference on the specified target platform."""
-
-    tag = "dev" if dev else "latest"
-
-    if in_docker():
-        setup_logging(file="modelconverter.log", use_rich=True)
-        logger = logging.getLogger(__name__)
-        logger.info("Starting inference")
-        try:
-            mult_cfg, _, _ = get_configs(path, opts)
-            cfg = mult_cfg.get_stage_config(stage)
-            Inferer = get_inferer(target)
-            assert output_dir is not None
-            Inferer.from_config(
-                model_path, input_path, Path(output_dir), cfg
-            ).run()
-        except Exception:
-            logger.exception("Encountered an unexpected error!")
-            exit(2)
-    else:
-        image = None
-        if dev:
-            image = docker_build(target.value, tag=tag, version=version)
-        args = [
-            "infer",
-            target.value,
-            "--model-path",
-            str(model_path),
-            "--input-path",
-            str(input_path),
-            "--path",
-            str(path),
-        ]
-        if output_dir is not None:
-            args.extend(["--output-dir", output_dir])
-        if opts is not None:
-            args.extend(opts)
-        docker_exec(target.value, *args, tag=tag, use_gpu=gpu, image=image)
-
-
-@app.command()
-def shell(
-    target: TargetArgument,
-    dev: DevOption = False,
-    version: VersionOption = None,
-    gpu: GPUOption = True,
-):
-    """Boots up a shell inside a docker container for the specified target platform."""
-    image = None
-    if dev:
-        image = docker_build(target.value, tag="dev", version=version)
-    docker_exec(
-        target.value, tag="dev" if dev else "latest", use_gpu=gpu, image=image
-    )
-
-
-@app.command(
-    context_settings={
-        "allow_extra_args": True,
-        "ignore_unknown_options": True,
-    },
-)
-def benchmark(
-    target: TargetArgument,
-    model_path: ModelPathOption,
-    ctx: typer.Context,
-    full: Annotated[
-        bool,
-        typer.Option(
-            ..., help="Runs the full benchmark using all configurations."
-        ),
-    ] = False,
-    save: Annotated[
-        bool, typer.Option(..., help="Saves the benchmark results to a file.")
-    ] = False,
-):
-    """Runs benchmark on the specified target platform.
-
-    Specific target options:
-
-
-
-
-    **RVC2**
-
-    - `--repetitions`: The number of repetitions to perform. Default: `1`
-
-    - `--num-threads`: The number of threads to use for inference. Default: `2`
-
-    ---
-
-    **RVC3**
-
-    - `--requests`: The number of requests to perform. Default: `1`
-
-    ---
-
-    **RVC4**
-
-    - `--profile`: The SNPE profile to use for inference. Default: `"default"`
-
-    - `--num-images`: The number of images to use for inference. Default: `1000`
-
-    ---
-    """
-
-    setup_logging(use_rich=True)
-    kwargs = {}
-    for key, value in zip(ctx.args[::2], ctx.args[1::2]):
-        if key.startswith("--"):
-            key = key[2:].replace("-", "_")
-        else:
-            raise typer.BadParameter(f"Unknown argument: {key}")
-        kwargs[key] = value
-    Benchmark = get_benchmark(target)
-    benchmark = Benchmark(str(model_path))
-    benchmark.run(full=full, save=save, **kwargs)
 
 
 @app.command()
@@ -411,14 +74,7 @@ def convert(
             "same as the model files without the suffix.",
         ),
     ] = None,
-    archive_preprocess: Annotated[
-        bool,
-        typer.Option(
-            help="Add the pre-processing to the NN archive instead of the model. "
-            "In case of conversion from archive to archive, it moves the "
-            "preprocessing to the new archive.",
-        ),
-    ] = False,
+    archive_preprocess: ArchivePreprocessOption = False,
     opts: OptsArgument = None,
 ):
     """Exports the model for the specified target platform."""
@@ -434,6 +90,7 @@ def convert(
     if in_docker():
         logger = logging.getLogger(__name__)
         try:
+            init_dirs()
             cfg, archive_cfg, _main_stage = get_configs(path, opts)
             main_stage = main_stage or _main_stage
             is_multistage = len(cfg.stages) > 1
@@ -548,6 +205,160 @@ def convert(
         if opts is not None:
             args.extend(opts)
         docker_exec(target.value, *args, tag=tag, use_gpu=gpu, image=image)
+
+
+@app.command()
+def infer(
+    target: TargetArgument,
+    model_path: ModelPathOption,
+    input_path: Annotated[
+        Path,
+        typer.Option(
+            ...,
+            "--input-path",
+            "-i",
+            help="Path to the directory with data for inference."
+            "The directory must contain one subdirectory per input, named the same as the input."
+            "Inference data must be provided in the NPY format.",
+        ),
+    ],
+    path: PathOption,
+    output_dir: OutputDirOption,
+    stage: Annotated[
+        Optional[str],
+        typer.Option(
+            ...,
+            "--stage",
+            "-s",
+            help="Name of the stage to run. Only needed for multistage configs.",
+        ),
+    ] = None,
+    dev: DevOption = False,
+    version: VersionOption = None,
+    gpu: Annotated[
+        bool,
+        typer.Option(help="Use GPU for conversion. Only relevant for HAILO."),
+    ] = True,
+    opts: OptsArgument = None,
+):
+    """Runs inference on the specified target platform."""
+
+    tag = "dev" if dev else "latest"
+
+    if in_docker():
+        setup_logging(file="modelconverter.log", use_rich=True)
+        logger = logging.getLogger(__name__)
+        logger.info("Starting inference")
+        try:
+            init_dirs()
+            mult_cfg, _, _ = get_configs(path, opts)
+            cfg = mult_cfg.get_stage_config(stage)
+            Inferer = get_inferer(target)
+            assert output_dir is not None
+            Inferer.from_config(
+                model_path, input_path, Path(output_dir), cfg
+            ).run()
+        except Exception:
+            logger.exception("Encountered an unexpected error!")
+            exit(2)
+    else:
+        image = None
+        if dev:
+            image = docker_build(target.value, tag=tag, version=version)
+        args = [
+            "infer",
+            target.value,
+            "--model-path",
+            str(model_path),
+            "--input-path",
+            str(input_path),
+            "--path",
+            str(path),
+        ]
+        if output_dir is not None:
+            args.extend(["--output-dir", output_dir])
+        if opts is not None:
+            args.extend(opts)
+        docker_exec(target.value, *args, tag=tag, use_gpu=gpu, image=image)
+
+
+@app.command()
+def shell(
+    target: TargetArgument,
+    dev: DevOption = False,
+    version: VersionOption = None,
+    gpu: GPUOption = True,
+):
+    """Boots up a shell inside a docker container for the specified target platform."""
+    image = None
+    if dev:
+        image = docker_build(target.value, tag="dev", version=version)
+    docker_exec(
+        target.value, tag="dev" if dev else "latest", use_gpu=gpu, image=image
+    )
+
+
+@app.command(
+    context_settings={
+        "allow_extra_args": True,
+        "ignore_unknown_options": True,
+    },
+)
+def benchmark(
+    target: TargetArgument,
+    model_path: ModelPathOption,
+    ctx: typer.Context,
+    full: Annotated[
+        bool,
+        typer.Option(
+            ..., help="Runs the full benchmark using all configurations."
+        ),
+    ] = False,
+    save: Annotated[
+        bool, typer.Option(..., help="Saves the benchmark results to a file.")
+    ] = False,
+):
+    """Runs benchmark on the specified target platform.
+
+    Specific target options:
+
+
+
+
+    **RVC2**
+
+    - `--repetitions`: The number of repetitions to perform. Default: `1`
+
+    - `--num-threads`: The number of threads to use for inference. Default: `2`
+
+    ---
+
+    **RVC3**
+
+    - `--requests`: The number of requests to perform. Default: `1`
+
+    ---
+
+    **RVC4**
+
+    - `--profile`: The SNPE profile to use for inference. Default: `"default"`
+
+    - `--num-images`: The number of images to use for inference. Default: `1000`
+
+    ---
+    """
+
+    setup_logging(use_rich=True)
+    kwargs = {}
+    for key, value in zip(ctx.args[::2], ctx.args[1::2]):
+        if key.startswith("--"):
+            key = key[2:].replace("-", "_")
+        else:
+            raise typer.BadParameter(f"Unknown argument: {key}")
+        kwargs[key] = value
+    Benchmark = get_benchmark(target)
+    benchmark = Benchmark(str(model_path))
+    benchmark.run(full=full, save=save, **kwargs)
 
 
 @app.command()

@@ -1,10 +1,14 @@
 import logging
+import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import unquote, urlparse
 
 import requests
 import rich.box
 import typer
+from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
 from rich.box import ROUNDED
 from rich.console import Console, Group
@@ -12,11 +16,38 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.pretty import Pretty
 from rich.table import Table
-from typing_extensions import Annotated, TypeAlias
 
-from modelconverter.utils.types import Target
+from modelconverter.cli import (
+    FilterPublicEntityByTeamIDOption,
+    IsPublicOption,
+    JSONOption,
+    LicenseTypeOption,
+    LimitOption,
+    LuxonisOnlyOption,
+    ModelClass,
+    ModelIDArgument,
+    ModelIDOption,
+    ModelType,
+    ModelVersionIDOption,
+    OptsArgument,
+    Order,
+    OrderOption,
+    PathOption,
+    PlatformOption,
+    ProjectIDOption,
+    SearchOption,
+    SlugArgument,
+    SlugOption,
+    SortOption,
+    Status,
+    TargetArgument,
+    Task,
+    TasksOption,
+    TeamIDOption,
+    UserIDOption,
+    get_configs,
+)
 
-from .enums import License, Order, Task
 from .hub_requests import Request
 
 logger = logging.getLogger(__name__)
@@ -54,120 +85,13 @@ app.add_typer(version, name="version", help="Hub Versions Interactions")
 app.add_typer(instance, name="instance", help="Hub Instances Interactions")
 
 
-def print_response(res: requests.Response):
-    table = Table(
-        title="Response",
-        box=rich.box.ROUNDED,
-        width=74,
-    )
-    table.add_column("Status Code", header_style="magenta i")
-    table.add_column("JSON", header_style="magenta i")
-    table.add_row(Pretty(res.status_code), Pretty(res.json()))
-    print(table)
+def _print_info(
+    model: Dict[str, Any], keys: List[str], json: bool, **kwargs
+) -> Dict[str, Any]:
+    if json:
+        print(model)
+        return model
 
-
-PlatformOption: TypeAlias = Annotated[
-    Target,
-    typer.Option(
-        case_sensitive=False,
-        help="What platform to convert the model to.",
-        show_default=False,
-    ),
-]
-
-SlugArgument: TypeAlias = Annotated[
-    Optional[str],
-    typer.Argument(
-        show_default=False,
-        help="The model slug.",
-    ),
-]
-
-JSONOption: TypeAlias = Annotated[
-    bool,
-    typer.Option(
-        "--json",
-        "-j",
-        help="Output as JSON.",
-        show_default=False,
-        is_flag=True,
-    ),
-]
-
-TeamIDOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(help="Filter by the team ID", show_default=False),
-]
-TasksOption: TypeAlias = Annotated[
-    Optional[List[Task]],
-    typer.Option(
-        help="Filter by tasks",
-        show_default=False,
-    ),
-]
-UserIDOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(help="Filter by user ID", show_default=False),
-]
-SearchOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(help="Search", show_default=False),
-]
-LicenseTypeOption: TypeAlias = Annotated[
-    Optional[License],
-    typer.Option(help="Filter by license type", show_default=False),
-]
-IsPublicOption: TypeAlias = Annotated[
-    bool,
-    typer.Option(help="Filter by public models", show_default=False),
-]
-SlugOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(help="Filter by slug", show_default=False),
-]
-ProjectIDOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(help="Filter by project ID", show_default=False),
-]
-FilterPublicEntityByTeamIDOption: TypeAlias = Annotated[
-    Optional[bool],
-    typer.Option(
-        help="Whether to filter public entity by team ID", show_default=False
-    ),
-]
-LuxonisOnlyOption: TypeAlias = Annotated[
-    bool,
-    typer.Option(help="Filter by Luxonis only", show_default=False),
-]
-CursorOption: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option(help="Cursor", show_default=False),
-]
-LimitOption: TypeAlias = Annotated[
-    Optional[int],
-    typer.Option(help="How many records to display"),
-]
-SortOption: TypeAlias = Annotated[
-    str,
-    typer.Option(help="How to sort the results", show_default=False),
-]
-OrderOption: TypeAlias = Annotated[
-    Order,
-    typer.Option(help="Order of the sorted results", show_default=False),
-]
-
-
-@app.command()
-def download(platform: PlatformOption, slug: SlugArgument):
-    params = {"platform": platform.value}
-    if slug is not None:
-        params["slug"] = slug
-    res = Request.get("/api/v1/models/download", params=params)
-    print(f"Status code: {res.status_code}")
-    print(f"Response: {res.json()}")
-
-
-def _print_info(model: Dict[str, Any], keys: List[str], **kwargs):
     console = Console()
 
     if model.get("description_short"):
@@ -211,15 +135,15 @@ def _print_info(model: Dict[str, Any], keys: List[str], **kwargs):
             else:
                 value = "Commercial" if model[key] else "Non-Commercial"
             table.add_row("Usage:", Pretty(value))
+        elif key == "is_nn_archive":
+            table.add_row("NN Archive:", Pretty(model.get(key, False)))
         else:
             table.add_row(
                 f"{key.replace('_', ' ').title()}:",
                 Pretty(model.get(key, "N/A")),
             )
 
-    info_panel = Panel(
-        table, title="Model Information", border_style="cyan", box=ROUNDED
-    )
+    info_panel = Panel(table, border_style="cyan", box=ROUNDED, **kwargs)
 
     if model.get("description"):
         description_panel = Panel(
@@ -250,88 +174,33 @@ def _print_info(model: Dict[str, Any], keys: List[str], **kwargs):
 
     console.print(main_panel)
     console.rule()
+    return model
 
 
 @model.command(name="info")
-def model_info(model_id: str, json: JSONOption = False):
+def model_info(model_id: ModelIDArgument, json: JSONOption = False):
     res = Request.get(f"/api/v1/models/{model_id}")
 
-    if res.status_code != 200:
-        print(f"Model with ID '{model_id}' not found.")
-        exit(1)
-
-    if json:
-        print(res.json())
-    else:
-        _print_info(
-            res.json(),
-            keys=[
-                "name",
-                "slug",
-                "id",
-                "created",
-                "updated",
-                "tasks",
-                "platforms",
-                "is_public",
-                "is_commercial",
-                "license_type",
-                "versions",
-                "likes",
-                "downloads",
-            ],
-        )
-
-
-@version.command(name="info")
-def version_info(model_id: str, json: JSONOption = False):
-    res = Request.get(
-        f"/api/v1/modelVersions/{model_id}",
-        params={"team_id": "0192af5f-719d-7b10-8fe6-6d73647dc61a"},
+    return _print_info(
+        res.json(),
+        title="Model Info",
+        json=json,
+        keys=[
+            "name",
+            "slug",
+            "id",
+            "created",
+            "updated",
+            "tasks",
+            "platforms",
+            "is_public",
+            "is_commercial",
+            "license_type",
+            "versions",
+            "likes",
+            "downloads",
+        ],
     )
-    res = res.json()
-    if json:
-        print(res)
-    else:
-        _print_info(
-            res,
-            keys=[
-                "name",
-                "slug",
-                "version",
-                "model_id",
-                "id",
-                "created",
-                "updated",
-                "platforms",
-                "exportable_to",
-                "is_public",
-            ],
-        )
-
-
-@instance.command(name="info")
-def instance_info(model_id: str, json: JSONOption = False):
-    res = Request.get(f"/api/v1/modelInstances/{model_id}").json()
-    if json:
-        print(res)
-    else:
-        _print_info(
-            res.json(),
-            keys=[
-                "name",
-                "slug",
-                "id",
-                "last_version_added",
-                "platforms",
-                "is_public",
-                "is_commercial",
-                "license_type",
-                "versions",
-                "likes",
-                "downloads",
-            ],
-        )
 
 
 @model.command(name="create")
@@ -342,27 +211,25 @@ def model_create(
     description_short: Optional[str] = None,
     description: Optional[str] = None,
     architecture_id: Optional[str] = None,
-):
+    tasks: Optional[List[Task]] = None,
+    links: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     data = {
         "name": name,
         "license_type": license_type,
         "is_public": public,
         "description_short": description_short,
+        "description": description,
+        "architecture_id": architecture_id,
+        "tasks": tasks or [],
+        "links": links or [],
     }
-    if description_short is not None:
-        data["description_short"] = description_short
-    if description is not None:
-        data["description"] = description
-    if architecture_id is not None:
-        data["architecture_id"] = architecture_id
-    res = Request.post("/api/v1/models", json=data)
-    print_response(res)
+    return Request.post("/api/v1/models", json=data).json()
 
 
 @model.command(name="delete")
-def model_delete(model_id: str):
-    res = Request.delete(f"/api/v1/models/{model_id}")
-    print_response(res)
+def model_delete(model_id: ModelIDArgument):
+    Request.delete(f"/api/v1/models/{model_id}")
 
 
 def _get_table(data: List[Dict[str, Any]], keys: List[str], **kwargs) -> Table:
@@ -382,52 +249,27 @@ def _get_table(data: List[Dict[str, Any]], keys: List[str], **kwargs) -> Table:
     return table
 
 
-def _ls(
-    endpoint: str,
-    team_id: Optional[str],
-    tasks: Optional[List[Task]] = None,
-    user_id: Optional[str] = None,
-    search: Optional[str] = None,
-    license_type: Optional[License] = None,
-    is_public: bool = True,
-    slug: Optional[str] = None,
-    project_id: Optional[str] = None,
-    filter_public_entity_by_team_id: Optional[bool] = None,
-    luxonis_only: bool = False,
-    cursor: Optional[str] = None,
-    limit: Optional[int] = 50,
-    sort: str = "updated",
-    order: Order = Order.DESC,
-    **kwargs,
-) -> None:
-    params = {
-        "team_id": team_id,
-        "tasks": [task.name for task in tasks] if tasks else None,
-        "user_id": user_id,
-        "search": search,
-        "license_type": license_type,
-        "is_public": is_public,
-        "slug": slug,
-        "project_id": project_id,
-        "filter_public_entity_by_team_id": filter_public_entity_by_team_id,
-        "luxonis_only": luxonis_only,
-        "cursor": cursor,
-        "limit": limit,
-        "sort": sort,
-        "order": order,
-    }
-    res = Request.get(
-        f"/api/v1/{endpoint}/{team_id or ''}", params=params
-    ).json()
+def _ls(endpoint: str, keys: List[str], **kwargs) -> None:
+    res = Request.get(f"/api/v1/{endpoint}/", params=kwargs).json()
     console = Console()
     console.print(
         _get_table(
             res,
-            **kwargs,
+            keys=keys,
             row_styles=["yellow", "cyan"],
             box=rich.box.ROUNDED,
         ),
     )
+
+
+@model.command(name="download")
+def model_download(platform: PlatformOption, slug: SlugArgument):
+    params = {"platform": platform.value}
+    if slug is not None:
+        params["slug"] = slug
+    res = Request.get("/api/v1/models/download", params=params)
+    print(f"Status code: {res.status_code}")
+    print(f"Response: {res.json()}")
 
 
 @model.command(name="ls")
@@ -442,7 +284,6 @@ def model_ls(
     project_id: ProjectIDOption = None,
     filter_public_entity_by_team_id: FilterPublicEntityByTeamIDOption = None,
     luxonis_only: LuxonisOnlyOption = False,
-    cursor: CursorOption = None,
     limit: LimitOption = 50,
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
@@ -450,7 +291,7 @@ def model_ls(
     _ls(
         "models",
         team_id=team_id,
-        tasks=tasks,
+        tasks=[task.name for task in tasks] if tasks else [],
         user_id=user_id,
         search=search,
         license_type=license_type,
@@ -459,7 +300,6 @@ def model_ls(
         project_id=project_id,
         filter_public_entity_by_team_id=filter_public_entity_by_team_id,
         luxonis_only=luxonis_only,
-        cursor=cursor,
         limit=limit,
         sort=sort,
         order=order,
@@ -470,33 +310,26 @@ def model_ls(
 @version.command(name="ls")
 def version_ls(
     team_id: TeamIDOption = None,
-    tasks: TasksOption = None,
     user_id: UserIDOption = None,
-    search: SearchOption = None,
-    license_type: LicenseTypeOption = None,
-    is_public: IsPublicOption = True,
+    model_id: ModelIDOption = None,
     slug: SlugOption = None,
-    project_id: ProjectIDOption = None,
-    filter_public_entity_by_team_id: FilterPublicEntityByTeamIDOption = None,
-    luxonis_only: LuxonisOnlyOption = False,
-    cursor: CursorOption = None,
+    variant_slug: Optional[str] = None,
+    version: Optional[str] = None,
+    is_public: IsPublicOption = True,
     limit: LimitOption = 50,
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
 ):
+    """Lists model versions."""
     _ls(
         "modelVersions",
         team_id=team_id,
-        tasks=tasks,
         user_id=user_id,
-        search=search,
-        license_type=license_type,
+        model_id=model_id,
         is_public=is_public,
         slug=slug,
-        project_id=project_id,
-        filter_public_entity_by_team_id=filter_public_entity_by_team_id,
-        luxonis_only=luxonis_only,
-        cursor=cursor,
+        variant_slug=variant_slug,
+        version=version,
         limit=limit,
         sort=sort,
         order=order,
@@ -504,43 +337,266 @@ def version_ls(
     )
 
 
+@version.command(name="info")
+def version_info(
+    version_id: ModelIDArgument, json: JSONOption = False
+) -> Dict[str, Any]:
+    res = Request.get(f"/api/v1/modelVersions/{version_id}")
+    res = res.json()
+    return _print_info(
+        res,
+        title="Model Version Info",
+        json=json,
+        keys=[
+            "name",
+            "slug",
+            "version",
+            "model_id",
+            "id",
+            "created",
+            "updated",
+            "platforms",
+            "exportable_to",
+            "is_public",
+        ],
+    )
+
+
+@model.command(name="create")
+def version_create(
+    model_id: ModelIDArgument,
+    name: str,
+    version: str,
+    description: Optional[str] = None,
+    repository_url: Optional[str] = None,
+    commit_hash: Optional[str] = None,
+    domain: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Creates a new version of a model."""
+    data = {
+        "model_id": model_id,
+        "name": name,
+        "version": version,
+        "description": description,
+        "repository_url": repository_url,
+        "commit_hash": commit_hash,
+        "domain": domain,
+        "tags": tags or [],
+    }
+    return Request.post("/api/v1/models", json=data).json()
+
+
+@version.command(name="delete")
+def version_delete(model_id: ModelIDArgument):
+    Request.delete(f"/api/v1/modelVersions/{model_id}")
+
+
 @instance.command(name="ls")
 def instance_ls(
+    platforms: Optional[List[ModelType]] = None,
     team_id: TeamIDOption = None,
-    tasks: TasksOption = None,
     user_id: UserIDOption = None,
-    search: SearchOption = None,
-    license_type: LicenseTypeOption = None,
+    model_id: ModelIDOption = None,
+    model_version_id: ModelVersionIDOption = None,
+    model_type: Optional[List[ModelType]] = None,
+    parent_id: Optional[str] = None,
+    model_class: Optional[ModelClass] = None,
+    name: Optional[str] = None,
+    hash: Optional[str] = None,
+    status: Optional[Status] = None,
     is_public: IsPublicOption = True,
+    compression_level: Optional[int] = None,
+    optimization_level: Optional[int] = None,
+    search: SearchOption = None,
     slug: SlugOption = None,
-    project_id: ProjectIDOption = None,
-    filter_public_entity_by_team_id: FilterPublicEntityByTeamIDOption = None,
-    luxonis_only: LuxonisOnlyOption = False,
-    cursor: CursorOption = None,
     limit: LimitOption = 50,
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
 ):
     _ls(
         "modelInstances",
+        platforms=[platform.name for platform in platforms]
+        if platforms
+        else [],
+        model_id=model_id,
+        model_version_id=model_version_id,
+        model_type=[model.name for model in model_type] if model_type else [],
+        parent_id=parent_id,
+        model_class=model_class,
+        name=name,
+        hash=hash,
+        status=status,
+        compression_level=compression_level,
+        optimization_level=optimization_level,
         team_id=team_id,
-        tasks=tasks,
         user_id=user_id,
         search=search,
-        license_type=license_type,
         is_public=is_public,
         slug=slug,
-        project_id=project_id,
-        filter_public_entity_by_team_id=filter_public_entity_by_team_id,
-        luxonis_only=luxonis_only,
-        cursor=cursor,
         limit=limit,
         sort=sort,
         order=order,
-        keys=["id", "instance_id", "slug", "platforms"],
+        keys=["id", "model_version_id", "model_id", "slug", "platforms"],
     )
 
 
+@instance.command(name="info")
+def instance_info(
+    model_instance_id: str, json: JSONOption = False
+) -> Dict[str, Any]:
+    res = Request.get(f"/api/v1/modelInstances/{model_instance_id}").json()
+    return _print_info(
+        res,
+        title="Model Instance Info",
+        json=json,
+        keys=[
+            "name",
+            "slug",
+            "id",
+            "created",
+            "updated",
+            "platforms",
+            "is_public",
+            "model_precision_type",
+            "is_nn_archive",
+            "downloads",
+        ],
+    )
+
+
+@instance.command(name="download")
+def instance_download(model_instance_id: str, dest: Optional[Path] = None):
+    for url in Request.get(
+        f"/api/v1/modelInstances/{model_instance_id}/download"
+    ).json():
+        with requests.get(url, stream=True) as response:
+            response.raise_for_status()
+
+            filename = unquote(Path(urlparse(url).path).name)
+            if dest is None:
+                dest = Path(
+                    Request.get(f"/api/v1/modelInstances/{model_instance_id}")
+                    .json()
+                    .get("slug", model_instance_id)
+                )
+            dest.mkdir(parents=True, exist_ok=True)
+
+            with open(dest / filename, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+        print(f"Donwloaded '{f.name}'")
+
+
+@instance.command(name="create")
+def instance_create(
+    name: str,
+    model_version_id: str,
+    model_type: ModelType,
+    parent_id: Optional[str] = None,
+    model_precision_type: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    input_shape: Optional[List[int]] = None,
+    quantization_data: Optional[str] = None,
+    is_deployable: Optional[bool] = None,
+) -> Dict[str, Any]:
+    data = {
+        "name": name,
+        "model_version_id": model_version_id,
+        "parent_id": parent_id,
+        "model_type": model_type,
+        "model_precision_type": model_precision_type,
+        "tags": tags or [],
+        "input_shape": input_shape,
+        "quantization_data": quantization_data,
+        "is_deployable": is_deployable,
+    }
+    return Request.post("/api/v1/modelInstances", json=data).json()
+
+
+@instance.command()
+def config(model_instance_id: str):
+    res = Request.get(f"/api/v1/modelInstances/{model_instance_id}/config")
+    print(res.json)
+
+
 @app.command()
-def convert():
-    logger.info("Converting model")
+def convert(
+    target: TargetArgument,
+    name: str,
+    license_type: Optional[str] = None,
+    public: bool = True,
+    description_short: Optional[str] = None,
+    description: Optional[str] = None,
+    architecture_id: Optional[str] = None,
+    tasks: Optional[List[Task]] = None,
+    links: Optional[List[str]] = None,
+    model_id: ModelIDOption = None,
+    version: Optional[str] = None,
+    repository_url: Optional[str] = None,
+    commit_hash: Optional[str] = None,
+    domain: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    version_id: ModelVersionIDOption = None,
+    path: PathOption = None,
+    opts: OptsArgument = None,
+):
+    if model_id is not None and version_id is not None:
+        raise ValueError("Cannot provide both model_id and version_id")
+
+    if model_id is None and version_id is None:
+        model_id = model_create(
+            name,
+            license_type,
+            public,
+            description_short,
+            description,
+            architecture_id,
+            tasks or [],
+            links or [],
+        )["id"]
+
+    if version_id is None:
+        if model_id is None:
+            print("`--model-id` is required to create a new model")
+            exit(1)
+
+        if version is None:
+            print("`--version` is required to create a new model version")
+            exit(1)
+
+        version_id = version_create(
+            model_id,
+            name,
+            version,
+            description,
+            repository_url,
+            commit_hash,
+            domain,
+            tags or [],
+        )["id"]
+
+    assert model_id is not None
+    instance_id = instance_create(name, model_id, ModelType(target.name))["id"]
+
+    if path is not None and is_nn_archive(path):
+        content_length = os.stat(path).st_size
+        Request.post(
+            f"/api/v1/modelInstances/{instance_id}/upload/",
+            json={"files": [path]},
+            headers={
+                "Content-Type": "multipart/form-data",
+                "Content-Length": str(content_length),
+            },
+        )
+    cfg, *_ = get_configs(path, opts)
+    Request.post(
+        f"/api/v1/modelInstances/{instance_id}/upload/",
+        json=cfg,
+    )
+
+    Request.post(
+        f"/api/v1/modelInstances/{instance_id}/export/{target.value}",
+        json=cfg,
+    )
