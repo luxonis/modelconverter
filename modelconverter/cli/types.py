@@ -189,27 +189,27 @@ ModelIDOption = Annotated[
     Optional[str], typer.Argument(help="The ID of the model")
 ]
 
+ModelIDRequired = Annotated[str, typer.Argument(help="The ID of the model")]
+
+
 ModelVersionIDOption = Annotated[
     Optional[str], typer.Option(help="The ID of the model version")
+]
+ModelVersionIDArgument = Annotated[
+    str, typer.Argument(help="The ID of the model version")
+]
+ModelPrecisionOption = Annotated[
+    Optional[ModelPrecision],
+    typer.Option(help="Precision of the model", show_default=False),
 ]
 
 ModelInstanceIDOption = Annotated[
     Optional[str], typer.Option(help="The ID of the model instance")
 ]
 
-
-PlatformOption = Annotated[
-    Target,
-    typer.Option(
-        case_sensitive=False,
-        help="What platform to convert the model to",
-        show_default=False,
-    ),
-]
-
 SlugArgument = Annotated[
     Optional[str],
-    typer.Argument(show_default=False, help="The model slug"),
+    typer.Argument(show_default=False, help="Slug of the model"),
 ]
 
 JSONOption = Annotated[
@@ -227,13 +227,54 @@ TeamIDOption = Annotated[
     Optional[str],
     typer.Option(help="The team ID", show_default=False),
 ]
+RepositoryUrlOption = Annotated[
+    Optional[str],
+    typer.Option(help="The repository URL", show_default=False),
+]
 TasksOption = Annotated[
     Optional[List[Task]],
     typer.Option(help="Tasks supported by the model", show_default=False),
 ]
+LinksOption = Annotated[
+    Optional[List[str]],
+    typer.Option(help="Links", show_default=False),
+]
+HubVersionOption = Annotated[
+    Optional[str],
+    typer.Option(help="Version number", show_default=False),
+]
+DomainOption = Annotated[
+    Optional[str],
+    typer.Option(help="Domain of the version", show_default=False),
+]
+TagsOption = Annotated[
+    Optional[List[str]],
+    typer.Option(help="Tags", show_default=False),
+]
+CommitHashOption = Annotated[
+    Optional[str],
+    typer.Option(help="Commit hash", show_default=False),
+]
+HubVersionRequired = Annotated[
+    str,
+    typer.Option(help="What version to ", show_default=False),
+]
+NameArgument = Annotated[str, typer.Argument(help="Name of the resource")]
 UserIDOption = Annotated[
     Optional[str],
     typer.Option(help="The user ID", show_default=False),
+]
+ArchitectureIDOption = Annotated[
+    Optional[str],
+    typer.Option(help="The architecture ID", show_default=False),
+]
+DescriptionOption = Annotated[
+    Optional[str],
+    typer.Option(help="Description of the model", show_default=False),
+]
+DescriptionShortOption = Annotated[
+    Optional[str],
+    typer.Option(help="Short description of the model", show_default=False),
 ]
 LicenseTypeOption = Annotated[
     Optional[License],
@@ -248,6 +289,51 @@ IsPublicOption = Annotated[
 SlugOption = Annotated[
     Optional[str],
     typer.Option(help="Slug of the model", show_default=False),
+]
+PlatformsOption = Annotated[
+    Optional[List[ModelType]],
+    typer.Option(help="Platforms supported by the model", show_default=False),
+]
+ModelTypeOption = Annotated[
+    Optional[ModelType],
+    typer.Option(help="Type of the model", show_default=False),
+]
+ParentIDOption = Annotated[
+    Optional[str],
+    typer.Option(help="The parent ID", show_default=False),
+]
+VariantSlugOption = Annotated[
+    Optional[str],
+    typer.Option(help="Slug of the model variant", show_default=False),
+]
+CompressionLevelOption = Annotated[
+    Optional[int],
+    typer.Option(
+        help="Compression level of the exported model. Only relevant for HAILO",
+        show_default=False,
+    ),
+]
+OptimizationLevelOption = Annotated[
+    Optional[int],
+    typer.Option(
+        help="Optimization level of the exported model. Only relevant for HAILO",
+        show_default=False,
+    ),
+]
+HashOption = Annotated[
+    Optional[str],
+    typer.Option(help="Hash of the instance", show_default=False),
+]
+NameOption = Annotated[
+    Optional[str],
+    typer.Option(help="Name of the model", show_default=False),
+]
+StatusOption = Annotated[
+    Optional[Status],
+    typer.Option(help="Status of the model", show_default=False),
+]
+ModelInstanceIDArgument = Annotated[
+    str, typer.Argument(help="The ID of the model instance")
 ]
 ProjectIDOption = Annotated[
     Optional[str],

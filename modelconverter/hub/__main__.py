@@ -10,31 +10,54 @@ from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
 
 from modelconverter.cli import (
+    ArchitectureIDOption,
+    CommitHashOption,
+    CompressionLevelOption,
+    DescriptionOption,
+    DescriptionShortOption,
+    DomainOption,
     FilterPublicEntityByTeamIDOption,
+    HashOption,
+    HubVersionOption,
+    HubVersionRequired,
     IdentifierArgument,
     IsPublicOption,
     JSONOption,
     LicenseTypeOption,
     LimitOption,
+    LinksOption,
     LuxonisOnlyOption,
     ModelClass,
     ModelIDArgument,
     ModelIDOption,
+    ModelIDRequired,
+    ModelInstanceIDArgument,
+    ModelPrecisionOption,
     ModelType,
+    ModelTypeOption,
+    ModelVersionIDArgument,
     ModelVersionIDOption,
+    NameArgument,
+    NameOption,
+    OptimizationLevelOption,
     OptsArgument,
     Order,
     OrderOption,
+    OutputDirOption,
+    ParentIDOption,
     PathOption,
+    PlatformsOption,
     ProjectIDOption,
+    RepositoryUrlOption,
     SlugOption,
     SortOption,
-    Status,
+    StatusOption,
+    TagsOption,
     TargetArgument,
-    Task,
     TasksOption,
     TeamIDOption,
     UserIDOption,
+    VariantSlugOption,
     get_configs,
     hub_ls,
     print_hub_resource_info,
@@ -140,19 +163,19 @@ def model_info(
 
 @model.command(name="create")
 def model_create(
-    name: str,
-    license_type: Optional[str] = None,
-    public: bool = True,
-    description_short: Optional[str] = None,
-    description: Optional[str] = None,
-    architecture_id: Optional[str] = None,
-    tasks: Optional[List[Task]] = None,
-    links: Optional[List[str]] = None,
+    name: NameArgument,
+    license_type: LicenseTypeOption = None,
+    is_public: IsPublicOption = True,
+    description: DescriptionOption = None,
+    description_short: DescriptionShortOption = None,
+    architecture_id: ArchitectureIDOption = None,
+    tasks: TasksOption = None,
+    links: LinksOption = None,
 ) -> Dict[str, Any]:
     data = {
         "name": name,
         "license_type": license_type,
-        "is_public": public,
+        "is_public": is_public,
         "description_short": description_short,
         "description": description,
         "architecture_id": architecture_id,
@@ -173,8 +196,8 @@ def version_ls(
     user_id: UserIDOption = None,
     model_id: ModelIDOption = None,
     slug: SlugOption = None,
-    variant_slug: Optional[str] = None,
-    version: Optional[str] = None,
+    variant_slug: VariantSlugOption = None,
+    version: HubVersionOption = None,
     is_public: IsPublicOption = True,
     limit: LimitOption = 50,
     sort: SortOption = "updated",
@@ -222,14 +245,14 @@ def version_info(
 
 @model.command(name="create")
 def version_create(
-    model_id: ModelIDArgument,
-    name: str,
-    version: str,
-    description: Optional[str] = None,
-    repository_url: Optional[str] = None,
-    commit_hash: Optional[str] = None,
-    domain: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    name: NameArgument,
+    model_id: ModelIDRequired,
+    version: HubVersionRequired,
+    description: DescriptionOption = None,
+    repository_url: RepositoryUrlOption = None,
+    commit_hash: CommitHashOption = None,
+    domain: DomainOption = None,
+    tags: TagsOption = None,
 ) -> Dict[str, Any]:
     """Creates a new version of a model."""
     data = {
@@ -252,20 +275,20 @@ def version_delete(model_id: ModelIDArgument):
 
 @instance.command(name="ls")
 def instance_ls(
-    platforms: Optional[List[ModelType]] = None,
+    platforms: PlatformsOption = None,
     team_id: TeamIDOption = None,
     user_id: UserIDOption = None,
     model_id: ModelIDOption = None,
     model_version_id: ModelVersionIDOption = None,
-    model_type: Optional[List[ModelType]] = None,
-    parent_id: Optional[str] = None,
+    model_type: ModelTypeOption = None,
+    parent_id: ParentIDOption = None,
     model_class: Optional[ModelClass] = None,
-    name: Optional[str] = None,
-    hash: Optional[str] = None,
-    status: Optional[Status] = None,
+    name: NameOption = None,
+    hash: HashOption = None,
+    status: StatusOption = None,
     is_public: IsPublicOption = True,
-    compression_level: Optional[int] = None,
-    optimization_level: Optional[int] = None,
+    compression_level: CompressionLevelOption = None,
+    optimization_level: OptimizationLevelOption = None,
     slug: SlugOption = None,
     limit: LimitOption = 50,
     sort: SortOption = "updated",
@@ -278,7 +301,7 @@ def instance_ls(
         else [],
         model_id=model_id,
         model_version_id=model_version_id,
-        model_type=[model.name for model in model_type] if model_type else [],
+        model_type=model_type,
         parent_id=parent_id,
         model_class=model_class,
         name=name,
@@ -321,7 +344,11 @@ def instance_info(
 
 
 @instance.command(name="download")
-def instance_download(model_instance_id: str, dest: Optional[Path] = None):
+def instance_download(
+    model_instance_id: ModelInstanceIDArgument,
+    output_dir: OutputDirOption,
+):
+    dest = Path(output_dir) if output_dir else None
     for url in Request.get(
         f"/api/v1/modelInstances/{model_instance_id}/download"
     ).json():
@@ -346,12 +373,12 @@ def instance_download(model_instance_id: str, dest: Optional[Path] = None):
 
 @instance.command(name="create")
 def instance_create(
-    name: str,
-    model_version_id: str,
+    name: NameArgument,
+    model_version_id: ModelVersionIDArgument,
     model_type: ModelType,
-    parent_id: Optional[str] = None,
-    model_precision_type: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    parent_id: ParentIDOption = None,
+    model_precision_type: ModelPrecisionOption = None,
+    tags: TagsOption = None,
     input_shape: Optional[List[int]] = None,
     quantization_data: Optional[str] = None,
     is_deployable: Optional[bool] = None,
@@ -371,7 +398,7 @@ def instance_create(
 
 
 @instance.command()
-def config(model_instance_id: str):
+def config(model_instance_id: ModelInstanceIDArgument):
     res = Request.get(f"/api/v1/modelInstances/{model_instance_id}/config")
     print(res.json)
 
@@ -379,20 +406,20 @@ def config(model_instance_id: str):
 @app.command()
 def convert(
     target: TargetArgument,
-    name: str,
-    license_type: Optional[str] = None,
-    public: bool = True,
-    description_short: Optional[str] = None,
-    description: Optional[str] = None,
-    architecture_id: Optional[str] = None,
-    tasks: Optional[List[Task]] = None,
-    links: Optional[List[str]] = None,
+    name: NameArgument,
+    license_type: LicenseTypeOption = None,
+    is_public: IsPublicOption = True,
+    description_short: DescriptionShortOption = None,
+    description: DescriptionOption = None,
+    architecture_id: ArchitectureIDOption = None,
+    tasks: TasksOption = None,
+    links: LinksOption = None,
     model_id: ModelIDOption = None,
-    version: Optional[str] = None,
-    repository_url: Optional[str] = None,
-    commit_hash: Optional[str] = None,
-    domain: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    version: HubVersionOption = None,
+    repository_url: RepositoryUrlOption = None,
+    commit_hash: CommitHashOption = None,
+    domain: DomainOption = None,
+    tags: TagsOption = None,
     version_id: ModelVersionIDOption = None,
     path: PathOption = None,
     opts: OptsArgument = None,
@@ -404,7 +431,7 @@ def convert(
         model_id = model_create(
             name,
             license_type,
-            public,
+            is_public,
             description_short,
             description,
             architecture_id,
