@@ -89,12 +89,7 @@ instance = typer.Typer(
     rich_markup_mode="markdown",
 )
 
-app.add_typer(
-    model,
-    name="model",
-    help="Models Interactions",
-    invoke_without_command=True,
-)
+app.add_typer(model, name="model", help="Models Interactions")
 app.add_typer(version, name="version", help="Hub Versions Interactions")
 app.add_typer(instance, name="instance", help="Hub Instances Interactions")
 
@@ -114,6 +109,7 @@ def model_ls(
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
 ):
+    """Lists models."""
     hub_ls(
         "models",
         team_id=team_id,
@@ -137,6 +133,7 @@ def model_info(
     identifier: IdentifierArgument,
     json: JSONOption = False,
 ):
+    """Prints information about a model."""
     return print_hub_resource_info(
         request_info(identifier, "models"),
         title="Model Info",
@@ -170,6 +167,7 @@ def model_create(
     tasks: TasksOption = None,
     links: LinksOption = None,
 ) -> Dict[str, Any]:
+    """Creates a new model resource."""
     data = {
         "name": name,
         "license_type": license_type,
@@ -185,6 +183,7 @@ def model_create(
 
 @model.command(name="delete")
 def model_delete(model_id: ModelIDArgument):
+    """Deletes a model."""
     Request.delete(f"/api/v1/models/{model_id}")
 
 
@@ -222,6 +221,7 @@ def version_ls(
 def version_info(
     identifier: IdentifierArgument, json: JSONOption = False
 ) -> Dict[str, Any]:
+    """Prints information about a model version."""
     return print_hub_resource_info(
         request_info(identifier, "modelVersions"),
         title="Model Version Info",
@@ -268,6 +268,7 @@ def version_create(
 
 @version.command(name="delete")
 def version_delete(model_id: ModelIDArgument):
+    """Deletes a model version."""
     Request.delete(f"/api/v1/modelVersions/{model_id}")
 
 
@@ -292,6 +293,7 @@ def instance_ls(
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
 ):
+    """Lists model instances."""
     hub_ls(
         "modelInstances",
         platforms=[platform.name for platform in platforms]
@@ -322,6 +324,7 @@ def instance_ls(
 def instance_info(
     identifier: IdentifierArgument, json: JSONOption = False
 ) -> Dict[str, Any]:
+    """Prints information about a model instance."""
     return print_hub_resource_info(
         request_info(identifier, "modelInstances"),
         title="Model Instance Info",
@@ -346,6 +349,7 @@ def instance_download(
     model_instance_id: ModelInstanceIDArgument,
     output_dir: OutputDirOption,
 ):
+    """Downloads files from a model instance."""
     dest = Path(output_dir) if output_dir else None
     for url in Request.get(
         f"/api/v1/modelInstances/{model_instance_id}/download"
@@ -381,6 +385,7 @@ def instance_create(
     quantization_data: Optional[str] = None,
     is_deployable: Optional[bool] = None,
 ) -> Dict[str, Any]:
+    """Creates a new model instance."""
     data = {
         "name": name,
         "model_version_id": model_version_id,
@@ -397,12 +402,14 @@ def instance_create(
 
 @instance.command()
 def config(model_instance_id: ModelInstanceIDArgument):
+    """Prints the configuration of a model instance."""
     res = Request.get(f"/api/v1/modelInstances/{model_instance_id}/config")
     print(res.json)
 
 
 @instance.command()
 def upload(file: Path, model_instance_id: ModelInstanceIDArgument):
+    """Uploads a file to a model instance."""
     content_length = file.stat().st_size
     Request.post(
         f"/api/v1/modelInstances/{model_instance_id}/upload/",
@@ -435,6 +442,7 @@ def convert(
     path: PathOption = None,
     opts: OptsArgument = None,
 ):
+    """Starts the online conversion process."""
     if model_id is not None and version_id is not None:
         raise ValueError("Cannot provide both model_id and version_id")
 
