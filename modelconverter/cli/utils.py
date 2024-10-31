@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import UUID
 
+import typer
 from luxonis_ml.nn_archive import is_nn_archive
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
+from requests.exceptions import HTTPError
 from rich import print
 from rich.box import ROUNDED
 from rich.console import Console, Group
@@ -265,4 +267,8 @@ def request_info(
     else:
         resource_id = slug_to_id(identifier, endpoint)
 
-    return Request.get(f"/api/v1/{endpoint}/{resource_id}/").json()
+    try:
+        return Request.get(f"/api/v1/{endpoint}/{resource_id}/").json()
+    except HTTPError:
+        typer.echo(f"Resource with ID '{resource_id}' not found.")
+        exit(1)
