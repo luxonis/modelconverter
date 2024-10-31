@@ -426,6 +426,7 @@ def convert(
     target: TargetArgument,
     name: NameArgument,
     license_type: LicenseTypeOption = None,
+    path: PathOption = None,
     is_public: IsPublicOption = True,
     description_short: DescriptionShortOption = None,
     description: DescriptionOption = None,
@@ -439,7 +440,6 @@ def convert(
     domain: DomainOption = None,
     tags: TagsOption = None,
     version_id: ModelVersionIDOption = None,
-    path: PathOption = None,
     opts: OptsArgument = None,
 ):
     """Starts the online conversion process."""
