@@ -241,7 +241,7 @@ def version_info(
     )
 
 
-@model.command(name="create")
+@version.command(name="create")
 def version_create(
     name: NameArgument,
     model_id: ModelIDRequired,
