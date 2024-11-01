@@ -481,10 +481,13 @@ def convert(
     assert model_id is not None
     instance_id = instance_create(name, model_id, ModelType(target.name))["id"]
 
-    if path is not None:
-        upload(path, instance_id)
-
     cfg, *_ = get_configs(str(path), opts)
+
+    for stage_cfg in cfg.stages.values():
+        upload(stage_cfg.input_model, instance_id)
+        if stage_cfg.input_bin is not None:
+            upload(stage_cfg.input_bin, instance_id)
+
     Request.post(
         f"/api/v1/modelInstances/{instance_id}/upload/",
         json=cfg,
