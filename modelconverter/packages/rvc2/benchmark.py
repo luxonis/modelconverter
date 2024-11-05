@@ -104,7 +104,7 @@ class RVC2Benchmark(Benchmark):
             for _ in range(repetitions):
                 progress.reset(infer_task, total=300 + 2 * xlink_buffer_count)
                 for _ in range(100 + xlink_buffer_count):
-                    nn_data = None
+                    nn_data = dai.NNData()
                     for inp_name in input_name_shape:
                         if input_name_type[inp_name] in ["FLOAT16", "FLOAT32"]:
                             frame = cast(
@@ -120,22 +120,27 @@ class RVC2Benchmark(Benchmark):
                             frame = np.random.randint(
                                 256,
                                 size=input_name_shape[inp_name],
-                                dtype=np.int32
-                                if input_name_type[inp_name] == "INT"
-                                else np.uint8
-                                if input_name_type[inp_name] == "U8F"
-                                else np.int8,
+                                dtype=(
+                                    np.int32
+                                    if input_name_type[inp_name] == "INT"
+                                    else (
+                                        np.uint8
+                                        if input_name_type[inp_name] == "U8F"
+                                        else np.int8
+                                    )
+                                ),
                             )
                         else:
                             raise RuntimeError(
                                 f"Unknown input type detected: {input_name_type[inp_name]}!"
                             )
 
-                        nn_data = dai.NNData()
                         nn_data.setLayer(inp_name, frame)
 
-                    if nn_data is None:
-                        raise RuntimeError("No input data was created!")
+                    if len(input_name_shape) == 0:
+                        raise RuntimeError(
+                            "Failed to create input data: missing required information for one or more input layers."
+                        )
                     detection_in.send(nn_data)
                     progress.update(infer_task, advance=1)
 
