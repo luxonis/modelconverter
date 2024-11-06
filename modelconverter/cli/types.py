@@ -9,19 +9,19 @@ from modelconverter.utils.types import Target
 
 
 class Task(str, Enum):
-    CLASSIFICATION = "classification"
-    OBJECT_DETECTION = "object_detection"
-    SEGMENTATION = "segmentation"
-    KEYPOINT_DETECTION = "keypoint_detection"
-    DEPTH_ESTIMATION = "depth_estimation"
-    LINE_DETECTION = "line_detection"
-    FEATURE_DETECTION = "feature_detection"
-    DENOISING = "denoising"
-    LOW_LIGHT_ENHANCEMENT = "low_light_enhancement"
-    SUPER_RESOLUTION = "super_resolution"
-    REGRESSION = "regression"
-    INSTANCE_SEGMENTATION = "instance_segmentation"
-    IMAGE_EMBEDDING = "image_embedding"
+    CLASSIFICATION = "CLASSIFICATION"
+    OBJECT_DETECTION = "OBJECT_DETECTION"
+    SEGMENTATION = "SEGMENTATION"
+    KEYPOINT_DETECTION = "KEYPOINT_DETECTION"
+    DEPTH_ESTIMATION = "DEPTH_ESTIMATION"
+    LINE_DETECTION = "LINE_DETECTION"
+    FEATURE_DETECTION = "FEATURE_DETECTION"
+    DENOISING = "DENOISING"
+    LOW_LIGHT_ENHANCEMENT = "LOW_LIGHT_ENHANCEMENT"
+    SUPER_RESOLUTION = "SUPER_RESOLUTION"
+    REGRESSION = "REGRESSION"
+    INSTANCE_SEGMENTATION = "INSTANCE_SEGMENTATION"
+    IMAGE_EMBEDDING = "IMAGE_EMBEDDING"
 
 
 class License(str, Enum):

@@ -5,6 +5,7 @@ from urllib.parse import unquote, urlparse
 
 import requests
 import typer
+from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
 
 from modelconverter.cli import (
@@ -178,13 +179,13 @@ def model_create(
         "tasks": tasks or [],
         "links": links or [],
     }
-    return Request.post("/api/v1/models", json=data).json()
+    return Request.post("models", json=data).json()
 
 
 @model.command(name="delete")
 def model_delete(model_id: ModelIDArgument):
     """Deletes a model."""
-    Request.delete(f"/api/v1/models/{model_id}")
+    Request.delete(f"models/{model_id}")
 
 
 @version.command(name="ls")
@@ -263,13 +264,13 @@ def version_create(
         "domain": domain,
         "tags": tags or [],
     }
-    return Request.post("/api/v1/models", json=data).json()
+    return Request.post("models", json=data).json()
 
 
 @version.command(name="delete")
 def version_delete(model_id: ModelIDArgument):
     """Deletes a model version."""
-    Request.delete(f"/api/v1/modelVersions/{model_id}")
+    Request.delete(f"modelVersions/{model_id}")
 
 
 @instance.command(name="ls")
@@ -316,7 +317,14 @@ def instance_ls(
         limit=limit,
         sort=sort,
         order=order,
-        keys=["id", "model_version_id", "model_id", "slug", "platforms"],
+        keys=[
+            "id",
+            "model_version_id",
+            "model_id",
+            "slug",
+            "platforms",
+            "is_nn_archive",
+        ],
     )
 
 
@@ -352,7 +360,7 @@ def instance_download(
     """Downloads files from a model instance."""
     dest = Path(output_dir) if output_dir else None
     for url in Request.get(
-        f"/api/v1/modelInstances/{model_instance_id}/download"
+        f"modelInstances/{model_instance_id}/download"
     ).json():
         with requests.get(url, stream=True) as response:
             response.raise_for_status()
@@ -360,7 +368,7 @@ def instance_download(
             filename = unquote(Path(urlparse(url).path).name)
             if dest is None:
                 dest = Path(
-                    Request.get(f"/api/v1/modelInstances/{model_instance_id}")
+                    Request.get(f"modelInstances/{model_instance_id}")
                     .json()
                     .get("slug", model_instance_id)
                 )
@@ -397,14 +405,21 @@ def instance_create(
         "quantization_data": quantization_data,
         "is_deployable": is_deployable,
     }
-    return Request.post("/api/v1/modelInstances", json=data).json()
+    return Request.post("modelInstances", json=data).json()
 
 
 @instance.command()
 def config(model_instance_id: ModelInstanceIDArgument):
     """Prints the configuration of a model instance."""
-    res = Request.get(f"/api/v1/modelInstances/{model_instance_id}/config")
-    print(res.json)
+    res = Request.get(f"modelInstances/{model_instance_id}/config")
+    print(res.json())
+
+
+@instance.command()
+def files(model_instance_id: ModelInstanceIDArgument):
+    """Prints the configuration of a model instance."""
+    res = Request.get(f"modelInstances/{model_instance_id}/files")
+    print(res.json())
 
 
 @instance.command()
@@ -412,7 +427,7 @@ def upload(file: Path, model_instance_id: ModelInstanceIDArgument):
     """Uploads a file to a model instance."""
     content_length = file.stat().st_size
     Request.post(
-        f"/api/v1/modelInstances/{model_instance_id}/upload/",
+        f"modelInstances/{model_instance_id}/upload/",
         json={"files": [file]},
         headers={
             "Content-Type": "multipart/form-data",
@@ -481,7 +496,11 @@ def convert(
     assert model_id is not None
     instance_id = instance_create(name, model_id, ModelType(target.name))["id"]
 
-    cfg, *_ = get_configs(str(path), opts)
+    if path is not None:
+        if is_nn_archive(path):
+            upload(path, instance_id)
+
+    cfg, *_ = get_configs(str(path) if path else None, opts)
 
     for stage_cfg in cfg.stages.values():
         upload(stage_cfg.input_model, instance_id)
@@ -489,11 +508,12 @@ def convert(
             upload(stage_cfg.input_bin, instance_id)
 
     Request.post(
-        f"/api/v1/modelInstances/{instance_id}/upload/",
+        f"modelInstances/{instance_id}/upload/",
         json=cfg,
     )
 
     Request.post(
-        f"/api/v1/modelInstances/{instance_id}/export/{target.value}",
+        f"modelInstances/{instance_id}/export/{target.value}",
         json=cfg,
     )
+    instance_download(instance_id, None)

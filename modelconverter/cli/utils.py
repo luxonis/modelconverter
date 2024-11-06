@@ -216,7 +216,7 @@ def print_hub_resource_info(
 
 
 def hub_ls(endpoint: str, keys: List[str], **kwargs) -> None:
-    data = Request.get(f"/api/v1/{endpoint}/", params=kwargs).json()
+    data = Request.get(f"{endpoint}/", params=kwargs).json()
     print(kwargs)
     table = Table(row_styles=["yellow", "cyan"], box=ROUNDED)
     for key in keys:
@@ -225,7 +225,7 @@ def hub_ls(endpoint: str, keys: List[str], **kwargs) -> None:
     for model in data:
         renderables = []
         for key in keys:
-            value = model.get(key, "N/A")
+            value = str(model.get(key, "N/A"))
             if isinstance(value, list):
                 value = ", ".join(value)
             renderables.append(value)
@@ -252,7 +252,7 @@ def slug_to_id(
                 "is_public": is_public,
                 "slug": slug,
             }
-            data = Request.get(f"/api/v1/{endpoint}/", params=params).json()
+            data = Request.get(f"{endpoint}/", params=params).json()
             if data:
                 return data[0]["id"]
     raise ValueError(f"Model with slug '{slug}' not found.")
@@ -268,7 +268,7 @@ def request_info(
         resource_id = slug_to_id(identifier, endpoint)
 
     try:
-        return Request.get(f"/api/v1/{endpoint}/{resource_id}/").json()
+        return Request.get(f"{endpoint}/{resource_id}/").json()
     except HTTPError:
         typer.echo(f"Resource with ID '{resource_id}' not found.")
         exit(1)
