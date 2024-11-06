@@ -294,19 +294,16 @@ ArchitectureIDOption = Annotated[
 ]
 
 DescriptionOption = Annotated[
-    Optional[str],
+    str,
     typer.Option(help="Description of the model", show_default=False),
 ]
 
 DescriptionShortOption = Annotated[
-    Optional[str],
+    str,
     typer.Option(help="Short description of the model", show_default=False),
 ]
 
-LicenseTypeOption = Annotated[
-    Optional[License],
-    typer.Option(help="License type.", show_default=False),
-]
+LicenseTypeOption = Annotated[License, typer.Option(help="License type.")]
 
 IsPublicOption = Annotated[
     bool,

@@ -62,6 +62,7 @@ from modelconverter.cli import (
     print_hub_resource_info,
     request_info,
 )
+from modelconverter.cli.types import License
 
 from .hub_requests import Request
 
@@ -100,7 +101,7 @@ def model_ls(
     team_id: TeamIDOption = None,
     tasks: TasksOption = None,
     user_id: UserIDOption = None,
-    license_type: LicenseTypeOption = None,
+    license_type: LicenseTypeOption = License.UNDEFINED,
     is_public: IsPublicOption = True,
     slug: SlugOption = None,
     project_id: ProjectIDOption = None,
@@ -160,10 +161,10 @@ def model_info(
 @model.command(name="create")
 def model_create(
     name: NameArgument,
-    license_type: LicenseTypeOption = None,
+    license_type: LicenseTypeOption = License.UNDEFINED,
     is_public: IsPublicOption = True,
-    description: DescriptionOption = None,
-    description_short: DescriptionShortOption = None,
+    description: DescriptionOption = "<empty>",
+    description_short: DescriptionShortOption = "<empty>",
     architecture_id: ArchitectureIDOption = None,
     tasks: TasksOption = None,
     links: LinksOption = None,
@@ -247,7 +248,7 @@ def version_create(
     name: NameArgument,
     model_id: ModelIDRequired,
     version: HubVersionRequired,
-    description: DescriptionOption = None,
+    description: DescriptionOption = "<empty>",
     repository_url: RepositoryUrlOption = None,
     commit_hash: CommitHashOption = None,
     domain: DomainOption = None,
@@ -440,11 +441,11 @@ def upload(file: Path, model_instance_id: ModelInstanceIDArgument):
 def convert(
     target: TargetArgument,
     name: NameArgument,
-    license_type: LicenseTypeOption = None,
+    license_type: LicenseTypeOption = License.UNDEFINED,
     path: PathOption = None,
     is_public: IsPublicOption = True,
-    description_short: DescriptionShortOption = None,
-    description: DescriptionOption = None,
+    description_short: DescriptionShortOption = "<empty>",
+    description: DescriptionOption = "<empty>",
     architecture_id: ArchitectureIDOption = None,
     tasks: TasksOption = None,
     links: LinksOption = None,
