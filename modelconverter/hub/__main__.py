@@ -539,7 +539,63 @@ def convert(
     tool_version: VersionOption = None,
     opts: OptsArgument = None,
 ) -> Path:
-    """Starts the online conversion process."""
+    """Starts the online conversion process.
+
+    @type target: Target
+    @param target: Target platform, one of ['RVC2', 'RVC3', 'RVC4', 'HAILO']
+    @type path: Path
+    @param path: Path to the model file, NN Archive, or configuration file
+    @type name: Optional[str]
+    @param name: Name of the model.
+        If not specified, the name will be taken from the configuration file or the model file
+    @type license_type: License
+    @param license_type: License type. Default: "UNDEFINED"
+    @type is_public: bool
+    @param is_public: Whether the model is public. Default: True
+    @type description_short: str
+    @param description_short: Short description of the model. Default: "<empty>"
+    @type description: Optional[str]
+    @param description: Full description of the model
+    @type architecture_id: Optional[int]
+    @param architecture_id: Architecture ID
+    @type tasks: Optional[List[str]]
+    @param tasks: List of tasks this model supports
+    @type links: Optional[List[str]]
+    @param links: List of links to related resources
+    @type model_id: Optional[int]
+    @param model_id: ID of an existind Model resource.
+        If specified, this model will be used instead of creating a new one
+    @type version: Optional[str]
+    @param version: Version of the model. If not specified, the version will be auto-incremented
+        from the latest version of the model. If no versions exist, the version will be "0.1.0"
+    @type repository_url: Optional[str]
+    @param repository_url: URL of the repository
+    @type commit_hash: Optional[str]
+    @param commit_hash: Commit hash
+    @type target_precision: Literal["FP16", "FP32", "INT8"]
+    @param target_precision: Target precision. Default: "INT8"
+    @type quantization_data: Literal["RANDOM", "GENERAL", "DRIVING", "FOOD", "INDOORS", "WAREHOUSE"]
+    @param quantization_data: Quantization data. Default: "RANDOM"
+    @type domain: Optional[str]
+    @param domain: Domain of the model
+    @type tags: Optional[List[str]]
+    @param tags: List of tags for the model
+    @type version_id: Optional[int]
+    @param version_id: ID of an existing Model Version resource.
+        If specified, this version will be used instead of creating a new one
+    @type output_dir: Optional[Path]
+    @param output_dir: Output directory for the downloaded files
+    @type tool_version: Optional[str]
+    @param tool_version: Version of the tool used for conversion.
+        Available options are:
+            - RVC2: "2021.4.0" (default), "2022.3.0"
+            - RVC4: "2.23.0" (default), "2.24.0", "2.25.0", "2.26.2", "2.27.0"
+
+    @type opts: Optional[List[str]]
+    @param opts: Additional options for the conversion process.
+    @rtype: Path
+    @return: Path to the downloaded converted model
+    """
     opts = opts or []
     if isinstance(target, str):
         target = Target(target.lower())
