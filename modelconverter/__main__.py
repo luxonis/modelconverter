@@ -37,7 +37,7 @@ from modelconverter.utils.constants import (
     MODELS_DIR,
     OUTPUTS_DIR,
 )
-from modelconverter.utils.types import Encoding, Target
+from modelconverter.utils.types import DataType, Encoding, Target
 
 logger = logging.getLogger(__name__)
 
@@ -217,7 +217,15 @@ def extract_preprocessing(
 
         dai_type = encoding.from_.value
         if dai_type != "NONE":
-            dai_type += "888i" if layout == "NHWC" else "888p"
+            if (
+                inp.data_type == DataType.FLOAT32
+                or inp.data_type == DataType.INT8
+            ):
+                type = "888"
+            elif inp.data_type == DataType.FLOAT16:
+                type = "F16F16F16"
+            dai_type += type
+            dai_type += "i" if layout == "NHWC" else "p"
 
         preproc_block = PreprocessingBlock(
             mean=mean,
