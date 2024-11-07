@@ -24,6 +24,7 @@ class DataType(Enum):
     FLOAT16 = "float16"
     FLOAT32 = "float32"
     FLOAT64 = "float64"
+    INT4 = "int4"
     INT8 = "int8"
     INT16 = "int16"
     INT32 = "int32"
