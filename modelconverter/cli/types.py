@@ -102,8 +102,6 @@ FormatOption = Annotated[
 VersionOption = Annotated[
     Optional[str],
     typer.Option(
-        "-v",
-        "--version",
         help="""Version of the underlying conversion tools to use.
         Available options differ based on the target platform:
 

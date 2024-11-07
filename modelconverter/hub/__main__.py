@@ -588,7 +588,7 @@ def convert(
     @type tool_version: Optional[str]
     @param tool_version: Version of the tool used for conversion.
         Available options are:
-            - RVC2: "2021.4.0" (default), "2022.3.0"
+            - RVC2: "2021.4.0", "2022.3.0" (default)
             - RVC4: "2.23.0" (default), "2.24.0", "2.25.0", "2.26.2", "2.27.0"
 
     @type opts: Optional[List[str]]
@@ -599,6 +599,8 @@ def convert(
     opts = opts or []
     if isinstance(target, str):
         target = Target(target.lower())
+
+    path = Path(path) if path else None
 
     if path is not None and not is_nn_archive(path):
         opts.extend(["input_model", str(path)])
