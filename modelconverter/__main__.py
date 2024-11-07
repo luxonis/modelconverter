@@ -114,7 +114,7 @@ TargetArgument: TypeAlias = Annotated[
 DevOption: TypeAlias = Annotated[
     bool,
     typer.Option(
-        help="Builds a new iamge and uses the development docker-compose file."
+        help="Builds a new image and uses the development docker-compose file."
     ),
 ]
 
