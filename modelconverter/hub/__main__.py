@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 from time import sleep
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import unquote, urlparse
 
 import requests
@@ -483,28 +483,31 @@ def upload(file_path: str, identifier: IdentifierArgument):
     print(f"File '{file_path}' uploaded to model instance '{identifier}'")
 
 
-@instance.command()
 def export(
-    name: NameArgument,
-    identifier: IdentifierArgument,
-    target: TargetArgument,
-    target_precision: ModelPrecisionOption = ModelPrecision.INT8,
-    quantization_data: QuantizationOption = Quantization.RANDOM,
+    name: str,
+    identifier: str,
+    target: Literal["RVC2", "RVC3", "RVC4", "HAILO"],
+    target_precision: Literal["FP16", "FP32", "INT8"] = "INT8",
+    quantization_data: Literal[
+        "RANDOM", "GENERAL", "DRIVING", "FOOD", "INDOORS", "WAREHOUSE"
+    ] = "RANDOM",
+    **kwargs,
 ) -> Dict[str, Any]:
     """Exports a model instance."""
     model_instance_id = get_resource_id(identifier, "modelInstances")
     json: Dict[str, Any] = {
         "name": name,
-        "quantization_data": quantization_data.name,
+        "quantization_data": quantization_data,
+        **kwargs,
     }
-    if target in [Target.RVC4]:
+    if target == "RVC4":
         json["target_precision"] = target_precision
     res = Request.post(
-        f"modelInstances/{model_instance_id}/export/{target.value}",
+        f"modelInstances/{model_instance_id}/export/{target.lower()}",
         json=json,
     ).json()
     print(
-        f"Model instance '{name}' created for {target.name} export with ID '{res['id']}'"
+        f"Model instance '{name}' created for {target} export with ID '{res['id']}'"
     )
     return res
 
@@ -536,6 +539,8 @@ def convert(
 ) -> Path:
     """Starts the online conversion process."""
     opts = opts or []
+    if isinstance(target, str):
+        target = Target(target.lower())
 
     if path is not None:
         opts.extend(["input_model", str(path)])
@@ -602,16 +607,16 @@ def convert(
     if cfg.input_bin is not None:
         upload(str(cfg.input_bin), instance_id)
 
-    cfg = cfg.model_dump()
-
+    cfg = cfg.model_dump(mode="json")
     exported_instance_name = f"{version_name} exported to {target.value}"
 
     instance_id = export(
         exported_instance_name,
         instance_id,
-        target,
-        target_precision=target_precision,
-        quantization_data=quantization_data,
+        target.name,
+        target_precision=target_precision.name,
+        quantization_data=quantization_data.name,
+        inputs=cfg["inputs"],
     )["id"]
 
     with Progress() as progress:
