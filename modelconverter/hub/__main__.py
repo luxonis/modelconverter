@@ -1,11 +1,11 @@
 import logging
 from pathlib import Path
+from time import sleep
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
 import requests
 import typer
-from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
 
 from modelconverter.cli import (
@@ -18,24 +18,23 @@ from modelconverter.cli import (
     FilterPublicEntityByTeamIDOption,
     HashOption,
     HubVersionOption,
-    HubVersionRequired,
+    HubVersionOptionRequired,
     IdentifierArgument,
     IsPublicOption,
     JSONOption,
     LicenseTypeOption,
+    LicenseTypeOptionRequired,
     LimitOption,
     LinksOption,
     LuxonisOnlyOption,
     ModelClass,
-    ModelIDArgument,
     ModelIDOption,
-    ModelIDRequired,
-    ModelInstanceIDArgument,
+    ModelIDOptionRequired,
     ModelPrecisionOption,
     ModelType,
     ModelTypeOption,
-    ModelVersionIDArgument,
     ModelVersionIDOption,
+    ModelVersionIDOptionRequired,
     NameArgument,
     NameOption,
     OptimizationLevelOption,
@@ -58,11 +57,13 @@ from modelconverter.cli import (
     UserIDOption,
     VariantSlugOption,
     get_configs,
+    get_resource_id,
     hub_ls,
     print_hub_resource_info,
     request_info,
 )
-from modelconverter.cli.types import License
+from modelconverter.cli.types import License, ModelPrecision
+from modelconverter.utils.types import Target
 
 from .hub_requests import Request
 
@@ -101,7 +102,7 @@ def model_ls(
     team_id: TeamIDOption = None,
     tasks: TasksOption = None,
     user_id: UserIDOption = None,
-    license_type: LicenseTypeOption = License.UNDEFINED,
+    license_type: LicenseTypeOption = None,
     is_public: IsPublicOption = True,
     slug: SlugOption = None,
     project_id: ProjectIDOption = None,
@@ -161,9 +162,9 @@ def model_info(
 @model.command(name="create")
 def model_create(
     name: NameArgument,
-    license_type: LicenseTypeOption = License.UNDEFINED,
+    license_type: LicenseTypeOptionRequired = License.UNDEFINED,
     is_public: IsPublicOption = True,
-    description: DescriptionOption = "<empty>",
+    description: DescriptionOption = None,
     description_short: DescriptionShortOption = "<empty>",
     architecture_id: ArchitectureIDOption = None,
     tasks: TasksOption = None,
@@ -180,13 +181,18 @@ def model_create(
         "tasks": tasks or [],
         "links": links or [],
     }
-    return Request.post("models", json=data).json()
+    res = Request.post("models", json=data).json()
+    print(f"Model '{res['name']}' created with ID '{res['id']}'")
+    model_info(res["id"])
+    return res
 
 
 @model.command(name="delete")
-def model_delete(model_id: ModelIDArgument):
+def model_delete(identifier: IdentifierArgument):
     """Deletes a model."""
+    model_id = get_resource_id(identifier, "models")
     Request.delete(f"models/{model_id}")
+    print(f"Model '{identifier}' deleted")
 
 
 @version.command(name="ls")
@@ -232,8 +238,8 @@ def version_info(
             "name",
             "slug",
             "version",
-            "model_id",
             "id",
+            "model_id",
             "created",
             "updated",
             "platforms",
@@ -246,9 +252,9 @@ def version_info(
 @version.command(name="create")
 def version_create(
     name: NameArgument,
-    model_id: ModelIDRequired,
-    version: HubVersionRequired,
-    description: DescriptionOption = "<empty>",
+    model_id: ModelIDOptionRequired,
+    version: HubVersionOptionRequired,
+    description: DescriptionOption = None,
     repository_url: RepositoryUrlOption = None,
     commit_hash: CommitHashOption = None,
     domain: DomainOption = None,
@@ -265,13 +271,18 @@ def version_create(
         "domain": domain,
         "tags": tags or [],
     }
-    return Request.post("models", json=data).json()
+    res = Request.post("modelVersions", json=data).json()
+    print(f"Model version '{res['name']}' created with ID '{res['id']}'")
+    version_info(res["id"])
+    return res
 
 
 @version.command(name="delete")
-def version_delete(model_id: ModelIDArgument):
+def version_delete(identifier: IdentifierArgument):
     """Deletes a model version."""
-    Request.delete(f"modelVersions/{model_id}")
+    version_id = get_resource_id(identifier, "modelVersions")
+    Request.delete(f"modelVersions/{version_id}")
+    print(f"Model version '{version_id}' deleted")
 
 
 @instance.command(name="ls")
@@ -342,6 +353,8 @@ def instance_info(
             "name",
             "slug",
             "id",
+            "model_version_id",
+            "model_id",
             "created",
             "updated",
             "platforms",
@@ -355,11 +368,12 @@ def instance_info(
 
 @instance.command(name="download")
 def instance_download(
-    model_instance_id: ModelInstanceIDArgument,
-    output_dir: OutputDirOption,
+    identifier: IdentifierArgument,
+    output_dir: OutputDirOption = None,
 ):
     """Downloads files from a model instance."""
     dest = Path(output_dir) if output_dir else None
+    model_instance_id = get_resource_id(identifier, "modelInstances")
     for url in Request.get(
         f"modelInstances/{model_instance_id}/download"
     ).json():
@@ -385,8 +399,8 @@ def instance_download(
 @instance.command(name="create")
 def instance_create(
     name: NameArgument,
-    model_version_id: ModelVersionIDArgument,
-    model_type: ModelType,
+    model_version_id: ModelVersionIDOptionRequired,
+    model_type: ModelTypeOption,
     parent_id: ParentIDOption = None,
     model_precision_type: ModelPrecisionOption = None,
     tags: TagsOption = None,
@@ -406,46 +420,80 @@ def instance_create(
         "quantization_data": quantization_data,
         "is_deployable": is_deployable,
     }
-    return Request.post("modelInstances", json=data).json()
+    res = Request.post("modelInstances", json=data).json()
+    print(f"Model instance '{res['name']}' created with ID '{res['id']}'")
+    instance_info(res["id"])
+    return res
+
+
+@instance.command(name="delete")
+def instance_delete(identifier: IdentifierArgument):
+    """Deletes a model instance."""
+    instance_id = get_resource_id(identifier, "modelInstances")
+    Request.delete(f"modelInstances/{instance_id}")
+    print(f"Model instance '{identifier}' deleted")
 
 
 @instance.command()
-def config(model_instance_id: ModelInstanceIDArgument):
+def config(identifier: IdentifierArgument):
     """Prints the configuration of a model instance."""
+    model_instance_id = get_resource_id(identifier, "modelInstances")
     res = Request.get(f"modelInstances/{model_instance_id}/config")
     print(res.json())
 
 
 @instance.command()
-def files(model_instance_id: ModelInstanceIDArgument):
+def files(identifier: IdentifierArgument):
     """Prints the configuration of a model instance."""
+    model_instance_id = get_resource_id(identifier, "modelInstances")
     res = Request.get(f"modelInstances/{model_instance_id}/files")
     print(res.json())
 
 
 @instance.command()
-def upload(file: Path, model_instance_id: ModelInstanceIDArgument):
+def upload(file_path: str, identifier: IdentifierArgument):
     """Uploads a file to a model instance."""
-    content_length = file.stat().st_size
-    Request.post(
-        f"modelInstances/{model_instance_id}/upload/",
-        json={"files": [file]},
-        headers={
-            "Content-Type": "multipart/form-data",
-            "Content-Length": str(content_length),
-        },
+    model_instance_id = get_resource_id(identifier, "modelInstances")
+    with open(file_path, "rb") as file:
+        files = {
+            "files": file  # Use the key 'files' to match the form field in the curl command
+        }
+
+        res = Request.post(
+            f"modelInstances/{model_instance_id}/upload", files=files
+        )
+    print(res.json())
+
+
+@instance.command()
+def export(
+    identifier: IdentifierArgument,
+    target: TargetArgument,
+    target_precision: ModelPrecisionOption = ModelPrecision.INT8,
+    name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Exports a model instance."""
+    model_instance_id = get_resource_id(identifier, "modelInstances")
+    json = {"name": name}
+    if target in [Target.RVC4]:
+        json["target_precision"] = target_precision
+    res = Request.post(
+        f"modelInstances/{model_instance_id}/export/{target.value}",
+        json=json,
     )
+    return res.json()
 
 
 @app.command()
 def convert(
     target: TargetArgument,
-    name: NameArgument,
-    license_type: LicenseTypeOption = License.UNDEFINED,
-    path: PathOption = None,
+    path: PathOption,
+    name: NameOption = None,
+    license_type: LicenseTypeOptionRequired = License.UNDEFINED,
+    config_path: PathOption = None,
     is_public: IsPublicOption = True,
     description_short: DescriptionShortOption = "<empty>",
-    description: DescriptionOption = "<empty>",
+    description: DescriptionOption = None,
     architecture_id: ArchitectureIDOption = None,
     tasks: TasksOption = None,
     links: LinksOption = None,
@@ -453,22 +501,63 @@ def convert(
     version: HubVersionOption = None,
     repository_url: RepositoryUrlOption = None,
     commit_hash: CommitHashOption = None,
+    target_precision: ModelPrecisionOption = ModelPrecision.INT8,
     domain: DomainOption = None,
     tags: TagsOption = None,
     version_id: ModelVersionIDOption = None,
     opts: OptsArgument = None,
 ):
     """Starts the online conversion process."""
-    if model_id is not None and version_id is not None:
-        raise ValueError("Cannot provide both model_id and version_id")
+    opts = opts or []
+
+    if path is not None:
+        opts.extend(["input_model", str(path)])
+
+    cfg, *_ = get_configs(str(config_path) if config_path else None, opts)
+
+    if len(cfg.stages) > 1:
+        raise ValueError(
+            "Only single-stage models are supported with online conversion."
+        )
+    name = name or cfg.name
+
+    cfg = next(iter(cfg.stages.values()))
+
+    suffix = cfg.input_model.suffix
+    if suffix == ".onnx":
+        model_type = ModelType.ONNX
+    elif suffix == ".tflite":
+        model_type = ModelType.TFLITE
+    elif suffix in [".xml", ".bin"]:
+        model_type = ModelType.IR
+    else:
+        raise ValueError(f"Unsupported model format: {suffix}")
+
+    shape = cfg.inputs[0].shape
+    layout = cfg.inputs[0].layout
+
+    if shape is not None:
+        if layout is not None and "H" in layout and "W" in layout:
+            h, w = shape[layout.index("H")], shape[layout.index("W")]
+            version_name = f"{name} {h}x{w}"
+        elif len(shape) == 4:
+            if model_type == ModelType.TFLITE:
+                h, w = shape[1], shape[2]
+            else:
+                h, w = shape[2], shape[3]
+            version_name = f"{name} {h}x{w}"
+        else:
+            version_name = name
+    else:
+        version_name = name
 
     if model_id is None and version_id is None:
         model_id = model_create(
             name,
             license_type,
             is_public,
-            description_short,
             description,
+            description_short,
             architecture_id,
             tasks or [],
             links or [],
@@ -479,13 +568,11 @@ def convert(
             print("`--model-id` is required to create a new model")
             exit(1)
 
-        if version is None:
-            print("`--version` is required to create a new model version")
-            exit(1)
+        version = version or "0.1.0"
 
         version_id = version_create(
+            version_name,
             model_id,
-            name,
             version,
             description,
             repository_url,
@@ -494,27 +581,27 @@ def convert(
             tags or [],
         )["id"]
 
-    assert model_id is not None
-    instance_id = instance_create(name, model_id, ModelType(target.name))["id"]
+    assert version_id is not None
+    instance_name = f"{version_name} base instance"
+    instance_id = instance_create(instance_name, version_id, model_type)["id"]
 
-    if path is not None:
-        if is_nn_archive(path):
-            upload(path, instance_id)
+    upload(str(cfg.input_model), instance_id)
+    if cfg.input_bin is not None:
+        upload(str(cfg.input_bin), instance_id)
 
-    cfg, *_ = get_configs(str(path) if path else None, opts)
+    cfg = cfg.model_dump()
 
-    for stage_cfg in cfg.stages.values():
-        upload(stage_cfg.input_model, instance_id)
-        if stage_cfg.input_bin is not None:
-            upload(stage_cfg.input_bin, instance_id)
+    exported_instance_name = f"{version_name} exported to {target.value}"
 
-    Request.post(
-        f"modelInstances/{instance_id}/upload/",
-        json=cfg,
-    )
+    instance_id = export(
+        instance_id,
+        target,
+        target_precision=target_precision,
+        name=exported_instance_name,
+    )["id"]
 
-    Request.post(
-        f"modelInstances/{instance_id}/export/{target.value}",
-        json=cfg,
-    )
+    while instance_info(instance_id, json=True)["status"] != "available":
+        sleep(5)
+        pass
+
     instance_download(instance_id, None)

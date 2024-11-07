@@ -9,14 +9,13 @@ from modelconverter.utils import environ
 class Request:
     URL: Final[str] = f"{environ.HUBAI_URL.rstrip('/')}/api/v1"
     HEADERS: Final[Dict[str, str]] = {
-        "Content-Type": "application/json",
         "accept": "application/json",
         "Authorization": f"Bearer {environ.HUBAI_API_KEY}",
     }
 
     @staticmethod
     def _check_response(response: Response) -> Response:
-        if response.status_code != 200:
+        if response.status_code >= 400:
             raise HTTPError(response.json())
         return response
 

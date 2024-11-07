@@ -7,7 +7,7 @@ def make_default_layout(shape: List[int]) -> str:
     Tries to guess most common layouts for the given shape pattern.
     Otherwise, uses the first free letter of the alphabet for each dimension.
 
-    Example::
+    Example:
         >>> make_default_layout([1, 3, 256, 256])
         >>> "NCHW"
         >>> make_default_layout([1, 19, 7, 8])
@@ -41,8 +41,7 @@ def guess_new_layout(
     The new shape must contain the same elements as the old one.
     If two values are the same, the order of their labels will be preserved.
 
-    Example::
-
+    Example:
         >>> old_shape = [1, 3, 256, 256]
         >>> old_layout = "NCHW"
         >>> guess_new_layout(old_layout, old_shape, [1, 256, 256, 3])

@@ -198,15 +198,17 @@ ModelIDOption = Annotated[
     Optional[str], typer.Option(help="The ID of the model", show_default=False)
 ]
 
-ModelIDRequired = Annotated[str, typer.Argument(help="The ID of the model")]
+ModelIDOptionRequired = Annotated[
+    str, typer.Option(help="The ID of the model")
+]
 
 ModelVersionIDOption = Annotated[
     Optional[str],
     typer.Option(help="The ID of the model version", show_default=False),
 ]
 
-ModelVersionIDArgument = Annotated[
-    str, typer.Argument(help="The ID of the model version")
+ModelVersionIDOptionRequired = Annotated[
+    str, typer.Option(help="The ID of the model version")
 ]
 
 ModelPrecisionOption = Annotated[
@@ -274,13 +276,13 @@ CommitHashOption = Annotated[
     typer.Option(help="Commit hash", show_default=False),
 ]
 
-HubVersionRequired = Annotated[
+HubVersionOptionRequired = Annotated[
     str,
     typer.Option(help="What version to ", show_default=False),
 ]
 
 NameArgument = Annotated[
-    str, typer.Argument(help="Name of the resource", show_default=False)
+    str, typer.Argument(help="Name of the model", show_default=False)
 ]
 
 UserIDOption = Annotated[
@@ -294,7 +296,7 @@ ArchitectureIDOption = Annotated[
 ]
 
 DescriptionOption = Annotated[
-    str,
+    Optional[str],
     typer.Option(help="Description of the model", show_default=False),
 ]
 
@@ -303,7 +305,12 @@ DescriptionShortOption = Annotated[
     typer.Option(help="Short description of the model", show_default=False),
 ]
 
-LicenseTypeOption = Annotated[License, typer.Option(help="License type.")]
+LicenseTypeOptionRequired = Annotated[
+    License, typer.Option(help="License type.")
+]
+LicenseTypeOption = Annotated[
+    Optional[License], typer.Option(help="License type.", show_default=False)
+]
 
 IsPublicOption = Annotated[
     bool,

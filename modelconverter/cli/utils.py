@@ -211,7 +211,6 @@ def print_hub_resource_info(
     )
 
     console.print(main_panel)
-    console.rule()
     return model
 
 
@@ -258,14 +257,20 @@ def slug_to_id(
     raise ValueError(f"Model with slug '{slug}' not found.")
 
 
+def get_resource_id(
+    identifier: str,
+    endpoint: Literal["models", "modelVersions", "modelInstances"],
+) -> str:
+    if is_valid_uuid(identifier):
+        return identifier
+    return slug_to_id(identifier, endpoint)
+
+
 def request_info(
     identifier: str,
     endpoint: Literal["models", "modelVersions", "modelInstances"],
 ) -> Dict[str, Any]:
-    if is_valid_uuid(identifier):
-        resource_id = identifier
-    else:
-        resource_id = slug_to_id(identifier, endpoint)
+    resource_id = get_resource_id(identifier, endpoint)
 
     try:
         return Request.get(f"{endpoint}/{resource_id}/").json()
