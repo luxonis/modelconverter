@@ -230,8 +230,8 @@ def extract_preprocessing(
         preproc_block = PreprocessingBlock(
             mean=mean,
             scale=scale,
-            reverse_channels=True if encoding.from_ != encoding.to else False,
-            interleaved_to_planar=True if layout == "NHWC" else False,
+            reverse_channels=encoding.from_ != encoding.to,
+            interleaved_to_planar=layout == "NHWC",
             dai_type=dai_type,
         )
         preprocessing[inp.name] = preproc_block
