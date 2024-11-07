@@ -47,6 +47,8 @@ from modelconverter.cli import (
     PathOption,
     PlatformsOption,
     ProjectIDOption,
+    Quantization,
+    QuantizationOption,
     RepositoryUrlOption,
     SlugOption,
     SortOption,
@@ -414,9 +416,9 @@ def instance_create(
     model_type: ModelTypeOption,
     parent_id: ParentIDOption = None,
     model_precision_type: ModelPrecisionOption = None,
+    quantization_data: QuantizationOption = Quantization.RANDOM,
     tags: TagsOption = None,
     input_shape: Optional[List[int]] = None,
-    quantization_data: Optional[str] = None,
     is_deployable: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Creates a new model instance."""
@@ -428,7 +430,7 @@ def instance_create(
         "model_precision_type": model_precision_type,
         "tags": tags or [],
         "input_shape": input_shape,
-        "quantization_data": quantization_data,
+        "quantization_data": quantization_data.name,
         "is_deployable": is_deployable,
     }
     res = Request.post("modelInstances", json=data).json()
@@ -481,11 +483,12 @@ def export(
     identifier: IdentifierArgument,
     target: TargetArgument,
     target_precision: ModelPrecisionOption = ModelPrecision.INT8,
+    quantization_data: QuantizationOption = Quantization.RANDOM,
     name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Exports a model instance."""
     model_instance_id = get_resource_id(identifier, "modelInstances")
-    json = {"name": name}
+    json = {"name": name, "quantization_data": quantization_data.name}
     if target in [Target.RVC4]:
         json["target_precision"] = target_precision
     res = Request.post(
@@ -513,6 +516,7 @@ def convert(
     repository_url: RepositoryUrlOption = None,
     commit_hash: CommitHashOption = None,
     target_precision: ModelPrecisionOption = ModelPrecision.INT8,
+    quantization_data: QuantizationOption = Quantization.RANDOM,
     domain: DomainOption = None,
     tags: TagsOption = None,
     version_id: ModelVersionIDOption = None,
@@ -623,6 +627,7 @@ def convert(
         instance_id,
         target,
         target_precision=target_precision,
+        quantization_data=quantization_data,
         name=exported_instance_name,
     )["id"]
 

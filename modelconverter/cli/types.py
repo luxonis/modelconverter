@@ -24,6 +24,15 @@ class Task(str, Enum):
     IMAGE_EMBEDDING = "IMAGE_EMBEDDING"
 
 
+class Quantization(str, Enum):
+    DRIVING = "driving"
+    FOOD = "food"
+    GENERAL = "general"
+    INDOORS = "indoors"
+    RANDOM = "random"
+    WAREHOUSE = "warehouse"
+
+
 class License(str, Enum):
     UNDEFINED = "undefined"
     MIT = "MIT"
@@ -409,4 +418,8 @@ SortOption = Annotated[
 OrderOption = Annotated[
     Order,
     typer.Option(help="Order of the sorted results", show_default=False),
+]
+
+QuantizationOption = Annotated[
+    Quantization, typer.Option(help="Quantization type")
 ]
