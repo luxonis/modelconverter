@@ -67,6 +67,17 @@ class ModelType(str, Enum):
     RVC4 = "RVC4"
     HAILO = "HAILO"
 
+    @classmethod
+    def from_suffix(cls, suffix: str) -> "ModelType":
+        if suffix == ".onnx":
+            return cls.ONNX
+        elif suffix == ".tflite":
+            return cls.TFLITE
+        elif suffix in [".xml", ".bin"]:
+            return cls.IR
+        else:
+            raise ValueError(f"Unsupported model format: {suffix}")
+
 
 class Format(str, Enum):
     NATIVE = "native"
