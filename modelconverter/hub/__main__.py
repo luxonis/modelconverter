@@ -6,6 +6,7 @@ from urllib.parse import unquote, urlparse
 
 import requests
 import typer
+from packaging.version import Version
 from rich import print
 
 from modelconverter.cli import (
@@ -111,9 +112,9 @@ def model_ls(
     limit: LimitOption = 50,
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
-):
+) -> List[Dict[str, Any]]:
     """Lists models."""
-    hub_ls(
+    return hub_ls(
         "models",
         team_id=team_id,
         tasks=[task.name for task in tasks] if tasks else [],
@@ -181,7 +182,11 @@ def model_create(
         "tasks": tasks or [],
         "links": links or [],
     }
-    res = Request.post("models", json=data).json()
+    try:
+        res = Request.post("models", json=data).json()
+    except requests.HTTPError as e:
+        if str(e) == "{'detail': 'Unique constraint error.'}":
+            raise ValueError(f"Model '{name}' already exists") from e
     print(f"Model '{res['name']}' created with ID '{res['id']}'")
     model_info(res["id"])
     return res
@@ -207,9 +212,9 @@ def version_ls(
     limit: LimitOption = 50,
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
-):
+) -> List[Dict[str, Any]]:
     """Lists model versions."""
-    hub_ls(
+    return hub_ls(
         "modelVersions",
         team_id=team_id,
         user_id=user_id,
@@ -271,7 +276,13 @@ def version_create(
         "domain": domain,
         "tags": tags or [],
     }
-    res = Request.post("modelVersions", json=data).json()
+    try:
+        res = Request.post("modelVersions", json=data).json()
+    except requests.HTTPError as e:
+        if str(e).startswith("{'detail': 'Unique constraint error."):
+            raise ValueError(
+                f"Model version '{name}' already exists for model '{model_id}'"
+            ) from e
     print(f"Model version '{res['name']}' created with ID '{res['id']}'")
     version_info(res["id"])
     return res
@@ -552,23 +563,38 @@ def convert(
         version_name = name
 
     if model_id is None and version_id is None:
-        model_id = model_create(
-            name,
-            license_type,
-            is_public,
-            description,
-            description_short,
-            architecture_id,
-            tasks or [],
-            links or [],
-        )["id"]
+        try:
+            model_id = model_create(
+                name,
+                license_type,
+                is_public,
+                description,
+                description_short,
+                architecture_id,
+                tasks or [],
+                links or [],
+            )["id"]
+        except ValueError:
+            model_id = get_resource_id(
+                name.lower().replace(" ", "-"), "models"
+            )
 
     if version_id is None:
         if model_id is None:
             print("`--model-id` is required to create a new model")
             exit(1)
 
-        version = version or "0.1.0"
+        versions = version_ls(model_id=model_id)
+        if not versions:
+            version = version or "0.1.0"
+        else:
+            max_version = Version(versions[0]["version"])
+            for v in versions[1:]:
+                max_version = max(max_version, Version(v["version"]))
+            max_version = str(max_version)
+            version_numbers = max_version.split(".")
+            version_numbers[-1] = str(int(version_numbers[-1]) + 1)
+            version = ".".join(version_numbers)
 
         version_id = version_create(
             version_name,

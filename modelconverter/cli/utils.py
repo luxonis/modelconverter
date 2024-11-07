@@ -214,9 +214,8 @@ def print_hub_resource_info(
     return model
 
 
-def hub_ls(endpoint: str, keys: List[str], **kwargs) -> None:
+def hub_ls(endpoint: str, keys: List[str], **kwargs) -> List[Dict[str, Any]]:
     data = Request.get(f"{endpoint}/", params=kwargs).json()
-    print(kwargs)
     table = Table(row_styles=["yellow", "cyan"], box=ROUNDED)
     for key in keys:
         table.add_column(key, header_style="magenta i")
@@ -232,6 +231,7 @@ def hub_ls(endpoint: str, keys: List[str], **kwargs) -> None:
 
     console = Console()
     console.print(table)
+    return data
 
 
 def is_valid_uuid(uuid_string: str) -> bool:
