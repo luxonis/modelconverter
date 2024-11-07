@@ -8,6 +8,7 @@ import requests
 import typer
 from packaging.version import Version
 from rich import print
+from rich.progress import Progress
 
 from modelconverter.cli import (
     ArchitectureIDOption,
@@ -50,6 +51,7 @@ from modelconverter.cli import (
     Quantization,
     QuantizationOption,
     RepositoryUrlOption,
+    SilentOption,
     SlugOption,
     SortOption,
     StatusOption,
@@ -172,6 +174,7 @@ def model_create(
     architecture_id: ArchitectureIDOption = None,
     tasks: TasksOption = None,
     links: LinksOption = None,
+    silent: SilentOption = False,
 ) -> Dict[str, Any]:
     """Creates a new model resource."""
     data = {
@@ -190,7 +193,8 @@ def model_create(
         if str(e) == "{'detail': 'Unique constraint error.'}":
             raise ValueError(f"Model '{name}' already exists") from e
     print(f"Model '{res['name']}' created with ID '{res['id']}'")
-    model_info(res["id"])
+    if not silent:
+        model_info(res["id"])
     return res
 
 
@@ -266,6 +270,7 @@ def version_create(
     commit_hash: CommitHashOption = None,
     domain: DomainOption = None,
     tags: TagsOption = None,
+    silent: SilentOption = False,
 ) -> Dict[str, Any]:
     """Creates a new version of a model."""
     data = {
@@ -286,7 +291,8 @@ def version_create(
                 f"Model version '{name}' already exists for model '{model_id}'"
             ) from e
     print(f"Model version '{res['name']}' created with ID '{res['id']}'")
-    version_info(res["id"])
+    if not silent:
+        version_info(res["id"])
     return res
 
 
@@ -383,7 +389,7 @@ def instance_info(
 def instance_download(
     identifier: IdentifierArgument,
     output_dir: OutputDirOption = None,
-):
+) -> Path:
     """Downloads files from a model instance."""
     dest = Path(output_dir) if output_dir else None
     model_instance_id = get_resource_id(identifier, "modelInstances")
@@ -408,6 +414,9 @@ def instance_download(
 
         print(f"Donwloaded '{f.name}'")
 
+    assert dest is not None
+    return dest
+
 
 @instance.command(name="create")
 def instance_create(
@@ -420,6 +429,7 @@ def instance_create(
     tags: TagsOption = None,
     input_shape: Optional[List[int]] = None,
     is_deployable: Optional[bool] = None,
+    silent: SilentOption = False,
 ) -> Dict[str, Any]:
     """Creates a new model instance."""
     data = {
@@ -435,7 +445,8 @@ def instance_create(
     }
     res = Request.post("modelInstances", json=data).json()
     print(f"Model instance '{res['name']}' created with ID '{res['id']}'")
-    instance_info(res["id"])
+    if not silent:
+        instance_info(res["id"])
     return res
 
 
@@ -468,14 +479,9 @@ def upload(file_path: str, identifier: IdentifierArgument):
     """Uploads a file to a model instance."""
     model_instance_id = get_resource_id(identifier, "modelInstances")
     with open(file_path, "rb") as file:
-        files = {
-            "files": file  # Use the key 'files' to match the form field in the curl command
-        }
-
-        res = Request.post(
-            f"modelInstances/{model_instance_id}/upload", files=files
-        )
-    print(res.json())
+        files = {"files": file}
+        Request.post(f"modelInstances/{model_instance_id}/upload", files=files)
+    print(f"File '{file_path}' uploaded to model instance '{identifier}'")
 
 
 @instance.command()
@@ -521,7 +527,7 @@ def convert(
     tags: TagsOption = None,
     version_id: ModelVersionIDOption = None,
     opts: OptsArgument = None,
-):
+) -> Path:
     """Starts the online conversion process."""
     opts = opts or []
 
@@ -577,6 +583,7 @@ def convert(
                 architecture_id,
                 tasks or [],
                 links or [],
+                silent=True,
             )["id"]
         except ValueError:
             model_id = get_resource_id(
@@ -588,7 +595,9 @@ def convert(
             print("`--model-id` is required to create a new model")
             exit(1)
 
-        versions = version_ls(model_id=model_id)
+        versions = Request.get(
+            "modelVersions/", params={"model_id": model_id}
+        ).json()
         if not versions:
             version = version or "0.1.0"
         else:
@@ -609,11 +618,14 @@ def convert(
             commit_hash,
             domain,
             tags or [],
+            silent=True,
         )["id"]
 
     assert version_id is not None
     instance_name = f"{version_name} base instance"
-    instance_id = instance_create(instance_name, version_id, model_type)["id"]
+    instance_id = instance_create(
+        instance_name, version_id, model_type, silent=True
+    )["id"]
 
     upload(str(cfg.input_model), instance_id)
     if cfg.input_bin is not None:
@@ -631,8 +643,14 @@ def convert(
         name=exported_instance_name,
     )["id"]
 
-    while instance_info(instance_id, json=True)["status"] != "available":
-        sleep(5)
-        pass
+    with Progress() as progress:
+        progress.add_task("Waiting for the conversion to finish", total=None)
 
-    instance_download(instance_id, None)
+        while (
+            request_info(instance_id, "modelInstances")["status"]
+            != "available"
+        ):
+            sleep(5)
+            pass
+
+    return instance_download(instance_id, None)

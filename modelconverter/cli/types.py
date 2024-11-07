@@ -353,6 +353,12 @@ VariantSlugOption = Annotated[
     typer.Option(help="Slug of the model variant", show_default=False),
 ]
 
+SilentOption = Annotated[
+    bool,
+    typer.Option(
+        "-s", "--silent", help="Silent mode", show_default=False, is_flag=True
+    ),
+]
 CompressionLevelOption = Annotated[
     Optional[int],
     typer.Option(
