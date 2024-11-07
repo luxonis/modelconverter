@@ -1,4 +1,5 @@
 import json
+import logging
 import tarfile
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -17,6 +18,8 @@ from modelconverter.utils.config import Config
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
 from modelconverter.utils.metadata import get_metadata
+
+logger = logging.getLogger(__name__)
 
 
 def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
@@ -64,13 +67,69 @@ def process_nn_archive(
 
     for inp in archive_config.model.inputs:
         reverse = inp.preprocessing.reverse_channels
+        interleaved_to_planar = inp.preprocessing.interleaved_to_planar
+        dai_type = inp.preprocessing.dai_type
+
+        layout = inp.layout
+        encoding = "NONE"
         if inp.input_type == InputType.IMAGE:
-            if reverse:
-                encoding = {"from": "RGB", "to": "BGR"}
+            if dai_type is not None:
+                if (reverse is True and dai_type.startswith("BGR")) or (
+                    reverse is False and dai_type.startswith("RGB")
+                ):
+                    logger.warning(
+                        "'reverse_channels' and 'dai_type' are conflicting, using dai_type"
+                    )
+
+                if dai_type.startswith("RGB"):
+                    encoding = {"from": "RGB", "to": "BGR"}
+                elif dai_type.startswith("BGR"):
+                    encoding = "BGR"
+                elif dai_type.startswith("GRAY"):
+                    encoding = "GRAY"
+                else:
+                    logger.warning("unknown dai_type, using RGB888p")
+                    encoding = {"from": "RGB", "to": "BGR"}
+
+                if (
+                    interleaved_to_planar is True and dai_type.endswith("p")
+                ) or (
+                    interleaved_to_planar is False and dai_type.endswith("i")
+                ):
+                    logger.warning(
+                        "'interleaved_to_planar' and 'dai_type' are conflicting, using dai_type"
+                    )
+                if dai_type.endswith("i"):
+                    layout = "NHWC"
+                elif dai_type.endswith("p"):
+                    layout = "NCHW"
             else:
-                encoding = "BGR"
-        else:
-            encoding = "NONE"
+                if reverse is not None:
+                    logger.warning(
+                        "'reverse_channels' flag is deprecated and will be removed in the future, use 'dai_type' instead"
+                    )
+                    if reverse:
+                        encoding = {"from": "RGB", "to": "BGR"}
+                    else:
+                        encoding = "BGR"
+                else:
+                    encoding = {"from": "RGB", "to": "BGR"}
+
+                if interleaved_to_planar is not None:
+                    logger.warning(
+                        "'interleaved_to_planar' flag is deprecated and will be removed in the future, use 'dai_type' instead"
+                    )
+                    if interleaved_to_planar:
+                        layout = "NHWC"
+                    else:
+                        layout = "NCHW"
+            channels = (
+                inp.shape[layout.index("C")]
+                if layout and "C" in layout
+                else None
+            )
+            if channels is not None and channels == 1:
+                encoding = "GRAY"
 
         mean = inp.preprocessing.mean or [0, 0, 0]
         scale = inp.preprocessing.scale or [1, 1, 1]
@@ -79,7 +138,7 @@ def process_nn_archive(
             {
                 "name": inp.name,
                 "shape": inp.shape,
-                "layout": inp.layout,
+                "layout": layout,
                 "data_type": inp.dtype.value,
                 "mean_values": mean,
                 "scale_values": scale,
@@ -97,7 +156,7 @@ def process_nn_archive(
             }
         )
 
-    main_stage_key = Path(archive_config.model.metadata.path).stem
+    main_stage_key = archive_config.model.metadata.name
     config = {
         "name": main_stage_key,
         "stages": {
@@ -168,9 +227,11 @@ def modelconverter_config_to_nn(
                     "mean": [0 for _ in inp.mean_values]
                     if inp.mean_values
                     else None,
-                    "scale": [1 for _ in inp.scale_values]
-                    if inp.scale_values
-                    else None,
+                    "scale": (
+                        [1 for _ in inp.scale_values]
+                        if inp.scale_values
+                        else None
+                    ),
                     "reverse_channels": False,
                     "interleaved_to_planar": False,
                 },
