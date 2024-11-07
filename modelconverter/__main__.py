@@ -37,7 +37,7 @@ from modelconverter.utils.constants import (
     MODELS_DIR,
     OUTPUTS_DIR,
 )
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Encoding, Target
 
 logger = logging.getLogger(__name__)
 
@@ -210,20 +210,28 @@ def extract_preprocessing(
     stage_cfg = next(iter(cfg.stages.values()))
     preprocessing = {}
     for inp in stage_cfg.inputs:
-        mean = inp.mean_values or [0, 0, 0]
-        scale = inp.scale_values or [1, 1, 1]
+        mean = inp.mean_values
+        scale = inp.scale_values
+        encoding = inp.encoding
+        layout = inp.layout
+
+        dai_type = encoding.from_.value
+        if dai_type != "NONE":
+            dai_type += "888i" if layout == "NHWC" else "888p"
 
         preproc_block = PreprocessingBlock(
-            reverse_channels=inp.reverse_input_channels,
             mean=mean,
             scale=scale,
-            interleaved_to_planar=False,
+            reverse_channels=True if encoding.from_ != encoding.to else False,
+            interleaved_to_planar=True if layout == "NHWC" else False,
+            dai_type=dai_type,
         )
         preprocessing[inp.name] = preproc_block
 
         inp.mean_values = None
         inp.scale_values = None
-        inp.reverse_input_channels = False
+        inp.encoding.from_ = Encoding.NONE
+        inp.encoding.to = Encoding.NONE
 
     return cfg, preprocessing
 
@@ -477,9 +485,13 @@ def convert(
                     archive_cfg,
                     preprocessing,
                     main_stage,
-                    exporter.inference_model_path
-                    if isinstance(exporter, Exporter)
-                    else exporter.exporters[main_stage].inference_model_path,
+                    (
+                        exporter.inference_model_path
+                        if isinstance(exporter, Exporter)
+                        else exporter.exporters[
+                            main_stage
+                        ].inference_model_path
+                    ),
                 )
                 generator = ArchiveGenerator(
                     archive_name=f"{cfg.name}.{target.value.lower()}",

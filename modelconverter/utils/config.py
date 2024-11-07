@@ -198,7 +198,7 @@ class InputConfig(OutputConfig):
     ) -> Any:
         """Resolves named values from the config."""
         if value is None:
-            return None
+            return [0, 0, 0] if values_type == "mean" else [1, 1, 1]
         if isinstance(value, str):
             if value in NAMED_VALUES:
                 return NAMED_VALUES[value][values_type]
