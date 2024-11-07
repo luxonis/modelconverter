@@ -59,8 +59,10 @@ from modelconverter.cli import (
     TeamIDOption,
     UserIDOption,
     VariantSlugOption,
+    VersionOption,
     get_configs,
     get_resource_id,
+    get_target_specific_options,
     get_version_name,
     get_version_number,
     hub_ls,
@@ -534,6 +536,7 @@ def convert(
     tags: TagsOption = None,
     version_id: ModelVersionIDOption = None,
     output_dir: OutputDirOption = None,
+    tool_version: VersionOption = None,
     opts: OptsArgument = None,
 ) -> Path:
     """Starts the online conversion process."""
@@ -544,7 +547,11 @@ def convert(
     if path is not None and not is_nn_archive(path):
         opts.extend(["input_model", str(path)])
 
-    cfg, *_ = get_configs(str(path) if path else None, opts)
+    config_path = None
+    if path and (is_nn_archive(path) or path.suffix in [".yaml", ".yml"]):
+        config_path = str(path)
+
+    cfg, *_ = get_configs(config_path, opts)
 
     if len(cfg.stages) > 1:
         raise ValueError(
@@ -606,6 +613,7 @@ def convert(
     else:
         upload(str(cfg.input_model), instance_id)
 
+    target_options = get_target_specific_options(target, cfg, tool_version)
     instance = export(
         f"{version_name} exported to {target.value}",
         instance_id,
@@ -614,7 +622,7 @@ def convert(
         quantization_data=Quantization(quantization_data).name
         if quantization_data
         else None,
-        inputs=cfg.model_dump(mode="json")["inputs"],
+        **target_options,
     )
 
     wait_for_export(instance["dag_run_id"])
