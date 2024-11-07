@@ -232,7 +232,7 @@ ModelVersionIDOptionRequired = Annotated[
 ]
 
 TargetPrecisionOption = Annotated[
-    TargetPrecision,
+    Optional[TargetPrecision],
     typer.Option(help="Precision of the model", show_default=False),
 ]
 

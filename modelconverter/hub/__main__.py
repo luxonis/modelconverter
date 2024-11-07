@@ -424,8 +424,8 @@ def instance_create(
     model_version_id: ModelVersionIDOptionRequired,
     model_type: ModelTypeOption,
     parent_id: ParentIDOption = None,
-    model_precision_type: TargetPrecisionOption = TargetPrecision.INT8,
-    quantization_data: QuantizationOption = Quantization.RANDOM,
+    model_precision_type: TargetPrecisionOption = None,
+    quantization_data: QuantizationOption = None,
     tags: TagsOption = None,
     input_shape: Optional[List[int]] = None,
     is_deployable: Optional[bool] = None,
@@ -440,9 +440,7 @@ def instance_create(
         "model_precision_type": model_precision_type,
         "tags": tags or [],
         "input_shape": [input_shape] if input_shape else None,
-        "quantization_data": quantization_data.name
-        if quantization_data
-        else None,
+        "quantization_data": quantization_data,
         "is_deployable": is_deployable,
     }
     res = Request.post("modelInstances", json=data).json()
