@@ -1,14 +1,18 @@
+import json
+import re
 import shutil
+import tarfile
 import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import onnx
 import pytest
 from onnx import checker, helper
 from onnx.onnx_pb import TensorProto
 
-from modelconverter.utils.config import Config
+from modelconverter.utils.config import Config, EncodingConfig
+from modelconverter.utils.nn_archive import process_nn_archive
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -128,6 +132,74 @@ def setup():
     shutil.rmtree(DATA_DIR)
 
 
+def set_nested_config_value(
+    config: Dict, keys: List[str], values: List[str]
+) -> Dict:
+    for key, value in zip(keys, values):
+        keys = key.split(".")
+        current_level = config["model"]
+
+        # Traverse through the keys except for the last one
+        for k in keys[:-1]:
+            # Handle integer keys for list indexing
+            if re.match(r"^\d+$", k):
+                k = int(k)
+
+            # Move to the next level
+            current_level = current_level[k]
+
+        # Set the final key to the value
+        final_key = keys[-1]
+        current_level[final_key] = value
+
+    return config
+
+
+def create_json(
+    keys: Optional[List[str]] = None, values: Optional[List[str]] = None
+) -> str:
+    config = {
+        "config_version": "1.0",
+        "model": {
+            "metadata": {
+                "name": "dummy_model",
+                "path": "dummy_model.onnx",
+                "precision": "float32",
+            },
+            "inputs": [
+                {
+                    "name": "input0",
+                    "dtype": "float32",
+                    "input_type": "image",
+                    "shape": [1, 3, 64, 64],
+                    "preprocessing": {},
+                },
+                {
+                    "name": "input0",
+                    "dtype": "float32",
+                    "input_type": "image",
+                    "shape": [1, 3, 64, 64],
+                    "preprocessing": {},
+                },
+            ],
+            "outputs": [
+                {"name": "output0", "dtype": "float32", "shape": [1, 10]},
+                {"name": "output1", "dtype": "float32", "shape": [1, 5, 5, 5]},
+            ],
+            "heads": [],
+        },
+    }
+
+    if keys and values:
+        config = set_nested_config_value(config, keys, values)
+
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.write(json.dumps(config))
+        f.flush()
+
+    return f.name
+
+
 def create_yaml(append: str = "") -> str:
     config = (
         f"""
@@ -213,7 +285,6 @@ def test_correct():
                     "layout": "NCHW",
                     "scale_values": [255, 255, 255],
                     "mean_values": [120, 0, 0],
-                    "reverse_input_channels": False,
                     "data_type": DataType.FLOAT32,
                     "frozen_value": None,
                     "encoding": {
@@ -231,7 +302,6 @@ def test_correct():
                     "shape": [1, 3, 256, 256],
                     "layout": "NCHW",
                     "data_type": DataType.FLOAT32,
-                    "reverse_input_channels": True,
                     "mean_values": [256, 256],
                     "scale_values": None,
                     "frozen_value": None,
@@ -302,7 +372,6 @@ def test_top_level():
                     "layout": "NCHW",
                     "scale_values": [255, 255, 255],
                     "mean_values": [123.675, 116.28, 103.53],
-                    "reverse_input_channels": True,
                     "data_type": DataType.FLOAT32,
                     "frozen_value": None,
                     "encoding": DEFAULT_ENCODINGS,
@@ -318,7 +387,6 @@ def test_top_level():
                     "layout": "NCHW",
                     "scale_values": [255, 255, 255],
                     "mean_values": [123.675, 116.28, 103.53],
-                    "reverse_input_channels": True,
                     "data_type": DataType.FLOAT32,
                     "frozen_value": None,
                     "encoding": DEFAULT_ENCODINGS,
@@ -399,7 +467,6 @@ def test_top_level_override():
                     "layout": "NCHW",
                     "scale_values": [1.0, 2.0, 3.0],
                     "mean_values": [4.0, 5.0, 6.0],
-                    "reverse_input_channels": False,
                     "data_type": DataType.FLOAT16,
                     "frozen_value": [7, 8, 9],
                     "encoding": {
@@ -418,7 +485,6 @@ def test_top_level_override():
                     "layout": "NCHW",
                     "scale_values": [255.0, 255.0, 255.0],
                     "mean_values": [123.675, 116.28, 103.53],
-                    "reverse_input_channels": True,
                     "data_type": DataType.FLOAT32,
                     "frozen_value": None,
                     "encoding": DEFAULT_ENCODINGS,
@@ -481,7 +547,6 @@ def test_no_top_level():
                     "layout": "NCHW",
                     "scale_values": [1.0, 2.0, 3.0],
                     "mean_values": [4.0, 5.0, 6.0],
-                    "reverse_input_channels": False,
                     "data_type": DataType.FLOAT16,
                     "frozen_value": [7, 8, 9],
                     "encoding": {
@@ -532,7 +597,6 @@ def test_missing(key: str, value: str):
 @pytest.mark.parametrize(
     "key, value",
     [
-        ("reverse_input_channels", "5"),
         ("inputs.0.encoding.from", "RGBA"),
         ("mean_values", "scale"),
         ("scale_values", "[1,2,dog]"),
@@ -550,6 +614,161 @@ def test_incorrect_type(key: str, value: str):
                 "input_model": str(DATA_DIR / "dummy_model.onnx"),
             },
         )
+
+
+@pytest.mark.parametrize(
+    "key, value, expected",
+    [
+        (
+            "",
+            "",
+            EncodingConfig(**{"from": Encoding.RGB, "to": Encoding.BGR}),
+        ),
+        (
+            "encoding",
+            "NONE",
+            EncodingConfig(**{"from": Encoding.NONE, "to": Encoding.NONE}),
+        ),
+        (
+            "encoding",
+            "RGB",
+            EncodingConfig(**{"from": Encoding.RGB, "to": Encoding.RGB}),
+        ),
+        (
+            "encoding",
+            "BGR",
+            EncodingConfig(**{"from": Encoding.BGR, "to": Encoding.BGR}),
+        ),
+        (
+            "encoding",
+            "GRAY",
+            EncodingConfig(**{"from": Encoding.GRAY, "to": Encoding.GRAY}),
+        ),
+        (
+            "encoding.from",
+            "BGR",
+            EncodingConfig(**{"from": Encoding.BGR, "to": Encoding.BGR}),
+        ),
+        (
+            "encoding.to",
+            "RGB",
+            EncodingConfig(**{"from": Encoding.RGB, "to": Encoding.RGB}),
+        ),
+    ],
+)
+def test_encoding(key: str, value: str, expected: EncodingConfig):
+    if key and value:
+        config = Config.get_config(
+            None,
+            {
+                key: value,
+                "input_model": str(DATA_DIR / "dummy_model.onnx"),
+            },
+        )
+    else:
+        config = Config.get_config(
+            None,
+            {
+                "input_model": str(DATA_DIR / "dummy_model.onnx"),
+            },
+        )
+    assert config.get("stages.dummy_model.inputs.0.encoding") == expected
+    assert config.get("stages.dummy_model.inputs.1.encoding") == expected
+
+
+@pytest.mark.parametrize(
+    "keys, values, expected",
+    [
+        (
+            [],
+            [],
+            EncodingConfig(**{"from": Encoding.RGB, "to": Encoding.BGR}),
+        ),
+        (
+            [
+                "inputs.0.preprocessing.reverse_channels",
+            ],
+            ["False"],
+            EncodingConfig(**{"from": Encoding.BGR, "to": Encoding.BGR}),
+        ),
+        (
+            [
+                "inputs.0.preprocessing.reverse_channels",
+            ],
+            ["True"],
+            EncodingConfig(**{"from": Encoding.RGB, "to": Encoding.BGR}),
+        ),
+        (
+            [
+                "inputs.0.preprocessing.dai_type",
+            ],
+            ["BGR888p"],
+            EncodingConfig(**{"from": Encoding.BGR, "to": Encoding.BGR}),
+        ),
+        (
+            [
+                "inputs.0.preprocessing.dai_type",
+            ],
+            ["RGB888p"],
+            EncodingConfig(**{"from": Encoding.RGB, "to": Encoding.BGR}),
+        ),
+        (
+            [
+                "inputs.0.preprocessing.dai_type",
+                "inputs.0.preprocessing.reverse_channels",
+            ],
+            ["BGR888p", "False"],
+            EncodingConfig(**{"from": Encoding.BGR, "to": Encoding.BGR}),
+        ),
+        (
+            [
+                "inputs.0.preprocessing.dai_type",
+                "inputs.0.preprocessing.reverse_channels",
+            ],
+            ["BGR888p", "True"],
+            EncodingConfig(**{"from": Encoding.BGR, "to": Encoding.BGR}),
+        ),
+        (
+            [
+                "inputs.0.preprocessing.dai_type",
+                "inputs.0.preprocessing.reverse_channels",
+            ],
+            ["RGB888p", "False"],
+            EncodingConfig(**{"from": Encoding.RGB, "to": Encoding.BGR}),
+        ),
+        (
+            [
+                "inputs.0.preprocessing.dai_type",
+                "inputs.0.preprocessing.reverse_channels",
+            ],
+            ["RGB888p", "True"],
+            EncodingConfig(**{"from": Encoding.RGB, "to": Encoding.BGR}),
+        ),
+        (
+            [
+                "inputs.0.preprocessing.dai_type",
+            ],
+            ["GRAY8"],
+            EncodingConfig(**{"from": Encoding.GRAY, "to": Encoding.GRAY}),
+        ),
+    ],
+)
+def test_encoding_nn_archive(
+    keys: List[str], values: List[str], expected: EncodingConfig
+):
+    nn_archive_path = DATA_DIR / "dummy_model.tar.xz"
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        tar_path = Path(tmpdirname) / "dummy_model.tar.xz"
+        with tarfile.open(tar_path, "w") as tar:
+            tar.add(
+                str(DATA_DIR / "dummy_model.onnx"), arcname="dummy_model.onnx"
+            )
+            tar.add(
+                create_json(keys=keys, values=values), arcname="config.json"
+            )
+        shutil.copy(tar_path, nn_archive_path)
+    config, _, _ = process_nn_archive(nn_archive_path, overrides=None)
+    assert config.get("stages.dummy_model.inputs.0.encoding") == expected
 
 
 def test_onnx_load():
@@ -570,7 +789,6 @@ def test_onnx_load():
                     "layout": "NCHW",
                     "scale_values": None,
                     "mean_values": None,
-                    "reverse_input_channels": True,
                     "data_type": DataType.FLOAT32,
                     "frozen_value": None,
                     "calibration": DEFAULT_CALIBRATION_CONFIG,
@@ -582,7 +800,6 @@ def test_onnx_load():
                     "layout": "NCHW",
                     "scale_values": None,
                     "mean_values": None,
-                    "reverse_input_channels": True,
                     "data_type": DataType.FLOAT32,
                     "frozen_value": None,
                     "calibration": DEFAULT_CALIBRATION_CONFIG,
@@ -624,7 +841,6 @@ def test_explicit_nones():
                     "layout": "NCHW",
                     "scale_values": None,
                     "mean_values": None,
-                    "reverse_input_channels": True,
                     "data_type": DataType.FLOAT32,
                     "frozen_value": None,
                     "encoding": DEFAULT_ENCODINGS,
@@ -636,7 +852,6 @@ def test_explicit_nones():
                     "layout": "NCHW",
                     "scale_values": None,
                     "mean_values": None,
-                    "reverse_input_channels": True,
                     "data_type": DataType.FLOAT32,
                     "frozen_value": None,
                     "encoding": DEFAULT_ENCODINGS,
