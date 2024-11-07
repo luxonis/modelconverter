@@ -163,6 +163,14 @@ class InputConfig(OutputConfig):
             return data
         if isinstance(encoding, str):
             data["encoding"] = {"from": encoding, "to": encoding}
+        if isinstance(encoding, dict):
+            if (
+                "from" in encoding
+                and encoding["from"] == "GRAY"
+                or "to" in encoding
+                and encoding["to"] == "GRAY"
+            ):
+                data["encoding"] = {"from": "GRAY", "to": "GRAY"}
         return data
 
     @model_validator(mode="before")
