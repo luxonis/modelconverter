@@ -1,8 +1,10 @@
 import logging
+import re
 import shutil
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
+from time import sleep
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import UUID
 
@@ -10,6 +12,7 @@ import typer
 from luxonis_ml.nn_archive import is_nn_archive
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
+from packaging.version import Version
 from requests.exceptions import HTTPError
 from rich import print
 from rich.box import ROUNDED
@@ -17,6 +20,7 @@ from rich.console import Console, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.pretty import Pretty
+from rich.progress import Progress
 from rich.table import Table
 
 from modelconverter.hub.hub_requests import Request
@@ -24,7 +28,7 @@ from modelconverter.utils import (
     process_nn_archive,
     resolve_path,
 )
-from modelconverter.utils.config import Config
+from modelconverter.utils.config import Config, SingleStageConfig
 from modelconverter.utils.constants import (
     CALIBRATION_DIR,
     CONFIGS_DIR,
@@ -33,6 +37,8 @@ from modelconverter.utils.constants import (
     OUTPUTS_DIR,
 )
 from modelconverter.utils.types import Target
+
+from .types import ModelType
 
 logger = logging.getLogger(__name__)
 
@@ -277,3 +283,64 @@ def request_info(
     except HTTPError:
         typer.echo(f"Resource with ID '{resource_id}' not found.")
         exit(1)
+
+
+def get_version_name(
+    cfg: SingleStageConfig, model_type: ModelType, name: str
+) -> str:
+    shape = cfg.inputs[0].shape
+    layout = cfg.inputs[0].layout
+
+    if shape is not None:
+        if layout is not None and "H" in layout and "W" in layout:
+            h, w = shape[layout.index("H")], shape[layout.index("W")]
+            return f"{name} {h}x{w}"
+        elif len(shape) == 4:
+            if model_type == ModelType.TFLITE:
+                h, w = shape[1], shape[2]
+            else:
+                h, w = shape[2], shape[3]
+            return f"{name} {h}x{w}"
+    return name
+
+
+def get_version_number(model_id: str) -> str:
+    versions = Request.get(
+        "modelVersions/", params={"model_id": model_id}
+    ).json()
+    if not versions:
+        version = "0.1.0"
+    else:
+        max_version = Version(versions[0]["version"])
+        for v in versions[1:]:
+            max_version = max(max_version, Version(v["version"]))
+        max_version = str(max_version)
+        version_numbers = max_version.split(".")
+        version_numbers[-1] = str(int(version_numbers[-1]) + 1)
+        version = ".".join(version_numbers)
+    return version
+
+
+def wait_for_export(run_id: str) -> None:
+    def _get_run(run_id: str) -> Dict[str, Any]:
+        run = Request.dag_get(f"runs/{run_id}").json()
+        return run
+
+    def _clean_logs(logs: str) -> str:
+        pattern = r"\[.*?\] \{.*?\} INFO - \[base\] logs:\s*"
+        return re.sub(pattern, "", logs)
+
+    with Progress() as progress:
+        progress.add_task("Waiting for the conversion to finish", total=None)
+        run = _get_run(run_id)
+        while run["status"] in ["PENDING", "RUNNING"]:
+            sleep(10)
+            run = _get_run(run_id)
+
+    if run["status"] == "FAILURE":
+        while len(run["logs"].split("\n")) < 5:
+            run = _get_run(run_id)
+            sleep(5)
+
+        logs = _clean_logs(run["logs"])
+        raise RuntimeError(f"Export failed with\n{logs}.")

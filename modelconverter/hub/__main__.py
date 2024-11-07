@@ -1,15 +1,12 @@
 import logging
-import re
 from pathlib import Path
-from time import sleep
 from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import unquote, urlparse
 
 import requests
 import typer
-from packaging.version import Version
+from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
-from rich.progress import Progress
 
 from modelconverter.cli import (
     ArchitectureIDOption,
@@ -64,12 +61,14 @@ from modelconverter.cli import (
     VariantSlugOption,
     get_configs,
     get_resource_id,
+    get_version_name,
+    get_version_number,
     hub_ls,
     print_hub_resource_info,
     request_info,
+    wait_for_export,
 )
 from modelconverter.cli.types import License, TargetPrecision
-from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.types import Target
 
 from .hub_requests import Request
@@ -519,7 +518,6 @@ def convert(
     path: PathOption = None,
     name: NameOption = None,
     license_type: LicenseTypeOptionRequired = License.UNDEFINED,
-    config_path: PathOption = None,
     is_public: IsPublicOption = True,
     description_short: DescriptionShortOption = "<empty>",
     description: DescriptionOption = None,
@@ -543,10 +541,10 @@ def convert(
     if isinstance(target, str):
         target = Target(target.lower())
 
-    if path is not None:
+    if path is not None and not is_nn_archive(path):
         opts.extend(["input_model", str(path)])
 
-    cfg, *_ = get_configs(str(config_path) if config_path else None, opts)
+    cfg, *_ = get_configs(str(path) if path else None, opts)
 
     if len(cfg.stages) > 1:
         raise ValueError(
@@ -558,7 +556,7 @@ def convert(
     cfg = next(iter(cfg.stages.values()))
 
     model_type = ModelType.from_suffix(cfg.input_model.suffix)
-    version_name = _get_version_name(cfg, model_type, name)
+    version_name = get_version_name(cfg, model_type, name)
 
     if model_id is None and version_id is None:
         try:
@@ -580,10 +578,9 @@ def convert(
 
     if version_id is None:
         if model_id is None:
-            print("`--model-id` is required to create a new model")
-            exit(1)
+            raise ValueError("`--model-id` is required to create a new model")
 
-        version = version or _get_version_number(model_id)
+        version = version or get_version_number(model_id)
 
         version_id = version_create(
             version_name,
@@ -604,85 +601,22 @@ def convert(
         instance_name, version_id, model_type, input_shape=shape, silent=True
     )["id"]
 
-    upload(str(cfg.input_model), instance_id)
-    if cfg.input_bin is not None:
-        upload(str(cfg.input_bin), instance_id)
-
-    cfg = cfg.model_dump(mode="json")
-    exported_instance_name = f"{version_name} exported to {target.value}"
+    if path is not None and is_nn_archive(path):
+        upload(str(path), instance_id)
+    else:
+        upload(str(cfg.input_model), instance_id)
 
     instance = export(
-        exported_instance_name,
+        f"{version_name} exported to {target.value}",
         instance_id,
         target.name,
         target_precision=TargetPrecision(target_precision).name,
         quantization_data=Quantization(quantization_data).name
         if quantization_data
         else None,
-        inputs=cfg["inputs"],
+        inputs=cfg.model_dump(mode="json")["inputs"],
     )
-    instance_id = instance["id"]
-    run_id = instance["dag_run_id"]
 
-    with Progress() as progress:
-        progress.add_task("Waiting for the conversion to finish", total=None)
-        run = _get_run(run_id)
-        while run["status"] in ["PENDING", "RUNNING"]:
-            sleep(10)
-            run = _get_run(run_id)
+    wait_for_export(instance["dag_run_id"])
 
-    if run["status"] == "FAILURE":
-        while len(run["logs"].split("\n")) < 5:
-            run = _get_run(run_id)
-            sleep(5)
-
-        logs = _clean_logs(run["logs"])
-        raise RuntimeError(f"Export failed with\n{logs}.")
-
-    return instance_download(instance_id, output_dir)
-
-
-def _clean_logs(logs: str) -> str:
-    pattern = r"\[.*?\] \{.*?\} INFO - \[base\] logs:\s*"
-    return re.sub(pattern, "", logs)
-
-
-def _get_version_name(
-    cfg: SingleStageConfig, model_type: ModelType, name: str
-) -> str:
-    shape = cfg.inputs[0].shape
-    layout = cfg.inputs[0].layout
-
-    if shape is not None:
-        if layout is not None and "H" in layout and "W" in layout:
-            h, w = shape[layout.index("H")], shape[layout.index("W")]
-            return f"{name} {h}x{w}"
-        elif len(shape) == 4:
-            if model_type == ModelType.TFLITE:
-                h, w = shape[1], shape[2]
-            else:
-                h, w = shape[2], shape[3]
-            return f"{name} {h}x{w}"
-    return name
-
-
-def _get_version_number(model_id: str) -> str:
-    versions = Request.get(
-        "modelVersions/", params={"model_id": model_id}
-    ).json()
-    if not versions:
-        version = "0.1.0"
-    else:
-        max_version = Version(versions[0]["version"])
-        for v in versions[1:]:
-            max_version = max(max_version, Version(v["version"]))
-        max_version = str(max_version)
-        version_numbers = max_version.split(".")
-        version_numbers[-1] = str(int(version_numbers[-1]) + 1)
-        version = ".".join(version_numbers)
-    return version
-
-
-def _get_run(run_id: str) -> Dict[str, Any]:
-    run = Request.dag_get(f"runs/{run_id}").json()
-    return run
+    return instance_download(instance["id"], output_dir)
