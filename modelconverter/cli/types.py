@@ -25,12 +25,12 @@ class Task(str, Enum):
 
 
 class Quantization(str, Enum):
-    DRIVING = "driving"
-    FOOD = "food"
-    GENERAL = "general"
-    INDOORS = "indoors"
-    RANDOM = "random"
-    WAREHOUSE = "warehouse"
+    DRIVING = "DRIVING"
+    FOOD = "FOOD"
+    GENERAL = "GENERAL"
+    INDOORS = "INDOORS"
+    RANDOM = "RANDOM"
+    WAREHOUSE = "WAREHOUSE"
 
 
 class License(str, Enum):
@@ -89,7 +89,7 @@ class Status(str, Enum):
     UNAVAILABLE = "unavailable"
 
 
-class ModelPrecision(str, Enum):
+class TargetPrecision(str, Enum):
     FP16 = "FP16"
     FP32 = "FP32"
     INT8 = "INT8"
@@ -231,8 +231,8 @@ ModelVersionIDOptionRequired = Annotated[
     str, typer.Option(help="The ID of the model version")
 ]
 
-ModelPrecisionOption = Annotated[
-    ModelPrecision,
+TargetPrecisionOption = Annotated[
+    TargetPrecision,
     typer.Option(help="Precision of the model", show_default=False),
 ]
 
@@ -438,5 +438,5 @@ OrderOption = Annotated[
 ]
 
 QuantizationOption = Annotated[
-    Quantization, typer.Option(help="Quantization type")
+    Optional[Quantization], typer.Option(help="Quantization type")
 ]

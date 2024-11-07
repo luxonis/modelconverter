@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from time import sleep
 from typing import Any, Dict, List, Literal, Optional
@@ -32,7 +33,6 @@ from modelconverter.cli import (
     ModelClass,
     ModelIDOption,
     ModelIDOptionRequired,
-    ModelPrecisionOption,
     ModelType,
     ModelTypeOption,
     ModelVersionIDOption,
@@ -57,6 +57,7 @@ from modelconverter.cli import (
     StatusOption,
     TagsOption,
     TargetArgument,
+    TargetPrecisionOption,
     TasksOption,
     TeamIDOption,
     UserIDOption,
@@ -67,7 +68,7 @@ from modelconverter.cli import (
     print_hub_resource_info,
     request_info,
 )
-from modelconverter.cli.types import License, ModelPrecision
+from modelconverter.cli.types import License, TargetPrecision
 from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.types import Target
 
@@ -423,7 +424,7 @@ def instance_create(
     model_version_id: ModelVersionIDOptionRequired,
     model_type: ModelTypeOption,
     parent_id: ParentIDOption = None,
-    model_precision_type: ModelPrecisionOption = None,
+    model_precision_type: TargetPrecisionOption = TargetPrecision.INT8,
     quantization_data: QuantizationOption = Quantization.RANDOM,
     tags: TagsOption = None,
     input_shape: Optional[List[int]] = None,
@@ -439,7 +440,9 @@ def instance_create(
         "model_precision_type": model_precision_type,
         "tags": tags or [],
         "input_shape": [input_shape] if input_shape else None,
-        "quantization_data": quantization_data.name,
+        "quantization_data": quantization_data.name
+        if quantization_data
+        else None,
         "is_deployable": is_deployable,
     }
     res = Request.post("modelInstances", json=data).json()
@@ -488,8 +491,8 @@ def export(
     identifier: str,
     target: Literal["RVC2", "RVC3", "RVC4", "HAILO"],
     target_precision: Literal["FP16", "FP32", "INT8"] = "INT8",
-    quantization_data: Literal[
-        "RANDOM", "GENERAL", "DRIVING", "FOOD", "INDOORS", "WAREHOUSE"
+    quantization_data: Optional[
+        Literal["RANDOM", "GENERAL", "DRIVING", "FOOD", "INDOORS", "WAREHOUSE"]
     ] = "RANDOM",
     **kwargs,
 ) -> Dict[str, Any]:
@@ -529,7 +532,7 @@ def convert(
     version: HubVersionOption = None,
     repository_url: RepositoryUrlOption = None,
     commit_hash: CommitHashOption = None,
-    target_precision: ModelPrecisionOption = ModelPrecision.INT8,
+    target_precision: TargetPrecisionOption = TargetPrecision.INT8,
     quantization_data: QuantizationOption = Quantization.RANDOM,
     domain: DomainOption = None,
     tags: TagsOption = None,
@@ -610,26 +613,40 @@ def convert(
     cfg = cfg.model_dump(mode="json")
     exported_instance_name = f"{version_name} exported to {target.value}"
 
-    instance_id = export(
+    instance = export(
         exported_instance_name,
         instance_id,
         target.name,
-        target_precision=target_precision.name,
-        quantization_data=quantization_data.name,
+        target_precision=TargetPrecision(target_precision).name,
+        quantization_data=Quantization(quantization_data).name
+        if quantization_data
+        else None,
         inputs=cfg["inputs"],
-    )["id"]
+    )
+    instance_id = instance["id"]
+    run_id = instance["dag_run_id"]
 
     with Progress() as progress:
         progress.add_task("Waiting for the conversion to finish", total=None)
+        run = _get_run(run_id)
+        while run["status"] in ["PENDING", "RUNNING"]:
+            sleep(10)
+            run = _get_run(run_id)
 
-        while (
-            request_info(instance_id, "modelInstances")["status"]
-            != "available"
-        ):
+    if run["status"] == "FAILURE":
+        while len(run["logs"].split("\n")) < 5:
+            run = _get_run(run_id)
             sleep(5)
-            pass
+
+        logs = _clean_logs(run["logs"])
+        raise RuntimeError(f"Export failed with\n{logs}.")
 
     return instance_download(instance_id, output_dir)
+
+
+def _clean_logs(logs: str) -> str:
+    pattern = r"\[.*?\] \{.*?\} INFO - \[base\] logs:\s*"
+    return re.sub(pattern, "", logs)
 
 
 def _get_version_name(
@@ -666,3 +683,8 @@ def _get_version_number(model_id: str) -> str:
         version_numbers[-1] = str(int(version_numbers[-1]) + 1)
         version = ".".join(version_numbers)
     return version
+
+
+def _get_run(run_id: str) -> Dict[str, Any]:
+    run = Request.dag_get(f"runs/{run_id}").json()
+    return run
