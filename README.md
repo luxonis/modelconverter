@@ -158,6 +158,7 @@ You can run the built image either manually using the `docker run` command or us
 1. Execute the conversion:
 
 - If using the `docker run` command:
+
   ```bash
   docker run --rm -it \
     -v $(pwd)/shared_with_container:/app/shared_with_container/ \
@@ -168,11 +169,15 @@ You can run the built image either manually using the `docker run` command or us
     convert <target> \
     --path <s3_url_or_path> [ config overrides ]
   ```
+
 - If using the `modelconverter` CLI:
+
   ```bash
   modelconverter convert <target> --path <s3_url_or_path> [ config overrides ]
   ```
+
 - If using `docker-compose`:
+
   ```bash
   docker compose run <target> convert <target> ...
   ```
@@ -207,6 +212,8 @@ modelconverter convert rvc2 input_model models/yolov6n.onnx \
                         outputs.1.name out_1 \
                         outputs.2.name out_2
 ```
+
+:warning: **Important Note**: If you modify the default stages names (`stages.stage_name`) in the configuration file (`config.yaml`), you need to provide the full path to each stage in the command-line arguments. For instance, if a stage name is changed to `stage1`, use `stages.stage1.inputs.0.name` instead of `inputs.0.name`.
 
 ## Multi-Stage Conversion
 
