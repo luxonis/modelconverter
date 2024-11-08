@@ -334,8 +334,16 @@ class SingleStageConfig(CustomBaseModel):
             inp["layout"] = inp.get("layout") or layout
             inp["data_type"] = inp.get("data_type") or data_type or onnx_dtype
             inp["encoding"] = inp.get("encoding") or encoding
-            inp["mean_values"] = inp.get("mean_values") or mean_values
-            inp["scale_values"] = inp.get("scale_values") or scale_values
+            inp["mean_values"] = (
+                inp.get("mean_values")
+                if inp.get("mean_values") is not None
+                else mean_values
+            )
+            inp["scale_values"] = (
+                inp.get("scale_values")
+                if inp.get("scale_values") is not None
+                else scale_values
+            )
 
             inp_calibration: Dict[str, Any] = inp.get("calibration", {})
             if not inp_calibration and not top_level_calibration:
