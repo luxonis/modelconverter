@@ -41,7 +41,7 @@ def onnx_attach_normalization_to_inputs(
             continue
         cfg = input_configs[input_name]
         if (
-            not cfg.reverse_input_channels
+            cfg.encoding.from_ == cfg.encoding.to
             and cfg.mean_values is None
             and cfg.scale_values is None
         ):
@@ -70,7 +70,7 @@ def onnx_attach_normalization_to_inputs(
         last_output = input_name
 
         # 1. Reverse channels if needed
-        if cfg.reverse_input_channels:
+        if cfg.encoding.from_ != cfg.encoding.to:
             split_names = [f"split_{i}_{input_name}" for i in range(3)]
             split_node = helper.make_node(
                 "Split",

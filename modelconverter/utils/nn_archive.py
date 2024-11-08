@@ -75,7 +75,7 @@ def process_nn_archive(
         if inp.input_type == InputType.IMAGE:
             if dai_type is not None:
                 if (reverse and dai_type.startswith("BGR")) or (
-                    not reverse and dai_type.startswith("RGB")
+                    reverse is False and dai_type.startswith("RGB")
                 ):
                     logger.warning(
                         "'reverse_channels' and 'dai_type' are conflicting, using dai_type"
@@ -92,7 +92,7 @@ def process_nn_archive(
                     encoding = {"from": "RGB", "to": "BGR"}
 
                 if (interleaved_to_planar and dai_type.endswith("p")) or (
-                    not interleaved_to_planar and dai_type.endswith("i")
+                    interleaved_to_planar is False and dai_type.endswith("i")
                 ):
                     logger.warning(
                         "'interleaved_to_planar' and 'dai_type' are conflicting, using dai_type"
