@@ -210,8 +210,8 @@ def extract_preprocessing(
     stage_cfg = next(iter(cfg.stages.values()))
     preprocessing = {}
     for inp in stage_cfg.inputs:
-        mean = inp.mean_values
-        scale = inp.scale_values
+        mean = inp.mean_values or [0, 0, 0]
+        scale = inp.scale_values or [1, 1, 1]
         encoding = inp.encoding
         layout = inp.layout
 
