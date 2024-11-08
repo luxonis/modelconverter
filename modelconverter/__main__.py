@@ -217,13 +217,10 @@ def extract_preprocessing(
 
         dai_type = encoding.from_.value
         if dai_type != "NONE":
-            if (
-                inp.data_type == DataType.FLOAT32
-                or inp.data_type == DataType.INT8
-            ):
-                type = "888"
-            elif inp.data_type == DataType.FLOAT16:
+            if inp.data_type == DataType.FLOAT16:
                 type = "F16F16F16"
+            else:
+                type = "888"
             dai_type += type
             dai_type += "i" if layout == "NHWC" else "p"
 
