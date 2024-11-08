@@ -200,7 +200,8 @@ Specify all options via the command line without a config file:
 ```bash
 modelconverter convert rvc2 input_model models/yolov6n.onnx \
                         scale_values "[255,255,255]" \
-                        reverse_input_channels True \
+                        inputs.0.encoding.from RGB \
+                        inputs.0.encoding.to BGR \
                         shape "[1,3,256,256]" \
                         outputs.0.name out_0 \
                         outputs.1.name out_1 \

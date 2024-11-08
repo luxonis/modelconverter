@@ -237,7 +237,7 @@ class HailoExporter(Exporter):
                 f"{mean_values},{scale_values},{hn_name})"
             )
 
-            if inp.reverse_input_channels:
+            if inp.encoding.from_ != inp.encoding.to:
                 alls.append(
                     f"bgr_to_rgb_{safe_name} = input_conversion("
                     f"{hn_name},bgr_to_rgb)"
