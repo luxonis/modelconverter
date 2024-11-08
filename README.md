@@ -101,9 +101,15 @@ To enable GPU acceleration for `hailo` conversion, install the [Nvidia Container
 
 ## Running ModelConverter
 
-Configuration for the conversion predominantly relies on a `yaml` config file. For reference, see [defaults.yaml](shared_with_container/configs/defaults.yaml) and other examples located in the [shared_with_container/configs](shared_with_container/configs) directory.
+There are two main ways to execute configure the conversion process:
 
-However, you have the flexibility to modify specific settings without altering the config file itself. This is done using command line arguments. You provide the arguments in the form of `key value` pairs. For better understanding, see [Examples](#examples).
+1. **YAML Config File (Primary Method)**:
+   The primary way to configure the conversion is through a YAML configuration file. For reference, you can check [defaults.yaml](shared_with_container/configs/defaults.yaml) and other examples located in the [shared_with_container/configs](shared_with_container/configs) directory.
+1. **NN Archive**:
+   Alternatively, you can use an [NN Archive](https://rvc4.docs.luxonis.com/software/ai-inference/nn-archive/#NN%20Archive) as input. An NN Archive includes a model in one of the supported formats—ONNX (.onnx), OpenVINO IR (.xml and .bin), or TensorFlow Lite (.tflite)—alongside a `config.json` file. The config.json file follows a specific configuration format as described in the [NN Archive Configuration Guide](https://rvc4.docs.luxonis.com/software/ai-inference/nn-archive/#NN%20Archive-Configuration).
+
+**Modifying Settings with Command-Line Arguments**:
+In addition to these two configuration methods, you have the flexibility to override specific settings directly via command-line arguments. By supplying `key-value` pairs in the CLI, you can adjust particular settings without explicitly altering the config files (YAML or NN Archive). For further details, refer to the [Examples](#examples) section.
 
 ### Sharing Files
 
