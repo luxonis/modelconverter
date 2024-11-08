@@ -21,13 +21,18 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 
 ## Table of Contents
 
-- [MLOps - Compilation Library](#mlops---compilation-library)
+- [ModelConverter - Compilation Library](#modelconverter---compilation-library)
+  - [Status](#status)
   - [Table of Contents](#table-of-contents)
   - [Installation](#installation)
+    - [System Requirements](#system-requirements)
     - [Before You Begin](#before-you-begin)
     - [Instructions](#instructions)
     - [GPU Support](#gpu-support)
   - [Running ModelConverter](#running-modelconverter)
+    - [Encoding Configuration Flags](#encoding-configuration-flags)
+      - [YAML Configuration File](#yaml-configuration-file)
+      - [NN Archive Configuration File](#nn-archive-configuration-file)
     - [Sharing Files](#sharing-files)
     - [Usage](#usage)
     - [Examples](#examples)
@@ -110,6 +115,46 @@ There are two main ways to execute configure the conversion process:
 
 **Modifying Settings with Command-Line Arguments**:
 In addition to these two configuration methods, you have the flexibility to override specific settings directly via command-line arguments. By supplying `key-value` pairs in the CLI, you can adjust particular settings without explicitly altering the config files (YAML or NN Archive). For further details, refer to the [Examples](#examples) section.
+
+### Encoding Configuration Flags
+
+In the conversion process, you have options to control the color encoding format in both the YAML configuration file and the NN Archive configuration. Here’s a breakdown of each available flag:
+
+#### YAML Configuration File
+
+The `encoding` flag in the YAML configuration file allows you to specify color encoding as follows:
+
+- **Single-Value `encoding`**:
+  Setting encoding to a single value, such as *"RGB"*, *"BGR"*, *"GRAY"*, or *"NONE"*, will automatically apply this setting to both `encoding.from` and `encoding.to`. For example, `encoding: RGB` sets both `encoding.from` and `encoding.to` to *"RGB"* internally.
+- **Multi-Value `encoding.from` and `encoding.to`**:
+  Alternatively, you can explicitly set `encoding.from` and `encoding.to` to different values. For example:
+  ```yaml
+  encoding:
+    from: RGB
+    to: BGR
+  ```
+  This configuration specifies that the input data is in RGB format and will be converted to BGR format during processing.
+
+> \[!NOTE\] Note on Default Encoding
+> If the encoding is not specified in the YAML configuration, the default values are set to `encoding.from=RGB` and `encoding.to=BGR`.
+
+> \[!NOTE\] Note on Global Settings
+> Certain options can be set **globally**, applying to all inputs of the model, or **per input**. If specified per input, these settings will override the global configuration for that input alone. The options that support this flexibility include `scale_values`, `mean_values`, `encoding`, `data_type`, `shape`, and `layout`.
+
+#### NN Archive Configuration File
+
+In the NN Archive configuration, there are two flags related to color encoding control:
+
+- **`reverse_channels` (Deprecated)**:
+  Determines the input color format of the model: when set to *True*, the input is considered to be *"RGB"*, and when set to *False*, it is treated as *"BGR"*. This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
+- **`dai_type`**:
+  Provides a more comprehensive control over the input type compatible with the DAI backend. It is read by DepthAI to automatically configure the processing pipeline, including any necessary modifications to the input image format.
+
+> \[!NOTE\] Note on Default Settings
+> If neither `dai_type` nor `reverse_channels` the input to the model is considered to be *"BGR"*.
+
+> \[!NOTE\] Note on Conflicting Settings
+> If both `dai_type` and `reverse_channels` are provided, the converter will give priority to `dai_type`.
 
 ### Sharing Files
 
@@ -219,7 +264,8 @@ modelconverter convert rvc2 input_model models/yolov6n.onnx \
                         outputs.2.name out_2
 ```
 
-:warning: **Important Note**: If you modify the default stages names (`stages.stage_name`) in the configuration file (`config.yaml`), you need to provide the full path to each stage in the command-line arguments. For instance, if a stage name is changed to `stage1`, use `stages.stage1.inputs.0.name` instead of `inputs.0.name`.
+> \[!WARNING\]
+> If you modify the default stages names (`stages.stage_name`) in the configuration file (`config.yaml`), you need to provide the full path to each stage in the command-line arguments. For instance, if a stage name is changed to `stage1`, use `stages.stage1.inputs.0.name` instead of `inputs.0.name`.
 
 ## Multi-Stage Conversion
 
