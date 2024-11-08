@@ -18,7 +18,7 @@ from modelconverter.utils.config import Config
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
 from modelconverter.utils.metadata import get_metadata
-from modelconverter.utils.types import DataType
+from modelconverter.utils.types import DataType, Encoding
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +235,7 @@ def modelconverter_config_to_nn(
                         if inp.scale_values
                         else None
                     ),
-                    "reverse_channels": inp.encoding.from_ != inp.encoding.to,
+                    "reverse_channels": inp.encoding.to == Encoding.RGB,
                     "interleaved_to_planar": layout == "NHWC",
                     "dai_type": dai_type,
                 },

@@ -215,7 +215,7 @@ def extract_preprocessing(
         encoding = inp.encoding
         layout = inp.layout
 
-        dai_type = encoding.from_.value
+        dai_type = encoding.to.value
         if dai_type != "NONE":
             if inp.data_type == DataType.FLOAT16:
                 type = "F16F16F16"
@@ -227,7 +227,7 @@ def extract_preprocessing(
         preproc_block = PreprocessingBlock(
             mean=mean,
             scale=scale,
-            reverse_channels=encoding.from_ != encoding.to,
+            reverse_channels=encoding.to == Encoding.RGB,
             interleaved_to_planar=layout == "NHWC",
             dai_type=dai_type,
         )
