@@ -129,9 +129,17 @@ VersionOption = Annotated[
 PathOption = Annotated[
     Optional[Path],
     typer.Option(
-        help="Path to the configuration file or nn archive.",
+        help="Path to the configuration file or NN Archive.",
         metavar="PATH",
         show_default=False,
+    ),
+]
+
+PathOptionRequired = Annotated[
+    Path,
+    typer.Option(
+        help="Path to the model, configuration file or NN Archive",
+        metavar="PATH",
     ),
 ]
 

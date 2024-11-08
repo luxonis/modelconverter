@@ -42,7 +42,7 @@ from modelconverter.cli import (
     OrderOption,
     OutputDirOption,
     ParentIDOption,
-    PathOption,
+    PathOptionRequired,
     PlatformsOption,
     ProjectIDOption,
     Quantization,
@@ -517,7 +517,7 @@ def export(
 @app.command()
 def convert(
     target: TargetArgument,
-    path: PathOption = None,
+    path: PathOptionRequired,
     name: NameOption = None,
     license_type: LicenseTypeOptionRequired = License.UNDEFINED,
     is_public: IsPublicOption = True,
