@@ -195,6 +195,7 @@ def model_create(
     except requests.HTTPError as e:
         if str(e) == "{'detail': 'Unique constraint error.'}":
             raise ValueError(f"Model '{name}' already exists") from e
+        raise e
     print(f"Model '{res['name']}' created with ID '{res['id']}'")
     if not silent:
         model_info(res["id"])
@@ -293,6 +294,7 @@ def version_create(
             raise ValueError(
                 f"Model version '{name}' already exists for model '{model_id}'"
             ) from e
+        raise e
     print(f"Model version '{res['name']}' created with ID '{res['id']}'")
     if not silent:
         version_info(res["id"])
