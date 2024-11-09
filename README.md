@@ -135,25 +135,25 @@ The `encoding` flag in the YAML configuration file allows you to specify color e
   ```
   This configuration specifies that the input data is in RGB format and will be converted to BGR format during processing.
 
-> \[!NOTE\] Note on Default Encoding
+> [!NOTE]
 > If the encoding is not specified in the YAML configuration, the default values are set to `encoding.from=RGB` and `encoding.to=BGR`.
 
-> \[!NOTE\] Note on Global Settings
+> [!NOTE]
 > Certain options can be set **globally**, applying to all inputs of the model, or **per input**. If specified per input, these settings will override the global configuration for that input alone. The options that support this flexibility include `scale_values`, `mean_values`, `encoding`, `data_type`, `shape`, and `layout`.
 
 #### NN Archive Configuration File
 
 In the NN Archive configuration, there are two flags related to color encoding control:
 
-- **`reverse_channels` (Deprecated)**:
-  Determines the input color format of the model: when set to *True*, the input is considered to be *"RGB"*, and when set to *False*, it is treated as *"BGR"*. This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
 - **`dai_type`**:
   Provides a more comprehensive control over the input type compatible with the DAI backend. It is read by DepthAI to automatically configure the processing pipeline, including any necessary modifications to the input image format.
+- **`reverse_channels` (Deprecated)**:
+  Determines the input color format of the model: when set to *True*, the input is considered to be *"RGB"*, and when set to *False*, it is treated as *"BGR"*. This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
 
-> \[!NOTE\] Note on Default Settings
-> If neither `dai_type` nor `reverse_channels` the input to the model is considered to be *"BGR"*.
+> [!NOTE]
+> If neither `dai_type` nor `reverse_channels` the input to the model is considered to be *"RGB"*.
 
-> \[!NOTE\] Note on Conflicting Settings
+> [!NOTE]
 > If both `dai_type` and `reverse_channels` are provided, the converter will give priority to `dai_type`.
 
 ### Sharing Files
@@ -264,7 +264,7 @@ modelconverter convert rvc2 input_model models/yolov6n.onnx \
                         outputs.2.name out_2
 ```
 
-> \[!WARNING\]
+> [!WARNING]
 > If you modify the default stages names (`stages.stage_name`) in the configuration file (`config.yaml`), you need to provide the full path to each stage in the command-line arguments. For instance, if a stage name is changed to `stage1`, use `stages.stage1.inputs.0.name` instead of `inputs.0.name`.
 
 ## Multi-Stage Conversion
