@@ -1,4 +1,5 @@
 import json
+import logging
 import tarfile
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -17,6 +18,9 @@ from modelconverter.utils.config import Config
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
 from modelconverter.utils.metadata import get_metadata
+from modelconverter.utils.types import DataType, Encoding
+
+logger = logging.getLogger(__name__)
 
 
 def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
@@ -64,13 +68,67 @@ def process_nn_archive(
 
     for inp in archive_config.model.inputs:
         reverse = inp.preprocessing.reverse_channels
+        interleaved_to_planar = inp.preprocessing.interleaved_to_planar
+        dai_type = inp.preprocessing.dai_type
+
+        layout = inp.layout
+        encoding = "NONE"
         if inp.input_type == InputType.IMAGE:
-            if reverse:
-                encoding = {"from": "RGB", "to": "BGR"}
+            if dai_type is not None:
+                if (reverse and dai_type.startswith("BGR")) or (
+                    reverse is False and dai_type.startswith("RGB")
+                ):
+                    logger.warning(
+                        "'reverse_channels' and 'dai_type' are conflicting, using dai_type"
+                    )
+
+                if dai_type.startswith("RGB"):
+                    encoding = {"from": "RGB", "to": "BGR"}
+                elif dai_type.startswith("BGR"):
+                    encoding = "BGR"
+                elif dai_type.startswith("GRAY"):
+                    encoding = "GRAY"
+                else:
+                    logger.warning("unknown dai_type, using RGB888p")
+                    encoding = {"from": "RGB", "to": "BGR"}
+
+                if (interleaved_to_planar and dai_type.endswith("p")) or (
+                    interleaved_to_planar is False and dai_type.endswith("i")
+                ):
+                    logger.warning(
+                        "'interleaved_to_planar' and 'dai_type' are conflicting, using dai_type"
+                    )
+                if dai_type.endswith("i"):
+                    layout = "NHWC"
+                elif dai_type.endswith("p"):
+                    layout = "NCHW"
             else:
-                encoding = "BGR"
-        else:
-            encoding = "NONE"
+                if reverse is not None:
+                    logger.warning(
+                        "'reverse_channels' flag is deprecated and will be removed in the future, use 'dai_type' instead"
+                    )
+                    if reverse:
+                        encoding = {"from": "RGB", "to": "BGR"}
+                    else:
+                        encoding = "BGR"
+                else:
+                    encoding = {"from": "RGB", "to": "BGR"}
+
+                if interleaved_to_planar is not None:
+                    logger.warning(
+                        "'interleaved_to_planar' flag is deprecated and will be removed in the future, use 'dai_type' instead"
+                    )
+                    if interleaved_to_planar:
+                        layout = "NHWC"
+                    else:
+                        layout = "NCHW"
+            channels = (
+                inp.shape[layout.index("C")]
+                if layout and "C" in layout
+                else None
+            )
+            if channels and channels == 1:
+                encoding = "GRAY"
 
         mean = inp.preprocessing.mean or [0, 0, 0]
         scale = inp.preprocessing.scale or [1, 1, 1]
@@ -79,7 +137,7 @@ def process_nn_archive(
             {
                 "name": inp.name,
                 "shape": inp.shape,
-                "layout": inp.layout,
+                "layout": layout,
                 "data_type": inp.dtype.value,
                 "mean_values": mean,
                 "scale_values": scale,
@@ -97,7 +155,7 @@ def process_nn_archive(
             }
         )
 
-    main_stage_key = Path(archive_config.model.metadata.path).stem
+    main_stage_key = archive_config.model.metadata.name
     config = {
         "name": main_stage_key,
         "stages": {
@@ -134,7 +192,7 @@ def modelconverter_config_to_nn(
     cfg = config.stages[main_stage_key]
 
     archive_cfg = {
-        "config_version": CONFIG_VERSION.__args__[-1],  # type: ignore
+        "config_version": CONFIG_VERSION,
         "model": {
             "metadata": {
                 "name": model_name.stem,
@@ -148,37 +206,43 @@ def modelconverter_config_to_nn(
 
     for inp in cfg.inputs:
         new_shape = model_metadata.input_shapes[inp.name]
-        # new_dtype = model_metadata.input_dtypes[inp.name]
         if inp.shape is not None and not any(s == 0 for s in inp.shape):
             assert inp.layout is not None
             layout = guess_new_layout(inp.layout, inp.shape, new_shape)
         else:
             layout = make_default_layout(new_shape)
+        dai_type = inp.encoding.to.value
+        if inp.data_type == DataType.FLOAT16:
+            type = "F16F16F16"
+        else:
+            type = "888"
+        dai_type += type
+        dai_type += "i" if layout == "NHWC" else "p"
 
         archive_cfg["model"]["inputs"].append(
             {
                 "name": inp.name,
                 "shape": new_shape,
                 "layout": layout,
-                # "dtype": new_dtype.value,
                 "dtype": inp.data_type.value,
-                # "dtype": "float32",
                 "input_type": "image",
                 "preprocessing": {
                     "mean": [0 for _ in inp.mean_values]
                     if inp.mean_values
                     else None,
-                    "scale": [1 for _ in inp.scale_values]
-                    if inp.scale_values
-                    else None,
-                    "reverse_channels": False,
-                    "interleaved_to_planar": False,
+                    "scale": (
+                        [1 for _ in inp.scale_values]
+                        if inp.scale_values
+                        else None
+                    ),
+                    "reverse_channels": inp.encoding.to == Encoding.RGB,
+                    "interleaved_to_planar": layout == "NHWC",
+                    "dai_type": dai_type,
                 },
             }
         )
     for out in cfg.outputs:
         new_shape = model_metadata.output_shapes[out.name]
-        # new_dtype = model_metadata.output_dtypes[out.name]
         if out.shape is not None and not any(s == 0 for s in out.shape):
             assert out.layout is not None
             layout = guess_new_layout(out.layout, out.shape, new_shape)
@@ -190,9 +254,7 @@ def modelconverter_config_to_nn(
                 "name": out.name,
                 "shape": new_shape,
                 "layout": layout,
-                # "dtype": new_dtype.value,
                 "dtype": out.data_type.value,
-                # "dtype": "float32",
             }
         )
 
@@ -225,7 +287,7 @@ def archive_from_model(model_path: Path) -> NNArchiveConfig:
     metadata = get_metadata(model_path)
 
     archive_cfg = {
-        "config_version": "1.0",
+        "config_version": CONFIG_VERSION,
         "model": {
             "metadata": {
                 "name": model_path.stem,
@@ -243,13 +305,14 @@ def archive_from_model(model_path: Path) -> NNArchiveConfig:
                 "name": name,
                 "shape": shape,
                 "layout": make_default_layout(shape),
-                "dtype": "float32",
+                "dtype": metadata.input_dtypes[name].value,
                 "input_type": "image",
                 "preprocessing": {
                     "mean": None,
                     "scale": None,
-                    "reverse_channels": False,
-                    "interleaved_to_planar": False,
+                    "reverse_channels": None,
+                    "interleaved_to_planar": None,
+                    "dai_type": None,
                 },
             }
         )
@@ -260,7 +323,7 @@ def archive_from_model(model_path: Path) -> NNArchiveConfig:
                 "name": name,
                 "shape": shape,
                 "layout": make_default_layout(shape),
-                "dtype": "float32",
+                "dtype": metadata.output_dtypes[name].value,
             }
         )
 

@@ -21,13 +21,18 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 
 ## Table of Contents
 
-- [MLOps - Compilation Library](#mlops---compilation-library)
+- [ModelConverter - Compilation Library](#modelconverter---compilation-library)
+  - [Status](#status)
   - [Table of Contents](#table-of-contents)
   - [Installation](#installation)
+    - [System Requirements](#system-requirements)
     - [Before You Begin](#before-you-begin)
     - [Instructions](#instructions)
     - [GPU Support](#gpu-support)
   - [Running ModelConverter](#running-modelconverter)
+    - [Encoding Configuration Flags](#encoding-configuration-flags)
+      - [YAML Configuration File](#yaml-configuration-file)
+      - [NN Archive Configuration File](#nn-archive-configuration-file)
     - [Sharing Files](#sharing-files)
     - [Usage](#usage)
     - [Examples](#examples)
@@ -101,9 +106,58 @@ To enable GPU acceleration for `hailo` conversion, install the [Nvidia Container
 
 ## Running ModelConverter
 
-Configuration for the conversion predominantly relies on a `yaml` config file. For reference, see [defaults.yaml](shared_with_container/configs/defaults.yaml) and other examples located in the [shared_with_container/configs](shared_with_container/configs) directory.
+There are two main ways to execute configure the conversion process:
 
-However, you have the flexibility to modify specific settings without altering the config file itself. This is done using command line arguments. You provide the arguments in the form of `key value` pairs. For better understanding, see [Examples](#examples).
+1. **YAML Config File (Primary Method)**:
+   The primary way to configure the conversion is through a YAML configuration file. For reference, you can check [defaults.yaml](shared_with_container/configs/defaults.yaml) and other examples located in the [shared_with_container/configs](shared_with_container/configs) directory.
+1. **NN Archive**:
+   Alternatively, you can use an [NN Archive](https://rvc4.docs.luxonis.com/software/ai-inference/nn-archive/#NN%20Archive) as input. An NN Archive includes a model in one of the supported formats—ONNX (.onnx), OpenVINO IR (.xml and .bin), or TensorFlow Lite (.tflite)—alongside a `config.json` file. The config.json file follows a specific configuration format as described in the [NN Archive Configuration Guide](https://rvc4.docs.luxonis.com/software/ai-inference/nn-archive/#NN%20Archive-Configuration).
+
+**Modifying Settings with Command-Line Arguments**:
+In addition to these two configuration methods, you have the flexibility to override specific settings directly via command-line arguments. By supplying `key-value` pairs in the CLI, you can adjust particular settings without explicitly altering the config files (YAML or NN Archive). For further details, refer to the [Examples](#examples) section.
+
+### Encoding Configuration Flags
+
+In the conversion process, you have options to control the color encoding format in both the YAML configuration file and the NN Archive configuration. Here’s a breakdown of each available flag:
+
+#### YAML Configuration File
+
+The `encoding` flag in the YAML configuration file allows you to specify color encoding as follows:
+
+- **Single-Value `encoding`**:
+  Setting encoding to a single value, such as *"RGB"*, *"BGR"*, *"GRAY"*, or *"NONE"*, will automatically apply this setting to both `encoding.from` and `encoding.to`. For example, `encoding: RGB` sets both `encoding.from` and `encoding.to` to *"RGB"* internally.
+- **Multi-Value `encoding.from` and `encoding.to`**:
+  Alternatively, you can explicitly set `encoding.from` and `encoding.to` to different values. For example:
+  ```yaml
+  encoding:
+    from: RGB
+    to: BGR
+  ```
+  This configuration specifies that the input data is in RGB format and will be converted to BGR format during processing.
+
+> [!NOTE]
+> If the encoding is not specified in the YAML configuration, the default values are set to `encoding.from=RGB` and `encoding.to=BGR`.
+
+> [!NOTE]
+> Certain options can be set **globally**, applying to all inputs of the model, or **per input**. If specified per input, these settings will override the global configuration for that input alone. The options that support this flexibility include `scale_values`, `mean_values`, `encoding`, `data_type`, `shape`, and `layout`.
+
+#### NN Archive Configuration File
+
+In the NN Archive configuration, there are two flags related to color encoding control:
+
+- **`dai_type`**:
+  Provides a more comprehensive control over the input type compatible with the DAI backend. It is read by DepthAI to automatically configure the processing pipeline, including any necessary modifications to the input image format.
+- **`reverse_channels` (Deprecated)**:
+  Determines the input color format of the model: when set to *True*, the input is considered to be *"RGB"*, and when set to *False*, it is treated as *"BGR"*. This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
+
+> [!NOTE]
+> If neither `dai_type` nor `reverse_channels` the input to the model is considered to be *"RGB"*.
+
+> [!NOTE]
+> If both `dai_type` and `reverse_channels` are provided, the converter will give priority to `dai_type`.
+
+> [!IMPORTANT]
+> Provide mean/scale values in the original color format used during model training (e.g., RGB or BGR). Any necessary channel permutation is handled internally—do not reorder values manually.
 
 ### Sharing Files
 
@@ -158,6 +212,7 @@ You can run the built image either manually using the `docker run` command or us
 1. Execute the conversion:
 
 - If using the `docker run` command:
+
   ```bash
   docker run --rm -it \
     -v $(pwd)/shared_with_container:/app/shared_with_container/ \
@@ -168,11 +223,15 @@ You can run the built image either manually using the `docker run` command or us
     convert <target> \
     --path <s3_url_or_path> [ config overrides ]
   ```
+
 - If using the `modelconverter` CLI:
+
   ```bash
   modelconverter convert <target> --path <s3_url_or_path> [ config overrides ]
   ```
+
 - If using `docker-compose`:
+
   ```bash
   docker compose run <target> convert <target> ...
   ```
@@ -200,12 +259,16 @@ Specify all options via the command line without a config file:
 ```bash
 modelconverter convert rvc2 input_model models/yolov6n.onnx \
                         scale_values "[255,255,255]" \
-                        reverse_input_channels True \
+                        inputs.0.encoding.from RGB \
+                        inputs.0.encoding.to BGR \
                         shape "[1,3,256,256]" \
                         outputs.0.name out_0 \
                         outputs.1.name out_1 \
                         outputs.2.name out_2
 ```
+
+> [!WARNING]
+> If you modify the default stages names (`stages.stage_name`) in the configuration file (`config.yaml`), you need to provide the full path to each stage in the command-line arguments. For instance, if a stage name is changed to `stage1`, use `stages.stage1.inputs.0.name` instead of `inputs.0.name`.
 
 ## Multi-Stage Conversion
 

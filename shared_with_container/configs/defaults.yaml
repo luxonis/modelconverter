@@ -94,7 +94,9 @@ stages:
     #    shape: [ 1, 3, 256, 256 ]
     #    data_type: float32 (default)
     #    scale_values: [ 255., 255., 255. ]
-    #    reverse_input_channels: false
+    #    encoding:
+    #      from: RGB
+    #      to: BGR
     #  - name: is_training
     #    freeze_value: false
     #  - name: sequence_len

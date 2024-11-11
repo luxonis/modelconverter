@@ -37,7 +37,7 @@ from modelconverter.utils.constants import (
     MODELS_DIR,
     OUTPUTS_DIR,
 )
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import DataType, Encoding, Target
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ TargetArgument: TypeAlias = Annotated[
 DevOption: TypeAlias = Annotated[
     bool,
     typer.Option(
-        help="Builds a new iamge and uses the development docker-compose file."
+        help="Builds a new image and uses the development docker-compose file."
     ),
 ]
 
@@ -212,18 +212,31 @@ def extract_preprocessing(
     for inp in stage_cfg.inputs:
         mean = inp.mean_values or [0, 0, 0]
         scale = inp.scale_values or [1, 1, 1]
+        encoding = inp.encoding
+        layout = inp.layout
+
+        dai_type = encoding.to.value
+        if dai_type != "NONE":
+            if inp.data_type == DataType.FLOAT16:
+                type = "F16F16F16"
+            else:
+                type = "888"
+            dai_type += type
+            dai_type += "i" if layout == "NHWC" else "p"
 
         preproc_block = PreprocessingBlock(
-            reverse_channels=inp.reverse_input_channels,
             mean=mean,
             scale=scale,
-            interleaved_to_planar=False,
+            reverse_channels=encoding.to == Encoding.RGB,
+            interleaved_to_planar=layout == "NHWC",
+            dai_type=dai_type,
         )
         preprocessing[inp.name] = preproc_block
 
         inp.mean_values = None
         inp.scale_values = None
-        inp.reverse_input_channels = False
+        inp.encoding.from_ = Encoding.NONE
+        inp.encoding.to = Encoding.NONE
 
     return cfg, preprocessing
 
@@ -477,9 +490,13 @@ def convert(
                     archive_cfg,
                     preprocessing,
                     main_stage,
-                    exporter.inference_model_path
-                    if isinstance(exporter, Exporter)
-                    else exporter.exporters[main_stage].inference_model_path,
+                    (
+                        exporter.inference_model_path
+                        if isinstance(exporter, Exporter)
+                        else exporter.exporters[
+                            main_stage
+                        ].inference_model_path
+                    ),
                 )
                 generator = ArchiveGenerator(
                     archive_name=f"{cfg.name}.{target.value.lower()}",

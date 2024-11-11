@@ -41,7 +41,7 @@ def onnx_attach_normalization_to_inputs(
             continue
         cfg = input_configs[input_name]
         if (
-            not cfg.reverse_input_channels
+            cfg.encoding.from_ == cfg.encoding.to
             and cfg.mean_values is None
             and cfg.scale_values is None
         ):
@@ -70,7 +70,7 @@ def onnx_attach_normalization_to_inputs(
         last_output = input_name
 
         # 1. Reverse channels if needed
-        if cfg.reverse_input_channels:
+        if cfg.encoding_mismatch:
             split_names = [f"split_{i}_{input_name}" for i in range(3)]
             split_node = helper.make_node(
                 "Split",
@@ -89,8 +89,15 @@ def onnx_attach_normalization_to_inputs(
             new_nodes.append(concat_node)
             last_output = f"normalized_{input_name}"
 
-        # 2. Subtract (mean) if mean_values is not None
-        if not reverse_only and cfg.mean_values is not None:
+        # 2. Subtract (mean) if mean_values is not None and not all 0
+        if (
+            not reverse_only
+            and cfg.mean_values is not None
+            and any(v != 0 for v in cfg.mean_values)
+        ):
+            if cfg.encoding_mismatch:
+                cfg.mean_values = cfg.mean_values[::-1]
+
             sub_out = f"sub_out_{input_name}"
             sub_node = helper.make_node(
                 "Sub",
@@ -110,8 +117,15 @@ def onnx_attach_normalization_to_inputs(
             )
             new_initializers.append(mean_tensor)
 
-        # 3. Divide (scale) if scale_values is not None
-        if not reverse_only and cfg.scale_values is not None:
+        # 3. Divide (scale) if scale_values is not None and not all 1
+        if (
+            not reverse_only
+            and cfg.scale_values is not None
+            and any(v != 1 for v in cfg.scale_values)
+        ):
+            if cfg.encoding_mismatch:
+                cfg.scale_values = cfg.scale_values[::-1]
+
             div_out = f"div_out_{input_name}"
             div_node = helper.make_node(
                 "Mul",
