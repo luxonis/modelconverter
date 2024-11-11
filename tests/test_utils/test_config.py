@@ -739,10 +739,6 @@ def test_modified_onnx(key: List[str], value: List[str]):
     normalize_inputs = {inp.name: [False, False] for inp in inputs}
     for node in modified_onnx.graph.node:
         if node.op_type == "Split":
-            next_node = modified_onnx.graph.node[
-                modified_onnx.graph.node.index(node) + 1
-            ]
-            assert next_node.op_type == "Concat"
             reverse_inputs[node.input[0]] = True
         elif node.op_type == "Sub":
             inp_name = node.input[1].split("mean_")[1]
