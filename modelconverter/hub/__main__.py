@@ -111,7 +111,7 @@ def model_ls(
     tasks: TasksOption = None,
     user_id: UserIDOption = None,
     license_type: LicenseTypeOption = None,
-    is_public: IsPublicOption = True,
+    is_public: IsPublicOption = None,
     slug: SlugOption = None,
     project_id: ProjectIDOption = None,
     filter_public_entity_by_team_id: FilterPublicEntityByTeamIDOption = None,
@@ -171,7 +171,7 @@ def model_info(
 def model_create(
     name: NameArgument,
     license_type: LicenseTypeOptionRequired = License.UNDEFINED,
-    is_public: IsPublicOption = True,
+    is_public: IsPublicOption = False,
     description: DescriptionOption = None,
     description_short: DescriptionShortOption = "<empty>",
     architecture_id: ArchitectureIDOption = None,
@@ -218,7 +218,7 @@ def version_ls(
     slug: SlugOption = None,
     variant_slug: VariantSlugOption = None,
     version: HubVersionOption = None,
-    is_public: IsPublicOption = True,
+    is_public: IsPublicOption = None,
     limit: LimitOption = 50,
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
@@ -236,7 +236,7 @@ def version_ls(
         limit=limit,
         sort=sort,
         order=order,
-        keys=["id", "version", "slug", "platforms"],
+        keys=["name", "id", "version", "variant_slug", "platforms"],
     )
 
 
@@ -322,7 +322,7 @@ def instance_ls(
     name: NameOption = None,
     hash: HashOption = None,
     status: StatusOption = None,
-    is_public: IsPublicOption = True,
+    is_public: IsPublicOption = None,
     compression_level: CompressionLevelOption = None,
     optimization_level: OptimizationLevelOption = None,
     slug: SlugOption = None,
@@ -354,10 +354,12 @@ def instance_ls(
         sort=sort,
         order=order,
         keys=[
+            "name",
             "id",
             "slug",
             "platforms",
             "is_nn_archive",
+            "hash",
         ],
     )
 
@@ -522,7 +524,7 @@ def convert(
     path: PathOptionRequired,
     name: NameOption = None,
     license_type: LicenseTypeOptionRequired = License.UNDEFINED,
-    is_public: IsPublicOption = True,
+    is_public: IsPublicOption = False,
     description_short: DescriptionShortOption = "<empty>",
     description: DescriptionOption = None,
     architecture_id: ArchitectureIDOption = None,

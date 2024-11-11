@@ -339,7 +339,7 @@ LicenseTypeOption = Annotated[
 ]
 
 IsPublicOption = Annotated[
-    bool,
+    Optional[bool],
     typer.Option(
         help="Whether to query public or private models", show_default=False
     ),
