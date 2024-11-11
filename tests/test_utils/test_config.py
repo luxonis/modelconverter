@@ -6,13 +6,17 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import numpy as np
 import onnx
 import pytest
 from onnx import checker, helper
 from onnx.onnx_pb import TensorProto
 
 from modelconverter.utils.config import Config, EncodingConfig
-from modelconverter.utils.nn_archive import process_nn_archive
+from modelconverter.utils.nn_archive import (
+    process_nn_archive,
+)
+from modelconverter.utils.onnx_tools import onnx_attach_normalization_to_inputs
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -129,7 +133,7 @@ def setup():
     checker.check_model(model)
     onnx.save(model, str(DATA_DIR / "dummy_model.onnx"))
     yield
-    shutil.rmtree(DATA_DIR)
+    # shutil.rmtree(DATA_DIR)
 
 
 def set_nested_config_value(
@@ -614,6 +618,180 @@ def test_incorrect_type(key: str, value: str):
                 "input_model": str(DATA_DIR / "dummy_model.onnx"),
             },
         )
+
+
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        (
+            [],
+            [],
+        ),
+        (
+            ["encoding"],
+            ["BGR"],
+        ),
+        (
+            [
+                "inputs.0.name",
+                "inputs.0.encoding",
+                "inputs.1.name",
+                "inputs.1.encoding.from",
+                "inputs.1.encoding.to",
+            ],
+            ["input0", "BGR", "input1", "RGB", "BGR"],
+        ),
+        (
+            [
+                "inputs.0.name",
+                "inputs.0.encoding.from",
+                "inputs.1.name",
+            ],
+            ["input0", "RGB", "input1"],
+        ),
+        (
+            [
+                "encoding",
+                "mean_values",
+                "scale_values",
+                "inputs.0.name",
+                "inputs.1.name",
+                "inputs.1.encoding.from",
+                "inputs.1.mean_values",
+            ],
+            ["BGR", 0, 255, "input0", "input1", "RGB", 127],
+        ),
+        (
+            [
+                "inputs.0.name",
+                "inputs.0.encoding",
+                "inputs.0.mean_values",
+                "inputs.0.scale_values",
+                "inputs.1.name",
+                "inputs.1.encoding.from",
+                "inputs.1.encoding.to",
+                "inputs.1.mean_values",
+                "inputs.1.scale_values",
+            ],
+            [
+                "input0",
+                "BGR",
+                0,
+                1,
+                "input1",
+                "RGB",
+                "BGR",
+                [123.675, 116.28, 103.53],
+                [58.395, 57.12, 57.375],
+            ],
+        ),
+        (
+            [
+                "encoding",
+                "mean_values",
+                "scale_values",
+                "inputs.0.name",
+                "inputs.0.encoding",
+                "inputs.0.mean_values",
+                "inputs.0.scale_values",
+                "inputs.1.name",
+                "inputs.1.encoding.from",
+                "inputs.1.encoding.to",
+                "inputs.1.mean_values",
+                "inputs.1.scale_values",
+            ],
+            [
+                "RGB",
+                0,
+                255,
+                "input0",
+                "BGR",
+                0,
+                1,
+                "input1",
+                "RGB",
+                "BGR",
+                [123.675, 116.28, 103.53],
+                [58.395, 57.12, 57.375],
+            ],
+        ),
+    ],
+)
+def test_modified_onnx(key: List[str], value: List[str]):
+    overrides = {key[i]: value[i] for i in range(len(key))}
+    overrides["input_model"] = str(DATA_DIR / "dummy_model.onnx")
+    config = Config.get_config(
+        None,
+        overrides,
+    )
+    inputs = next(iter(config.stages.values())).inputs
+    input_configs = {inp.name: inp for inp in inputs}
+    print(input_configs)
+    modified_onnx_path = onnx_attach_normalization_to_inputs(
+        DATA_DIR / "dummy_model.onnx",
+        DATA_DIR / "dummy_model_modified.onnx",
+        input_configs,
+        reverse_only=False,
+    )
+    modified_onnx = onnx.load(modified_onnx_path)
+
+    reverse_inputs = {inp.name: False for inp in inputs}
+    normalize_inputs = {inp.name: [False, False] for inp in inputs}
+    for node in modified_onnx.graph.node:
+        if node.op_type == "Split":
+            next_node = modified_onnx.graph.node[
+                modified_onnx.graph.node.index(node) + 1
+            ]
+            assert next_node.op_type == "Concat"
+            reverse_inputs[node.input[0]] = True
+        elif node.op_type == "Sub":
+            inp_name = node.input[1].split("mean_")[1]
+            mean_tensor = onnx.numpy_helper.to_array(
+                next(
+                    t
+                    for t in modified_onnx.graph.initializer
+                    if t.name == node.input[1]
+                )
+            )
+            assert np.allclose(
+                np.squeeze(mean_tensor),
+                np.array(input_configs[inp_name].mean_values),
+            )
+            normalize_inputs[inp_name][0] = True
+        elif node.op_type == "Mul":
+            inp_name = node.input[1].split("scale_")[1]
+            scale_tensor = onnx.numpy_helper.to_array(
+                next(
+                    t
+                    for t in modified_onnx.graph.initializer
+                    if t.name == node.input[1]
+                )
+            )
+            assert np.allclose(
+                np.squeeze(scale_tensor),
+                1 / np.array(input_configs[inp_name].scale_values),
+            )
+            normalize_inputs[inp_name][1] = True
+
+    for inp, norm in reverse_inputs.items():
+        if norm:
+            assert input_configs[inp].encoding_mismatch
+        else:
+            assert not input_configs[inp].encoding_mismatch
+
+    for inp, norm in normalize_inputs.items():
+        if norm[0] and norm[1]:
+            assert input_configs[inp].mean_values is not None
+            assert input_configs[inp].scale_values is not None
+        elif norm[0] and not norm[1]:
+            assert input_configs[inp].mean_values is not None
+            assert input_configs[inp].scale_values is None or [1, 1, 1]
+        elif not norm[0] and norm[1]:
+            assert input_configs[inp].mean_values is None or [0, 0, 0]
+            assert input_configs[inp].scale_values is not None
+        else:
+            assert input_configs[inp].mean_values is None or [0, 0, 0]
+            assert input_configs[inp].scale_values is None or [1, 1, 1]
 
 
 @pytest.mark.parametrize(

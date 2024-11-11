@@ -109,15 +109,9 @@ class RVC2Exporter(Exporter):
                 reverse_only=True,
             )
             for inp in self.inputs.values():
-                if (
-                    inp.mean_values is not None
-                    and inp.encoding.from_ != inp.encoding.to
-                ):
+                if inp.mean_values is not None and inp.encoding_mismatch:
                     inp.mean_values = inp.mean_values[::-1]
-                if (
-                    inp.scale_values is not None
-                    and inp.encoding.from_ != inp.encoding.to
-                ):
+                if inp.scale_values is not None and inp.encoding_mismatch:
                     inp.scale_values = inp.scale_values[::-1]
                 inp.encoding.from_ = Encoding.BGR
                 inp.encoding.to = Encoding.BGR
@@ -148,8 +142,7 @@ class RVC2Exporter(Exporter):
 
         # Append reverse_input_channels flag only once if needed
         reverse_input_flag = any(
-            inp.encoding.from_ != inp.encoding.to
-            for inp in self.inputs.values()
+            inp.encoding_mismatch for inp in self.inputs.values()
         )
         if reverse_input_flag:
             args.append("--reverse_input_channels")
@@ -162,10 +155,7 @@ class RVC2Exporter(Exporter):
         return self.input_model.with_suffix(".xml")
 
     def _check_reverse_channels(self):
-        reverses = [
-            inp.encoding.from_ != inp.encoding.to
-            for inp in self.inputs.values()
-        ]
+        reverses = [inp.encoding_mismatch for inp in self.inputs.values()]
         return all(reverses) or not any(reverses)
 
     @staticmethod

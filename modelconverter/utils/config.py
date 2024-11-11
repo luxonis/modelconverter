@@ -137,6 +137,10 @@ class InputConfig(OutputConfig):
     frozen_value: Optional[Any] = None
     encoding: EncodingConfig = EncodingConfig()
 
+    @property
+    def encoding_mismatch(self) -> bool:
+        return self.encoding.from_ != self.encoding.to
+
     @model_validator(mode="after")
     def _validate_grayscale_inputs(self) -> Self:
         if self.layout is None:

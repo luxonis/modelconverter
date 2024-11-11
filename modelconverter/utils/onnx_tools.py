@@ -70,7 +70,7 @@ def onnx_attach_normalization_to_inputs(
         last_output = input_name
 
         # 1. Reverse channels if needed
-        if cfg.encoding.from_ != cfg.encoding.to:
+        if cfg.encoding_mismatch:
             split_names = [f"split_{i}_{input_name}" for i in range(3)]
             split_node = helper.make_node(
                 "Split",
