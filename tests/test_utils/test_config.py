@@ -9,11 +9,14 @@ from typing import Dict, List, Optional
 import numpy as np
 import onnx
 import pytest
+from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
 from onnx import checker, helper
 from onnx.onnx_pb import TensorProto
 
+from modelconverter.__main__ import extract_preprocessing
 from modelconverter.utils.config import Config, EncodingConfig
 from modelconverter.utils.nn_archive import (
+    modelconverter_config_to_nn,
     process_nn_archive,
 )
 from modelconverter.utils.onnx_tools import onnx_attach_normalization_to_inputs
@@ -133,7 +136,7 @@ def setup():
     checker.check_model(model)
     onnx.save(model, str(DATA_DIR / "dummy_model.onnx"))
     yield
-    # shutil.rmtree(DATA_DIR)
+    shutil.rmtree(DATA_DIR)
 
 
 def set_nested_config_value(
@@ -179,10 +182,10 @@ def create_json(
                     "preprocessing": {},
                 },
                 {
-                    "name": "input0",
+                    "name": "input1",
                     "dtype": "float32",
                     "input_type": "image",
-                    "shape": [1, 3, 64, 64],
+                    "shape": [1, 3, 128, 128],
                     "preprocessing": {},
                 },
             ],
@@ -621,7 +624,7 @@ def test_incorrect_type(key: str, value: str):
 
 
 @pytest.mark.parametrize(
-    "key, value",
+    "keys, values",
     [
         (
             [],
@@ -717,8 +720,8 @@ def test_incorrect_type(key: str, value: str):
         ),
     ],
 )
-def test_modified_onnx(key: List[str], value: List[str]):
-    overrides = {key[i]: value[i] for i in range(len(key))}
+def test_modified_onnx(keys: List[str], values: List[str]):
+    overrides = {keys[i]: values[i] for i in range(len(keys))}
     overrides["input_model"] = str(DATA_DIR / "dummy_model.onnx")
     config = Config.get_config(
         None,
@@ -788,6 +791,361 @@ def test_modified_onnx(key: List[str], value: List[str]):
         else:
             assert input_configs[inp].mean_values is None or [0, 0, 0]
             assert input_configs[inp].scale_values is None or [1, 1, 1]
+
+
+@pytest.mark.parametrize(
+    "keys, values, nn_preprocess, expected",
+    [
+        (
+            [],
+            [],
+            False,
+            [
+                {
+                    "mean": None,
+                    "scale": None,
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+                {
+                    "mean": None,
+                    "scale": None,
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+            ],
+        ),
+        (
+            [
+                "inputs.0.name",
+                "inputs.0.encoding",
+                "inputs.0.mean_values",
+                "inputs.0.scale_values",
+                "inputs.1.name",
+                "inputs.1.encoding.to",
+            ],
+            ["input0", "BGR", 127, 255, "input1", "RGB"],
+            False,
+            [
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [1, 1, 1],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+                {
+                    "mean": None,
+                    "scale": None,
+                    "reverse_channels": True,
+                    "interleaved_to_planar": False,
+                    "dai_type": "RGB888p",
+                },
+            ],
+        ),
+        (
+            [],
+            [],
+            True,
+            [
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [1, 1, 1],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [1, 1, 1],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+            ],
+        ),
+        (
+            [
+                "inputs.0.name",
+                "inputs.0.encoding",
+                "inputs.0.mean_values",
+                "inputs.0.scale_values",
+                "inputs.1.name",
+                "inputs.1.encoding.to",
+            ],
+            ["input0", "BGR", 127, 255, "input1", "RGB"],
+            True,
+            [
+                {
+                    "mean": [127, 127, 127],
+                    "scale": [255, 255, 255],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [1, 1, 1],
+                    "reverse_channels": True,
+                    "interleaved_to_planar": False,
+                    "dai_type": "RGB888p",
+                },
+            ],
+        ),
+    ],
+)
+def test_output_nn_config_from_yaml(
+    keys: List[str],
+    values: List[str],
+    nn_preprocess: bool,
+    expected: List[Dict],
+):
+    overrides = {keys[i]: values[i] for i in range(len(keys))}
+    overrides["input_model"] = str(DATA_DIR / "dummy_model.onnx")
+    config = Config.get_config(
+        None,
+        overrides,
+    )
+    preprocessing = {}
+    if nn_preprocess:
+        config, preprocessing = extract_preprocessing(config)
+    nn_config = modelconverter_config_to_nn(
+        config,
+        DATA_DIR / "dummy_model.onnx",
+        None,
+        preprocessing,
+        "dummy_model",
+        DATA_DIR / "dummy_model.onnx",
+    )
+
+    input_0_preprocessing = nn_config.model.inputs[0].preprocessing
+    input_1_preprocessing = nn_config.model.inputs[1].preprocessing
+
+    expected_0_preprocessing = PreprocessingBlock(
+        mean=expected[0]["mean"],
+        scale=expected[0]["scale"],
+        reverse_channels=expected[0]["reverse_channels"],
+        interleaved_to_planar=expected[0]["interleaved_to_planar"],
+        dai_type=expected[0]["dai_type"],
+    )
+    expected_1_preprocessing = PreprocessingBlock(
+        mean=expected[1]["mean"],
+        scale=expected[1]["scale"],
+        reverse_channels=expected[1]["reverse_channels"],
+        interleaved_to_planar=expected[1]["interleaved_to_planar"],
+        dai_type=expected[1]["dai_type"],
+    )
+
+    assert input_0_preprocessing == expected_0_preprocessing
+    assert input_1_preprocessing == expected_1_preprocessing
+
+
+@pytest.mark.parametrize(
+    "keys, values, nn_preprocess, expected",
+    [
+        (
+            [],
+            [],
+            False,
+            [
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [1, 1, 1],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [1, 1, 1],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+            ],
+        ),
+        (
+            [
+                "inputs.0.preprocessing.reverse_channels",
+                "inputs.1.preprocessing.reverse_channels",
+            ],
+            ["False", "True"],
+            False,
+            [
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [1, 1, 1],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [1, 1, 1],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+            ],
+        ),
+        (
+            [
+                "inputs.0.preprocessing.dai_type",
+                "inputs.1.preprocessing.dai_type",
+            ],
+            ["BGR888p", "RGB888p"],
+            False,
+            [
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [1, 1, 1],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [1, 1, 1],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+            ],
+        ),
+        (
+            [
+                "inputs.0.preprocessing.dai_type",
+                "inputs.0.preprocessing.reverse_channels",
+                "inputs.0.preprocessing.mean",
+                "inputs.0.preprocessing.scale",
+                "inputs.1.preprocessing.dai_type",
+                "inputs.1.preprocessing.reverse_channels",
+                "inputs.1.preprocessing.mean",
+                "inputs.1.preprocessing.scale",
+            ],
+            [
+                "BGR888p",
+                "True",
+                [0, 0, 0],
+                [255, 255, 255],
+                "RGB888p",
+                "False",
+                [127, 127, 127],
+                [255, 255, 255],
+            ],
+            False,
+            [
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [1, 1, 1],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [1, 1, 1],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+            ],
+        ),
+        (
+            [
+                "inputs.0.preprocessing.dai_type",
+                "inputs.0.preprocessing.reverse_channels",
+                "inputs.0.preprocessing.mean",
+                "inputs.0.preprocessing.scale",
+                "inputs.1.preprocessing.dai_type",
+                "inputs.1.preprocessing.reverse_channels",
+                "inputs.1.preprocessing.mean",
+                "inputs.1.preprocessing.scale",
+            ],
+            [
+                "BGR888p",
+                "True",
+                [0, 0, 0],
+                [255, 255, 255],
+                "RGB888p",
+                "False",
+                [127, 127, 127],
+                [255, 255, 255],
+            ],
+            True,
+            [
+                {
+                    "mean": [0, 0, 0],
+                    "scale": [255, 255, 255],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+                {
+                    "mean": [127, 127, 127],
+                    "scale": [255, 255, 255],
+                    "reverse_channels": False,
+                    "interleaved_to_planar": False,
+                    "dai_type": "BGR888p",
+                },
+            ],
+        ),
+    ],
+)
+def test_output_nn_config_from_nn_archive(
+    keys: List[str],
+    values: List[str],
+    nn_preprocess: bool,
+    expected: List[Dict],
+):
+    nn_archive_path = DATA_DIR / "dummy_model.tar.xz"
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        tar_path = Path(tmpdirname) / "dummy_model.tar.xz"
+        with tarfile.open(tar_path, "w") as tar:
+            tar.add(
+                str(DATA_DIR / "dummy_model.onnx"), arcname="dummy_model.onnx"
+            )
+            tar.add(
+                create_json(keys=keys, values=values), arcname="config.json"
+            )
+        shutil.copy(tar_path, nn_archive_path)
+    config, archive_cfg, main_stage = process_nn_archive(
+        nn_archive_path, overrides=None
+    )
+    preprocessing = {}
+    if nn_preprocess:
+        config, preprocessing = extract_preprocessing(config)
+    nn_config = modelconverter_config_to_nn(
+        config,
+        DATA_DIR / "dummy_model.onnx",
+        archive_cfg,
+        preprocessing,
+        main_stage,
+        DATA_DIR / "dummy_model.onnx",
+    )
+
+    input_0_preprocessing = nn_config.model.inputs[0].preprocessing
+    input_1_preprocessing = nn_config.model.inputs[1].preprocessing
+
+    expected_0_preprocessing = PreprocessingBlock(
+        mean=expected[0]["mean"],
+        scale=expected[0]["scale"],
+        reverse_channels=expected[0]["reverse_channels"],
+        interleaved_to_planar=expected[0]["interleaved_to_planar"],
+        dai_type=expected[0]["dai_type"],
+    )
+    expected_1_preprocessing = PreprocessingBlock(
+        mean=expected[1]["mean"],
+        scale=expected[1]["scale"],
+        reverse_channels=expected[1]["reverse_channels"],
+        interleaved_to_planar=expected[1]["interleaved_to_planar"],
+        dai_type=expected[1]["dai_type"],
+    )
+
+    assert input_0_preprocessing == expected_0_preprocessing
+    assert input_1_preprocessing == expected_1_preprocessing
 
 
 @pytest.mark.parametrize(
