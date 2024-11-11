@@ -95,6 +95,9 @@ def onnx_attach_normalization_to_inputs(
             and cfg.mean_values is not None
             and any(v != 0 for v in cfg.mean_values)
         ):
+            if cfg.encoding_mismatch:
+                cfg.mean_values = cfg.mean_values[::-1]
+
             sub_out = f"sub_out_{input_name}"
             sub_node = helper.make_node(
                 "Sub",
@@ -120,6 +123,9 @@ def onnx_attach_normalization_to_inputs(
             and cfg.scale_values is not None
             and any(v != 1 for v in cfg.scale_values)
         ):
+            if cfg.encoding_mismatch:
+                cfg.scale_values = cfg.scale_values[::-1]
+
             div_out = f"div_out_{input_name}"
             div_node = helper.make_node(
                 "Mul",

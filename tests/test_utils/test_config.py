@@ -729,7 +729,7 @@ def test_modified_onnx(keys: List[str], values: List[str]):
     )
     inputs = next(iter(config.stages.values())).inputs
     input_configs = {inp.name: inp for inp in inputs}
-    print(input_configs)
+
     modified_onnx_path = onnx_attach_normalization_to_inputs(
         DATA_DIR / "dummy_model.onnx",
         DATA_DIR / "dummy_model_modified.onnx",
