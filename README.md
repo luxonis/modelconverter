@@ -156,6 +156,9 @@ In the NN Archive configuration, there are two flags related to color encoding c
 > [!NOTE]
 > If both `dai_type` and `reverse_channels` are provided, the converter will give priority to `dai_type`.
 
+> [!IMPORTANT]
+> Provide mean/scale values in the original color format used during model training (e.g., RGB or BGR). Any necessary channel permutation is handled internally—do not reorder values manually.
+
 ### Sharing Files
 
 When using the supplied `docker-compose.yaml`, the `shared_with_container` directory facilitates file sharing between the host and container. This directory is mounted as `/app/shared_with_container/` inside the container. You can place your models, calibration data, and config files here. The directory structure is:
