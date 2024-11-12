@@ -1,7 +1,7 @@
 import pkg_resources
 from luxonis_ml.utils import PUT_FILE_REGISTRY
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 
 def load_put_file_plugins() -> None:
