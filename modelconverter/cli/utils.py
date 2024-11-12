@@ -143,8 +143,14 @@ def extract_preprocessing(
 
 
 def print_hub_resource_info(
-    model: Dict[str, Any], keys: List[str], json: bool, **kwargs
+    model: Dict[str, Any],
+    keys: List[str],
+    json: bool,
+    rename: Optional[Dict[str, str]] = None,
+    **kwargs,
 ) -> Dict[str, Any]:
+    rename = rename or {}
+
     if json:
         print(model)
         return model
@@ -178,7 +184,10 @@ def print_hub_resource_info(
 
             formatted_value = format_date(value)
 
-            table.add_row(f"{key.replace('_', ' ').title()}:", formatted_value)
+            table.add_row(
+                f"{rename.get(key, key).replace('_', ' ').title()}:",
+                formatted_value,
+            )
         elif key == "is_public":
             if key not in model:
                 value = "N/A"
@@ -196,7 +205,7 @@ def print_hub_resource_info(
             table.add_row("NN Archive:", Pretty(model.get(key, False)))
         else:
             table.add_row(
-                f"{key.replace('_', ' ').title()}:",
+                f"{rename.get(key, key).replace('_', ' ').title()}:",
                 Pretty(model.get(key, "N/A")),
             )
 
@@ -233,11 +242,17 @@ def print_hub_resource_info(
     return model
 
 
-def hub_ls(endpoint: str, keys: List[str], **kwargs) -> List[Dict[str, Any]]:
+def hub_ls(
+    endpoint: str,
+    keys: List[str],
+    rename: Optional[Dict[str, str]] = None,
+    **kwargs,
+) -> List[Dict[str, Any]]:
+    rename = rename or {}
     data = Request.get(f"{endpoint}/", params=kwargs).json()
     table = Table(row_styles=["yellow", "cyan"], box=ROUNDED)
     for key in keys:
-        table.add_column(key, header_style="magenta i")
+        table.add_column(rename.get(key, key), header_style="magenta i")
 
     for model in data:
         renderables = []
@@ -298,7 +313,7 @@ def request_info(
         exit(1)
 
 
-def get_version_name(
+def get_variant_name(
     cfg: SingleStageConfig, model_type: ModelType, name: str
 ) -> str:
     shape = cfg.inputs[0].shape

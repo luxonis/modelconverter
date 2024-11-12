@@ -63,7 +63,7 @@ from modelconverter.cli import (
     get_configs,
     get_resource_id,
     get_target_specific_options,
-    get_version_name,
+    get_variant_name,
     get_version_number,
     hub_ls,
     print_hub_resource_info,
@@ -88,7 +88,7 @@ model = typer.Typer(
     rich_markup_mode="markdown",
 )
 
-version = typer.Typer(
+variant = typer.Typer(
     help="Hub Versions Interactions",
     add_completion=False,
     rich_markup_mode="markdown",
@@ -101,8 +101,8 @@ instance = typer.Typer(
 )
 
 app.add_typer(model, name="model", help="Models Interactions")
-app.add_typer(version, name="version", help="Hub Versions Interactions")
-app.add_typer(instance, name="instance", help="Hub Instances Interactions")
+app.add_typer(variant, name="variant", help="Model Variants Interactions")
+app.add_typer(instance, name="instance", help="Model Instances Interactions")
 
 
 @model.command(name="ls")
@@ -210,8 +210,8 @@ def model_delete(identifier: IdentifierArgument):
     print(f"Model '{identifier}' deleted")
 
 
-@version.command(name="ls")
-def version_ls(
+@variant.command(name="ls")
+def variant_ls(
     team_id: TeamIDOption = None,
     user_id: UserIDOption = None,
     model_id: ModelIDOption = None,
@@ -236,18 +236,18 @@ def version_ls(
         limit=limit,
         sort=sort,
         order=order,
-        keys=["name", "id", "version", "variant_slug", "platforms"],
+        keys=["name", "version", "slug", "platforms"],
     )
 
 
-@version.command(name="info")
-def version_info(
+@variant.command(name="info")
+def variant_info(
     identifier: IdentifierArgument, json: JSONOption = False
 ) -> Dict[str, Any]:
     """Prints information about a model version."""
     return print_hub_resource_info(
         request_info(identifier, "modelVersions"),
-        title="Model Version Info",
+        title="Model Variant Info",
         json=json,
         keys=[
             "name",
@@ -264,8 +264,8 @@ def version_info(
     )
 
 
-@version.command(name="create")
-def version_create(
+@variant.command(name="create")
+def variant_create(
     name: NameArgument,
     model_id: ModelIDOptionRequired,
     version: HubVersionOptionRequired,
@@ -276,7 +276,7 @@ def version_create(
     tags: TagsOption = None,
     silent: SilentOption = False,
 ) -> Dict[str, Any]:
-    """Creates a new version of a model."""
+    """Creates a new variant of a model."""
     data = {
         "model_id": model_id,
         "name": name,
@@ -292,21 +292,21 @@ def version_create(
     except requests.HTTPError as e:
         if str(e).startswith("{'detail': 'Unique constraint error."):
             raise ValueError(
-                f"Model version '{name}' already exists for model '{model_id}'"
+                f"Model variant '{name}' already exists for model '{model_id}'"
             ) from e
         raise e
-    print(f"Model version '{res['name']}' created with ID '{res['id']}'")
+    print(f"Model variant '{res['name']}' created with ID '{res['id']}'")
     if not silent:
-        version_info(res["id"])
+        variant_info(res["id"])
     return res
 
 
-@version.command(name="delete")
-def version_delete(identifier: IdentifierArgument):
-    """Deletes a model version."""
-    version_id = get_resource_id(identifier, "modelVersions")
-    Request.delete(f"modelVersions/{version_id}")
-    print(f"Model version '{version_id}' deleted")
+@variant.command(name="delete")
+def variant_delete(identifier: IdentifierArgument):
+    """Deletes a model variant."""
+    variant_id = get_resource_id(identifier, "modelVersions")
+    Request.delete(f"modelVersions/{variant_id}")
+    print(f"Model variant '{variant_id}' deleted")
 
 
 @instance.command(name="ls")
@@ -315,7 +315,7 @@ def instance_ls(
     team_id: TeamIDOption = None,
     user_id: UserIDOption = None,
     model_id: ModelIDOption = None,
-    model_version_id: ModelVersionIDOption = None,
+    variant_id: ModelVersionIDOption = None,
     model_type: ModelTypeOption = None,
     parent_id: ParentIDOption = None,
     model_class: Optional[ModelClass] = None,
@@ -337,7 +337,7 @@ def instance_ls(
         if platforms
         else [],
         model_id=model_id,
-        model_version_id=model_version_id,
+        model_version_id=variant_id,
         model_type=model_type,
         parent_id=parent_id,
         model_class=model_class,
@@ -355,7 +355,6 @@ def instance_ls(
         order=order,
         keys=[
             "name",
-            "id",
             "slug",
             "platforms",
             "is_nn_archive",
@@ -387,6 +386,7 @@ def instance_info(
             "is_nn_archive",
             "downloads",
         ],
+        rename={"model_version_id": "variant_id"},
     )
 
 
@@ -426,7 +426,7 @@ def instance_download(
 @instance.command(name="create")
 def instance_create(
     name: NameArgument,
-    model_version_id: ModelVersionIDOptionRequired,
+    variant_id: ModelVersionIDOptionRequired,
     model_type: ModelTypeOption,
     parent_id: ParentIDOption = None,
     model_precision_type: TargetPrecisionOption = None,
@@ -439,7 +439,7 @@ def instance_create(
     """Creates a new model instance."""
     data = {
         "name": name,
-        "model_version_id": model_version_id,
+        "model_version_id": variant_id,
         "parent_id": parent_id,
         "model_type": model_type,
         "model_precision_type": model_precision_type,
@@ -538,7 +538,7 @@ def convert(
     quantization_data: QuantizationOption = Quantization.RANDOM,
     domain: DomainOption = None,
     tags: TagsOption = None,
-    version_id: ModelVersionIDOption = None,
+    variant_id: ModelVersionIDOption = None,
     output_dir: OutputDirOption = None,
     tool_version: VersionOption = None,
     opts: OptsArgument = None,
@@ -584,8 +584,8 @@ def convert(
     @param domain: Domain of the model
     @type tags: Optional[List[str]]
     @param tags: List of tags for the model
-    @type version_id: Optional[int]
-    @param version_id: ID of an existing Model Version resource.
+    @type variant_id: Optional[int]
+    @param variant_id: ID of an existing Model Version resource.
         If specified, this version will be used instead of creating a new one
     @type output_dir: Optional[Path]
     @param output_dir: Output directory for the downloaded files
@@ -604,7 +604,8 @@ def convert(
     if isinstance(target, str):
         target = Target(target.lower())
 
-    path = Path(path) if path else None
+    if path is not None:
+        path = Path(path)
 
     if path is not None and not is_nn_archive(path):
         opts.extend(["input_model", str(path)])
@@ -625,9 +626,9 @@ def convert(
     cfg = next(iter(cfg.stages.values()))
 
     model_type = ModelType.from_suffix(cfg.input_model.suffix)
-    version_name = get_version_name(cfg, model_type, name)
+    variant_name = get_variant_name(cfg, model_type, name)
 
-    if model_id is None and version_id is None:
+    if model_id is None and variant_id is None:
         try:
             model_id = model_create(
                 name,
@@ -645,14 +646,14 @@ def convert(
                 name.lower().replace(" ", "-"), "models"
             )
 
-    if version_id is None:
+    if variant_id is None:
         if model_id is None:
             raise ValueError("`--model-id` is required to create a new model")
 
         version = version or get_version_number(model_id)
 
-        version_id = version_create(
-            version_name,
+        variant_id = variant_create(
+            variant_name,
             model_id,
             version,
             description,
@@ -663,11 +664,11 @@ def convert(
             silent=True,
         )["id"]
 
-    assert version_id is not None
+    assert variant_id is not None
     shape = cfg.inputs[0].shape
-    instance_name = f"{version_name} base instance"
+    instance_name = f"{variant_name} base instance"
     instance_id = instance_create(
-        instance_name, version_id, model_type, input_shape=shape, silent=True
+        instance_name, variant_id, model_type, input_shape=shape, silent=True
     )["id"]
 
     if path is not None and is_nn_archive(path):
@@ -677,7 +678,7 @@ def convert(
 
     target_options = get_target_specific_options(target, cfg, tool_version)
     instance = export(
-        f"{version_name} exported to {target.value}",
+        f"{variant_name} exported to {target.value}",
         instance_id,
         target.name,
         target_precision=TargetPrecision(target_precision).name,
