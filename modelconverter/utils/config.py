@@ -134,40 +134,12 @@ class InputConfig(OutputConfig):
     ] = RandomCalibrationConfig()
     scale_values: Optional[Annotated[List[float], Field(min_length=1)]] = None
     mean_values: Optional[Annotated[List[float], Field(min_length=1)]] = None
-    reverse_input_channels: bool = False
     frozen_value: Optional[Any] = None
     encoding: EncodingConfig = EncodingConfig()
 
-    @model_validator(mode="before")
-    @classmethod
-    def _validate_encoding(cls, data: Dict[str, Any]) -> Dict[str, Any]:
-        encoding = data.get("encoding")
-        if encoding is None:
-            return data
-        if isinstance(encoding, str):
-            data["encoding"] = {"from": encoding, "to": encoding}
-        return data
-
-    @model_validator(mode="after")
-    def _validate_reverse_input_channels(self) -> Self:
-        if self.reverse_input_channels:
-            return self
-
-        if self.encoding.from_ == Encoding.NONE:
-            self.reverse_input_channels = False
-            return self
-
-        if (
-            self.encoding.from_ == Encoding.GRAY
-            or self.encoding.to == Encoding.GRAY
-        ):
-            self.encoding.from_ = self.encoding.to = Encoding.GRAY
-            self.reverse_input_channels = False
-
-        if self.encoding.from_ != self.encoding.to:
-            self.reverse_input_channels = True
-
-        return self
+    @property
+    def encoding_mismatch(self) -> bool:
+        return self.encoding.from_ != self.encoding.to
 
     @model_validator(mode="after")
     def _validate_grayscale_inputs(self) -> Self:
@@ -185,6 +157,25 @@ class InputConfig(OutputConfig):
             self.encoding.from_ = self.encoding.to = Encoding.GRAY
 
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_encoding(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        encoding = data.get("encoding")
+        if encoding is None or encoding == {}:
+            data["encoding"] = {"from": "RGB", "to": "BGR"}
+            return data
+        if isinstance(encoding, str):
+            data["encoding"] = {"from": encoding, "to": encoding}
+        if isinstance(encoding, dict):
+            if (
+                "from" in encoding
+                and encoding["from"] == "GRAY"
+                or "to" in encoding
+                and encoding["to"] == "GRAY"
+            ):
+                data["encoding"] = {"from": "GRAY", "to": "GRAY"}
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -218,63 +209,6 @@ class InputConfig(OutputConfig):
         if isinstance(value, (float, int)):
             return [value, value, value]
         return value
-
-    @model_validator(mode="before")
-    @classmethod
-    def _validate_deprecated_reverse_channels(
-        cls, data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        if "reverse_input_channels" not in data:
-            return data
-        logger.warning(
-            "Field `reverse_input_channels` is deprecated. "
-            "Please use `encoding.from` and `encoding.to` instead."
-        )
-        reverse = data["reverse_input_channels"]
-        calib = data.get("calibration", {}) or {}
-        if isinstance(calib, str):
-            calib_encoding = Encoding.BGR
-        else:
-            calib_encoding = calib.get("encoding", Encoding.BGR)
-
-        if reverse:
-            if calib_encoding == Encoding.GRAY:
-                raise ValueError(
-                    "Cannot reverse channels for grayscale images."
-                )
-            else:
-                encoding = {"from": Encoding.RGB, "to": Encoding.BGR}
-        else:
-            if calib_encoding == Encoding.GRAY:
-                encoding = "GRAY"
-            else:
-                encoding = {"from": Encoding.BGR, "to": Encoding.BGR}
-
-        data["encoding"] = encoding
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def _validate_deprecated_reverse_calib_encoding(
-        cls, data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        calib = data.get("calibration", {}) or {}
-        if isinstance(calib, str):
-            return data
-
-        calib_encoding = calib.pop("encoding", None)
-        if calib_encoding is None:
-            return data
-
-        logger.warning(
-            "Field `calibration.encoding` is deprecated. Please use `encoding.to` instead."
-        )
-        encoding = data.get("encoding", {})
-        if isinstance(encoding, str):
-            encoding = {"from": encoding, "to": encoding}
-        encoding["to"] = calib_encoding
-        data["encoding"] = encoding
-        return data
 
 
 class TargetConfig(CustomBaseModel):
@@ -329,6 +263,8 @@ class RVC4Config(TargetConfig):
     snpe_dlc_quant_args: List[str] = []
     snpe_dlc_graph_prepare_args: List[str] = []
     keep_raw_images: bool = False
+    use_per_channel_quantization: bool = True
+    use_per_row_quantization: bool = False
     htp_socs: List[
         Literal["sm8350", "sm8450", "sm8550", "sm8650", "qcs6490", "qcs8550"]
     ] = ["sm8550"]
@@ -361,7 +297,6 @@ class SingleStageConfig(CustomBaseModel):
         data_type = data.pop("data_type", None)
         shape = data.pop("shape", None)
         layout = data.pop("layout", None)
-        reverse_input_channels = data.pop("reverse_input_channels", None)
         top_level_calibration = data.pop("calibration", {})
 
         input_file_type = InputFileType.from_path(data["input_model"])
@@ -403,16 +338,16 @@ class SingleStageConfig(CustomBaseModel):
             inp["layout"] = inp.get("layout") or layout
             inp["data_type"] = inp.get("data_type") or data_type or onnx_dtype
             inp["encoding"] = inp.get("encoding") or encoding
-            inp["mean_values"] = inp.get("mean_values") or mean_values
-            inp["scale_values"] = inp.get("scale_values") or scale_values
-
-            if (
-                inp.get("reverse_input_channels") is not None
-                or reverse_input_channels is not None
-            ):
-                inp["reverse_input_channels"] = inp.get(
-                    "reverse_input_channels"
-                ) or (reverse_input_channels or False)
+            inp["mean_values"] = (
+                inp.get("mean_values")
+                if inp.get("mean_values") is not None
+                else mean_values
+            )
+            inp["scale_values"] = (
+                inp.get("scale_values")
+                if inp.get("scale_values") is not None
+                else scale_values
+            )
 
             inp_calibration: Dict[str, Any] = inp.get("calibration", {})
             if not inp_calibration and not top_level_calibration:
@@ -460,7 +395,6 @@ class SingleStageConfig(CustomBaseModel):
                 data[target] = {}
 
             data[target]["disable_calibration"] = disable_calibration
-
         return data
 
     @model_validator(mode="before")
@@ -520,7 +454,6 @@ class Config(LuxonisConfig):
                 for key, value in extra.items():
                     if key not in stage:
                         stage[key] = value
-
         return data
 
     @model_validator(mode="after")

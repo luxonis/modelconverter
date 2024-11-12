@@ -109,25 +109,43 @@ class RVC2Exporter(Exporter):
                 reverse_only=True,
             )
             for inp in self.inputs.values():
-                if inp.mean_values is not None and inp.reverse_input_channels:
+                if inp.mean_values is not None and inp.encoding_mismatch:
                     inp.mean_values = inp.mean_values[::-1]
-                if inp.scale_values is not None and inp.reverse_input_channels:
+                if inp.scale_values is not None and inp.encoding_mismatch:
                     inp.scale_values = inp.scale_values[::-1]
-                inp.reverse_input_channels = False
+                inp.encoding.from_ = Encoding.BGR
+                inp.encoding.to = Encoding.BGR
 
+        mean_values_str = ""
+        scale_values_str = ""
         for name, inp in self.inputs.items():
+            # Append mean values in a similar style
             if inp.mean_values is not None:
-                self._add_args(
-                    args,
-                    ["--mean_values", f"{name}{_lst_join(inp.mean_values)}"],
+                if mean_values_str:
+                    mean_values_str += ","
+                mean_values_str += (
+                    f"{name}[{', '.join(str(v) for v in inp.mean_values)}]"
                 )
+
+            # Append scale values in a similar style
             if inp.scale_values is not None:
-                self._add_args(
-                    args,
-                    ["--scale_values", f"{name}{_lst_join(inp.scale_values)}"],
+                if scale_values_str:
+                    scale_values_str += ","
+                scale_values_str += (
+                    f"{name}[{', '.join(str(v) for v in inp.scale_values)}]"
                 )
-            if inp.reverse_input_channels:
-                self._add_args(args, ["--reverse_input_channels"])
+        # Extend args with mean and scale values if they were collected
+        if mean_values_str:
+            args.extend(["--mean_values", mean_values_str])
+        if scale_values_str:
+            args.extend(["--scale_values", scale_values_str])
+
+        # Append reverse_input_channels flag only once if needed
+        reverse_input_flag = any(
+            inp.encoding_mismatch for inp in self.inputs.values()
+        )
+        if reverse_input_flag:
+            args.append("--reverse_input_channels")
 
         self._add_args(args, ["--input_model", self.input_model])
 
@@ -137,7 +155,7 @@ class RVC2Exporter(Exporter):
         return self.input_model.with_suffix(".xml")
 
     def _check_reverse_channels(self):
-        reverses = [inp.reverse_input_channels for inp in self.inputs.values()]
+        reverses = [inp.encoding_mismatch for inp in self.inputs.values()]
         return all(reverses) or not any(reverses)
 
     @staticmethod

@@ -94,7 +94,9 @@ stages:
     #    shape: [ 1, 3, 256, 256 ]
     #    data_type: float32 (default)
     #    scale_values: [ 255., 255., 255. ]
-    #    reverse_input_channels: false
+    #    encoding:
+    #      from: RGB
+    #      to: BGR
     #  - name: is_training
     #    freeze_value: false
     #  - name: sequence_len
@@ -188,3 +190,11 @@ stages:
       # Whether to include the raw images in the intermediate outputs.
       # Warning: the raw images can get very large.
       keep_raw_images: False
+
+      # Selects per-axis-element quantization for the weights
+      # and biases of certain layer types.
+      # Only Convolution, Deconvolution, and FullyConnected are supported.
+      use_per_channel_quantization: True
+
+      # Enables row wise quantization of Matmul and FullyConnected ops.
+      use_per_row_quantization: False

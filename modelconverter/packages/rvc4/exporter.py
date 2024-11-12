@@ -40,6 +40,10 @@ class RVC4Exporter(Exporter):
         self.snpe_onnx_to_dlc = rvc4_cfg.snpe_onnx_to_dlc_args
         self.snpe_dlc_quant = rvc4_cfg.snpe_dlc_quant_args
         self.snpe_dlc_graph_prepare = rvc4_cfg.snpe_dlc_graph_prepare_args
+        self.use_per_channel_quantization = (
+            rvc4_cfg.use_per_channel_quantization
+        )
+        self.use_per_row_quantization = rvc4_cfg.use_per_row_quantization
         self.keep_raw_images = rvc4_cfg.keep_raw_images
         if "--htp_socs" in self.snpe_dlc_graph_prepare:
             i = self.snpe_dlc_graph_prepare.index("--htp_socs")
@@ -103,6 +107,12 @@ class RVC4Exporter(Exporter):
         )
         self._add_args(args, ["--input_dlc", dlc_path])
         self._add_args(args, ["--output_dlc", quantized_dlc_path])
+
+        if self.use_per_channel_quantization:
+            args.append("--use_per_channel_quantization")
+
+        if self.use_per_row_quantization:
+            args.append("--use_per_row_quantization")
 
         start_time = time.time()
         self._subprocess_run(

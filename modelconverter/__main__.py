@@ -96,7 +96,7 @@ def infer(
         logger = logging.getLogger(__name__)
         logger.info("Starting inference")
         try:
-            mult_cfg, _, _ = get_configs(path, opts)
+            mult_cfg, _, _ = get_configs(str(path), opts)
             cfg = mult_cfg.get_stage_config(stage)
             Inferer = get_inferer(target)
             assert output_dir is not None
@@ -247,7 +247,7 @@ def convert(
         logger = logging.getLogger(__name__)
         try:
             init_dirs()
-            cfg, archive_cfg, _main_stage = get_configs(path, opts)
+            cfg, archive_cfg, _main_stage = get_configs(str(path), opts)
             main_stage = main_stage or _main_stage
             is_multistage = len(cfg.stages) > 1
             if is_multistage and main_stage is None:
@@ -296,9 +296,13 @@ def convert(
                     archive_cfg,
                     preprocessing,
                     main_stage,
-                    exporter.inference_model_path
-                    if isinstance(exporter, Exporter)
-                    else exporter.exporters[main_stage].inference_model_path,
+                    (
+                        exporter.inference_model_path
+                        if isinstance(exporter, Exporter)
+                        else exporter.exporters[
+                            main_stage
+                        ].inference_model_path
+                    ),
                 )
                 generator = ArchiveGenerator(
                     archive_name=f"{cfg.name}.{target.value.lower()}",
@@ -356,7 +360,7 @@ def convert(
         if output_dir is not None:
             args.extend(["--output-dir", output_dir])
         if path is not None:
-            args.extend(["--path", path])
+            args.extend(["--path", str(path)])
         if opts is not None:
             args.extend(opts)
         docker_exec(
