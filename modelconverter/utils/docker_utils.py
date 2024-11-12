@@ -108,15 +108,12 @@ def docker_build(
 def get_docker_image(
     target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
     bare_tag: str,
-    version: Optional[str] = None,
+    version: str,
 ) -> str:
     check_docker()
 
     client = docker.from_env()
-    if version is not None:
-        tag = f"{version}-{bare_tag}"
-    else:
-        tag = bare_tag
+    tag = f"{version}-{bare_tag}"
 
     image = f"luxonis/modelconverter-{target}:{tag}"
 
@@ -147,6 +144,7 @@ def docker_exec(
     use_gpu: bool,
     version: Optional[str] = None,
 ) -> None:
+    version = version or get_default_target_version(target)
     image = get_docker_image(target, bare_tag, version)
 
     with tempfile.NamedTemporaryFile(delete=False) as f:
