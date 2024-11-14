@@ -125,9 +125,7 @@ def get_docker_image(
     logger.warning(f"Image '{image}' not found, pulling latest image...")
 
     try:
-        docker_image = cast(
-            Image, client.images.pull(f"ghcr.io/{image}", bare_tag)
-        )
+        docker_image = cast(Image, client.images.pull(f"ghcr.io/{image}", tag))
         docker_image.tag(image, tag)
 
     except (docker.errors.APIError, docker.errors.DockerException):
