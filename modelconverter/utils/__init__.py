@@ -6,6 +6,7 @@ from .docker_utils import (
     get_docker_image,
     in_docker,
 )
+from .environ import environ
 from .exceptions import (
     ModelconverterException,
     S3Exception,
@@ -57,4 +58,5 @@ __all__ = [
     "Metadata",
     "get_metadata",
     "archive_from_model",
+    "environ",
 ]
