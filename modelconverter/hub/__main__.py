@@ -433,9 +433,12 @@ def instance_download(
     """Downloads files from a model instance."""
     dest = Path(output_dir) if output_dir else None
     model_instance_id = get_resource_id(identifier, "modelInstances")
-    for url in Request.get(
-        f"modelInstances/{model_instance_id}/download"
-    ).json():
+    downloaded_path = None
+    urls = Request.get(f"modelInstances/{model_instance_id}/download").json()
+    if not urls:
+        raise ValueError("No files to download")
+
+    for url in urls:
         with requests.get(url, stream=True) as response:
             response.raise_for_status()
 
@@ -453,9 +456,10 @@ def instance_download(
                     f.write(chunk)
 
         print(f"Donwloaded '{f.name}'")
+        downloaded_path = Path(f.name)
 
-    assert dest is not None
-    return dest
+    assert downloaded_path is not None
+    return downloaded_path
 
 
 @instance.command(name="create")
