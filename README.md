@@ -23,6 +23,7 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 
 ## Table of Contents
 
+- [Installation](#installation)
 - [Configuration](#usage)
   - [YAML Configuration File](#yaml-configuration-file)
   - [NN Archive Configuration File](#nn-archive-configuration-file)
@@ -38,6 +39,17 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 - [Inference](#inference)
   - [Inference Example](#inference-example)
 - [Benchmarking](#benchmarking)
+
+## Installation
+
+The easiest way to use ModelConverter is to use the `modelconverter` CLI.
+The CLI is available on PyPI and can be installed using `pip`.
+
+```bash
+pip install modelconv
+```
+
+Run `modelconverter --help` to see the available commands and options.
 
 ## Configuration
 
