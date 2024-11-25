@@ -9,3 +9,4 @@ s3fs
 s3transfer
 typer
 docker
+keyring
