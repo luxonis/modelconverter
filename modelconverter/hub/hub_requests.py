@@ -1,7 +1,7 @@
 from typing import Dict, Final, Optional
 
 import requests
-from requests import HTTPError, Response
+from requests import Response
 
 from modelconverter.utils import environ
 
@@ -17,7 +17,7 @@ class Request:
     @staticmethod
     def _check_response(response: Response) -> Response:
         if response.status_code >= 400:
-            raise HTTPError(response.json())
+            response.raise_for_status()
         return response
 
     @staticmethod

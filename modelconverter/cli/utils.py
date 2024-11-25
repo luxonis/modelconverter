@@ -375,14 +375,15 @@ def wait_for_export(run_id: str) -> None:
 
 
 def get_target_specific_options(
-    target: Target, cfg: SingleStageConfig, tool_version: Optional[str] = None
+    target: str, cfg: SingleStageConfig, tool_version: Optional[str] = None
 ) -> Dict[str, Any]:
+    target = target.lower()
     json_cfg = cfg.model_dump(mode="json")
     options = {
         "disable_onnx_simplification": cfg.disable_onnx_simplification,
         "inputs": json_cfg["inputs"],
     }
-    if target == Target.RVC4:
+    if target == "rvc4":
         options["snpe_onnx_to_dlc_args"] = cfg.rvc4.snpe_onnx_to_dlc_args
         options["snpe_dlc_quant_args"] = cfg.rvc4.snpe_dlc_quant_args
         options[
@@ -390,15 +391,15 @@ def get_target_specific_options(
         ] = cfg.rvc4.snpe_dlc_graph_prepare_args
         if tool_version is not None:
             options["snpe_version"] = tool_version
-    elif target in [Target.RVC2, Target.RVC3]:
-        target_cfg = cfg.rvc2 if target == Target.RVC2 else cfg.rvc3
+    elif target in ["rvc2", "rvc3"]:
+        target_cfg = getattr(cfg, target)
         options["mo_args"] = target_cfg.mo_args
         options["compile_tool_args"] = target_cfg.compile_tool_args
         if tool_version is not None:
             options["ir_version"] = tool_version
-        if target == Target.RVC3:
+        if target == "rvc3":
             options["pot_target_device"] = cfg.rvc3.pot_target_device
-    elif target == Target.HAILO:
+    elif target == "hailo":
         options["optimization_level"] = cfg.hailo.optimization_level
         options["compression_level"] = cfg.hailo.compression_level
         options["batch_size"] = cfg.hailo.batch_size
