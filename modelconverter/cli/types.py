@@ -1,10 +1,11 @@
 from enum import Enum
-from pathlib import Path
 from typing import List, Optional
 
 import click
 import typer
 from typing_extensions import Annotated
+
+from modelconverter.utils.types import Target
 
 
 class License(str, Enum):
@@ -95,7 +96,7 @@ VersionOption = Annotated[
 ]
 
 PathOption = Annotated[
-    Optional[Path],
+    Optional[str],
     typer.Option(
         help="Path to the configuration file or NN Archive.",
         metavar="PATH",
@@ -103,13 +104,6 @@ PathOption = Annotated[
     ),
 ]
 
-PathOptionRequired = Annotated[
-    Path,
-    typer.Option(
-        help="Path to the model, configuration file or NN Archive",
-        metavar="PATH",
-    ),
-]
 
 OptsArgument = Annotated[
     Optional[List[str]],
@@ -120,12 +114,8 @@ OptsArgument = Annotated[
 ]
 
 TargetArgument = Annotated[
-    str,
-    typer.Argument(
-        help="Target platform to convert to.",
-        show_default=False,
-        click_type=click.Choice(["hailo", "rvc2", "rvc3", "rvc4"]),
-    ),
+    Target,
+    typer.Argument(help="Target platform to convert to.", show_default=False),
 ]
 
 DevOption = Annotated[

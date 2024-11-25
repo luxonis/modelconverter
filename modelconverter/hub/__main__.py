@@ -5,6 +5,7 @@ from time import sleep
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
+import click
 import keyring
 import requests
 import typer
@@ -46,7 +47,6 @@ from modelconverter.cli import (
     OrderOption,
     OutputDirOption,
     ParentIDOption,
-    PathOptionRequired,
     PlatformsOption,
     ProjectIDOption,
     QuantizationOption,
@@ -56,7 +56,6 @@ from modelconverter.cli import (
     SortOption,
     StatusOption,
     TagsOption,
-    TargetArgument,
     TargetPrecisionOption,
     TasksOption,
     TeamIDOption,
@@ -227,7 +226,10 @@ def model_create(
     try:
         res = Request.post("models", json=data).json()
     except requests.HTTPError as e:
-        if str(e) == "{'detail': 'Unique constraint error.'}":
+        if (
+            e.response is not None
+            and e.response.json().get("detail") == "Unique constraint error."
+        ):
             raise ValueError(f"Model '{name}' already exists") from e
         raise e
     print(f"Model '{res['name']}' created with ID '{res['id']}'")
@@ -551,8 +553,21 @@ def _export(
 
 @app.command()
 def convert(
-    target: TargetArgument,
-    path: PathOptionRequired,
+    target: Annotated[
+        str,
+        typer.Argument(
+            help="Target platform to convert to.",
+            show_default=False,
+            click_type=click.Choice(["hailo", "rvc2", "rvc3", "rvc4"]),
+        ),
+    ],
+    path: Annotated[
+        str,
+        typer.Option(
+            help="Path to the model, configuration file or NN Archive",
+            metavar="PATH",
+        ),
+    ],
     name: NameOption = None,
     license_type: LicenseTypeOptionRequired = "undefined",
     is_public: IsPublicOption = False,
@@ -633,15 +648,20 @@ def convert(
     """
     opts = opts or []
 
-    if path is not None:
-        path = Path(path)
+    is_archive = is_nn_archive(path)
 
-    if path is not None and not is_nn_archive(path):
-        opts.extend(["input_model", str(path)])
+    def is_yaml(path: str) -> bool:
+        return Path(path).suffix in [".yaml", ".yml"]
+
+    if path is not None and not is_archive and not is_yaml(path):
+        opts.extend(["input_model", path])
+
+    if is_yaml(path):
+        opts.extend(["calibration", "random"])
 
     config_path = None
-    if path and (is_nn_archive(path) or path.suffix in [".yaml", ".yml"]):
-        config_path = str(path)
+    if path and (is_archive or is_yaml(path)):
+        config_path = path
 
     cfg, *_ = get_configs(config_path, opts)
 
@@ -701,7 +721,7 @@ def convert(
     )["id"]
 
     if path is not None and is_nn_archive(path):
-        upload(str(path), instance_id)
+        upload(path, instance_id)
     else:
         upload(str(cfg.input_model), instance_id)
 
