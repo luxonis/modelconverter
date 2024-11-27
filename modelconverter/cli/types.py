@@ -1,36 +1,11 @@
 from enum import Enum
-from pathlib import Path
 from typing import List, Optional
 
+import click
 import typer
 from typing_extensions import Annotated
 
 from modelconverter.utils.types import Target
-
-
-class Task(str, Enum):
-    CLASSIFICATION = "CLASSIFICATION"
-    OBJECT_DETECTION = "OBJECT_DETECTION"
-    SEGMENTATION = "SEGMENTATION"
-    KEYPOINT_DETECTION = "KEYPOINT_DETECTION"
-    DEPTH_ESTIMATION = "DEPTH_ESTIMATION"
-    LINE_DETECTION = "LINE_DETECTION"
-    FEATURE_DETECTION = "FEATURE_DETECTION"
-    DENOISING = "DENOISING"
-    LOW_LIGHT_ENHANCEMENT = "LOW_LIGHT_ENHANCEMENT"
-    SUPER_RESOLUTION = "SUPER_RESOLUTION"
-    REGRESSION = "REGRESSION"
-    INSTANCE_SEGMENTATION = "INSTANCE_SEGMENTATION"
-    IMAGE_EMBEDDING = "IMAGE_EMBEDDING"
-
-
-class Quantization(str, Enum):
-    DRIVING = "DRIVING"
-    FOOD = "FOOD"
-    GENERAL = "GENERAL"
-    INDOORS = "INDOORS"
-    RANDOM = "RANDOM"
-    WAREHOUSE = "WAREHOUSE"
 
 
 class License(str, Enum):
@@ -89,12 +64,6 @@ class Status(str, Enum):
     UNAVAILABLE = "unavailable"
 
 
-class TargetPrecision(str, Enum):
-    FP16 = "FP16"
-    FP32 = "FP32"
-    INT8 = "INT8"
-
-
 FormatOption = Annotated[
     Format, typer.Option(help="One of the supported formats.")
 ]
@@ -127,7 +96,7 @@ VersionOption = Annotated[
 ]
 
 PathOption = Annotated[
-    Optional[Path],
+    Optional[str],
     typer.Option(
         help="Path to the configuration file or NN Archive.",
         metavar="PATH",
@@ -135,13 +104,6 @@ PathOption = Annotated[
     ),
 ]
 
-PathOptionRequired = Annotated[
-    Path,
-    typer.Option(
-        help="Path to the model, configuration file or NN Archive",
-        metavar="PATH",
-    ),
-]
 
 OptsArgument = Annotated[
     Optional[List[str]],
@@ -153,11 +115,7 @@ OptsArgument = Annotated[
 
 TargetArgument = Annotated[
     Target,
-    typer.Argument(
-        case_sensitive=False,
-        help="Target platform to convert to.",
-        show_default=False,
-    ),
+    typer.Argument(help="Target platform to convert to.", show_default=False),
 ]
 
 DevOption = Annotated[
@@ -171,7 +129,7 @@ BuildOption = Annotated[
     bool,
     typer.Option(
         help="Builds the docker image before running the command."
-        "Can only be used together with --dev and --docker.",
+        "Can only be used together with --dev.",
     ),
 ]
 
@@ -238,8 +196,12 @@ ModelVersionIDOptionRequired = Annotated[
 ]
 
 TargetPrecisionOption = Annotated[
-    Optional[TargetPrecision],
-    typer.Option(help="Precision of the model", show_default=False),
+    Optional[str],
+    typer.Option(
+        help="Precision of the model",
+        show_default=False,
+        click_type=click.Choice(["FP16", "FP32", "INT8"]),
+    ),
 ]
 
 ModelInstanceIDOption = Annotated[
@@ -272,9 +234,30 @@ RepositoryUrlOption = Annotated[
     typer.Option(help="The repository URL", show_default=False),
 ]
 
+
 TasksOption = Annotated[
-    Optional[List[Task]],
-    typer.Option(help="Tasks supported by the model", show_default=False),
+    Optional[List[str]],
+    typer.Option(
+        help="Tasks supported by the model",
+        show_default=False,
+        click_type=click.Choice(
+            [
+                "classification",
+                "object_detection",
+                "segmentation",
+                "keypoint_detection",
+                "depth_estimation",
+                "line_detection",
+                "feature_detection",
+                "denoising",
+                "low_light_enhancement",
+                "super_resolution",
+                "regression",
+                "instance_segmentation",
+                "image_embedding",
+            ]
+        ),
+    ),
 ]
 
 LinksOption = Annotated[
@@ -332,10 +315,19 @@ DescriptionShortOption = Annotated[
 ]
 
 LicenseTypeOptionRequired = Annotated[
-    License, typer.Option(help="License type.")
+    str,
+    typer.Option(
+        help="License type.",
+        click_type=click.Choice([e.value for e in License]),
+    ),
 ]
 LicenseTypeOption = Annotated[
-    Optional[License], typer.Option(help="License type.", show_default=False)
+    Optional[str],
+    typer.Option(
+        help="License type.",
+        show_default=False,
+        click_type=click.Choice([e.value for e in License]),
+    ),
 ]
 
 IsPublicOption = Annotated[
@@ -444,5 +436,11 @@ OrderOption = Annotated[
 ]
 
 QuantizationOption = Annotated[
-    Optional[Quantization], typer.Option(help="Quantization type")
+    Optional[str],
+    typer.Option(
+        help="Quantization type",
+        click_type=click.Choice(
+            ["driving", "food", "general", "indoors", "random", "warehouse"]
+        ),
+    ),
 ]

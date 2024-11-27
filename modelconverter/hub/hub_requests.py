@@ -1,3 +1,4 @@
+from json import JSONDecodeError
 from typing import Dict, Final, Optional
 
 import requests
@@ -17,7 +18,11 @@ class Request:
     @staticmethod
     def _check_response(response: Response) -> Response:
         if response.status_code >= 400:
-            raise HTTPError(response.json())
+            try:
+                json = response.json()
+                raise HTTPError(json, response=response)
+            except JSONDecodeError as e:
+                raise HTTPError(response.text) from e
         return response
 
     @staticmethod

@@ -10,6 +10,8 @@
 
 Convert your **ONNX** models to a format compatible with any generation of Luxonis camera using the **Model Compilation Library**.
 
+`ModelConverter` is in an experimental public beta stage. Some parts might change in the future.
+
 ## Status
 
 | Package   | Test                                                                                                  | Deploy                                                                                                  |
@@ -21,94 +23,39 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 
 ## Table of Contents
 
-- [ModelConverter - Compilation Library](#modelconverter---compilation-library)
-  - [Status](#status)
-  - [Table of Contents](#table-of-contents)
-  - [Installation](#installation)
-    - [System Requirements](#system-requirements)
-    - [Before You Begin](#before-you-begin)
-    - [Instructions](#instructions)
+- [Installation](#installation)
+- [Configuration](#usage)
+  - [YAML Configuration File](#yaml-configuration-file)
+  - [NN Archive Configuration File](#nn-archive-configuration-file)
+- [Online Usage](#online-usage)
+- [Local Usage](#local-usage)
+  - [Prerequisites](#prerequisites)
     - [GPU Support](#gpu-support)
+  - [Sharing Files](#sharing-files)
   - [Running ModelConverter](#running-modelconverter)
-    - [Encoding Configuration Flags](#encoding-configuration-flags)
-      - [YAML Configuration File](#yaml-configuration-file)
-      - [NN Archive Configuration File](#nn-archive-configuration-file)
-    - [Sharing Files](#sharing-files)
-    - [Usage](#usage)
-    - [Examples](#examples)
-  - [Multi-Stage Conversion](#multi-stage-conversion)
-  - [Interactive Mode](#interactive-mode)
-  - [Calibration Data](#calibration-data)
-  - [Inference](#inference)
-    - [Inference Example](#inference-example)
-  - [Benchmarking](#benchmarking)
+- [Multi-Stage Conversion](#multi-stage-conversion)
+- [Interactive Mode](#interactive-mode)
+- [Calibration Data](#calibration-data)
+- [Inference](#inference)
+  - [Inference Example](#inference-example)
+- [Benchmarking](#benchmarking)
 
 ## Installation
 
-### System Requirements
+The easiest way to use ModelConverter is to use the `modelconverter` CLI.
+The CLI is available on PyPI and can be installed using `pip`.
 
-`ModelConverter` requires `docker` to be installed on your system.
-It is recommended to use Ubuntu OS for the best compatibility.
-On Windows or MacOS, it is recommended to install `docker` using the [Docker Desktop](https://www.docker.com/products/docker-desktop).
-Otherwise follow the installation instructions for your OS from the [official website](https://docs.docker.com/engine/install/).
+```bash
+pip install modelconv
+```
 
-### Before You Begin
+Run `modelconverter --help` to see the available commands and options.
 
-`ModelConverter` is in an experimental public beta stage. Some parts might change in the future.
-
-To build the images, you need to download additional packages depending on the selected target and the desired version of the underlying conversion tools.
-
-**RVC2**
-
-Requires `openvino-<version>.tar.gz` to be present in `docker/extra_packages/`.
-
-- Version `2023.2.0` archive can be downloaded from [here](https://drive.google.com/file/d/1IXtYi1Mwpsg3pr5cDXlEHdSUZlwJRTVP/view?usp=share_link).
-
-- Version `2021.4.0` archive can be downloaded from [here](https://storage.openvinotoolkit.org/repositories/openvino/packages/2021.4/l_openvino_toolkit_dev_ubuntu20_p_2021.4.582.tgz)
-
-You only need to rename the archive to either `openvino-2023.2.0.tar.gz` or `openvino-2021.4.0.tar.gz` and place it in the `docker/extra_packages` directory.
-
-**RVC3**
-
-Only the version `2023.2.0` of `OpenVino` is supported for `RVC3`. Follow the instructions for `RVC2` to use the correct archive.
-
-**RVC4**
-
-Requires `snpe-<version>.zip` archive to be present in `docker/extra_packages`. You can download version `2.23.0` from [here](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.23.0.24.06.24.zip). You only need to rename it to `snpe-2.23.0.zip` and place it in the `docker/extra_packages` directory.
-
-**HAILO**
-
-Requires `hailo_ai_sw_suite_<version>:1` docker image to be present on the system. You can obtain the image by following the instructions on [Hailo website](https://developer.hailo.ai/developer-zone/sw-downloads/).
-
-After you obtain the image, you need to rename it to `hailo_ai_sw_suite_<version>:1` using `docker tag <old_name> hailo_ai_sw_suite_<version>:1`.
-
-Furthermore, you need to use the `docker/hailo/Dockerfile.public` file to build the image. The `docker/hailo/Dockerfile` is for internal use only.
-
-### Instructions
-
-1. Build the docker image:
-
-   ```bash
-   docker build -f docker/<package>/Dockerfile -t luxonis/modelconverter-<package>:latest .
-   ```
-
-1. For easier use, you can install the ModelConverter CLI. You can install it from PyPI using the following command:
-
-   ```bash
-   pip install modelconv
-   ```
-
-   For usage instructions, see `modelconverter --help`.
-
-### GPU Support
-
-To enable GPU acceleration for `hailo` conversion, install the [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker).
-
-## Running ModelConverter
+## Configuration
 
 There are two main ways to execute configure the conversion process:
 
-1. **YAML Config File (Primary Method)**:
+1. **YAML Configuration File (Primary Method)**:
    The primary way to configure the conversion is through a YAML configuration file. For reference, you can check [defaults.yaml](shared_with_container/configs/defaults.yaml) and other examples located in the [shared_with_container/configs](shared_with_container/configs) directory.
 1. **NN Archive**:
    Alternatively, you can use an [NN Archive](https://rvc4.docs.luxonis.com/software/ai-inference/nn-archive/#NN%20Archive) as input. An NN Archive includes a model in one of the supported formats—ONNX (.onnx), OpenVINO IR (.xml and .bin), or TensorFlow Lite (.tflite)—alongside a `config.json` file. The config.json file follows a specific configuration format as described in the [NN Archive Configuration Guide](https://rvc4.docs.luxonis.com/software/ai-inference/nn-archive/#NN%20Archive-Configuration).
@@ -116,11 +63,9 @@ There are two main ways to execute configure the conversion process:
 **Modifying Settings with Command-Line Arguments**:
 In addition to these two configuration methods, you have the flexibility to override specific settings directly via command-line arguments. By supplying `key-value` pairs in the CLI, you can adjust particular settings without explicitly altering the config files (YAML or NN Archive). For further details, refer to the [Examples](#examples) section.
 
-### Encoding Configuration Flags
-
 In the conversion process, you have options to control the color encoding format in both the YAML configuration file and the NN Archive configuration. Here’s a breakdown of each available flag:
 
-#### YAML Configuration File
+### YAML Configuration File
 
 The `encoding` flag in the YAML configuration file allows you to specify color encoding as follows:
 
@@ -135,13 +80,13 @@ The `encoding` flag in the YAML configuration file allows you to specify color e
   ```
   This configuration specifies that the input data is in RGB format and will be converted to BGR format during processing.
 
-> [!NOTE]
+> \[!NOTE\]
 > If the encoding is not specified in the YAML configuration, the default values are set to `encoding.from=RGB` and `encoding.to=BGR`.
 
-> [!NOTE]
+> \[!NOTE\]
 > Certain options can be set **globally**, applying to all inputs of the model, or **per input**. If specified per input, these settings will override the global configuration for that input alone. The options that support this flexibility include `scale_values`, `mean_values`, `encoding`, `data_type`, `shape`, and `layout`.
 
-#### NN Archive Configuration File
+### NN Archive Configuration File
 
 In the NN Archive configuration, there are two flags related to color encoding control:
 
@@ -150,18 +95,103 @@ In the NN Archive configuration, there are two flags related to color encoding c
 - **`reverse_channels` (Deprecated)**:
   Determines the input color format of the model: when set to *True*, the input is considered to be *"RGB"*, and when set to *False*, it is treated as *"BGR"*. This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
 
-> [!NOTE]
+> \[!NOTE\]
 > If neither `dai_type` nor `reverse_channels` the input to the model is considered to be *"RGB"*.
 
-> [!NOTE]
+> \[!NOTE\]
 > If both `dai_type` and `reverse_channels` are provided, the converter will give priority to `dai_type`.
 
-> [!IMPORTANT]
+> \[!IMPORTANT\]
 > Provide mean/scale values in the original color format used during model training (e.g., RGB or BGR). Any necessary channel permutation is handled internally—do not reorder values manually.
+
+## Online Usage
+
+The preferred way of using ModelConverter is in the online mode, where the conversion is performed on a remote server.
+
+To start with the online conversion, you need to create an account on the [HubAI](https://hub.luxonis.com) platform and obtain the API key for your team.
+
+To log in to HubAI, use the following command:
+
+```bash
+modelconverter hub login
+```
+
+> \[!NOTE\]
+> The key can also be stored in an environment variable `HUBAI_API_KEY`. In such a case, it takes precedence over the saved key.
+
+**CLI Example:**
+
+```bash
+modelconverter hub convert rvc4 --path configs/resnet18.yaml
+```
+
+**Python Example:**
+
+```python
+from modelconverter import convert
+
+# if your API key is not stored in the environment variable or .env file
+from modelconverter.utils import environ
+
+environ.HUBAI_API_KEY = "your_api_key"
+
+converted_model = convert("rvc4", path="configs/resnet18.yaml")
+```
+
+> \[!NOTE\]
+> To learn more about the available options, use `modelconverter hub convert --help`.
+
+## Local Usage
+
+If you prefer not to share your models with the cloud, you can run the conversion locally.
+
+### Prerequisites
+
+In local mode, `ModelConverter` requires `docker` to be installed on your system.
+It is recommended to use Ubuntu OS for the best compatibility.
+On Windows or MacOS, it is recommended to install `docker` using the [Docker Desktop](https://www.docker.com/products/docker-desktop).
+Otherwise, follow the installation instructions for your OS from the [official website](https://docs.docker.com/engine/install/).
+
+In order for the images to be build successfully, you need to download additional packages depending on the selected target and the desired version of the underlying conversion tools.
+
+**RVC2**
+
+Requires `openvino-<version>.tar.gz` to be present in `docker/extra_packages/`.
+
+- Version `2023.2.0` archive can be downloaded from [here](https://drive.google.com/file/d/1IXtYi1Mwpsg3pr5cDXlEHdSUZlwJRTVP/view?usp=share_link).
+
+- Version `2021.4.0` archive can be downloaded from [here](https://storage.openvinotoolkit.org/repositories/openvino/packages/2021.4/l_openvino_toolkit_dev_ubuntu20_p_2021.4.582.tgz)
+
+You only need to rename the archive to either `openvino-2023.2.0.tar.gz` or `openvino-2021.4.0.tar.gz` and place it in the `docker/extra_packages` directory.
+
+**RVC3**
+
+Only the version `2023.2.0` of `OpenVino` is supported for `RVC3`. Follow the same instructions as for `RVC2` to use the correct archive.
+
+**RVC4**
+
+Requires `snpe-<version>.zip` archive to be present in `docker/extra_packages`. You can download version `2.23.0` from [here](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.23.0.24.06.24.zip). You only need to rename it to `snpe-2.23.0.zip` and place it in the `docker/extra_packages` directory.
+
+**HAILO**
+
+Requires `hailo_ai_sw_suite_<version>:1` docker image to be present on the system. You can obtain the image by following the instructions on [Hailo website](https://developer.hailo.ai/developer-zone/sw-downloads/).
+
+After you obtain the image, you need to rename it to `hailo_ai_sw_suite_<version>:1` using `docker tag <old_name> hailo_ai_sw_suite_<version>:1`.
+
+The `modelconverter` CLI will build the images automatically, but if you want to build them manually, use the following command:
+
+```bash
+docker build -f docker/$TARGET/Dockerfile \
+             -t luxonis/modelconverter-$TARGET:latest .
+```
+
+#### GPU Support
+
+To enable GPU acceleration for `hailo` conversion, install the [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker).
 
 ### Sharing Files
 
-When using the supplied `docker-compose.yaml`, the `shared_with_container` directory facilitates file sharing between the host and container. This directory is mounted as `/app/shared_with_container/` inside the container. You can place your models, calibration data, and config files here. The directory structure is:
+The `shared_with_container` directory facilitates file sharing between the host and container. This directory is mounted as `/app/shared_with_container/` inside the container. You can place your models, calibration data, and config files here. The directory structure is:
 
 ```txt
 shared_with_container/
@@ -193,7 +223,7 @@ The converter first searches for files exactly at the provided path. If not foun
 
 The `output_dir` can be specified using the `--output-dir` CLI argument. If such a directory already exists, the `output_dir_name` will be appended with the current date and time. If not specified, the `output_dir_name` will be autogenerated in the following format: `<model_name>_to_<target>_<date>_<time>`.
 
-### Usage
+### Running ModelConverter
 
 You can run the built image either manually using the `docker run` command or using the `modelconverter` CLI.
 
@@ -211,6 +241,19 @@ You can run the built image either manually using the `docker run` command or us
 
 1. Execute the conversion:
 
+- If using the `modelconverter` CLI:
+
+  ```bash
+  modelconverter convert <target> --path <s3_url_or_path> [ config overrides ]
+  ```
+
+- If using `docker-compose`:
+
+  ```bash
+  docker compose run <target> convert <target> ...
+
+  ```
+
 - If using the `docker run` command:
 
   ```bash
@@ -224,19 +267,7 @@ You can run the built image either manually using the `docker run` command or us
     --path <s3_url_or_path> [ config overrides ]
   ```
 
-- If using the `modelconverter` CLI:
-
-  ```bash
-  modelconverter convert <target> --path <s3_url_or_path> [ config overrides ]
-  ```
-
-- If using `docker-compose`:
-
-  ```bash
-  docker compose run <target> convert <target> ...
-  ```
-
-### Examples
+**Examples:**
 
 Use `resnet18.yaml` config, but override `calibration.path`:
 
@@ -267,7 +298,7 @@ modelconverter convert rvc2 input_model models/yolov6n.onnx \
                         outputs.2.name out_2
 ```
 
-> [!WARNING]
+> \[!WARNING\]
 > If you modify the default stages names (`stages.stage_name`) in the configuration file (`config.yaml`), you need to provide the full path to each stage in the command-line arguments. For instance, if a stage name is changed to `stage1`, use `stages.stage1.inputs.0.name` instead of `inputs.0.name`.
 
 ## Multi-Stage Conversion
@@ -310,8 +341,12 @@ The `modelconverter` CLI is available inside the container as well.
 
 Calibration data can be a mix of images (`.jpg`, `.png`, `.jpeg`) and `.npy`, `.raw` files.
 Image files will be loaded and converted to the format specified in the config.
-No conversion is performed for `.npy` or `.raw` files, the files are used as provided.
-**NOTE for RVC4**: `RVC4` expects images to be provided in `NHWC` layout. If you provide the calibration data in a form of `.npy` or `.raw` format, you need to make sure they have the correct layout.
+
+> \[!IMPORTANT\]
+> No conversion is performed for `.npy` or `.raw` files, the files are used as provided.
+
+> \[!WARNING\]
+> `RVC4` and `Hailo` expects images to be provided in `NHWC` layout. If you provide the calibration data in a form of `.npy` or `.raw` format, you need to make sure they have the correct layout.
 
 ## Inference
 

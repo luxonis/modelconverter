@@ -247,7 +247,7 @@ def convert(
         logger = logging.getLogger(__name__)
         try:
             init_dirs()
-            cfg, archive_cfg, _main_stage = get_configs(str(path), opts)
+            cfg, archive_cfg, _main_stage = get_configs(path, opts)
             main_stage = main_stage or _main_stage
             is_multistage = len(cfg.stages) > 1
             if is_multistage and main_stage is None:
@@ -360,7 +360,7 @@ def convert(
         if output_dir is not None:
             args.extend(["--output-dir", output_dir])
         if path is not None:
-            args.extend(["--path", str(path)])
+            args.extend(["--path", path])
         if opts is not None:
             args.extend(opts)
         docker_exec(

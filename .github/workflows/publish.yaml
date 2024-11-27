@@ -20,7 +20,6 @@ permissions:
 
 env:
   GAR_LOCATION: us-central1
-  DOCKERFILE: docker/${{ inputs.package }}/Dockerfile
   PACKAGE: ${{ inputs.package }}
   NAME: luxonis/modelconverter-${{ inputs.package }}
   STEM: modelconverter-${{ inputs.package }}
@@ -80,6 +79,10 @@ jobs:
 
     - name: Build image
       run: |
+        DOCKERFILE="docker/${PACKAGE}/Dockerfile"
+        if [ $PACKAGE = "hailo" ]; then
+            DOCKERFILE="${DOCKERFILE}.internal"
+        fi
         docker build -f "${DOCKERFILE}" -t "${LOCAL_NAME}" . --build-arg VERSION="${VERSION}"
 
     - name: GHCR publish latest

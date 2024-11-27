@@ -1,12 +1,17 @@
 import logging
+import webbrowser
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from time import sleep
+from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
+import click
+import keyring
 import requests
 import typer
 from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
+from typing_extensions import Annotated
 
 from modelconverter.cli import (
     ArchitectureIDOption,
@@ -42,10 +47,8 @@ from modelconverter.cli import (
     OrderOption,
     OutputDirOption,
     ParentIDOption,
-    PathOptionRequired,
     PlatformsOption,
     ProjectIDOption,
-    Quantization,
     QuantizationOption,
     RepositoryUrlOption,
     SilentOption,
@@ -53,7 +56,6 @@ from modelconverter.cli import (
     SortOption,
     StatusOption,
     TagsOption,
-    TargetArgument,
     TargetPrecisionOption,
     TasksOption,
     TeamIDOption,
@@ -70,8 +72,7 @@ from modelconverter.cli import (
     request_info,
     wait_for_export,
 )
-from modelconverter.cli.types import License, TargetPrecision
-from modelconverter.utils.types import Target
+from modelconverter.utils import environ
 
 from .hub_requests import Request
 
@@ -105,6 +106,38 @@ app.add_typer(variant, name="variant", help="Model Variants Interactions")
 app.add_typer(instance, name="instance", help="Model Instances Interactions")
 
 
+def validate_api_key(_: str) -> bool:
+    # TODO
+    return True
+
+
+@app.command()
+def login(
+    relogin: Annotated[
+        bool,
+        typer.Option("--relogin", "-r", help="Relogin if already logged in"),
+    ] = False,
+):
+    """Login to the Hub."""
+    if environ.HUBAI_API_KEY and not relogin:
+        typer.echo(
+            "User already logged in. Use `modelconverter hub --relogin` to relogin."
+        )
+        return
+
+    typer.echo("User not logged in. Follow the link to get your API key.")
+    webbrowser.open("https://hub.luxonis.com/team-settings", new=2)
+    sleep(0.1)
+    api_key = typer.prompt("Enter your API key: ", hide_input=True)
+    if not validate_api_key(api_key):
+        typer.echo("Invalid API key. Please try again.", err=True)
+        raise typer.Exit(1)
+
+    keyring.set_password("ModelConverter", "api_key", api_key)
+
+    typer.echo("API key stored successfully.")
+
+
 @model.command(name="ls")
 def model_ls(
     team_id: TeamIDOption = None,
@@ -124,7 +157,7 @@ def model_ls(
     return hub_ls(
         "models",
         team_id=team_id,
-        tasks=[task.name for task in tasks] if tasks else [],
+        tasks=[task for task in tasks] if tasks else [],
         user_id=user_id,
         license_type=license_type,
         is_public=is_public,
@@ -170,7 +203,7 @@ def model_info(
 @model.command(name="create")
 def model_create(
     name: NameArgument,
-    license_type: LicenseTypeOptionRequired = License.UNDEFINED,
+    license_type: LicenseTypeOptionRequired = "undefined",
     is_public: IsPublicOption = False,
     description: DescriptionOption = None,
     description_short: DescriptionShortOption = "<empty>",
@@ -193,7 +226,10 @@ def model_create(
     try:
         res = Request.post("models", json=data).json()
     except requests.HTTPError as e:
-        if str(e) == "{'detail': 'Unique constraint error.'}":
+        if (
+            e.response is not None
+            and e.response.json().get("detail") == "Unique constraint error."
+        ):
             raise ValueError(f"Model '{name}' already exists") from e
         raise e
     print(f"Model '{res['name']}' created with ID '{res['id']}'")
@@ -392,15 +428,17 @@ def instance_info(
 
 @instance.command(name="download")
 def instance_download(
-    identifier: IdentifierArgument,
-    output_dir: OutputDirOption = None,
+    identifier: IdentifierArgument, output_dir: OutputDirOption = None
 ) -> Path:
     """Downloads files from a model instance."""
     dest = Path(output_dir) if output_dir else None
     model_instance_id = get_resource_id(identifier, "modelInstances")
-    for url in Request.get(
-        f"modelInstances/{model_instance_id}/download"
-    ).json():
+    downloaded_path = None
+    urls = Request.get(f"modelInstances/{model_instance_id}/download").json()
+    if not urls:
+        raise ValueError("No files to download")
+
+    for url in urls:
         with requests.get(url, stream=True) as response:
             response.raise_for_status()
 
@@ -418,9 +456,10 @@ def instance_download(
                     f.write(chunk)
 
         print(f"Donwloaded '{f.name}'")
+        downloaded_path = Path(f.name)
 
-    assert dest is not None
-    return dest
+    assert downloaded_path is not None
+    return downloaded_path
 
 
 @instance.command(name="create")
@@ -489,14 +528,12 @@ def upload(file_path: str, identifier: IdentifierArgument):
     print(f"File '{file_path}' uploaded to model instance '{identifier}'")
 
 
-def export(
+def _export(
     name: str,
     identifier: str,
-    target: Literal["RVC2", "RVC3", "RVC4", "HAILO"],
-    target_precision: Literal["FP16", "FP32", "INT8"] = "INT8",
-    quantization_data: Optional[
-        Literal["RANDOM", "GENERAL", "DRIVING", "FOOD", "INDOORS", "WAREHOUSE"]
-    ] = "RANDOM",
+    target: str,
+    target_precision: str,
+    quantization_data: str,
     **kwargs,
 ) -> Dict[str, Any]:
     """Exports a model instance."""
@@ -520,10 +557,23 @@ def export(
 
 @app.command()
 def convert(
-    target: TargetArgument,
-    path: PathOptionRequired,
+    target: Annotated[
+        str,
+        typer.Argument(
+            help="Target platform to convert to.",
+            show_default=False,
+            click_type=click.Choice(["hailo", "rvc2", "rvc3", "rvc4"]),
+        ),
+    ],
+    path: Annotated[
+        str,
+        typer.Option(
+            help="Path to the model, configuration file or NN Archive",
+            metavar="PATH",
+        ),
+    ],
     name: NameOption = None,
-    license_type: LicenseTypeOptionRequired = License.UNDEFINED,
+    license_type: LicenseTypeOptionRequired = "undefined",
     is_public: IsPublicOption = False,
     description_short: DescriptionShortOption = "<empty>",
     description: DescriptionOption = None,
@@ -534,8 +584,8 @@ def convert(
     version: HubVersionOption = None,
     repository_url: RepositoryUrlOption = None,
     commit_hash: CommitHashOption = None,
-    target_precision: TargetPrecisionOption = TargetPrecision.INT8,
-    quantization_data: QuantizationOption = Quantization.RANDOM,
+    target_precision: TargetPrecisionOption = "INT8",
+    quantization_data: QuantizationOption = "random",
     domain: DomainOption = None,
     tags: TagsOption = None,
     variant_id: ModelVersionIDOption = None,
@@ -601,18 +651,21 @@ def convert(
     @return: Path to the downloaded converted model
     """
     opts = opts or []
-    if isinstance(target, str):
-        target = Target(target.lower())
 
-    if path is not None:
-        path = Path(path)
+    is_archive = is_nn_archive(path)
 
-    if path is not None and not is_nn_archive(path):
-        opts.extend(["input_model", str(path)])
+    def is_yaml(path: str) -> bool:
+        return Path(path).suffix in [".yaml", ".yml"]
+
+    if path is not None and not is_archive and not is_yaml(path):
+        opts.extend(["input_model", path])
+
+    if is_yaml(path):
+        opts.extend(["calibration", "random"])
 
     config_path = None
-    if path and (is_nn_archive(path) or path.suffix in [".yaml", ".yml"]):
-        config_path = str(path)
+    if path and (is_archive or is_yaml(path)):
+        config_path = path
 
     cfg, *_ = get_configs(config_path, opts)
 
@@ -672,19 +725,19 @@ def convert(
     )["id"]
 
     if path is not None and is_nn_archive(path):
-        upload(str(path), instance_id)
+        upload(path, instance_id)
     else:
         upload(str(cfg.input_model), instance_id)
 
     target_options = get_target_specific_options(target, cfg, tool_version)
-    instance = export(
-        f"{variant_name} exported to {target.value}",
+    instance = _export(
+        f"{variant_name} exported to {target}",
         instance_id,
-        target.name,
-        target_precision=TargetPrecision(target_precision).name,
-        quantization_data=Quantization(quantization_data).name
+        target,
+        target_precision=target_precision or "INT8",
+        quantization_data=quantization_data.upper()
         if quantization_data
-        else None,
+        else "RANDOM",
         **target_options,
     )
 
