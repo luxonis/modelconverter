@@ -447,9 +447,8 @@ class Config(LuxonisConfig):
         else:
             extra = {}
             for key in list(data.keys()):
-                if key not in cls.__fields__:
+                if key not in cls.model_fields:
                     extra[key] = data.pop(key)
-
             for stage in data["stages"].values():
                 for key, value in extra.items():
                     if key not in stage:
@@ -459,7 +458,7 @@ class Config(LuxonisConfig):
     @model_validator(mode="after")
     def _validate_single_stage_name(self) -> Self:
         """Changes the default 'default_stage' name to the name of the input model."""
-        if len(self.stages) == 1:
+        if len(self.stages) == 1 and "default_stage" in self.stages:
             stage = next(iter(self.stages.values()))
             model_name = stage.input_model.stem
             self.stages = {model_name: stage}
