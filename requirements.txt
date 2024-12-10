@@ -2,7 +2,7 @@ Pillow
 PyYAML
 gcsfs
 luxonis-ml[data,nn_archive] >= 0.5.0
-onnx<1.17.0
+onnx>=1.17.0
 onnxruntime
 onnxsim
 s3fs
