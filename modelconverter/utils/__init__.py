@@ -28,7 +28,7 @@ from .nn_archive import (
     modelconverter_config_to_nn,
     process_nn_archive,
 )
-from .onnx_tools import onnx_attach_normalization_to_inputs
+from .onnx_tools import ONNXModifier, onnx_attach_normalization_to_inputs
 from .subprocess import subprocess_run
 
 __all__ = [
@@ -37,6 +37,7 @@ __all__ = [
     "S3Exception",
     "SubprocessException",
     "exit_with",
+    "ONNXModifier",
     "onnx_attach_normalization_to_inputs",
     "read_calib_dir",
     "read_image",
