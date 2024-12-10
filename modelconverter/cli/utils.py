@@ -22,7 +22,6 @@ from rich.panel import Panel
 from rich.pretty import Pretty
 from rich.progress import Progress
 from rich.table import Table
-from typeguard import check_type
 
 from modelconverter.hub.hub_requests import Request
 from modelconverter.utils import (
@@ -288,7 +287,7 @@ def slug_to_id(
             }
             data = Request.get(f"{endpoint}/", params=params)
             if data:
-                return check_type(data[0]["id"], str)
+                return data[0]["id"]
     raise ValueError(f"Model with slug '{slug}' not found.")
 
 
