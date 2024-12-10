@@ -22,6 +22,7 @@ from rich.panel import Panel
 from rich.pretty import Pretty
 from rich.progress import Progress
 from rich.table import Table
+from typeguard import check_type
 
 from modelconverter.hub.hub_requests import Request
 from modelconverter.utils import (
@@ -249,7 +250,7 @@ def hub_ls(
     **kwargs,
 ) -> List[Dict[str, Any]]:
     rename = rename or {}
-    data = Request.get(f"{endpoint}/", params=kwargs).json()
+    data = Request.get(f"{endpoint}/", params=kwargs)
     table = Table(row_styles=["yellow", "cyan"], box=ROUNDED)
     for key in keys:
         table.add_column(rename.get(key, key), header_style="magenta i")
@@ -285,9 +286,9 @@ def slug_to_id(
                 "is_public": is_public,
                 "slug": slug,
             }
-            data = Request.get(f"{endpoint}/", params=params).json()
+            data = Request.get(f"{endpoint}/", params=params)
             if data:
-                return data[0]["id"]
+                return check_type(data[0]["id"], str)
     raise ValueError(f"Model with slug '{slug}' not found.")
 
 
@@ -307,7 +308,7 @@ def request_info(
     resource_id = get_resource_id(identifier, endpoint)
 
     try:
-        return Request.get(f"{endpoint}/{resource_id}/").json()
+        return Request.get(f"{endpoint}/{resource_id}/")
     except HTTPError:
         typer.echo(f"Resource with ID '{resource_id}' not found.")
         exit(1)
@@ -333,26 +334,21 @@ def get_variant_name(
 
 
 def get_version_number(model_id: str) -> str:
-    versions = Request.get(
-        "modelVersions/", params={"model_id": model_id}
-    ).json()
+    versions = Request.get("modelVersions/", params={"model_id": model_id})
     if not versions:
-        version = "0.1.0"
-    else:
-        max_version = Version(versions[0]["version"])
-        for v in versions[1:]:
-            max_version = max(max_version, Version(v["version"]))
-        max_version = str(max_version)
-        version_numbers = max_version.split(".")
-        version_numbers[-1] = str(int(version_numbers[-1]) + 1)
-        version = ".".join(version_numbers)
-    return version
+        return "0.1.0"
+    max_version = Version(versions[0]["version"])
+    for v in versions[1:]:
+        max_version = max(max_version, Version(v["version"]))
+    max_version = str(max_version)
+    version_numbers = max_version.split(".")
+    version_numbers[-1] = str(int(version_numbers[-1]) + 1)
+    return ".".join(version_numbers)
 
 
 def wait_for_export(run_id: str) -> None:
     def _get_run(run_id: str) -> Dict[str, Any]:
-        run = Request.dag_get(f"runs/{run_id}").json()
-        return run
+        return Request.dag_get(f"runs/{run_id}")
 
     def _clean_logs(logs: str) -> str:
         pattern = r"\[.*?\] \{.*?\} INFO - \[base\] logs:\s*"

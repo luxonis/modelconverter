@@ -218,7 +218,7 @@ def model_create(
         "links": links or [],
     }
     try:
-        res = Request.post("models", json=data).json()
+        res = Request.post("models", json=data)
     except requests.HTTPError as e:
         if (
             e.response is not None
@@ -316,7 +316,7 @@ def variant_create(
         "tags": tags or [],
     }
     try:
-        res = Request.post("modelVersions", json=data).json()
+        res = Request.post("modelVersions", json=data)
     except requests.HTTPError as e:
         if str(e).startswith("{'detail': 'Unique constraint error."):
             raise ValueError(
@@ -424,7 +424,7 @@ def instance_download(
     dest = Path(output_dir) if output_dir else None
     model_instance_id = get_resource_id(identifier, "modelInstances")
     downloaded_path = None
-    urls = Request.get(f"modelInstances/{model_instance_id}/download").json()
+    urls = Request.get(f"modelInstances/{model_instance_id}/download")
     if not urls:
         raise ValueError("No files to download")
 
@@ -435,9 +435,9 @@ def instance_download(
             filename = unquote(Path(urlparse(url).path).name)
             if dest is None:
                 dest = Path(
-                    Request.get(f"modelInstances/{model_instance_id}")
-                    .json()
-                    .get("slug", model_instance_id)
+                    Request.get(f"modelInstances/{model_instance_id}").get(
+                        "slug", model_instance_id
+                    )
                 )
             dest.mkdir(parents=True, exist_ok=True)
 
@@ -477,7 +477,7 @@ def instance_create(
         "quantization_data": quantization_data,
         "is_deployable": is_deployable,
     }
-    res = Request.post("modelInstances", json=data).json()
+    res = Request.post("modelInstances", json=data)
     print(f"Model instance '{res['name']}' created with ID '{res['id']}'")
     if not silent:
         instance_info(res["id"])
@@ -496,16 +496,14 @@ def instance_delete(identifier: IdentifierArgument):
 def config(identifier: IdentifierArgument):
     """Prints the configuration of a model instance."""
     model_instance_id = get_resource_id(identifier, "modelInstances")
-    res = Request.get(f"modelInstances/{model_instance_id}/config")
-    print(res.json())
+    print(Request.get(f"modelInstances/{model_instance_id}/config"))
 
 
 @instance.command()
 def files(identifier: IdentifierArgument):
     """Prints the configuration of a model instance."""
     model_instance_id = get_resource_id(identifier, "modelInstances")
-    res = Request.get(f"modelInstances/{model_instance_id}/files")
-    print(res.json())
+    print(Request.get(f"modelInstances/{model_instance_id}/files"))
 
 
 @instance.command()
@@ -538,7 +536,7 @@ def _export(
     res = Request.post(
         f"modelInstances/{model_instance_id}/export/{target.lower()}",
         json=json,
-    ).json()
+    )
     print(
         f"Model instance '{name}' created for {target} export with ID '{res['id']}'"
     )
