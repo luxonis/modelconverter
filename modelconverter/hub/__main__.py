@@ -20,11 +20,11 @@ from modelconverter.cli import (
     DescriptionOption,
     DescriptionShortOption,
     DomainOption,
-    FilterPublicEntityByTeamIDOption,
     HashOption,
     HubVersionOption,
     HubVersionOptionRequired,
     IdentifierArgument,
+    IsOwnerOption,
     IsPublicOption,
     JSONOption,
     LicenseTypeOption,
@@ -58,8 +58,6 @@ from modelconverter.cli import (
     TagsOption,
     TargetPrecisionOption,
     TasksOption,
-    TeamIDOption,
-    UserIDOption,
     VariantSlugOption,
     VersionOption,
     get_configs,
@@ -140,14 +138,12 @@ def login(
 
 @model.command(name="ls")
 def model_ls(
-    team_id: TeamIDOption = None,
     tasks: TasksOption = None,
-    user_id: UserIDOption = None,
     license_type: LicenseTypeOption = None,
     is_public: IsPublicOption = None,
+    is_owner: IsOwnerOption = True,
     slug: SlugOption = None,
     project_id: ProjectIDOption = None,
-    filter_public_entity_by_team_id: FilterPublicEntityByTeamIDOption = None,
     luxonis_only: LuxonisOnlyOption = False,
     limit: LimitOption = 50,
     sort: SortOption = "updated",
@@ -156,14 +152,12 @@ def model_ls(
     """Lists models."""
     return hub_ls(
         "models",
-        team_id=team_id,
         tasks=[task for task in tasks] if tasks else [],
-        user_id=user_id,
         license_type=license_type,
         is_public=is_public,
+        is_owner=is_owner,
         slug=slug,
         project_id=project_id,
-        filter_public_entity_by_team_id=filter_public_entity_by_team_id,
         luxonis_only=luxonis_only,
         limit=limit,
         sort=sort,
@@ -248,13 +242,12 @@ def model_delete(identifier: IdentifierArgument):
 
 @variant.command(name="ls")
 def variant_ls(
-    team_id: TeamIDOption = None,
-    user_id: UserIDOption = None,
     model_id: ModelIDOption = None,
     slug: SlugOption = None,
     variant_slug: VariantSlugOption = None,
     version: HubVersionOption = None,
     is_public: IsPublicOption = None,
+    is_owner: IsOwnerOption = True,
     limit: LimitOption = 50,
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
@@ -262,10 +255,9 @@ def variant_ls(
     """Lists model versions."""
     return hub_ls(
         "modelVersions",
-        team_id=team_id,
-        user_id=user_id,
         model_id=model_id,
         is_public=is_public,
+        is_owner=is_owner,
         slug=slug,
         variant_slug=variant_slug,
         version=version,
@@ -348,8 +340,6 @@ def variant_delete(identifier: IdentifierArgument):
 @instance.command(name="ls")
 def instance_ls(
     platforms: PlatformsOption = None,
-    team_id: TeamIDOption = None,
-    user_id: UserIDOption = None,
     model_id: ModelIDOption = None,
     variant_id: ModelVersionIDOption = None,
     model_type: ModelTypeOption = None,
@@ -359,6 +349,7 @@ def instance_ls(
     hash: HashOption = None,
     status: StatusOption = None,
     is_public: IsPublicOption = None,
+    is_owner: IsOwnerOption = True,
     compression_level: CompressionLevelOption = None,
     optimization_level: OptimizationLevelOption = None,
     slug: SlugOption = None,
@@ -382,9 +373,8 @@ def instance_ls(
         status=status,
         compression_level=compression_level,
         optimization_level=optimization_level,
-        team_id=team_id,
-        user_id=user_id,
         is_public=is_public,
+        is_owner=is_owner,
         slug=slug,
         limit=limit,
         sort=sort,
