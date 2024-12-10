@@ -20,11 +20,11 @@ from modelconverter.cli import (
     DescriptionOption,
     DescriptionShortOption,
     DomainOption,
-    FilterPublicEntityByTeamIDOption,
     HashOption,
     HubVersionOption,
     HubVersionOptionRequired,
     IdentifierArgument,
+    IsOwnerOption,
     IsPublicOption,
     JSONOption,
     LicenseTypeOption,
@@ -58,8 +58,6 @@ from modelconverter.cli import (
     TagsOption,
     TargetPrecisionOption,
     TasksOption,
-    TeamIDOption,
-    UserIDOption,
     VariantSlugOption,
     VersionOption,
     get_configs,
@@ -140,14 +138,12 @@ def login(
 
 @model.command(name="ls")
 def model_ls(
-    team_id: TeamIDOption = None,
     tasks: TasksOption = None,
-    user_id: UserIDOption = None,
     license_type: LicenseTypeOption = None,
     is_public: IsPublicOption = None,
+    is_owner: IsOwnerOption = True,
     slug: SlugOption = None,
     project_id: ProjectIDOption = None,
-    filter_public_entity_by_team_id: FilterPublicEntityByTeamIDOption = None,
     luxonis_only: LuxonisOnlyOption = False,
     limit: LimitOption = 50,
     sort: SortOption = "updated",
@@ -156,14 +152,12 @@ def model_ls(
     """Lists models."""
     return hub_ls(
         "models",
-        team_id=team_id,
         tasks=[task for task in tasks] if tasks else [],
-        user_id=user_id,
         license_type=license_type,
         is_public=is_public,
+        is_owner=is_owner,
         slug=slug,
         project_id=project_id,
-        filter_public_entity_by_team_id=filter_public_entity_by_team_id,
         luxonis_only=luxonis_only,
         limit=limit,
         sort=sort,
@@ -224,7 +218,7 @@ def model_create(
         "links": links or [],
     }
     try:
-        res = Request.post("models", json=data).json()
+        res = Request.post("models", json=data)
     except requests.HTTPError as e:
         if (
             e.response is not None
@@ -248,13 +242,12 @@ def model_delete(identifier: IdentifierArgument):
 
 @variant.command(name="ls")
 def variant_ls(
-    team_id: TeamIDOption = None,
-    user_id: UserIDOption = None,
     model_id: ModelIDOption = None,
     slug: SlugOption = None,
     variant_slug: VariantSlugOption = None,
     version: HubVersionOption = None,
     is_public: IsPublicOption = None,
+    is_owner: IsOwnerOption = True,
     limit: LimitOption = 50,
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
@@ -262,10 +255,9 @@ def variant_ls(
     """Lists model versions."""
     return hub_ls(
         "modelVersions",
-        team_id=team_id,
-        user_id=user_id,
         model_id=model_id,
         is_public=is_public,
+        is_owner=is_owner,
         slug=slug,
         variant_slug=variant_slug,
         version=version,
@@ -324,7 +316,7 @@ def variant_create(
         "tags": tags or [],
     }
     try:
-        res = Request.post("modelVersions", json=data).json()
+        res = Request.post("modelVersions", json=data)
     except requests.HTTPError as e:
         if str(e).startswith("{'detail': 'Unique constraint error."):
             raise ValueError(
@@ -348,8 +340,6 @@ def variant_delete(identifier: IdentifierArgument):
 @instance.command(name="ls")
 def instance_ls(
     platforms: PlatformsOption = None,
-    team_id: TeamIDOption = None,
-    user_id: UserIDOption = None,
     model_id: ModelIDOption = None,
     variant_id: ModelVersionIDOption = None,
     model_type: ModelTypeOption = None,
@@ -359,6 +349,7 @@ def instance_ls(
     hash: HashOption = None,
     status: StatusOption = None,
     is_public: IsPublicOption = None,
+    is_owner: IsOwnerOption = True,
     compression_level: CompressionLevelOption = None,
     optimization_level: OptimizationLevelOption = None,
     slug: SlugOption = None,
@@ -382,9 +373,8 @@ def instance_ls(
         status=status,
         compression_level=compression_level,
         optimization_level=optimization_level,
-        team_id=team_id,
-        user_id=user_id,
         is_public=is_public,
+        is_owner=is_owner,
         slug=slug,
         limit=limit,
         sort=sort,
@@ -434,7 +424,7 @@ def instance_download(
     dest = Path(output_dir) if output_dir else None
     model_instance_id = get_resource_id(identifier, "modelInstances")
     downloaded_path = None
-    urls = Request.get(f"modelInstances/{model_instance_id}/download").json()
+    urls = Request.get(f"modelInstances/{model_instance_id}/download")
     if not urls:
         raise ValueError("No files to download")
 
@@ -445,9 +435,9 @@ def instance_download(
             filename = unquote(Path(urlparse(url).path).name)
             if dest is None:
                 dest = Path(
-                    Request.get(f"modelInstances/{model_instance_id}")
-                    .json()
-                    .get("slug", model_instance_id)
+                    Request.get(f"modelInstances/{model_instance_id}").get(
+                        "slug", model_instance_id
+                    )
                 )
             dest.mkdir(parents=True, exist_ok=True)
 
@@ -487,7 +477,7 @@ def instance_create(
         "quantization_data": quantization_data,
         "is_deployable": is_deployable,
     }
-    res = Request.post("modelInstances", json=data).json()
+    res = Request.post("modelInstances", json=data)
     print(f"Model instance '{res['name']}' created with ID '{res['id']}'")
     if not silent:
         instance_info(res["id"])
@@ -506,16 +496,14 @@ def instance_delete(identifier: IdentifierArgument):
 def config(identifier: IdentifierArgument):
     """Prints the configuration of a model instance."""
     model_instance_id = get_resource_id(identifier, "modelInstances")
-    res = Request.get(f"modelInstances/{model_instance_id}/config")
-    print(res.json())
+    print(Request.get(f"modelInstances/{model_instance_id}/config"))
 
 
 @instance.command()
 def files(identifier: IdentifierArgument):
     """Prints the configuration of a model instance."""
     model_instance_id = get_resource_id(identifier, "modelInstances")
-    res = Request.get(f"modelInstances/{model_instance_id}/files")
-    print(res.json())
+    print(Request.get(f"modelInstances/{model_instance_id}/files"))
 
 
 @instance.command()
@@ -548,7 +536,7 @@ def _export(
     res = Request.post(
         f"modelInstances/{model_instance_id}/export/{target.lower()}",
         json=json,
-    ).json()
+    )
     print(
         f"Model instance '{name}' created for {target} export with ID '{res['id']}'"
     )
