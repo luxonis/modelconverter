@@ -224,11 +224,6 @@ JSONOption = Annotated[
     ),
 ]
 
-TeamIDOption = Annotated[
-    Optional[str],
-    typer.Option(help="The team ID", show_default=False),
-]
-
 RepositoryUrlOption = Annotated[
     Optional[str],
     typer.Option(help="The repository URL", show_default=False),
@@ -294,9 +289,12 @@ NameArgument = Annotated[
     str, typer.Argument(help="Name of the model", show_default=False)
 ]
 
-UserIDOption = Annotated[
-    Optional[str],
-    typer.Option(help="The user ID", show_default=False),
+IsOwnerOption = Annotated[
+    bool,
+    typer.Option(
+        help="Whether the user is the owner of the resource",
+        show_default=False,
+    ),
 ]
 
 ArchitectureIDOption = Annotated[
@@ -406,13 +404,6 @@ ModelInstanceIDArgument = Annotated[
 ProjectIDOption = Annotated[
     Optional[str],
     typer.Option(help="The project ID", show_default=False),
-]
-
-FilterPublicEntityByTeamIDOption = Annotated[
-    Optional[bool],
-    typer.Option(
-        help="Whether to filter public entity by team ID", show_default=False
-    ),
 ]
 
 LuxonisOnlyOption = Annotated[
