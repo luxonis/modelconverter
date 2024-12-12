@@ -1,9 +1,11 @@
 import pkg_resources
 from luxonis_ml.utils import PUT_FILE_REGISTRY
 
-from .hub import *
+from .hub import convert
 
 __version__ = "0.3.1"
+
+__all__ = ["convert"]
 
 
 def load_put_file_plugins() -> None:
