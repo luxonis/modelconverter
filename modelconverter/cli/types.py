@@ -289,14 +289,6 @@ NameArgument = Annotated[
     str, typer.Argument(help="Name of the model", show_default=False)
 ]
 
-IsOwnerOption = Annotated[
-    bool,
-    typer.Option(
-        help="Whether the user is the owner of the resource",
-        show_default=False,
-    ),
-]
-
 ArchitectureIDOption = Annotated[
     Optional[str],
     typer.Option(help="The architecture ID", show_default=False),
