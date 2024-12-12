@@ -75,7 +75,8 @@ class RVC4Exporter(Exporter):
                     logger.info("ONNX model has been optimised for RVC4.")
                     shutil.move(onnx_modifier.output_path, self.input_model)
                 else:
-                    os.remove(onnx_modifier.output_path)
+                    if os.path.exists(onnx_modifier.output_path):
+                        os.remove(onnx_modifier.output_path)
         else:
             logger.warning(
                 "Input file type is not ONNX. Skipping pre-processing."
