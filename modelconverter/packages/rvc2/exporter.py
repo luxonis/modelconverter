@@ -120,7 +120,10 @@ class RVC2Exporter(Exporter):
         scale_values_str = ""
         for name, inp in self.inputs.items():
             # Append mean values in a similar style
-            if inp.mean_values is not None:
+            if inp.mean_values is not None and inp.encoding.from_ not in {
+                Encoding.NONE,
+                Encoding.GRAY,
+            }:
                 if mean_values_str:
                     mean_values_str += ","
                 mean_values_str += (
@@ -128,7 +131,10 @@ class RVC2Exporter(Exporter):
                 )
 
             # Append scale values in a similar style
-            if inp.scale_values is not None:
+            if inp.scale_values is not None and inp.encoding.from_ not in {
+                Encoding.NONE,
+                Encoding.GRAY,
+            }:
                 if scale_values_str:
                     scale_values_str += ","
                 scale_values_str += (
