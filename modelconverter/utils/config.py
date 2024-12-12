@@ -141,6 +141,10 @@ class InputConfig(OutputConfig):
     def encoding_mismatch(self) -> bool:
         return self.encoding.from_ != self.encoding.to
 
+    @property
+    def is_color_input(self) -> bool:
+        return self.encoding.from_ in {Encoding.RGB, Encoding.BGR}
+
     @model_validator(mode="after")
     def _validate_grayscale_inputs(self) -> Self:
         if self.layout is None:
