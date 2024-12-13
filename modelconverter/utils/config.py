@@ -284,6 +284,7 @@ class SingleStageConfig(CustomBaseModel):
 
     keep_intermediate_outputs: bool = True
     disable_onnx_simplification: bool = False
+    disable_onnx_optimisation: bool = False
     output_remote_url: Optional[str] = None
     put_file_plugin: Optional[str] = None
 

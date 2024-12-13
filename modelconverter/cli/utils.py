@@ -376,6 +376,7 @@ def get_target_specific_options(
     json_cfg = cfg.model_dump(mode="json")
     options = {
         "disable_onnx_simplification": cfg.disable_onnx_simplification,
+        "disable_onnx_optimisation": cfg.disable_onnx_optimisation,
         "inputs": json_cfg["inputs"],
     }
     if target == "rvc4":

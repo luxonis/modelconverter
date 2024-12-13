@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import time
@@ -6,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, cast
 
 from modelconverter.utils import (
+    ONNXModifier,
     exit_with,
     onnx_attach_normalization_to_inputs,
     read_image,
@@ -57,6 +59,24 @@ class RVC4Exporter(Exporter):
                 self._attach_suffix(self.input_model, "modified.onnx"),
                 self.inputs,
             )
+
+            if not config.disable_onnx_optimisation:
+                onnx_modifier = ONNXModifier(
+                    model_path=self.input_model,
+                    output_path=self._attach_suffix(
+                        self.input_model, "modified_optimised.onnx"
+                    ),
+                )
+
+                if (
+                    onnx_modifier.modify_onnx()
+                    and onnx_modifier.compare_outputs()
+                ):
+                    logger.info("ONNX model has been optimised for RVC4.")
+                    shutil.move(onnx_modifier.output_path, self.input_model)
+                else:
+                    if os.path.exists(onnx_modifier.output_path):
+                        os.remove(onnx_modifier.output_path)
         else:
             logger.warning(
                 "Input file type is not ONNX. Skipping pre-processing."
