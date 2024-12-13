@@ -33,5 +33,6 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_S3_ENDPOINT_URL: ${{ secrets.AWS_S3_ENDPOINT_URL }}
         GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+        HUB_AI_API_KEY: ${{ secrets.HUB_AI_API_KEY }}
       run: python -m pytest tests/test_utils
 

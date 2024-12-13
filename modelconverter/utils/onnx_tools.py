@@ -1055,11 +1055,10 @@ class ONNXModifier:
             )
             return False
 
-        half = self.dtype == np.float16
         try:
             logger.debug("Substituting Div -> Mul nodes...")
             self.substitute_node_by_type(source_node="Div", target_node="Mul")
-            if not self.compare_outputs(from_modelproto=True, half=half):
+            if not self.compare_outputs(from_modelproto=True):
                 logger.warning(
                     "Failed to substitute Div -> Mul nodes, reverting changes..."
                 )
@@ -1068,7 +1067,7 @@ class ONNXModifier:
 
             logger.debug("Substituting Sub -> Add nodes...")
             self.substitute_node_by_type(source_node="Sub", target_node="Add")
-            if not self.compare_outputs(from_modelproto=True, half=half):
+            if not self.compare_outputs(from_modelproto=True):
                 logger.warning(
                     "Failed to substitute Sub -> Add nodes, reverting changes..."
                 )
@@ -1079,7 +1078,7 @@ class ONNXModifier:
                 "Fusing Add and Mul nodes to BatchNormalization nodes and then into Conv nodes..."
             )
             self.fuse_add_mul_to_bn()
-            if not self.compare_outputs(from_modelproto=True, half=half):
+            if not self.compare_outputs(from_modelproto=True):
                 logger.warning(
                     "Failed to fuse Add and Mul nodes to BatchNormalization nodes, reverting changes..."
                 )
@@ -1088,14 +1087,14 @@ class ONNXModifier:
 
             logger.debug("Fusing Add and Mul nodes to Conv nodes...")
             self.fuse_comb_add_mul_to_conv()
-            if not self.compare_outputs(from_modelproto=True, half=half):
+            if not self.compare_outputs(from_modelproto=True):
                 logger.warning(
                     "Failed to fuse Add and Mul nodes (combined) to Conv nodes, reverting changes..."
                 )
                 self.onnx_model = self.prev_onnx_model
                 self.onnx_gs = self.prev_onnx_gs
             self.fuse_single_add_mul_to_conv()
-            if not self.compare_outputs(from_modelproto=True, half=half):
+            if not self.compare_outputs(from_modelproto=True):
                 logger.warning(
                     "Failed to fuse Add and Mul nodes (single) to Conv nodes, reverting changes..."
                 )
@@ -1104,7 +1103,7 @@ class ONNXModifier:
 
             logger.debug("Fusing Split and Concat nodes to Conv nodes...")
             self.fuse_split_concat_to_conv()
-            if not self.compare_outputs(from_modelproto=True, half=half):
+            if not self.compare_outputs(from_modelproto=True):
                 logger.warning(
                     "Failed to fuse Split and Concat nodes to Conv nodes, reverting changes..."
                 )
@@ -1117,9 +1116,7 @@ class ONNXModifier:
             return False
         return True
 
-    def compare_outputs(
-        self, from_modelproto: bool = False, half: bool = False
-    ) -> bool:
+    def compare_outputs(self, from_modelproto: bool = False) -> bool:
         """Compare the outputs of two ONNX models.
 
         @param half: Flag to use half precision for the input tensors
@@ -1142,10 +1139,23 @@ class ONNXModifier:
 
         inputs = dict()
         for input in ort_session_1.get_inputs():
-            inputs[input.name] = (
-                np.random.rand(*input.shape).astype(np.float32)
-                if not half
-                else np.random.rand(*input.shape).astype(np.float16)
+            if input.type in ["tensor(float64)"]:
+                input_type = np.float64
+            elif input.type in ["tensor(float32)", "tensor(float)"]:
+                input_type = np.float32
+            elif input.type in ["tensor(float16)"]:
+                input_type = np.float16
+            elif input.type in ["tensor(int64)"]:
+                input_type = np.int64
+            elif input.type in ["tensor(int32)"]:
+                input_type = np.int32
+            elif input.type in ["tensor(int16)"]:
+                input_type = np.int16
+            elif input.type in ["tensor(int8)"]:
+                input_type = np.int8
+
+            inputs[input.name] = np.random.rand(*input.shape).astype(
+                input_type
             )
 
         outputs_1 = ort_session_1.run(None, inputs)
