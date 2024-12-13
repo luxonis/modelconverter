@@ -12,3 +12,4 @@ docker
 keyring
 onnx_graphsurgeon
 onnxoptimizer
+wget
