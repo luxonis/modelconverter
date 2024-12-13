@@ -394,7 +394,7 @@ class ONNXModifier:
         ) -> Optional[gs.Node]:
             if const_idx == 0:
                 return None
-            # new_nodes = []
+
             first_input = node.inputs[0]
             second_input = node.inputs[const_idx]
             if target_node == "Add":
