@@ -85,7 +85,6 @@ def get_configs(
         path_ = resolve_path(path, MISC_DIR)
         if path_.is_dir() or is_nn_archive(path_):
             return process_nn_archive(path_, overrides)
-        shutil.move(str(path_), CONFIGS_DIR / path_.name)
     cfg = Config.get_config(path, overrides)
 
     main_stage_key = None
