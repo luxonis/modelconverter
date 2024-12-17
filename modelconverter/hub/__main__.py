@@ -641,8 +641,8 @@ def convert(
     if path is not None and not is_archive and not is_yaml(path):
         opts.extend(["input_model", path])
 
-    if is_yaml(path):
-        opts.extend(["calibration", "random"])
+    if target_precision in {"FP16", "FP32"}:
+        opts.extend(["disable_calibration", "True"])
 
     config_path = None
     if path and (is_archive or is_yaml(path)):
