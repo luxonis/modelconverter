@@ -129,11 +129,39 @@ def setup():
     output1 = helper.make_tensor_value_info(
         "output1", TensorProto.FLOAT, [1, 5, 5, 5]
     )
+
+    shape_tensor = helper.make_tensor(
+        name="shape_tensor",
+        data_type=TensorProto.INT64,
+        dims=[4],
+        vals=[1, 5, 5, 5],
+    )
+
+    node0 = helper.make_node(
+        "Add", inputs=["input0", "input0"], outputs=["intermediate0"]
+    )
+    node1 = helper.make_node(
+        "Add", inputs=["input1", "input1"], outputs=["intermediate1"]
+    )
+    node2 = helper.make_node(
+        "Flatten", inputs=["intermediate0"], outputs=["output0"]
+    )
+    node3 = helper.make_node(
+        "Reshape",
+        inputs=["intermediate1", "shape_tensor"],
+        outputs=["output1"],
+    )
+
     graph = helper.make_graph(
-        [], "DummyModel", [input0, input1], [output0, output1]
+        [node0, node1, node2, node3],
+        "DummyModel",
+        [input0, input1],
+        [output0, output1],
+        initializer=[shape_tensor],
     )
 
     model = helper.make_model(graph, producer_name="DummyModelProducer")
+
     checker.check_model(model)
     onnx.save(model, str(DATA_DIR / "dummy_model.onnx"))
     yield
@@ -147,16 +175,12 @@ def set_nested_config_value(
         keys = key.split(".")
         current_level = config["model"]
 
-        # Traverse through the keys except for the last one
         for k in keys[:-1]:
-            # Handle integer keys for list indexing
             if re.match(r"^\d+$", k):
                 k = int(k)
 
-            # Move to the next level
             current_level = current_level[k]
 
-        # Set the final key to the value
         final_key = keys[-1]
         current_level[final_key] = value
 
