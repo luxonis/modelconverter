@@ -24,7 +24,7 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 ## Table of Contents
 
 - [Installation](#installation)
-- [Configuration](#usage)
+- [Configuration](#configuration)
   - [YAML Configuration File](#yaml-configuration-file)
   - [NN Archive Configuration File](#nn-archive-configuration-file)
 - [Online Usage](#online-usage)
@@ -269,7 +269,7 @@ You can run the built image either manually using the `docker run` command or us
     --path <s3_url_or_path> [ config overrides ]
   ```
 
-**Examples:**
+#### Examples
 
 Use `resnet18.yaml` config, but override `calibration.path`:
 
