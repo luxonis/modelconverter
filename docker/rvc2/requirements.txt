@@ -1,4 +1,5 @@
 tflite2onnx
 bsdiff4
+tokenizers==0.20.0
 openvino==${VERSION}
 openvino-dev==${VERSION}
