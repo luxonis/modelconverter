@@ -175,9 +175,11 @@ def benchmark(
 
     **RVC2**
 
-    - `--repetitions`: The number of repetitions to perform. Default: `1`
+    - `--repetitions`: The number of repetitions to perform. Default: `10`
 
     - `--num-threads`: The number of threads to use for inference. Default: `2`
+
+    - `--num-messages`: The number of messages to measure for each report. Default: `50`
 
     ---
 

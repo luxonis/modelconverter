@@ -19,6 +19,7 @@ from .filesystem_utils import (
     resolve_path,
     upload_file_to_remote,
 )
+from .hubai_utils import is_hubai_available
 from .image import read_calib_dir, read_image
 from .layout import guess_new_layout, make_default_layout
 from .metadata import Metadata, get_metadata
@@ -45,6 +46,7 @@ __all__ = [
     "subprocess_run",
     "download_from_remote",
     "upload_file_to_remote",
+    "is_hubai_available",
     "get_protocol",
     "process_nn_archive",
     "modelconverter_config_to_nn",

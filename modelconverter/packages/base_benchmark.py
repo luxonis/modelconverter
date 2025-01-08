@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 from typing_extensions import TypeAlias
 
-from modelconverter.utils import resolve_path
+from modelconverter.utils import is_hubai_available, resolve_path
 
 logger = getLogger(__name__)
 
@@ -28,9 +28,14 @@ class Benchmark(ABC):
         model_path: str,
         dataset_path: Optional[Path] = None,
     ):
-        self.model_path = resolve_path(model_path, Path.cwd())
+        if not is_hubai_available(model_path):
+            self.model_path = resolve_path(model_path, Path.cwd())
+            self.model_name = self.model_path.stem
+        else:
+            self.model_path = model_path
+            self.model_name = self.model_path.split("/", 1)[-1]
         self.dataset_path = dataset_path
-        self.model_name = self.model_path.stem
+
         self.header = [
             *self.default_configuration.keys(),
             "fps",
