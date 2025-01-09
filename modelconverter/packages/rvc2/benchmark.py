@@ -39,6 +39,10 @@ class RVC2Benchmark(Benchmark):
         num_threads: int,
     ) -> BenchmarkResult:
         device = dai.Device()
+        if device.getPlatform() != dai.Platform.RVC2:
+            raise ValueError(
+                f"Found {device.getPlatformAsString()}, expected RVC2 platform."
+            )
 
         if isinstance(model_path, str):
             modelPath = dai.getModelFromZoo(
@@ -113,9 +117,12 @@ class RVC2Benchmark(Benchmark):
             avg_latency_list = []
             while pipeline.isRunning() and rep < repetitions:
                 benchmarkReport = outputQueue.get()
-                assert isinstance(benchmarkReport, dai.BenchmarkReport)
+                if not isinstance(benchmarkReport, dai.BenchmarkReport):
+                    raise ValueError(
+                        f"Expected BenchmarkReport, got {type(benchmarkReport)}"
+                    )
                 fps = benchmarkReport.fps
-                avg_latency = benchmarkReport.averageLatency
+                avg_latency = benchmarkReport.averageLatency * 1000
 
                 fps_list.append(fps)
                 avg_latency_list.append(avg_latency)

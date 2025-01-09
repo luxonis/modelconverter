@@ -69,7 +69,13 @@ class Benchmark(ABC):
             title=f"Benchmark Results for [yellow]{self.model_name}",
             box=box.ROUNDED,
         )
-        for field in self.header:
+
+        updated_header = [
+            *results[0][0].keys(),
+            "fps",
+            "latency (ms)",
+        ]
+        for field in updated_header:
             table.add_column(f"[cyan]{field}")
         for configuration, result in results:
             fps_color = (
