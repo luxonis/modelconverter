@@ -129,6 +129,5 @@ class RVC2Benchmark(Benchmark):
                 progress.update(repet_task, advance=1)
                 rep += 1
 
-            return BenchmarkResult(
-                np.mean(fps_list), np.mean(avg_latency_list)
-            )
+            # Currently, the latency measurement is not supported on RVC2 by the depthai library.
+            return BenchmarkResult(np.mean(fps_list), "N/A")

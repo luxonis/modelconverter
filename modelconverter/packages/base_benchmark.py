@@ -85,17 +85,22 @@ class Benchmark(ABC):
                 if result.fps < 5
                 else "green"
             )
-            latency_color = (
-                "yellow"
-                if 50 < result.latency < 100
-                else "red"
-                if result.latency > 100
-                else "green"
-            )
+            if isinstance(result.latency, str):
+                latency_color = "orange3"
+            else:
+                latency_color = (
+                    "yellow"
+                    if 50 < result.latency < 100
+                    else "red"
+                    if result.latency > 100
+                    else "green"
+                )
             table.add_row(
                 *map(lambda x: f"[magenta]{x}", configuration.values()),
                 f"[{fps_color}]{result.fps:.2f}",
-                f"[{latency_color}]{result.latency:.5f}",
+                f"[{latency_color}]{result.latency}"
+                if isinstance(result.latency, str)
+                else f"[{latency_color}]{result.latency:.5f}",
             )
         console = Console()
         console.print(table)

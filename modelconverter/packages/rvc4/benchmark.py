@@ -321,6 +321,5 @@ class RVC4Benchmark(Benchmark):
                 progress.update(repet_task, advance=1)
                 rep += 1
 
-            return BenchmarkResult(
-                np.mean(fps_list), np.mean(avg_latency_list)
-            )
+            # Currently, the latency measurement is only supported on RVC4 when using ImgFrame as the input to the BenchmarkOut which we don't do here.
+            return BenchmarkResult(np.mean(fps_list), "N/A")
