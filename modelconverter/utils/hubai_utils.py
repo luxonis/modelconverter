@@ -11,7 +11,12 @@ def is_hubai_available(model_slug: str) -> bool:
         )
 
     model_id = slug_to_id(
-        model_slug.removeprefix(f"{team_name}/").split(":")[0], "models"
+        (
+            model_slug[len(f"{team_name}/") :]
+            if model_slug.startswith(f"{team_name}/")
+            else model_slug
+        ).split(":")[0],
+        "models",
     )
     model_variants = Request.get(
         "modelVersions/", params={"model_id": model_id, "is_public": True}
