@@ -7,9 +7,13 @@ def is_hubai_available(model_name: str, model_variant: str) -> bool:
         model_name,
         "models",
     )
-    model_variants = Request.get(
-        "modelVersions/", params={"model_id": model_id, "is_public": True}
-    )
+
+    model_variants = []
+    for is_public in [True, False]:
+        model_variants += Request.get(
+            "modelVersions/",
+            params={"model_id": model_id, "is_public": is_public},
+        )
 
     for version in model_variants:
         if f"{model_name}:{version['variant_slug']}" == model_slug:

@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from rich.progress import Progress
 
-from modelconverter.utils import subprocess_run
+from modelconverter.utils import environ, subprocess_run
 
 from ..base_benchmark import Benchmark, BenchmarkResult, Configuration
 
@@ -235,7 +235,8 @@ class RVC4Benchmark(Benchmark):
                 dai.NNModelDescription(
                     model_path,
                     platform=device.getPlatformAsString(),
-                )
+                ),
+                apiKey=environ.HUBAI_API_KEY if environ.HUBAI_API_KEY else "",
             )
         elif str(model_path).endswith(".tar.xz"):
             modelPath = str(model_path)

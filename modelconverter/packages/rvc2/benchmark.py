@@ -6,6 +6,8 @@ import depthai as dai
 import numpy as np
 from rich.progress import Progress
 
+from modelconverter.utils import environ
+
 from ..base_benchmark import Benchmark, BenchmarkResult, Configuration
 
 logger = logging.getLogger(__name__)
@@ -49,7 +51,8 @@ class RVC2Benchmark(Benchmark):
                 dai.NNModelDescription(
                     model_path,
                     platform=device.getPlatformAsString(),
-                )
+                ),
+                apiKey=environ.HUBAI_API_KEY if environ.HUBAI_API_KEY else "",
             )
         elif str(model_path).endswith(".tar.xz"):
             modelPath = str(model_path)
