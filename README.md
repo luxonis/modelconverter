@@ -437,3 +437,6 @@ modelconverter benchmark rvc3 --model-path <path_to_model.xml>
 
 The command prints a table with the benchmark results to the console and
 optionally saves the results to a `.csv` file.
+
+> \[!NOTE\]
+> For **RVC2** and **RVC4**: The `--model-path` can be a path to a local .blob file, a NN Archive file (.tar.xz), or a name of a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai). To access models from different teams in Luxonis HubAI, remember to update the HUBAI_API_KEY environment variable respectively.
