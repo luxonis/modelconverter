@@ -1,3 +1,4 @@
+import re
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from logging import getLogger
@@ -23,17 +24,34 @@ i.e. `{"shaves": 4}` for RVC2
 
 
 class Benchmark(ABC):
+    VALID_EXTENSIONS = (".tar.xz", ".blob")
+    HUB_MODEL_PATTERN = re.compile(r"^(?:([^/]+)/)?([^:]+):(.+)$")
+
     def __init__(
         self,
         model_path: str,
         dataset_path: Optional[Path] = None,
     ):
-        if not is_hubai_available(model_path):
+        if any(model_path.endswith(ext) for ext in self.VALID_EXTENSIONS):
             self.model_path = resolve_path(model_path, Path.cwd())
             self.model_name = self.model_path.stem
         else:
-            self.model_path = model_path
-            self.model_name = self.model_path.split("/", 1)[-1]
+            hub_match = self.HUB_MODEL_PATTERN.match(model_path)
+            if not hub_match:
+                raise ValueError(
+                    "Invalid 'model-path' format. Expected either:\n"
+                    "- Model file path: path/to/model.blob or path/to/model.tar.xz\n"
+                    "- HubAI model slug: [team_name/]model_name:variant"
+                )
+            team_name, model_name, model_variant = hub_match.groups()
+            if is_hubai_available(model_name, model_variant):
+                self.model_path = model_path
+                self.model_name = model_name
+            else:
+                raise ValueError(
+                    f"Model {team_name+'/' if team_name else ''}{model_name}:{model_variant} not found in HubAI."
+                )
+
         self.dataset_path = dataset_path
 
         self.header = [
