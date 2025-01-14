@@ -24,7 +24,7 @@ i.e. `{"shaves": 4}` for RVC2
 
 
 class Benchmark(ABC):
-    VALID_EXTENSIONS = (".tar.xz", ".blob")
+    VALID_EXTENSIONS = (".tar.xz", ".blob", ".dlc")
     HUB_MODEL_PATTERN = re.compile(r"^(?:([^/]+)/)?([^:]+):(.+)$")
 
     def __init__(
@@ -40,7 +40,7 @@ class Benchmark(ABC):
             if not hub_match:
                 raise ValueError(
                     "Invalid 'model-path' format. Expected either:\n"
-                    "- Model file path: path/to/model.blob or path/to/model.tar.xz\n"
+                    "- Model file path: path/to/model.blob, path/to/model.dlc or path/to/model.tar.xz\n"
                     "- HubAI model slug: [team_name/]model_name:variant"
                 )
             team_name, model_name, model_variant = hub_match.groups()
