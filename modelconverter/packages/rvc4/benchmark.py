@@ -1,6 +1,7 @@
 import io
 import logging
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -119,7 +120,7 @@ class RVC4Benchmark(Benchmark):
         csv_path.unlink()
 
         start_marker = "Input Name,Dimensions,Type,Encoding Info"
-        end_marker = "Total parameters:"
+        end_marker = "Output Name,Dimensions,Type,Encoding Info"
         start_index = content.find(start_marker)
         end_index = content.find(end_marker, start_index)
 
@@ -143,7 +144,7 @@ class RVC4Benchmark(Benchmark):
                 img = cast(np.ndarray, np.random.rand(*size)).astype(
                     np.float32
                 )
-                with tempfile.TemporaryFile() as f:
+                with tempfile.NamedTemporaryFile() as f:
                     img.tofile(f)
                     self.adb.push(
                         f.name,
@@ -151,11 +152,18 @@ class RVC4Benchmark(Benchmark):
                     )
 
                 input_list += f"{name}:=/data/local/tmp/{self.model_name}/inputs/{name}_{i}.raw "
-        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+            input_list += "\n"
+
+        temp_path = tempfile.mktemp()
+        with open(temp_path, "w") as f:
             f.write(input_list)
+            f.flush()
+        try:
             self.adb.push(
-                f.name, f"/data/local/tmp/{self.model_name}/input_list.txt"
+                temp_path, f"/data/local/tmp/{self.model_name}/input_list.txt"
             )
+        finally:
+            Path(temp_path).unlink()
 
     def benchmark(self, configuration: Configuration) -> BenchmarkResult:
         dai_benchmark = configuration.get("dai_benchmark")
@@ -188,14 +196,37 @@ class RVC4Benchmark(Benchmark):
         runtime: str,
     ) -> BenchmarkResult:
         runtime = RUNTIMES[runtime] if runtime in RUNTIMES else "use_dsp"
+
+        if isinstance(model_path, str):
+            model_archive = dai.getModelFromZoo(
+                dai.NNModelDescription(
+                    model_path,
+                    platform=dai.Platform.RVC4.name,
+                ),
+                apiKey=environ.HUBAI_API_KEY if environ.HUBAI_API_KEY else "",
+            )
+            tmp_dir = Path(model_archive).parent / "tmp"
+            shutil.unpack_archive(model_archive, tmp_dir)
+
+            dlc_path = next(tmp_dir.rglob("*.dlc"), None)
+            if not dlc_path:
+                raise ValueError("Could not find model.dlc in the archive.")
+            self.model_path = dlc_path
+        elif str(model_path).endswith(".dlc"):
+            dlc_path = model_path
+        else:
+            raise ValueError(
+                "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
+            )
+
         self.adb.shell(f"mkdir /data/local/tmp/{self.model_name}")
         self.adb.push(
-            str(model_path), f"/data/local/tmp/{self.model_name}/model.dlc"
+            str(dlc_path), f"/data/local/tmp/{self.model_name}/model.dlc"
         )
         self._prepare_raw_inputs(num_images)
 
         _, stdout, _ = self.adb.shell(
-            "source /data/local/tmp/source_me.sh && "
+            # "source /data/local/tmp/source_me.sh && "
             "snpe-parallel-run "
             f"--container /data/local/tmp/{self.model_name}/model.dlc "
             f"--input_list /data/local/tmp/{self.model_name}/input_list.txt "
@@ -212,7 +243,7 @@ class RVC4Benchmark(Benchmark):
                 f"stdout:\n{stdout}"
             )
         fps = float(match.group(1))
-        return BenchmarkResult(fps=fps, latency=0)
+        return BenchmarkResult(fps=fps, latency="N/A")
 
     def _benchmark_dai(
         self,
