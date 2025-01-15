@@ -9,14 +9,13 @@ from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import InputType
 
 from modelconverter.cli import Request
-from modelconverter.utils import ONNXModifier
+from modelconverter.utils import ONNXModifier, environ
 from modelconverter.utils.config import Config
 from modelconverter.utils.onnx_tools import onnx_attach_normalization_to_inputs
 
 DATA_DIR = Path("tests/data/test_utils/hub_ai_models")
 
-API_KEY = os.getenv("HUB_AI_API_KEY", None)
-HEADERS = {"Authorization": f"Bearer {API_KEY}"}
+HEADERS = {"Authorization": f"Bearer {environ.HUBAI_API_KEY}"}
 
 EXCEMPTED_MODELS = [
     "l2cs",
