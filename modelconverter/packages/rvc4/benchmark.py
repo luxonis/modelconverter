@@ -79,6 +79,7 @@ class AdbHandler:
 
 class RVC4Benchmark(Benchmark):
     adb = AdbHandler()
+    force_cpu: bool = False
 
     @property
     def default_configuration(self) -> Configuration:
@@ -105,7 +106,7 @@ class RVC4Benchmark(Benchmark):
     def all_configurations(self) -> List[Configuration]:
         return [{"profile": profile} for profile in PROFILES]
 
-    def _get_input_sizes(self) -> Dict[str, List[int]]:
+    def _get_input_sizes(self) -> Tuple[Dict[str, List[int]], Dict[str, str]]:
         csv_path = Path("info.csv")
         subprocess_run(
             [
@@ -133,16 +134,32 @@ class RVC4Benchmark(Benchmark):
             )
             for _, row in df.iterrows()
         }
-        return sizes
+        data_types = {
+            str(row["Input Name"]): str(row["Type"])
+            for _, row in df.iterrows()
+        }
+
+        return sizes, data_types
 
     def _prepare_raw_inputs(self, num_images: int) -> None:
-        input_sizes = self._get_input_sizes()
+        input_sizes, data_types = self._get_input_sizes()
         input_list = ""
         self.adb.shell(f"mkdir /data/local/tmp/{self.model_name}/inputs")
         for i in range(num_images):
             for name, size in input_sizes.items():
+                if data_types[name] == "Float_32":
+                    self.force_cpu = True
+                    numpy_type = np.float32
+                elif data_types[name] == "Float_16":
+                    numpy_type = np.float16
+                elif data_types[name] == "uFxp_8":
+                    numpy_type = np.uint8
+                else:
+                    raise ValueError(
+                        f"Unsupported data type {data_types[name]} for input {name}."
+                    )
                 img = cast(np.ndarray, np.random.rand(*size)).astype(
-                    np.float32
+                    numpy_type
                 )
                 with tempfile.NamedTemporaryFile() as f:
                     img.tofile(f)
@@ -164,6 +181,72 @@ class RVC4Benchmark(Benchmark):
             )
         finally:
             Path(temp_path).unlink()
+
+    def _get_data_type(self) -> dai.TensorInfo.DataType:
+        """Retrieve the data type of the model inputs. If the model is not a HubAI
+        model, it defaults to dai.TensorInfo.DataType.U8F (INT8).
+
+        @return: The data type of the model inputs.
+        @rtype: dai.TensorInfo.DataType
+        """
+        from modelconverter.cli import Request, slug_to_id
+
+        if not isinstance(
+            self.model_path, str
+        ) or not self.HUB_MODEL_PATTERN.match(self.model_path):
+            return dai.TensorInfo.DataType.U8F
+
+        model_id = slug_to_id(self.model_name, "models")
+        model_variant = self.model_path.split(":")[1]
+
+        model_variants = []
+        for is_public in [True, False]:
+            try:
+                model_variants += Request.get(
+                    "modelVersions/",
+                    params={"model_id": model_id, "is_public": is_public},
+                )
+            except Exception:
+                continue
+
+        model_version_id = None
+        for version in model_variants:
+            if version["variant_slug"] == model_variant:
+                model_version_id = version["id"]
+                break
+
+        if not model_version_id:
+            return dai.TensorInfo.DataType.U8F
+
+        model_instances = []
+        for is_public in [True, False]:
+            try:
+                model_instances += Request.get(
+                    "modelInstances/",
+                    params={
+                        "model_id": model_id,
+                        "model_version_id": model_version_id,
+                        "is_public": is_public,
+                    },
+                )
+            except Exception:
+                continue
+
+        model_precision_type = "INT8"
+        for instance in model_instances:
+            if instance["platforms"] == ["RVC4"]:
+                model_precision_type = instance.get(
+                    "model_precision_type", "INT8"
+                )
+                break
+
+        if model_precision_type == "FP16":
+            return dai.TensorInfo.DataType.FP16
+        elif model_precision_type == "FP32":
+            self.force_cpu = True
+            return dai.TensorInfo.DataType.FP32
+
+        return dai.TensorInfo.DataType.U8F
 
     def benchmark(self, configuration: Configuration) -> BenchmarkResult:
         dai_benchmark = configuration.get("dai_benchmark")
@@ -224,6 +307,11 @@ class RVC4Benchmark(Benchmark):
             str(dlc_path), f"/data/local/tmp/{self.model_name}/model.dlc"
         )
         self._prepare_raw_inputs(num_images)
+        if self.force_cpu:
+            logger.warning(
+                "Forcing CPU runtime due to Float_32 input data type."
+            )
+            runtime = "use_cpu"
 
         _, stdout, _ = self.adb.shell(
             # "source /data/local/tmp/source_me.sh && "
@@ -232,7 +320,7 @@ class RVC4Benchmark(Benchmark):
             f"--input_list /data/local/tmp/{self.model_name}/input_list.txt "
             f"--output_dir /data/local/tmp/{self.model_name}/outputs "
             f"--perf_profile {profile} "
-            "--cpu_fallback false "
+            "--cpu_fallback true "
             f"--{runtime}"
         )
         pattern = re.compile(r"(\d+\.\d+) infs/sec")
@@ -288,12 +376,11 @@ class RVC4Benchmark(Benchmark):
                 inputSizes.append(input.shape)
                 inputNames.append(input.name)
 
+        data_type = self._get_data_type()
         inputData = dai.NNData()
         for name, inputSize in zip(inputNames, inputSizes):
-            img = np.random.randint(
-                0, 255, (1, inputSize[1], inputSize[2], 3), np.uint8
-            )
-            inputData.addTensor(name, img)
+            img = np.random.randint(0, 255, inputSize, np.uint8)
+            inputData.addTensor(name, img, dataType=data_type)
 
         with dai.Pipeline(device) as pipeline, Progress() as progress:
             repet_task = progress.add_task(
@@ -309,6 +396,12 @@ class RVC4Benchmark(Benchmark):
                 ".tar.xz"
             ):
                 neuralNetwork.setNNArchive(modelArhive)
+
+            if self.force_cpu:
+                logger.warning(
+                    "Forcing CPU runtime due to Float_32 input data type."
+                )
+                runtime = "cpu"
             neuralNetwork.setBackendProperties(
                 {
                     "runtime": runtime,
