@@ -1172,6 +1172,8 @@ class ONNXModifier:
                 input_type = np.int16
             elif input.type in ["tensor(int8)"]:
                 input_type = np.int8
+            elif input.type in ["tensor(bool)"]:
+                input_type = "bool"
 
             inputs[input.name] = np.random.rand(*input.shape).astype(
                 input_type
