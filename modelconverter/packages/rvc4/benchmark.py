@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import re
 import shutil
@@ -291,7 +292,10 @@ class RVC4Benchmark(Benchmark):
             tmp_dir = Path(model_archive).parent / "tmp"
             shutil.unpack_archive(model_archive, tmp_dir)
 
-            dlc_path = next(tmp_dir.rglob("*.dlc"), None)
+            dlc_model_name = json.loads((tmp_dir / "config.json").read_text())[
+                "model"
+            ]["metadata"]["path"]
+            dlc_path = next(tmp_dir.rglob(dlc_model_name), None)
             if not dlc_path:
                 raise ValueError("Could not find model.dlc in the archive.")
             self.model_path = dlc_path
