@@ -1,7 +1,5 @@
-from contextlib import suppress
 from typing import Optional
 
-import keyring
 from luxonis_ml.utils import Environ as BaseEnviron
 from pydantic import AliasChoices, Field, model_validator
 from typing_extensions import Annotated, Self
@@ -18,10 +16,10 @@ class Environ(BaseEnviron):
         if self.HUBAI_API_KEY:
             return self
 
-        with suppress(Exception):
-            self.HUBAI_API_KEY = keyring.get_password(
-                "ModelConverter", "api_key"
-            )
+        # with suppress(Exception):
+        #     self.HUBAI_API_KEY = keyring.get_password(
+        #         "ModelConverter", "api_key"
+        #     )
 
         return self
 
