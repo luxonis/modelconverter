@@ -85,6 +85,9 @@ stages:
     # Do not run ONNX simplifier on the provided model.
     disable_onnx_simplification: false
 
+    # Do not run ONNX graph optimisations on the provided model.
+    disable_onnx_optimisation: false
+
     # List of input names with shapes,
     # data types, values for freezing and input modifiers.
     # Overrides the top-level input modifiers.
