@@ -23,23 +23,26 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 
 ## Table of Contents
 
-- [Installation](#installation)
-- [Configuration](#configuration)
-  - [YAML Configuration File](#yaml-configuration-file)
-  - [NN Archive Configuration File](#nn-archive-configuration-file)
-- [Online Usage](#online-usage)
-- [Local Usage](#local-usage)
-  - [Prerequisites](#prerequisites)
-    - [GPU Support](#gpu-support)
-  - [Sharing Files](#sharing-files)
-  - [Running ModelConverter](#running-modelconverter)
-    - [Examples](#examples)
-- [Multi-Stage Conversion](#multi-stage-conversion)
-- [Interactive Mode](#interactive-mode)
-- [Calibration Data](#calibration-data)
-- [Inference](#inference)
-  - [Inference Example](#inference-example)
-- [Benchmarking](#benchmarking)
+- [ModelConverter - Compilation Library](#modelconverter---compilation-library)
+  - [Status](#status)
+  - [Table of Contents](#table-of-contents)
+  - [Installation](#installation)
+  - [Configuration](#configuration)
+    - [YAML Configuration File](#yaml-configuration-file)
+    - [NN Archive Configuration File](#nn-archive-configuration-file)
+  - [Online Usage](#online-usage)
+  - [Local Usage](#local-usage)
+    - [Prerequisites](#prerequisites)
+      - [GPU Support](#gpu-support)
+    - [Sharing Files](#sharing-files)
+    - [Running ModelConverter](#running-modelconverter)
+      - [Examples](#examples)
+  - [Multi-Stage Conversion](#multi-stage-conversion)
+  - [Interactive Mode](#interactive-mode)
+  - [Calibration Data](#calibration-data)
+  - [Inference](#inference)
+    - [Inference Example](#inference-example)
+  - [Benchmarking](#benchmarking)
 
 ## Installation
 
@@ -51,6 +54,13 @@ pip install modelconv
 ```
 
 Run `modelconverter --help` to see the available commands and options.
+
+> \[!NOTE\]
+> To use the [benchmarking feature](#benchmarking), the `depthai v3` package must be installed. While the `depthai v3` is not yet released on PyPI, you can install it with the following command:
+>
+> ```bash
+> pip install -r requirements-bench.txt --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local/
+> ```
 
 ## Configuration
 
