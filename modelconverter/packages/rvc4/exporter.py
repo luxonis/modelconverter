@@ -68,13 +68,21 @@ class RVC4Exporter(Exporter):
                     ),
                 )
 
-                if (
-                    onnx_modifier.modify_onnx()
-                    and onnx_modifier.compare_outputs()
-                ):
-                    logger.info("ONNX model has been optimised for RVC4.")
-                    shutil.move(onnx_modifier.output_path, self.input_model)
-                else:
+                try:
+                    if (
+                        onnx_modifier.modify_onnx()
+                        and onnx_modifier.compare_outputs()
+                    ):
+                        logger.info("ONNX model has been optimised for RVC4.")
+                        shutil.move(
+                            onnx_modifier.output_path, self.input_model
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to optimise ONNX model: {e}. "
+                        "Proceeding with unoptimised model."
+                    )
+                finally:
                     if os.path.exists(onnx_modifier.output_path):
                         os.remove(onnx_modifier.output_path)
         else:

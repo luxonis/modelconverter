@@ -4,11 +4,11 @@ import shutil
 from pathlib import Path
 from typing import Tuple
 
-import requests
 import wget
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import InputType
 
+from modelconverter.cli import Request
 from modelconverter.utils import ONNXModifier, environ
 from modelconverter.utils.config import Config
 from modelconverter.utils.onnx_tools import onnx_attach_normalization_to_inputs
@@ -24,18 +24,18 @@ EXCEMPTED_MODELS = [
     "mult_512x288",
 ]
 
+EXCEMPT_OPTIMISATION = [
+    "efficientvit-b1-224",
+]
+
 
 def download_onnx_models():
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
 
-    url = "https://easyml.cloud.luxonis.com/models/api/v1/models?is_public=true&limit=1000"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code != 200:
-        raise ValueError(
-            f"Failed to get models. Status code: {response.status_code}"
-        )
-    hub_ai_models = response.json()
+    hub_ai_models = Request.get(
+        "models/", params={"is_public": True, "limit": 1000}
+    )
 
     for model in hub_ai_models:
         if "ONNX" in model["exportable_types"]:
@@ -45,25 +45,22 @@ def download_onnx_models():
                 os.makedirs(model_dir)
             model_id = model["id"]
 
-            url = f"https://easyml.cloud.luxonis.com/models/api/v1/modelVersions?model_id={model_id}"
-            response = requests.get(url, headers=HEADERS)
-            if response.status_code != 200:
-                raise ValueError(
-                    f"Failed to get model versions. Status code: {response.status_code}"
-                )
-            model_versions = response.json()
+            model_variants = Request.get(
+                "modelVersions/",
+                params={
+                    "model_id": model_id,
+                    "is_public": True,
+                    "limit": 1000,
+                },
+            )
 
-            for version in model_versions:
-                if "ONNX" in version["exportable_types"]:
-                    model_version_id = version["id"]
+            for variant in model_variants:
+                if "ONNX" in variant["exportable_types"]:
+                    model_version_id = variant["id"]
                     break
-            url = f"https://easyml.cloud.luxonis.com/models/api/v1/modelVersions/{model_version_id}/download"
-            response = requests.get(url, headers=HEADERS)
-            if response.status_code != 200:
-                raise ValueError(
-                    f"Failed to download model. Status code: {response.status_code}"
-                )
-            download_info = response.json()
+            download_info = Request.get(
+                f"modelVersions/{model_version_id}/download"
+            )
 
             model_download_link = download_info[0]["download_link"]
 
@@ -209,6 +206,9 @@ def pytest_generate_tests(metafunc):
 
 
 def test_onnx_model(onnx_file):
+    skip_optimisation = (
+        True if onnx_file.stem in EXCEMPT_OPTIMISATION else False
+    )
     nn_config = onnx_file.parent / f"{onnx_file.stem}_config.json"
     cfg, main_stage_key = get_config(nn_config)
 
@@ -228,7 +228,9 @@ def test_onnx_model(onnx_file):
         onnx_file.parent / f"{onnx_file.stem}_modified_optimised.onnx"
     )
     onnx_modifier = ONNXModifier(
-        model_path=modified_onnx, output_path=modified_optimised_onnx
+        model_path=modified_onnx,
+        output_path=modified_optimised_onnx,
+        skip_optimisation=skip_optimisation,
     )
 
     if onnx_modifier.has_dynamic_shape:
