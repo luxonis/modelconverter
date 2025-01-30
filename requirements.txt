@@ -13,3 +13,4 @@ keyring
 onnx_graphsurgeon
 onnxoptimizer
 wget
+aiobotocore<2.18 # to be removed after luxonis-ml>=0.6.0
