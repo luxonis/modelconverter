@@ -7,9 +7,8 @@ for arg in "${args[@]}"; do
 done
 
 set --
-source /opt/intel/setupvars.sh
+source /opt/intel/setupvars.sh -pyver 3.8
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/python3.8/site-packages/openvino/libs/
 
 if [[ -z $new_args ]]; then
     exec /bin/bash

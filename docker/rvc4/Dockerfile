@@ -68,6 +68,8 @@ ENV VERSION=${VERSION}
 
 WORKDIR /app
 
+RUN pip install --upgrade pip
+
 COPY --link --from=base /opt/ /opt/
 COPY --link --from=base /usr/local/lib /usr/local/lib
 COPY --link --from=base \
@@ -104,7 +106,6 @@ COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libicudata.so.72 \
     /usr/lib/
 
-RUN pip install --upgrade pip
 
 COPY --link docker/rvc4/entrypoint.sh /app/entrypoint.sh
 COPY --link modelconverter /app/modelconverter/

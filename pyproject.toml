@@ -36,6 +36,11 @@ version = {attr = "modelconverter.__version__"}
 [tool.setuptools.dynamic.optional-dependencies]
 bench = { file = ["requirements-bench.txt"] }
 dev = { file = ["requirements-dev.txt", "requirements-bench.txt"] }
+rvc2 = { file = ["modelconverter/packages/rvc2/requirements.txt"] }
+rvc3 = { file = ["modelconverter/packages/rvc3/requirements.txt"] }
+rvc4 = { file = ["modelconverter/packages/rvc4/requirements.txt"] }
+hailo = { file = ["modelconverter/packages/hailo/requirements.txt"] }
+
 
 [tool.ruff]
 target-version = "py38"

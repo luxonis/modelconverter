@@ -1,24 +1,24 @@
+import json
 from logging import getLogger
 from pathlib import Path
 
-import addict
-import numpy as np
-import openvino.tools.pot as pot
-from luxonis_ml.utils.logging import reset_logging, setup_logging
+import cv2
 
 from modelconverter.utils import exit_with, read_image
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
 )
-from modelconverter.utils.types import InputFileType, Target
+from modelconverter.utils.subprocess import subprocess_run
+from modelconverter.utils.types import (
+    DataType,
+    Encoding,
+    InputFileType,
+    Target,
+)
 
 from ..base_exporter import Exporter
 from ..rvc2.exporter import COMPILE_TOOL, RVC2Exporter
-
-# NOTE: importing `pot` breaks the logging module, so we need to reset it
-reset_logging()
-setup_logging(file="modelconverter.log", use_rich=True)
 
 logger = getLogger(__name__)
 
@@ -52,8 +52,6 @@ class RVC3Exporter(RVC2Exporter):
         self._add_args(args, ["-d", self.device])
         self._add_args(args, ["-ip", "U8"])
 
-        output_dir = Path(self.intermediate_outputs_dir)
-
         if not self._disable_calibration:
             if len(self.inputs) > 1:
                 exit_with(
@@ -62,10 +60,7 @@ class RVC3Exporter(RVC2Exporter):
                         "models with multiple inputs."
                     )
                 )
-            calibrated_xml_path = self.calibrate(
-                xml_path,
-                output_dir=str(output_dir),
-            )
+            calibrated_xml_path = self.calibrate(xml_path)
             self._inference_model_path = calibrated_xml_path
             output_path = (
                 self.output_dir
@@ -89,86 +84,97 @@ class RVC3Exporter(RVC2Exporter):
         logger.info(f"OpenVINO IR compiled to {self.output_dir}")
         return blob_output_path
 
-    def calibrate(self, xml_path: Path, output_dir: str) -> Path:
+    def calibrate(self, xml_path: Path) -> Path:
         inp = list(self.inputs.values())[0]
         calib = inp.calibration
         assert isinstance(calib, ImageCalibrationConfig)
 
         files = self.read_img_dir(calib.path, calib.max_images)
+        calibration_img_dir = (
+            self.intermediate_outputs_dir / "calibration_images"
+        )
+        calibration_img_dir.mkdir(exist_ok=True)
 
-        class DataLoader(pot.DataLoader):
-            def __init__(self, calib: ImageCalibrationConfig):
-                self.calib_cfg = calib
-                super().__init__({})
-
-            def __getitem__(self, index: int):
-                image_path = files[index]
-                if inp.shape is None:
-                    exit_with(
-                        ValueError(
-                            "Input shape must be specified for calibration."
-                        )
-                    )
-                img = read_image(
-                    image_path,
-                    inp.shape,  # type: ignore # TODO: dynamic shapes
-                    inp.encoding.to,
-                    self.calib_cfg.resize_method,
-                    data_type=inp.data_type,
+        for file in files:
+            if inp.shape is None:
+                raise ValueError(
+                    "Input shape must be provided for calibration"
                 )
-                annotation = (index, np.zeros((1,)))
-                img = np.expand_dims(img, axis=0).astype(np.float32)
-                return annotation, img, {}
+            img = read_image(
+                file,
+                inp.shape,
+                inp.encoding.to,
+                calib.resize_method,
+                data_type=DataType.UINT8,
+                transpose=False,
+            )
+            cv2.imwrite(str(calibration_img_dir / file.name), img)
 
-            def __len__(self):
-                return len(files)
-
-        model_config = addict.Dict(
-            {
+        config = {
+            "model": {
                 "model_name": f"{xml_path.stem}-int8",
-                "model": xml_path,
-                "weights": xml_path.with_suffix(".bin"),
-            }
+                "model": str(xml_path),
+                "weights": str(xml_path.with_suffix(".bin")),
+            },
+            "engine": {
+                "launchers": [
+                    {
+                        "framework": "openvino",
+                        "device": "CPU",
+                    }
+                ],
+                "datasets": [
+                    {
+                        "name": "calibration",
+                        "data_source": str(calibration_img_dir),
+                        "reader": "opencv_imread",
+                    }
+                ],
+            },
+            "compression": {
+                "target_device": self.pot_target_device.name,
+                "algorithms": [
+                    {
+                        "name": "DefaultQuantization",
+                        "params": {
+                            "preset": "performance",
+                            "stat_subset_size": 300,
+                        },
+                    }
+                ],
+            },
+        }
+
+        if inp.encoding.to == Encoding.GRAY:
+            config["engine"]["datasets"][0]["preprocessing"] = [
+                {"type": "bgr_to_gray"}
+            ]
+        elif not self.reverse_input_channels:
+            config["engine"]["datasets"][0]["preprocessing"] = [
+                {"type": "bgr_to_rgb"}
+            ]
+
+        pot_config_path = self.intermediate_outputs_dir / "pot_config.json"
+
+        with open(pot_config_path, "w") as f:
+            json.dump(config, f, indent=4)
+
+        logger.info(f"Executing POT pipeline for {xml_path}")
+
+        subprocess_run(
+            [
+                "pot",
+                "--config",
+                pot_config_path,
+                "-d",
+                "--output-dir",
+                self.intermediate_outputs_dir,
+            ],
         )
 
-        engine_config = addict.Dict({"device": "CPU"})
-
-        algorithms = [
-            {
-                "name": "DefaultQuantization",
-                "stat_subset_size": 300,
-                "params": {
-                    "target_device": self.pot_target_device.name,
-                    "preset": "performance",
-                },
-            }
-        ]
-
-        ir_model = pot.load_model(model_config=model_config)
-
-        dataloader = DataLoader(calib)
-
-        engine = pot.IEEngine(config=engine_config, data_loader=dataloader)
-
-        pipeline = pot.create_pipeline(algorithms, engine)
-
-        algorithm_name = pipeline.algo_seq[0].name
-        preset = pipeline._algo_seq[0].config["preset"]
-
-        logger.info(
-            f'Executing POT pipeline on {model_config["model"]} '
-            f"with {algorithm_name}, {preset} preset"
+        logger.info("Calibration finished successfully")
+        return Path(
+            self.intermediate_outputs_dir
+            / "optimized"
+            / f"{xml_path.stem}-int8.xml"
         )
-
-        compressed_model = pipeline.run(ir_model)
-
-        pot.compress_model_weights(compressed_model)
-
-        compressed_model_path = pot.save_model(
-            model=compressed_model,
-            save_path=output_dir,
-            model_name=ir_model.name,
-        )[0]["model"]
-
-        logger.info("Quantization finished successfully")
-        return Path(compressed_model_path)
