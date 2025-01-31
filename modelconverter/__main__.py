@@ -175,9 +175,11 @@ def benchmark(
 
     **RVC2**
 
-    - `--repetitions`: The number of repetitions to perform. Default: `1`
+    - `--repetitions`: The number of repetitions to perform. Default: `10`
 
     - `--num-threads`: The number of threads to use for inference. Default: `2`
+
+    - `--num-messages`: The number of messages to measure for each report. Default: `50`
 
     ---
 
@@ -191,7 +193,17 @@ def benchmark(
 
     - `--profile`: The SNPE profile to use for inference. Default: `"default"`
 
+    - `--runtime`: The SNPE runtime to use for inference (dsp or cpu). Default: `"dsp"`
+
     - `--num-images`: The number of images to use for inference. Default: `1000`
+
+    - `--dai-benchmark`: Whether to run the benchmark using the DAI V3. If False the SNPE tools are used. Default: `True`
+
+    - `--repetitions`: The number of repetitions to perform (dai-benchmark only). Default: `10`
+
+    - `--num-threads`: The number of threads to use for inference (dai-benchmark only). Default: `1`
+
+    - `--num-messages`: The number of messages to measure for each report (dai-benchmark only). Default: `50`
 
     ---
     """
@@ -203,6 +215,13 @@ def benchmark(
             key = key[2:].replace("-", "_")
         else:
             raise typer.BadParameter(f"Unknown argument: {key}")
+        if key == "dai_benchmark":
+            value = value.capitalize()
+            if value not in ["True", "False"]:
+                raise typer.BadParameter(
+                    "dai_benchmark must be either True or False"
+                )
+            value = value == "True"
         kwargs[key] = value
     Benchmark = get_benchmark(target)
     benchmark = Benchmark(str(model_path))

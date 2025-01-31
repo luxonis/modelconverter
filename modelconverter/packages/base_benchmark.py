@@ -1,3 +1,4 @@
+import re
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from logging import getLogger
@@ -7,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 from typing_extensions import TypeAlias
 
-from modelconverter.utils import resolve_path
+from modelconverter.utils import is_hubai_available, resolve_path
 
 logger = getLogger(__name__)
 
@@ -23,14 +24,36 @@ i.e. `{"shaves": 4}` for RVC2
 
 
 class Benchmark(ABC):
+    VALID_EXTENSIONS = (".tar.xz", ".blob", ".dlc")
+    HUB_MODEL_PATTERN = re.compile(r"^(?:([^/]+)/)?([^:]+):(.+)$")
+
     def __init__(
         self,
         model_path: str,
         dataset_path: Optional[Path] = None,
     ):
-        self.model_path = resolve_path(model_path, Path.cwd())
+        if any(model_path.endswith(ext) for ext in self.VALID_EXTENSIONS):
+            self.model_path = resolve_path(model_path, Path.cwd())
+            self.model_name = self.model_path.stem
+        else:
+            hub_match = self.HUB_MODEL_PATTERN.match(model_path)
+            if not hub_match:
+                raise ValueError(
+                    "Invalid 'model-path' format. Expected either:\n"
+                    "- Model file path: path/to/model.blob, path/to/model.dlc or path/to/model.tar.xz\n"
+                    "- HubAI model slug: [team_name/]model_name:variant"
+                )
+            team_name, model_name, model_variant = hub_match.groups()
+            if is_hubai_available(model_name, model_variant):
+                self.model_path = model_path
+                self.model_name = model_name
+            else:
+                raise ValueError(
+                    f"Model {team_name+'/' if team_name else ''}{model_name}:{model_variant} not found in HubAI."
+                )
+
         self.dataset_path = dataset_path
-        self.model_name = self.model_path.stem
+
         self.header = [
             *self.default_configuration.keys(),
             "fps",
@@ -64,7 +87,13 @@ class Benchmark(ABC):
             title=f"Benchmark Results for [yellow]{self.model_name}",
             box=box.ROUNDED,
         )
-        for field in self.header:
+
+        updated_header = [
+            *results[0][0].keys(),
+            "fps",
+            "latency (ms)",
+        ]
+        for field in updated_header:
             table.add_column(f"[cyan]{field}")
         for configuration, result in results:
             fps_color = (
@@ -74,17 +103,22 @@ class Benchmark(ABC):
                 if result.fps < 5
                 else "green"
             )
-            latency_color = (
-                "yellow"
-                if 50 < result.latency < 100
-                else "red"
-                if result.latency > 100
-                else "green"
-            )
+            if isinstance(result.latency, str):
+                latency_color = "orange3"
+            else:
+                latency_color = (
+                    "yellow"
+                    if 50 < result.latency < 100
+                    else "red"
+                    if result.latency > 100
+                    else "green"
+                )
             table.add_row(
                 *map(lambda x: f"[magenta]{x}", configuration.values()),
                 f"[{fps_color}]{result.fps:.2f}",
-                f"[{latency_color}]{result.latency:.5f}",
+                f"[{latency_color}]{result.latency}"
+                if isinstance(result.latency, str)
+                else f"[{latency_color}]{result.latency:.5f}",
             )
         console = Console()
         console.print(table)
