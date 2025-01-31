@@ -3,7 +3,7 @@ from luxonis_ml.utils import PUT_FILE_REGISTRY
 
 from .hub import convert
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 __all__ = ["convert"]
 
