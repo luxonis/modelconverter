@@ -29,14 +29,6 @@ logger = getLogger(__name__)
 
 
 OV_2021: Final[bool] = env.get("VERSION") == "2021.4.0"
-COMPILE_TOOL: str
-
-if OV_2021:
-    COMPILE_TOOL = f"{env['INTEL_OPENVINO_DIR']}/deployment_tools/tools/compile_tool/compile_tool"
-else:
-    COMPILE_TOOL = (
-        f"{env['INTEL_OPENVINO_DIR']}/tools/compile_tool/compile_tool"
-    )
 
 DEFAULT_SUPER_SHAVES: Final[int] = 8
 
@@ -247,7 +239,7 @@ class RVC2Exporter(Exporter):
                 ),
             ]
 
-        self._subprocess_run([COMPILE_TOOL, *args], meta_name="compile_tool")
+        self._subprocess_run(["compile_tool", *args], meta_name="compile_tool")
         logger.info(f"Blob compiled to {blob_output_path}")
         return blob_output_path
 
@@ -343,7 +335,7 @@ class RVC2Exporter(Exporter):
         )
         args += ["-o", blob_path]
 
-        subprocess_run([COMPILE_TOOL, *args], silent=True)
+        subprocess_run(["compile_tool", *args], silent=True)
 
         patch_file = blob_path.with_suffix(".patch")
         bsdiff4.file_diff(default_blob_path, blob_path, patch_file)
@@ -356,7 +348,7 @@ class RVC2Exporter(Exporter):
             .strip()
         )
         compile_tool_version, compile_tool_build = (
-            subprocess.run([COMPILE_TOOL], capture_output=True)
+            subprocess.run(["compile_tool"], capture_output=True)
             .stdout.decode()
             .splitlines()[:2]
         )

@@ -18,7 +18,7 @@ from modelconverter.utils.types import (
 )
 
 from ..base_exporter import Exporter
-from ..rvc2.exporter import COMPILE_TOOL, RVC2Exporter
+from ..rvc2.exporter import RVC2Exporter
 
 logger = getLogger(__name__)
 
@@ -80,7 +80,7 @@ class RVC3Exporter(RVC2Exporter):
         else:
             blob_output_path = Path(args[args.index("-o") + 1])
 
-        self._subprocess_run([COMPILE_TOOL, *args], meta_name="compile_tool")
+        self._subprocess_run(["compile_tool", *args], meta_name="compile_tool")
         logger.info(f"OpenVINO IR compiled to {self.output_dir}")
         return blob_output_path
 

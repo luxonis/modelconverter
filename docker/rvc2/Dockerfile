@@ -7,6 +7,8 @@ RUN pip install --upgrade pip
 
 RUN <<EOF
 
+    set -e
+
     apt-get update
     apt-get install -y  \
         cmake           \
@@ -34,9 +36,9 @@ RUN <<EOF
     else
         STRIP_COMPONENTS=2
     fi
+
     tar xvf "openvino-${VERSION}.tar.gz" \
         -C /opt/intel --strip-components=${STRIP_COMPONENTS}
-
 
     if [ "${VERSION}" = "2022.3.0" ]; then
         rm -r /opt/intel/tools/*.whl
@@ -48,11 +50,10 @@ EOF
 
 
 RUN <<EOF
+
     set -e
 
-    pip install openvino==${VERSION}
-    pip install openvino-dev==${VERSION}
-
+    pip install openvino==${VERSION} openvino-dev==${VERSION} tokenizers==0.20.0
     # ONNX Runtime needs to be installed together with
     # numpy<1.20 to prevent it from installing higher
     # versions of numpy that are incompatible with OpenVINO 2021.4.0
@@ -70,7 +71,6 @@ RUN <<EOF
 
     # Model Optimizer contains a bug in both versions
     # that needs to be patched
-
     if [ "${VERSION}" = "2022.3.0" ]; then
         patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py \
             < /patches/mo-2022.3.patch
@@ -80,11 +80,12 @@ RUN <<EOF
     fi
 
 
-    sed -i '1c\#!/usr/local/bin/python3.8' /usr/local/bin/mo
-
     if [ "${VERSION}" = "2022.3.0" ]; then
         sed -i '1c\#!/usr/local/bin/python3.8' /usr/local/bin/opt_in_out
-        opt_in_out --opt_out
+        sed -i '1c\#!/usr/local/bin/python3.8' /usr/local/bin/mo
+    else
+        echo '#!/usr/local/bin/python3.8' > /usr/local/bin/opt_in_out
+        chmod +x /usr/local/bin/opt_in_out
     fi
 
 EOF
@@ -93,10 +94,13 @@ EOF
 FROM python:3.10-slim
 
 ARG VERSION
-ENV IN_DOCKER=
-ENV VERSION=${VERSION}
 
 WORKDIR /app
+
+ENV IN_DOCKER=
+ENV VERSION=${VERSION}
+ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib/python3.8/site-packages/openvino/libs/
+
 
 COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libcurl.so.4 \
@@ -124,45 +128,46 @@ COPY --link --from=base \
 
 COPY --link --from=base /opt/intel /opt/intel
 
-COPY --link --from=base /usr/local/bin/mo \
-                        /usr/local/bin/opt_in_out \
-                        /usr/local/bin/python3.8 \
-                        /usr/local/bin/
-
 COPY --link --from=base /usr/local/lib /usr/local/lib
-
 
 COPY --link requirements.txt /app/requirements.txt
 COPY --link modelconverter/packages/rvc2/requirements.txt requirements-rvc2.txt
 
 RUN <<EOF
 
+    set -e
+
     pip install --upgrade pip  --no-cache-dir
     pip install -r requirements.txt --no-cache-dir
     pip install -r requirements-rvc2.txt --no-cache-dir
+    pip install openvino==2022.3.0 openvino-dev==2022.3.0 tokenizers==0.20.0
 
 EOF
 
+COPY --link --from=base /usr/local/bin/mo \
+    /usr/local/bin/opt_in_out \
+    /usr/local/bin/python3.8 \
+    /usr/local/bin/
 
-COPY --link docker/rvc2/entrypoint.sh /app/entrypoint.sh
+
 COPY --link modelconverter /app/modelconverter/
 COPY --link pyproject.toml /app/pyproject.toml
+
+RUN pip install -e . --no-deps --no-cache-dir
+
+COPY --link docker/rvc2/entrypoint.sh /app/entrypoint.sh
 
 RUN <<EOF
 
     set -e
 
-    COMPILE_TOOL=$(find /opt/intel -name compile_tool -type f)
-
-    pip install -e . --no-deps
-
-    echo "alias compile_tool=${COMPILE_TOOL}"  >> ~/.bashrc
     chmod +x /app/entrypoint.sh
+
+    COMPILE_TOOL=$(find /opt/intel -name compile_tool -type f)
+    install -m 755 ${COMPILE_TOOL} /usr/local/bin/compile_tool
 
     opt_in_out --opt_out
 
 EOF
-
-ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib/python3.8/site-packages/openvino/libs/
 
 ENTRYPOINT ["/app/entrypoint.sh"]

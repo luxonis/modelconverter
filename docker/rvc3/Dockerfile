@@ -30,6 +30,7 @@ RUN <<EOF
     mkdir /opt/intel
     tar xvf openvino-2022.3.0.tar.gz -C /opt/intel/ --strip-components 1
 
+    pip install openvino==2022.3.0 openvino-dev==2022.3.0 --no-cache-dir
     pip install /opt/intel/tools/*.whl
 
 EOF
@@ -46,19 +47,19 @@ RUN <<EOF
 
     rm -r /opt/intel/tools/*.whl
 
-    sed -i '1c\#!/usr/local/bin/python3.8' /usr/local/bin/mo
     sed -i '1c\#!/usr/local/bin/python3.8' /usr/local/bin/opt_in_out
+    sed -i '1c\#!/usr/local/bin/python3.8' /usr/local/bin/mo
     sed -i '1c\#!/usr/local/bin/python3.8' /usr/local/bin/pot
 
 EOF
 
 
-
 FROM python:3.10-slim
 
-ENV IN_DOCKER=
-
 WORKDIR /app
+
+ENV IN_DOCKER=
+ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib/python3.8/site-packages/openvino/libs/
 
 COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libcurl.so.4 \
@@ -86,44 +87,48 @@ COPY --link --from=base \
 
 COPY --link --from=base /opt/intel /opt/intel
 
-COPY --link --from=base /usr/local/bin/mo \
-                        /usr/local/bin/opt_in_out \
-                        /usr/local/bin/pot \
-                        /usr/local/bin/python3.8 \
-                        /usr/local/bin/
-
 COPY --link --from=base /usr/local/lib /usr/local/lib
+
 
 COPY --link requirements.txt requirements.txt
 COPY --link modelconverter/packages/rvc3/requirements.txt requirements-rvc3.txt
 
 RUN <<EOF
 
+    set -e
+
     pip install --upgrade pip  --no-cache-dir
     pip install -r requirements.txt --no-cache-dir
     pip install -r requirements-rvc3.txt --no-cache-dir
+    pip install openvino==2022.3.0 openvino-dev==2022.3.0 tokenizers==0.20.0
 
 EOF
 
-COPY --link docker/rvc3/entrypoint.sh /app/entrypoint.sh
+COPY --link --from=base /usr/local/bin/mo \
+    /usr/local/bin/opt_in_out \
+    /usr/local/bin/pot \
+    /usr/local/bin/python3.8 \
+    /usr/local/bin/
+
 COPY --link modelconverter /app/modelconverter/
 COPY --link pyproject.toml /app/pyproject.toml
+
+RUN pip install -e . --no-deps
+
+COPY --link docker/rvc3/entrypoint.sh /app/entrypoint.sh
 
 RUN <<EOF
 
     set -e
 
-    COMPILE_TOOL=/opt/intel/tools/compile_tool/compile_tool
-
-    pip install -e . --no-deps
-
-    echo "alias compile_tool=${COMPILE_TOOL}" >> ~/.bashrc
     chmod +x /app/entrypoint.sh
+
+    COMPILE_TOOL=$(find /opt/intel -name compile_tool -type f)
+    install -m 755 ${COMPILE_TOOL} /usr/local/bin/compile_tool
 
     opt_in_out --opt_out
 
 EOF
 
-ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib/python3.8/site-packages/openvino/libs/
 
 ENTRYPOINT ["/app/entrypoint.sh"]

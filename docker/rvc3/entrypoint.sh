@@ -6,9 +6,14 @@ for arg in "${args[@]}"; do
     new_args+="\"$arg\" "
 done
 
-set --
-source /opt/intel/setupvars.sh -pyver 3.8
+if [[ "${args[0]}" != "infer" ]]; then
+    set --
+    source $(find /opt/intel -name setupvars.sh) -pyver 3.8
+fi
 
+if [[ "${PYTHONPATH}" != *: ]]; then
+    export PYTHONPATH="${PYTHONPATH}:"
+fi
 
 if [[ -z $new_args ]]; then
     exec /bin/bash
