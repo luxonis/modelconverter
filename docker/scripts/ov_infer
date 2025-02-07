@@ -1,0 +1,5 @@
+#!/bin/bash
+
+source $(find /opt/intel -name setupvars.sh -type f) -pyver 3.8 > /dev/null
+
+python3.8 /opt/intel/ov_infer.py $@

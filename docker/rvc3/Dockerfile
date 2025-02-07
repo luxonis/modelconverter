@@ -100,7 +100,6 @@ RUN <<EOF
     pip install --upgrade pip  --no-cache-dir
     pip install -r requirements.txt --no-cache-dir
     pip install -r requirements-rvc3.txt --no-cache-dir
-    pip install openvino==2022.3.0 openvino-dev==2022.3.0 tokenizers==0.20.0
 
 EOF
 
@@ -116,6 +115,8 @@ COPY --link pyproject.toml /app/pyproject.toml
 RUN pip install -e . --no-deps
 
 COPY --link docker/rvc3/entrypoint.sh /app/entrypoint.sh
+COPY --link docker/scripts/ov_infer /usr/local/bin/ov_infer
+COPY --link docker/scripts/ov_infer.py /opt/intel/ov_infer.py
 
 RUN <<EOF
 
@@ -125,6 +126,7 @@ RUN <<EOF
 
     COMPILE_TOOL=$(find /opt/intel -name compile_tool -type f)
     install -m 755 ${COMPILE_TOOL} /usr/local/bin/compile_tool
+    chmod +x /usr/local/bin/ov_infer
 
     opt_in_out --opt_out
 
