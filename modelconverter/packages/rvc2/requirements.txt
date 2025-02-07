@@ -1,3 +1,2 @@
 tflite2onnx
 bsdiff4
-tokenizers==0.20.0
