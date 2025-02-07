@@ -36,9 +36,8 @@ class RVC2Inferer(Inferer):
 
             args.extend(["--out-path", temp_dir])
 
-            outputs = {}
             subprocess_run(args)
-            for path in Path(temp_dir).iterdir():
-                outputs[path.stem] = np.load(path)
 
-        return outputs
+            return {
+                path.stem: np.load(path) for path in Path(temp_dir).iterdir()
+            }

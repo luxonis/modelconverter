@@ -39,6 +39,7 @@ def parse_args() -> Tuple[Path, Path, Dict[str, Path], Path]:
         default=[],
         required=True,
     )
+
     parser.add_argument(
         "--out-path",
         type=Path,
@@ -47,6 +48,7 @@ def parse_args() -> Tuple[Path, Path, Dict[str, Path], Path]:
         "The output files will have the same name as the outputs of the network.",
         required=True,
     )
+
     args = parser.parse_args()
 
     inputs = {name: Path(path) for name, path in args.input}
