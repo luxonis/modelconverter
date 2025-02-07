@@ -52,6 +52,13 @@ pip install modelconv
 
 Run `modelconverter --help` to see the available commands and options.
 
+> \[!NOTE\]
+> To use the [benchmarking feature](#benchmarking), the `depthai v3` package must be installed. While the `depthai v3` is not yet released on PyPI, you can install it with the following command:
+>
+> ```bash
+> pip install -r requirements-bench.txt --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local/
+> ```
+
 ## Configuration
 
 There are two main ways to execute configure the conversion process:
@@ -437,3 +444,6 @@ modelconverter benchmark rvc3 --model-path <path_to_model.xml>
 
 The command prints a table with the benchmark results to the console and
 optionally saves the results to a `.csv` file.
+
+> \[!NOTE\]
+> For **RVC2** and **RVC4**: The `--model-path` can be a path to a local .blob file, a NN Archive file (.tar.xz), or a name of a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai). To access models from different teams in Luxonis HubAI, remember to update the HUBAI_API_KEY environment variable respectively.

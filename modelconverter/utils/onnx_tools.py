@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import onnx
@@ -191,11 +191,19 @@ class ONNXModifier:
         Path to the base ONNX model
     output_path : Path
         Path to save the modified ONNX model
+    skip_optimisation : bool
+        Flag to skip optimization of the ONNX model
     """
 
-    def __init__(self, model_path: Path, output_path: Path) -> None:
+    def __init__(
+        self,
+        model_path: Path,
+        output_path: Path,
+        skip_optimisation: bool = False,
+    ) -> None:
         self.model_path = model_path
         self.output_path = output_path
+        self.skip_optimisation = skip_optimisation
         self.load_onnx()
         self.prev_onnx_model = self.onnx_model
         self.prev_onnx_gs = self.onnx_gs
@@ -207,7 +215,8 @@ class ONNXModifier:
         logger.info(f"Loading model: {self.model_path.stem}")
 
         self.onnx_model, _ = simplify(
-            self.model_path.as_posix(), perform_optimization=True
+            self.model_path.as_posix(),
+            perform_optimization=True and not self.skip_optimisation,
         )
 
         self.dtype = onnx.mapping.TENSOR_TYPE_TO_NP_TYPE[
@@ -232,8 +241,10 @@ class ONNXModifier:
         @type passes: Optional[List[str]]
         """
 
-        optimised_onnx_model = onnxoptimizer.optimize(
-            self.onnx_model, passes=passes
+        optimised_onnx_model = (
+            self.onnx_model
+            if self.skip_optimisation
+            else onnxoptimizer.optimize(self.onnx_model, passes=passes)
         )
 
         optimised_onnx_model, _ = simplify(
@@ -1043,6 +1054,33 @@ class ONNXModifier:
 
         self.optimize_onnx()
 
+    def revert_changes(self):
+        """Reverts ONNX model to previous state."""
+        self.onnx_model = self.prev_onnx_model
+        self.onnx_gs = self.prev_onnx_gs
+
+    def apply_optimization_step(
+        self, step_name: str, optimization_func: Callable
+    ):
+        """Applies a single optimization step to the ONNX model.
+
+        @param step_name: Name of the optimization step
+        @type step_name: str
+        @param optimization_func: Optimization function to apply
+        @type optimization_func: Callable
+        """
+        logger.debug(f"Attempting: {step_name}...")
+        try:
+            optimization_func()
+            if not self.compare_outputs(from_modelproto=True):
+                logger.warning(f"Failed: {step_name}, reverting changes...")
+                self.revert_changes()
+        except Exception as e:
+            logger.warning(
+                f"Failed: {step_name} with error: {e}, reverting changes..."
+            )
+            self.revert_changes()
+
     def modify_onnx(self) -> bool:
         """Modify the ONNX model by applying a series of optimizations.
 
@@ -1055,65 +1093,46 @@ class ONNXModifier:
             )
             return False
 
+        optimization_steps = [
+            (
+                "Substitute Div -> Mul nodes",
+                lambda: self.substitute_node_by_type(
+                    source_node="Div", target_node="Mul"
+                ),
+            ),
+            (
+                "Substitute Sub -> Add nodes",
+                lambda: self.substitute_node_by_type(
+                    source_node="Sub", target_node="Add"
+                ),
+            ),
+            (
+                "Fuse Add and Mul nodes to BatchNormalization nodes",
+                self.fuse_add_mul_to_bn,
+            ),
+            (
+                "Fuse Add and Mul nodes to Conv nodes (combined)",
+                self.fuse_comb_add_mul_to_conv,
+            ),
+            (
+                "Fuse Add and Mul nodes to Conv nodes (single)",
+                self.fuse_single_add_mul_to_conv,
+            ),
+            (
+                "Fuse Split and Concat nodes to Conv nodes",
+                self.fuse_split_concat_to_conv,
+            ),
+        ]
+
+        for step_name, optimization_func in optimization_steps:
+            self.apply_optimization_step(step_name, optimization_func)
+
         try:
-            logger.debug("Substituting Div -> Mul nodes...")
-            self.substitute_node_by_type(source_node="Div", target_node="Mul")
-            if not self.compare_outputs(from_modelproto=True):
-                logger.warning(
-                    "Failed to substitute Div -> Mul nodes, reverting changes..."
-                )
-                self.onnx_model = self.prev_onnx_model
-                self.onnx_gs = self.prev_onnx_gs
-
-            logger.debug("Substituting Sub -> Add nodes...")
-            self.substitute_node_by_type(source_node="Sub", target_node="Add")
-            if not self.compare_outputs(from_modelproto=True):
-                logger.warning(
-                    "Failed to substitute Sub -> Add nodes, reverting changes..."
-                )
-                self.onnx_model = self.prev_onnx_model
-                self.onnx_gs = self.prev_onnx_gs
-
-            logger.debug(
-                "Fusing Add and Mul nodes to BatchNormalization nodes and then into Conv nodes..."
-            )
-            self.fuse_add_mul_to_bn()
-            if not self.compare_outputs(from_modelproto=True):
-                logger.warning(
-                    "Failed to fuse Add and Mul nodes to BatchNormalization nodes, reverting changes..."
-                )
-                self.onnx_model = self.prev_onnx_model
-                self.onnx_gs = self.prev_onnx_gs
-
-            logger.debug("Fusing Add and Mul nodes to Conv nodes...")
-            self.fuse_comb_add_mul_to_conv()
-            if not self.compare_outputs(from_modelproto=True):
-                logger.warning(
-                    "Failed to fuse Add and Mul nodes (combined) to Conv nodes, reverting changes..."
-                )
-                self.onnx_model = self.prev_onnx_model
-                self.onnx_gs = self.prev_onnx_gs
-            self.fuse_single_add_mul_to_conv()
-            if not self.compare_outputs(from_modelproto=True):
-                logger.warning(
-                    "Failed to fuse Add and Mul nodes (single) to Conv nodes, reverting changes..."
-                )
-                self.onnx_model = self.prev_onnx_model
-                self.onnx_gs = self.prev_onnx_gs
-
-            logger.debug("Fusing Split and Concat nodes to Conv nodes...")
-            self.fuse_split_concat_to_conv()
-            if not self.compare_outputs(from_modelproto=True):
-                logger.warning(
-                    "Failed to fuse Split and Concat nodes to Conv nodes, reverting changes..."
-                )
-                self.onnx_model = self.prev_onnx_model
-                self.onnx_gs = self.prev_onnx_gs
-
             self.export_onnx()
         except Exception as e:
             logger.error(f"Failed to modify the ONNX model: {e}")
             return False
+
         return True
 
     def compare_outputs(self, from_modelproto: bool = False) -> bool:
@@ -1153,6 +1172,8 @@ class ONNXModifier:
                 input_type = np.int16
             elif input.type in ["tensor(int8)"]:
                 input_type = np.int8
+            elif input.type in ["tensor(bool)"]:
+                input_type = "bool"
 
             inputs[input.name] = np.random.rand(*input.shape).astype(
                 input_type

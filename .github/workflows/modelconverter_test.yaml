@@ -51,7 +51,7 @@ jobs:
         cache: pip
 
     - name: Install dependencies
-      run: pip install -e .[dev]
+      run: pip install -e .[dev] --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local/
 
     - name: Authenticate to Google Cloud
       id: google-auth
