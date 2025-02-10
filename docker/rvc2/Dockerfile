@@ -70,11 +70,14 @@ RUN <<EOF
     set -e
 
     # Model Optimizer contains a bug in both versions
-    # that needs to be patched
+    # that needs to be manually patched
     if [ "${VERSION}" = "2022.3.0" ]; then
         patch /usr/local/lib/python3.8/site-packages/openvino/tools/mo/convert_impl.py \
             < /patches/mo-2022.3.patch
     else
+        patch /usr/local/lib/python3.8/site-packages/mo/mo/main.py \
+            < /patches/mo-2021.4.patch
+
         patch /opt/intel/deployment_tools/model_optimizer/mo/main.py \
             < /patches/mo-2021.4.patch
     fi
