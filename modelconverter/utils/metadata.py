@@ -1,8 +1,7 @@
 import io
 from dataclasses import dataclass
-from importlib.metadata import version
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, cast
 
 import onnx
 import pandas as pd
@@ -59,7 +58,7 @@ def _get_metadata_dlc(model_path: Path) -> Metadata:
         end_index = content.find(end_marker, start_index)
 
         relevant_csv_part = content[start_index:end_index].strip()
-        df = pd.read_csv(io.StringIO(relevant_csv_part))
+        df = cast(pd.DataFrame, pd.read_csv(io.StringIO(relevant_csv_part)))
         metadata[f"{typ}_shapes"] = {
             str(row[f"{typ.capitalize()} Name"]): list(
                 map(int, str(row["Dimensions"]).split(","))
@@ -77,57 +76,6 @@ def _get_metadata_dlc(model_path: Path) -> Metadata:
 
 
 def _get_metadata_ir(bin_path: Path, xml_path: Path) -> Metadata:
-    if version("openvino") == "2021.4.0":
-        return _get_metadata_ir_ie(bin_path, xml_path)
-    return _get_metadata_ir_runtime(bin_path, xml_path)
-
-
-def _get_metadata_ir_ie(bin_path: Path, xml_path: Path) -> Metadata:
-    """Extracts metadata from an OpenVINO IR model using the Inference Engine API.
-
-    Args:
-        bin_path (Path): Path to the model's .bin file.
-        xml_path (Path): Path to the model's .xml file.
-
-    Returns:
-        Metadata: An object containing input/output shapes and data types.
-    """
-    from openvino.inference_engine import IECore
-
-    ie = IECore()
-    try:
-        network = ie.read_network(model=str(xml_path), weights=str(bin_path))
-    except Exception as e:
-        raise ValueError(
-            f"Failed to load IR model: `{bin_path}` and `{xml_path}`"
-        ) from e
-
-    input_shapes = {}
-    input_dtypes = {}
-    output_shapes = {}
-    output_dtypes = {}
-
-    for input_name, input_info in network.input_info.items():
-        input_shapes[input_name] = list(input_info.input_data.shape)
-
-        ie_precision = input_info.input_data.precision
-        input_dtypes[input_name] = DataType.from_ir_ie_dtype(ie_precision)
-
-    for output_name, output_data in network.outputs.items():
-        output_shapes[output_name] = list(output_data.shape)
-
-        ie_precision = output_data.precision
-        output_dtypes[output_name] = DataType.from_ir_ie_dtype(ie_precision)
-
-    return Metadata(
-        input_shapes=input_shapes,
-        input_dtypes=input_dtypes,
-        output_shapes=output_shapes,
-        output_dtypes=output_dtypes,
-    )
-
-
-def _get_metadata_ir_runtime(bin_path: Path, xml_path: Path) -> Metadata:
     from openvino.runtime import Core
 
     ie = Core()

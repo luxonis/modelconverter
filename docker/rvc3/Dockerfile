@@ -83,6 +83,7 @@ COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libXdmcp.so.6 \
     /usr/lib/x86_64-linux-gnu/libbsd.so.0 \
     /usr/lib/x86_64-linux-gnu/libusb-1.0.so.0 \
+    /usr/lib/x86_64-linux-gnu/libexpat.so.1 \
     /usr/lib/
 
 COPY --link --from=base /opt/intel /opt/intel
@@ -100,6 +101,7 @@ RUN <<EOF
     pip install --upgrade pip  --no-cache-dir
     pip install -r requirements.txt --no-cache-dir
     pip install -r requirements-rvc3.txt --no-cache-dir
+    pip install openvino==2022.3.0 openvino-dev==2022.3.0 --no-cache-dir
 
 EOF
 
@@ -114,19 +116,20 @@ COPY --link pyproject.toml /app/pyproject.toml
 
 RUN pip install -e . --no-deps
 
-COPY --link docker/rvc3/entrypoint.sh /app/entrypoint.sh
-COPY --link docker/scripts/ov_infer /usr/local/bin/ov_infer
-COPY --link docker/scripts/ov_infer.py /opt/intel/ov_infer.py
+# The RVC2 entrypoint is used for RVC3 as well
+COPY --link docker/rvc2/entrypoint.sh /app/entrypoint.sh
+COPY --link docker/scripts/mo /usr/local/bin/mo
+COPY --link docker/scripts/pot /usr/local/bin/pot
+COPY --link docker/scripts/compile_tool /usr/local/bin/compile_tool
 
 RUN <<EOF
 
     set -e
 
     chmod +x /app/entrypoint.sh
-
-    COMPILE_TOOL=$(find /opt/intel -name compile_tool -type f)
-    install -m 755 ${COMPILE_TOOL} /usr/local/bin/compile_tool
-    chmod +x /usr/local/bin/ov_infer
+    chmod +x /usr/local/bin/mo
+    chmod +x /usr/local/bin/pot
+    chmod +x /usr/local/bin/compile_tool
 
     opt_in_out --opt_out
 
