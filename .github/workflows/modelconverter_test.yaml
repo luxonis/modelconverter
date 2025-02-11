@@ -79,5 +79,5 @@ jobs:
 
     - name: Run Tests
       run: |
-        pytest -s -x -vv "tests/test_packages/test_${PACKAGE}.py" --tool-version "${VERSION}"
+        pytest -x "tests/test_packages/test_${PACKAGE}.py" --tool-version "${VERSION}"
 
