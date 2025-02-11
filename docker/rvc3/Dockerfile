@@ -48,8 +48,6 @@ RUN <<EOF
     rm -r /opt/intel/tools/*.whl
 
     sed -i '1c\#!/usr/local/bin/python3.8' /usr/local/bin/opt_in_out
-    sed -i '1c\#!/usr/local/bin/python3.8' /usr/local/bin/mo
-    sed -i '1c\#!/usr/local/bin/python3.8' /usr/local/bin/pot
 
 EOF
 

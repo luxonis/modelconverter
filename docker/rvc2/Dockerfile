@@ -83,7 +83,6 @@ RUN <<EOF
     fi
 
 
-    sed -i '1c\#!/usr/local/bin/python3.8' /usr/local/bin/mo
     if [ "${VERSION}" = "2022.3.0" ]; then
         sed -i '1c\#!/usr/local/bin/python3.8' /usr/local/bin/opt_in_out
     else
