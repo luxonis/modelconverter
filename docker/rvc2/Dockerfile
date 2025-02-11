@@ -101,6 +101,7 @@ WORKDIR /app
 
 ENV IN_DOCKER=
 ENV VERSION=${VERSION}
+ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib/python3.8/site-packages/openvino/libs/
 
 
 COPY --link --from=base \
