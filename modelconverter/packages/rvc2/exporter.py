@@ -1,7 +1,6 @@
 import subprocess
 import tempfile
 from functools import partial
-from importlib.metadata import version
 from logging import getLogger
 from multiprocessing import Pool, cpu_count
 from os import environ as env
@@ -28,17 +27,8 @@ from ..base_exporter import Exporter
 
 logger = getLogger(__name__)
 
-OV_VERSION: Final[str] = version("openvino")
-COMPILE_TOOL: str
 
-OV_2021: Final[bool] = OV_VERSION.startswith("2021")
-
-if OV_2021:
-    COMPILE_TOOL = f'{env["INTEL_OPENVINO_DIR"]}/deployment_tools/tools/compile_tool/compile_tool'
-else:
-    COMPILE_TOOL = (
-        f'{env["INTEL_OPENVINO_DIR"]}/tools/compile_tool/compile_tool'
-    )
+OV_2021: Final[bool] = env.get("VERSION") == "2021.4.0"
 
 DEFAULT_SUPER_SHAVES: Final[int] = 8
 
@@ -55,6 +45,7 @@ class RVC2Exporter(Exporter):
         self.mo_args = config.rvc2.mo_args
         self.compile_tool_args = config.rvc2.compile_tool_args
         self.device = "MYRIAD"
+        self.reverse_input_channels = False
 
         self._device_specific_buildinfo = {
             "is_superblob": self.superblob,
@@ -145,6 +136,7 @@ class RVC2Exporter(Exporter):
             inp.encoding_mismatch for inp in self.inputs.values()
         )
         if reverse_input_flag:
+            self.reverse_input_channels = True
             args.append("--reverse_input_channels")
 
         self._add_args(args, ["--input_model", self.input_model])
@@ -199,7 +191,7 @@ class RVC2Exporter(Exporter):
                     inp.layout = f"{lt[0]}{lt[3]}{lt[1]}{lt[2]}"
 
                 elif len(inp.layout) == 3:
-                    if not OV_VERSION.startswith("2021.4"):
+                    if not OV_2021:
                         self._add_args(
                             self.mo_args, ["--layout", f"{name}(chw->hwc)"]
                         )
@@ -247,7 +239,7 @@ class RVC2Exporter(Exporter):
                 ),
             ]
 
-        self._subprocess_run([COMPILE_TOOL, *args], meta_name="compile_tool")
+        self._subprocess_run(["compile_tool", *args], meta_name="compile_tool")
         logger.info(f"Blob compiled to {blob_output_path}")
         return blob_output_path
 
@@ -343,7 +335,7 @@ class RVC2Exporter(Exporter):
         )
         args += ["-o", blob_path]
 
-        subprocess_run([COMPILE_TOOL, *args], silent=True)
+        subprocess_run(["compile_tool", *args], silent=True)
 
         patch_file = blob_path.with_suffix(".patch")
         bsdiff4.file_diff(default_blob_path, blob_path, patch_file)
@@ -356,7 +348,7 @@ class RVC2Exporter(Exporter):
             .strip()
         )
         compile_tool_version, compile_tool_build = (
-            subprocess.run([COMPILE_TOOL], capture_output=True)
+            subprocess.run(["compile_tool"], capture_output=True)
             .stdout.decode()
             .splitlines()[:2]
         )

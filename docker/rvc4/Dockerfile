@@ -54,7 +54,7 @@ RUN <<EOF
 EOF
 
 COPY --link requirements.txt requirements.txt
-COPY --link docker/rvc4/requirements.txt requirements-rvc4.txt
+COPY --link modelconverter/packages/rvc4/requirements.txt requirements-rvc4.txt
 
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
@@ -67,6 +67,8 @@ ENV IN_DOCKER=
 ENV VERSION=${VERSION}
 
 WORKDIR /app
+
+RUN pip install --upgrade pip
 
 COPY --link --from=base /opt/ /opt/
 COPY --link --from=base /usr/local/lib /usr/local/lib
@@ -104,7 +106,6 @@ COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libicudata.so.72 \
     /usr/lib/
 
-RUN pip install --upgrade pip
 
 COPY --link docker/rvc4/entrypoint.sh /app/entrypoint.sh
 COPY --link modelconverter /app/modelconverter/

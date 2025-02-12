@@ -184,6 +184,7 @@ def prepare(
         converted_model_path = (
             converted_model_path_prefix
             / "intermediate_outputs"
+            / "optimized"
             / f"{model_name}-simplified-int8.xml"
         )
     elif service == "hailo":
