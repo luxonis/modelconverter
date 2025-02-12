@@ -168,15 +168,15 @@ In order for the images to be build successfully, you need to download additiona
 
 Requires `openvino-<version>.tar.gz` to be present in `docker/extra_packages/`.
 
-- Version `2023.2.0` archive can be downloaded from [here](https://drive.google.com/file/d/1IXtYi1Mwpsg3pr5cDXlEHdSUZlwJRTVP/view?usp=share_link).
+- Version `2022.3.0` archive can be downloaded from [here](https://drive.google.com/file/d/1IXtYi1Mwpsg3pr5cDXlEHdSUZlwJRTVP/view?usp=share_link).
 
 - Version `2021.4.0` archive can be downloaded from [here](https://storage.openvinotoolkit.org/repositories/openvino/packages/2021.4/l_openvino_toolkit_dev_ubuntu20_p_2021.4.582.tgz)
 
-You only need to rename the archive to either `openvino-2023.2.0.tar.gz` or `openvino-2021.4.0.tar.gz` and place it in the `docker/extra_packages` directory.
+You only need to rename the archive to either `openvino-2022.3.0.tar.gz` or `openvino-2021.4.0.tar.gz` and place it in the `docker/extra_packages` directory.
 
 **RVC3**
 
-Only the version `2023.2.0` of `OpenVino` is supported for `RVC3`. Follow the same instructions as for `RVC2` to use the correct archive.
+Only the version `2022.3.0` of `OpenVino` is supported for `RVC3`. Follow the same instructions as for `RVC2` to use the correct archive.
 
 **RVC4**
 
