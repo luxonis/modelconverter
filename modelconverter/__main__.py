@@ -5,7 +5,7 @@ from typing import Optional
 
 import typer
 from luxonis_ml.nn_archive import ArchiveGenerator
-from luxonis_ml.utils import LuxonisFileSystem, reset_logging, setup_logging
+from luxonis_ml.utils import LuxonisFileSystem, setup_logging
 from typing_extensions import Annotated
 
 from modelconverter.cli import (
@@ -279,7 +279,6 @@ def convert(
 
             output_path = get_output_dir_name(target, cfg.name, output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
-            reset_logging()
             setup_logging(
                 file=str(output_path / "modelconverter.log"), use_rich=True
             )
