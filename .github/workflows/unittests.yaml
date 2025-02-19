@@ -10,6 +10,10 @@ on:
       - 'modelconverter/**'
       - '.github/workflows/unittests.yaml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   utils-test:
     runs-on: ubuntu-latest
