@@ -2,9 +2,10 @@ import os
 import shutil
 import subprocess
 import time
-from logging import getLogger
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, cast
+
+from loguru import logger
 
 from modelconverter.utils import (
     ONNXModifier,
@@ -25,8 +26,6 @@ from modelconverter.utils.types import (
 )
 
 from ..base_exporter import Exporter
-
-logger = getLogger(__name__)
 
 
 class RVC4Exporter(Exporter):

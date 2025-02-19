@@ -1,10 +1,10 @@
 import json
 import shutil
-from logging import getLogger
 from pathlib import Path
 from typing import List
 
 import numpy as np
+from loguru import logger
 
 from modelconverter.utils.config import (
     Config,
@@ -15,8 +15,6 @@ from modelconverter.utils.types import Target
 
 from .base_exporter import Exporter
 from .getters import get_exporter, get_inferer
-
-logger = getLogger(__name__)
 
 
 class MultiStageExporter:

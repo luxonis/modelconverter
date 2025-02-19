@@ -1,8 +1,9 @@
 import shutil
 import subprocess
 import time
-from logging import getLogger
 from typing import Any, List, Union
+
+from loguru import logger
 
 from .exceptions import SubprocessException
 
@@ -24,7 +25,6 @@ def subprocess_run(
     else:
         args = [str(arg) for arg in cmd]
         cmd = " ".join(args)
-    logger = getLogger(__name__)
     cmd_name = args[0]
 
     if shutil.which(cmd_name) is None:

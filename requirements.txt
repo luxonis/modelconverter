@@ -1,7 +1,7 @@
 Pillow
 PyYAML
 gcsfs
-luxonis-ml[data,nn_archive] == 0.6.1
+luxonis-ml[data,nn_archive]==0.6.1
 onnx>=1.17.0
 onnxruntime
 onnxsim

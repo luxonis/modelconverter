@@ -1,18 +1,16 @@
-import logging
 import shutil
 import zipfile
 from pathlib import Path
 from typing import List, Optional
 
 import cv2
+from loguru import logger
 from luxonis_ml.data import LuxonisDataset, LuxonisLoader
 
 from .constants import CALIBRATION_DIR, LOADERS, SHARED_DIR
 from .exceptions import ModelconverterException, exit_with
 from .filesystem_utils import download_from_remote, get_protocol
 from .image import read_calib_dir
-
-logger = logging.getLogger(__name__)
 
 
 def read_img_dir(path: Path, max_images: int) -> List[Path]:

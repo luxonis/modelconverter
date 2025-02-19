@@ -1,6 +1,5 @@
 import io
 import json
-import logging
 import re
 import shutil
 import subprocess
@@ -11,13 +10,12 @@ from typing import Dict, Final, List, Optional, Tuple, cast
 import depthai as dai
 import numpy as np
 import pandas as pd
+from loguru import logger
 from rich.progress import Progress
 
 from modelconverter.utils import environ, subprocess_run
 
 from ..base_benchmark import Benchmark, BenchmarkResult, Configuration
-
-logger = logging.getLogger(__name__)
 
 PROFILES: Final[List[str]] = [
     "low_balanced",

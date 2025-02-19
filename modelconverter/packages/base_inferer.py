@@ -1,4 +1,3 @@
-import logging
 import shutil
 import time
 from abc import ABC, abstractmethod
@@ -7,6 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
+from loguru import logger
 
 from modelconverter.utils import resolve_path
 from modelconverter.utils.config import (
@@ -14,8 +14,6 @@ from modelconverter.utils.config import (
     SingleStageConfig,
 )
 from modelconverter.utils.types import DataType, Encoding, ResizeMethod
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass

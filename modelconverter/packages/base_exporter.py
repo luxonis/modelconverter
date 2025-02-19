@@ -2,12 +2,12 @@ import json
 import shutil
 from abc import ABC, abstractmethod
 from importlib.metadata import version
-from logging import getLogger
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import onnx
+from loguru import logger
 
 from modelconverter.utils import read_calib_dir, subprocess_run
 from modelconverter.utils.config import (
@@ -17,8 +17,6 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.exceptions import exit_with
 from modelconverter.utils.types import InputFileType, Target
-
-logger = getLogger(__name__)
 
 
 class Exporter(ABC):

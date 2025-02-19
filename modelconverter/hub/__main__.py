@@ -1,4 +1,3 @@
-import logging
 import webbrowser
 from pathlib import Path
 from time import sleep
@@ -73,7 +72,6 @@ from modelconverter.utils import environ
 
 from .hub_requests import Request
 
-logger = logging.getLogger(__name__)
 app = typer.Typer(
     help="Hub CLI",
     add_completion=False,

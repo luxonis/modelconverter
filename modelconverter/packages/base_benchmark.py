@@ -1,17 +1,14 @@
 import re
 from abc import ABC, abstractmethod
 from collections import namedtuple
-from logging import getLogger
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+from loguru import logger
 from typing_extensions import TypeAlias
 
 from modelconverter.utils import is_hubai_available, resolve_path
-
-logger = getLogger(__name__)
-
 
 BenchmarkResult = namedtuple("Result", ["fps", "latency"])
 """Benchmark result, tuple (FPS, latency in ms)"""
