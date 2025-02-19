@@ -88,7 +88,7 @@ MODEL_CONFIGS = chain(
     ]
 )
 
-setup_logging(use_rich=True)
+setup_logging()
 
 
 def pytest_addoption(parser):

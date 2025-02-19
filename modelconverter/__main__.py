@@ -92,7 +92,7 @@ def infer(
     tag = "dev" if dev else "latest"
 
     if in_docker():
-        setup_logging(file="modelconverter.log", use_rich=True)
+        setup_logging(file="modelconverter.log")
         logger = logging.getLogger(__name__)
         logger.info("Starting inference")
         try:
@@ -208,7 +208,7 @@ def benchmark(
     ---
     """
 
-    setup_logging(use_rich=True)
+    setup_logging()
     kwargs = {}
     for key, value in zip(ctx.args[::2], ctx.args[1::2]):
         if key.startswith("--"):
@@ -261,7 +261,7 @@ def convert(
             "--archive-preprocess can only be used with --to nn_archive"
         )
 
-    setup_logging(use_rich=True)
+    setup_logging()
     if in_docker():
         logger = logging.getLogger(__name__)
         try:
@@ -408,7 +408,7 @@ def archive(
         ),
     ] = None,
 ):
-    setup_logging(use_rich=True)
+    setup_logging()
     model_path = resolve_path(path, MODELS_DIR)
     cfg = archive_from_model(model_path)
     save_path = save_path or f"{cfg.model.metadata.name}.tar.xz"
