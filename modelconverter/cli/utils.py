@@ -1,4 +1,3 @@
-import logging
 import re
 import shutil
 from contextlib import suppress
@@ -9,6 +8,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import UUID
 
 import typer
+from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
@@ -39,8 +39,6 @@ from modelconverter.utils.constants import (
 from modelconverter.utils.types import DataType, Encoding, Target
 
 from .types import ModelType
-
-logger = logging.getLogger(__name__)
 
 
 def get_output_dir_name(

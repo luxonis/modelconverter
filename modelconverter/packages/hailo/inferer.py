@@ -1,6 +1,5 @@
 import contextlib
 from io import StringIO
-from logging import getLogger
 from pathlib import Path
 from typing import Dict
 
@@ -13,8 +12,6 @@ from modelconverter.packages.hailo.exporter import (
 from modelconverter.utils import read_image
 
 from ..base_inferer import Inferer
-
-logger = getLogger(__name__)
 
 with _replace_pydantic():
     from hailo_sdk_client import ClientRunner, InferenceContext

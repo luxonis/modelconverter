@@ -1,9 +1,9 @@
 import json
-import logging
 import tarfile
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from loguru import logger
 from luxonis_ml.nn_archive.config import CONFIG_VERSION
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import (
@@ -19,8 +19,6 @@ from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
 from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.types import DataType, Encoding
-
-logger = logging.getLogger(__name__)
 
 
 def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:

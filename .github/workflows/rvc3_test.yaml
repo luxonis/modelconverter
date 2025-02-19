@@ -14,6 +14,10 @@ on:
       - '.github/workflows/modelconverter_test.yaml'
       - '.github/workflows/rvc3_test.yaml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rvc3-test:
     uses: ./.github/workflows/modelconverter_test.yaml

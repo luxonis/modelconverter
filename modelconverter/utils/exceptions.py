@@ -1,5 +1,6 @@
-from logging import getLogger
 from typing import NoReturn
+
+from loguru import logger
 
 
 class ModelconverterException(BaseException):
@@ -19,6 +20,5 @@ class SubprocessException(ModelconverterException):
 
 
 def exit_with(exception: BaseException, code: int = 1) -> NoReturn:
-    logger = getLogger(__name__)
     logger.exception(exception)
     exit(code)

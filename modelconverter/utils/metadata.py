@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Dict, List, cast
 
 import onnx
-import pandas as pd
 
 from modelconverter.utils.subprocess import subprocess_run
 from modelconverter.utils.types import DataType
@@ -40,6 +39,8 @@ def get_metadata(model_path: Path) -> Metadata:
 
 
 def _get_metadata_dlc(model_path: Path) -> Metadata:
+    import pandas as pd
+
     csv_path = Path("info.csv")
     subprocess_run(
         ["snpe-dlc-info", "-i", model_path, "-s", csv_path], silent=True

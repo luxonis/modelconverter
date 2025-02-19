@@ -1,7 +1,6 @@
 import subprocess
 import tempfile
 from functools import partial
-from logging import getLogger
 from multiprocessing import Pool, cpu_count
 from os import environ as env
 from os import path
@@ -9,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Final, Iterable
 
 import tflite2onnx
+from loguru import logger
 from rich.progress import track
 
 from modelconverter.utils import (
@@ -24,9 +24,6 @@ from modelconverter.utils.types import (
 )
 
 from ..base_exporter import Exporter
-
-logger = getLogger(__name__)
-
 
 OV_2021: Final[bool] = env.get("VERSION") == "2021.4.0"
 

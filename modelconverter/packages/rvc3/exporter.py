@@ -1,8 +1,8 @@
 import json
-from logging import getLogger
 from pathlib import Path
 
 import cv2
+from loguru import logger
 
 from modelconverter.utils import exit_with, read_image
 from modelconverter.utils.config import (
@@ -19,8 +19,6 @@ from modelconverter.utils.types import (
 
 from ..base_exporter import Exporter
 from ..rvc2.exporter import RVC2Exporter
-
-logger = getLogger(__name__)
 
 
 class RVC3Exporter(RVC2Exporter):

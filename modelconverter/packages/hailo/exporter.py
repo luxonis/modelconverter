@@ -2,12 +2,12 @@ import importlib
 import shutil
 import sys
 from contextlib import contextmanager
-from logging import getLogger
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import tensorflow as tf
+from loguru import logger
 
 from modelconverter.utils import exit_with, read_image
 from modelconverter.utils.config import (
@@ -17,8 +17,6 @@ from modelconverter.utils.config import (
 from modelconverter.utils.types import Target
 
 from ..base_exporter import Exporter
-
-logger = getLogger(__name__)
 
 
 @contextmanager

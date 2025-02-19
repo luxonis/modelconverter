@@ -1,4 +1,3 @@
-import logging
 import os
 import shutil
 import subprocess
@@ -7,13 +6,12 @@ from pathlib import Path
 from typing import Literal, Optional, cast
 
 import yaml
+from loguru import logger
 from luxonis_ml.utils import environ
 
 import docker
 import docker.errors
 from docker.models.images import Image
-
-logger = logging.getLogger(__name__)
 
 
 def get_default_target_version(
@@ -95,6 +93,7 @@ def docker_build(
         f"docker/{target}/Dockerfile",
         "-t",
         image,
+        "--load",
         ".",
     ]
     if version is not None:
@@ -118,8 +117,7 @@ def get_docker_image(
     image = f"luxonis/modelconverter-{target}:{tag}"
 
     for docker_image in client.images.list():
-        docker_image = cast(Image, docker_image)
-        if image in docker_image.tags:
+        if {image, f"docker.io/{image}"} & set(docker_image.tags):
             return image
 
     logger.warning(f"Image '{image}' not found, pulling latest image...")

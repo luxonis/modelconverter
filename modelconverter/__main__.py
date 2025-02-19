@@ -1,11 +1,11 @@
-import logging
 from importlib.metadata import version
 from pathlib import Path
 from typing import Optional
 
 import typer
+from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator
-from luxonis_ml.utils import LuxonisFileSystem, reset_logging, setup_logging
+from luxonis_ml.utils import LuxonisFileSystem, setup_logging
 from typing_extensions import Annotated
 
 from modelconverter.cli import (
@@ -43,8 +43,6 @@ from modelconverter.utils import (
 )
 from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.constants import MODELS_DIR
-
-logger = logging.getLogger(__name__)
 
 app = typer.Typer(
     help="Modelconverter CLI",
@@ -92,8 +90,7 @@ def infer(
     tag = "dev" if dev else "latest"
 
     if in_docker():
-        setup_logging(file="modelconverter.log", use_rich=True)
-        logger = logging.getLogger(__name__)
+        setup_logging(file="modelconverter.log")
         logger.info("Starting inference")
         try:
             mult_cfg, _, _ = get_configs(str(path), opts)
@@ -208,7 +205,6 @@ def benchmark(
     ---
     """
 
-    setup_logging(use_rich=True)
     kwargs = {}
     for key, value in zip(ctx.args[::2], ctx.args[1::2]):
         if key.startswith("--"):
@@ -261,9 +257,7 @@ def convert(
             "--archive-preprocess can only be used with --to nn_archive"
         )
 
-    setup_logging(use_rich=True)
     if in_docker():
-        logger = logging.getLogger(__name__)
         try:
             init_dirs()
             cfg, archive_cfg, _main_stage = get_configs(path, opts)
@@ -279,10 +273,7 @@ def convert(
 
             output_path = get_output_dir_name(target, cfg.name, output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
-            reset_logging()
-            setup_logging(
-                file=str(output_path / "modelconverter.log"), use_rich=True
-            )
+            setup_logging(file=str(output_path / "modelconverter.log"))
             if is_multistage:
                 from modelconverter.packages.multistage_exporter import (
                     MultiStageExporter,
@@ -409,7 +400,6 @@ def archive(
         ),
     ] = None,
 ):
-    setup_logging(use_rich=True)
     model_path = resolve_path(path, MODELS_DIR)
     cfg = archive_from_model(model_path)
     save_path = save_path or f"{cfg.model.metadata.name}.tar.xz"

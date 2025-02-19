@@ -1,9 +1,9 @@
-import logging
 from itertools import chain
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
 
 import onnx
+from loguru import logger
 from luxonis_ml.utils import LuxonisConfig
 from pydantic import (
     BaseModel,
@@ -26,9 +26,6 @@ from modelconverter.utils.types import (
     PotDevice,
     ResizeMethod,
 )
-
-logger = logging.getLogger(__name__)
-
 
 NAMED_VALUES = {
     "imagenet": {

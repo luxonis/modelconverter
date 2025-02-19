@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 from typing import List
 
@@ -9,8 +8,6 @@ from rich.progress import Progress
 from modelconverter.utils import environ
 
 from ..base_benchmark import Benchmark, BenchmarkResult, Configuration
-
-logger = logging.getLogger(__name__)
 
 
 class RVC2Benchmark(Benchmark):
@@ -35,7 +32,7 @@ class RVC2Benchmark(Benchmark):
 
     @staticmethod
     def _benchmark(
-        model_path: Path | str,
+        model_path: Path,
         repetitions: int,
         num_messages: int,
         num_threads: int,

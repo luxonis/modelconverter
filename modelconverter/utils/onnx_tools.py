@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -6,14 +5,13 @@ import numpy as np
 import onnx
 import onnx_graphsurgeon as gs
 import onnxoptimizer
+from loguru import logger
 from onnx import checker, helper
 from onnxsim import simplify
 
 from modelconverter.utils.config import InputConfig
 
 from .exceptions import ONNXException
-
-logger = logging.getLogger(__name__)
 
 
 def onnx_attach_normalization_to_inputs(

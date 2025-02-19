@@ -1,14 +1,12 @@
-import logging
 from datetime import datetime
 from statistics import median
 from typing import List
 
+from loguru import logger
 from openvino.inference_engine.ie_api import IECore, StatusCode
 from rich.progress import track
 
 from ..base_benchmark import Benchmark, BenchmarkResult, Configuration
-
-logger = logging.getLogger(__name__)
 
 
 class RVC3Benchmark(Benchmark):
