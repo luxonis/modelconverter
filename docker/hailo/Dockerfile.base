@@ -1,6 +1,6 @@
 ARG VERSION=2024.07
 
-FROM hailo_ai_sw_suite_${VERSION/./-}:1 as BASE
+FROM hailo_ai_sw_suite_${VERSION//./-}:1 as BASE
 USER root
 
 RUN rm -rf \

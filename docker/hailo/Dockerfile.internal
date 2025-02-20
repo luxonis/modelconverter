@@ -1,13 +1,14 @@
 # This Dockerfile is intended for internal use only.
 # If you want to build the Model Converter Docker image,
-# please use the Dockerfile.public file instead.
+# please use the `docker/hailo/Dockerfile` file instead.
 
 ARG VERSION=2024.07
 
-FROM ghcr.io/luxonis/modelconverter-hailo:${VERSION}-base
+FROM ghcr.io/luxonis/modelconverter-hailo:${VERSION//-/.}-base
+WORKDIR /app
 
-ENV IN_DOCKER=
-ENV VERSION=${VERSION}
+ARG VERSION
+ENV VERSION=${VERSION//./-}
 
 COPY requirements.txt requirements.txt
 
@@ -18,13 +19,12 @@ RUN <<EOF
     pip install --upgrade pip
     pip install -r requirements.txt
 
-    if [ "${VERSION}" = "2024.04" ]; then
-        pip install --upgrade 'numpy<1.20.0'
+    if [ "${VERSION}" = "2024-04" ]; then
+        pip install --upgrade numpy==1.22.0  --no-cache-dir
     fi
 
 EOF
 
-WORKDIR /app
 
 COPY --link docker/hailo/entrypoint.sh /app/entrypoint.sh
 COPY --link modelconverter /app/modelconverter/

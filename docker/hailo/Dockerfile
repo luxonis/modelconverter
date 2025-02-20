@@ -1,5 +1,15 @@
-FROM hailo_ai_sw_suite_2024-07:1
+ARG VERSION=2024.04
+
+FROM hailo_ai_sw_suite_${VERSION//./-}:1
+
 USER root
+
+ARG VERSION
+
+ENV VERSION=${VERSION//./-}
+ENV IN_DOCKER=
+
+WORKDIR /app
 
 RUN rm -rf \
     /local/workspace/tappas \
@@ -11,20 +21,21 @@ RUN rm -rf \
     /usr/bin/containerd* \
     /local/workspace/hailo_virtualenv/lib/python3.8/site-packages/hailo_tutorials
 
-COPY requirements.txt .
+COPY --link requirements.txt requirements.txt
+COPY --link modelconverter/packages/hailo/requirements.txt requirements-hailo.txt
 
 RUN <<EOF
 
     set -e
 
-    pip install --upgrade pip
-    pip install -r requirements.txt
-    pip install --extra-index-url
-        https://developer.download.nvidia.com/compute/redist \
-        nvidia-dali-cuda110
+    pip install --upgrade pip --no-cache-dir
+    pip install -r requirements.txt --no-cache-dir
     pip install --extra-index-url \
         https://developer.download.nvidia.com/compute/redist \
-        nvidia-dali-tf-plugin-cuda110
+        nvidia-dali-cuda110 --no-cache-dir
+    pip install --extra-index-url \
+        https://developer.download.nvidia.com/compute/redist \
+        nvidia-dali-tf-plugin-cuda110 --no-cache-dir
 
 EOF
 
@@ -32,33 +43,26 @@ RUN <<EOF
 
     set -e
 
-    pip install pip-autoremove
+    if [[ "${VERSION}" = "2024-04" ]]; then
+        pip install --upgrade numpy==1.22.0 --no-cache-dir
+    fi
 
-    pip-autoremove -y \
-        torch         \
-        jupyter       \
-        plotly        \
-        matplotlib    \
-        ipython       \
-        tensorboard   \
-        pip-autoremove
-
-    pip install psutil
-    rm -rf ~/.cache
+    pip install psutil  --no-cache-dir
 
 EOF
 
-WORKDIR /app
 
-COPY docker/hailo/entrypoint.sh /app/entrypoint.sh
 COPY --link modelconverter /app/modelconverter/
 COPY --link pyproject.toml /app/pyproject.toml
 
+RUN pip install -e . --no-deps --no-cache-dir
+
+COPY --link docker/hailo/entrypoint.sh /app/entrypoint.sh
+
 RUN <<EOF
 
     set -e
 
-    pip install -e . --no-deps --no-cache-dir
     echo "export SSL_CERT_FILE=$(python -m certifi)" > /etc/profile.d/certifi.sh
     chmod +x /app/entrypoint.sh
 
