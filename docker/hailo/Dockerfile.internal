@@ -9,6 +9,7 @@ WORKDIR /app
 
 ARG VERSION
 ENV VERSION=${VERSION//./-}
+ENV IN_DOCKER=
 
 COPY requirements.txt requirements.txt
 
