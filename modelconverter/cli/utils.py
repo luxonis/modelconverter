@@ -277,7 +277,7 @@ def slug_to_id(
     slug: str, endpoint: Literal["models", "modelVersions", "modelInstances"]
 ) -> str:
     for is_public in [True, False]:
-        with suppress(Exception):
+        with suppress(HTTPError):
             params = {
                 "is_public": is_public,
                 "slug": slug,
