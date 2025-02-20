@@ -152,7 +152,7 @@ def docker_exec(
 
     os.execlpe(
         "docker",
-        *f"docker compose -f {f.name} run modelconverter".split(),
+        *f"docker compose -f {f.name} run --remove-orphans modelconverter".split(),
         *args,
         os.environ,
     )
