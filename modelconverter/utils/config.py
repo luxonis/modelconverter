@@ -241,7 +241,6 @@ class RVC2Config(BlobBaseConfig):
     @model_validator(mode="after")
     def _validate_cmx_slices(self) -> Self:
         if self.superblob:
-            logger.info("Superblob enabled. Setting number of shaves to 8.")
             self.number_of_cmx_slices = self.number_of_shaves = 8
 
         elif self.number_of_cmx_slices < self.number_of_shaves:
