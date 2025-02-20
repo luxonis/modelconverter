@@ -112,7 +112,9 @@ class HailoExporter(Exporter):
         har_path = self.input_model.with_suffix(".har")
         runner.save_har(har_path)
         if self._disable_calibration:
-            self._inference_model_path = har_path
+            self._inference_model_path = (
+                self.output_dir / self.model_name
+            ).with_suffix(".har")
             return har_path
 
         quantized_har_path = self._calibrate(har_path)
