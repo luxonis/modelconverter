@@ -4,8 +4,8 @@ from typing import Optional, Union
 
 import keyring
 from luxonis_ml.utils import Environ as BaseEnviron
-from pydantic import AliasChoices, Field, model_validator
-from typing_extensions import Annotated, Self
+from pydantic import model_validator
+from typing_extensions import Self
 
 
 def get_password_with_timeout(
@@ -23,15 +23,8 @@ def get_password_with_timeout(
 
 
 class Environ(BaseEnviron):
-    HUBAI_API_KEY: Annotated[
-        Optional[str],
-        Field(
-            validation_alias=AliasChoices("HUBAI_API_KEY", "HUB_AI_API_KEY")
-        ),
-    ] = None
-    HUBAI_URL: Annotated[
-        str, Field(validation_alias=AliasChoices("HUBAI_URL", "HUB_AI_URL"))
-    ] = "https://easyml.cloud.luxonis.com/models/"
+    HUBAI_API_KEY: Optional[str] = None
+    HUBAI_URL: str = "https://easyml.cloud.luxonis.com/models/"
 
     @model_validator(mode="after")
     def validate_hubai_api_key(self) -> Self:
