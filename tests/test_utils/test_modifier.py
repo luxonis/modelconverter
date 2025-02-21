@@ -24,7 +24,7 @@ EXCEMPTED_MODELS = [
     "mult_512x288",
 ]
 
-EXCEMPT_OPTIMISATION = [
+EXCEMPT_OPTIMIZATION = [
     "efficientvit-b1-224",
 ]
 
@@ -206,8 +206,8 @@ def pytest_generate_tests(metafunc):
 
 
 def test_onnx_model(onnx_file):
-    skip_optimisation = (
-        True if onnx_file.stem in EXCEMPT_OPTIMISATION else False
+    skip_optimization = (
+        True if onnx_file.stem in EXCEMPT_OPTIMIZATION else False
     )
     nn_config = onnx_file.parent / f"{onnx_file.stem}_config.json"
     cfg, main_stage_key = get_config(nn_config)
@@ -224,13 +224,13 @@ def test_onnx_model(onnx_file):
         onnx_file, modified_onnx, input_configs
     )
 
-    modified_optimised_onnx = (
-        onnx_file.parent / f"{onnx_file.stem}_modified_optimised.onnx"
+    modified_optimized_onnx = (
+        onnx_file.parent / f"{onnx_file.stem}_modified_optimized.onnx"
     )
     onnx_modifier = ONNXModifier(
         model_path=modified_onnx,
-        output_path=modified_optimised_onnx,
-        skip_optimisation=skip_optimisation,
+        output_path=modified_optimized_onnx,
+        skip_optimization=skip_optimization,
     )
 
     if onnx_modifier.has_dynamic_shape:

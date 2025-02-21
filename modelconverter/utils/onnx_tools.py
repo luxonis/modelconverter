@@ -189,7 +189,7 @@ class ONNXModifier:
         Path to the base ONNX model
     output_path : Path
         Path to save the modified ONNX model
-    skip_optimisation : bool
+    skip_optimization : bool
         Flag to skip optimization of the ONNX model
     """
 
@@ -197,11 +197,11 @@ class ONNXModifier:
         self,
         model_path: Path,
         output_path: Path,
-        skip_optimisation: bool = False,
+        skip_optimization: bool = False,
     ) -> None:
         self.model_path = model_path
         self.output_path = output_path
-        self.skip_optimisation = skip_optimisation
+        self.skip_optimization = skip_optimization
         self.load_onnx()
         self.prev_onnx_model = self.onnx_model
         self.prev_onnx_gs = self.onnx_gs
@@ -214,7 +214,7 @@ class ONNXModifier:
 
         self.onnx_model, _ = simplify(
             self.model_path.as_posix(),
-            perform_optimization=True and not self.skip_optimisation,
+            perform_optimization=True and not self.skip_optimization,
         )
 
         self.dtype = onnx.mapping.TENSOR_TYPE_TO_NP_TYPE[
@@ -239,21 +239,21 @@ class ONNXModifier:
         @type passes: Optional[List[str]]
         """
 
-        optimised_onnx_model = (
+        optimized_onnx_model = (
             self.onnx_model
-            if self.skip_optimisation
+            if self.skip_optimization
             else onnxoptimizer.optimize(self.onnx_model, passes=passes)
         )
 
-        optimised_onnx_model, _ = simplify(
-            optimised_onnx_model, perform_optimization=False
+        optimized_onnx_model, _ = simplify(
+            optimized_onnx_model, perform_optimization=False
         )
 
-        onnx.checker.check_model(optimised_onnx_model)
+        onnx.checker.check_model(optimized_onnx_model)
 
         self.onnx_model, self.onnx_gs = (
-            optimised_onnx_model,
-            gs.import_onnx(optimised_onnx_model),
+            optimized_onnx_model,
+            gs.import_onnx(optimized_onnx_model),
         )
 
     def export_onnx(self, passes: Optional[List[str]] = None) -> None:

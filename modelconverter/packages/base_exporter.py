@@ -37,7 +37,7 @@ class Exporter(ABC):
         self.outputs = {out.name: out for out in config.outputs}
         self.keep_intermediate_outputs = config.keep_intermediate_outputs
         self.disable_onnx_simplification = config.disable_onnx_simplification
-        self.disable_onnx_optimisation = config.disable_onnx_optimisation
+        self.disable_onnx_optimization = config.disable_onnx_optimization
 
         self.model_name = self.input_model.stem
 
