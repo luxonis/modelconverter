@@ -1,5 +1,5 @@
 from json import JSONDecodeError
-from typing import Any, Dict, Final, Optional
+from typing import Any, Dict, Optional
 
 import requests
 from requests import HTTPError, Response
@@ -8,12 +8,23 @@ from modelconverter.utils import environ
 
 
 class Request:
-    URL: Final[str] = f"{environ.HUBAI_URL.rstrip('/')}/models/api/v1"
-    DAG_URL: Final[str] = URL.replace("models", "dags")
-    HEADERS: Final[Dict[str, str]] = {
-        "accept": "application/json",
-        "Authorization": f"Bearer {environ.HUBAI_API_KEY}",
-    }
+    @staticmethod
+    def url() -> str:
+        return f"{environ.HUBAI_URL.rstrip('/')}/models/api/v1"
+
+    @staticmethod
+    def dag_url() -> str:
+        return f"{environ.HUBAI_URL.rstrip('/')}/dags/api/v1"
+
+    @staticmethod
+    def headers() -> Dict[str, str]:
+        if environ.HUBAI_API_KEY is None:
+            raise ValueError("HUBAI_API_KEY is not set")
+
+        return {
+            "accept": "application/json",
+            "Authorization": f"Bearer {environ.HUBAI_API_KEY}",
+        }
 
     @staticmethod
     def _process_response(response: Response) -> Any:
@@ -40,7 +51,7 @@ class Request:
         return Request._process_response(
             requests.get(
                 Request._get_url(endpoint),
-                headers=Request.HEADERS,
+                headers=Request.headers(),
                 **kwargs,
             )
         )
@@ -49,17 +60,17 @@ class Request:
     def dag_get(endpoint: str = "", **kwargs) -> Any:
         return Request._process_response(
             requests.get(
-                Request._get_url(endpoint, Request.DAG_URL),
-                headers=Request.HEADERS,
+                Request._get_url(endpoint, Request.dag_url()),
+                headers=Request.headers(),
                 **kwargs,
             )
         )
 
     @staticmethod
     def post(endpoint: str = "", **kwargs) -> Any:
-        headers = Request.HEADERS
+        headers = Request.headers()
         if "headers" in kwargs:
-            headers = {**Request.HEADERS, **kwargs.pop("headers")}
+            headers = {**Request.headers(), **kwargs.pop("headers")}
         return Request._process_response(
             requests.post(
                 Request._get_url(endpoint), headers=headers, **kwargs
@@ -70,11 +81,11 @@ class Request:
     def delete(endpoint: str = "", **kwargs) -> Any:
         return Request._process_response(
             requests.delete(
-                Request._get_url(endpoint), headers=Request.HEADERS, **kwargs
+                Request._get_url(endpoint), headers=Request.headers(), **kwargs
             )
         )
 
     @staticmethod
     def _get_url(endpoint: str, base_url: Optional[str] = None) -> str:
-        base_url = base_url or Request.URL
+        base_url = base_url or Request.url()
         return f"{base_url}/{endpoint.lstrip('/')}".rstrip("/")
