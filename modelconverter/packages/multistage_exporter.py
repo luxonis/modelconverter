@@ -110,10 +110,21 @@ class MultiStageExporter:
                         for out_name in output_dirs
                     }
 
-                    # TODO: safe exec
                     local_scope = {}
+                    safe_globals = {"__builtins__": {}}
 
-                    exec(script, globals(), local_scope)
+                    try:
+                        exec(  # nosemgrep
+                            script, safe_globals, local_scope
+                        )
+                    except Exception as e:
+                        raise RuntimeError(f"Error executing script: {e}")
+
+                    if "run_script" not in local_scope:
+                        raise RuntimeError(
+                            "Error: `run_script` function not found in script."
+                        )
+
                     run_script = local_scope["run_script"]
                     arr = run_script(outputs)
                     np.save(dest / f"{i}.npy", arr)

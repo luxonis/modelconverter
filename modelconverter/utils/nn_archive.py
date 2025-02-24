@@ -47,8 +47,21 @@ def process_nn_archive(
     elif tarfile.is_tarfile(path):
         if untar_path.suffix == ".tar":
             untar_path = MISC_DIR / untar_path.stem
-        with tarfile.open(path) as tar:
-            tar.extractall(untar_path)
+
+        def safe_members(tar):
+            """Filter members to prevent path traversal attacks."""
+            safe_files = []
+            for member in tar.getmembers():
+                # Normalize path and ensure it's within the extraction folder
+                if not member.name.startswith("/") and ".." not in member.name:
+                    safe_files.append(member)
+                else:
+                    logger.warning(f"Skipping unsafe file: {member.name}")
+            return safe_files
+
+        tf = tarfile.open(path, mode="r")
+        tf.extractall(untar_path, members=safe_members(tf))
+
     else:
         raise RuntimeError(f"Unknown NN Archive path: `{path}`")
 

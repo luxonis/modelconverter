@@ -21,8 +21,8 @@ from ..base_exporter import Exporter
 
 @contextmanager
 def _replace_module(original, substitute):
-    original_module = importlib.import_module(original)
-    substitute_module = importlib.import_module(substitute)
+    original_module = importlib.import_module(original)  # nosemgrep
+    substitute_module = importlib.import_module(substitute)  # nosemgrep
 
     sys.modules[original] = substitute_module
     try:
