@@ -34,7 +34,7 @@ def download_onnx_models():
         os.makedirs(DATA_DIR)
 
     hub_ai_models = Request.get(
-        "models/", params={"is_public": True, "limit": 1000}
+        "models/", params={"is_public": True, "limit": 10}
     )
 
     for model in hub_ai_models:
