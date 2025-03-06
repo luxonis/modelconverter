@@ -202,6 +202,7 @@ def model_create(
     silent: SilentOption = False,
 ) -> Dict[str, Any]:
     """Creates a new model resource."""
+    tasks = [task.upper() for task in tasks] if tasks else []
     data = {
         "name": name,
         "license_type": license_type,
@@ -522,8 +523,7 @@ def _export(
         "quantization_data": quantization_data,
         **kwargs,
     }
-    if target == "RVC4":
-        json["target_precision"] = target_precision
+    json["target_precision"] = target_precision.upper()
     res = Request.post(
         f"modelInstances/{model_instance_id}/export/{target.lower()}",
         json=json,
@@ -669,8 +669,8 @@ def convert(
                 description,
                 description_short,
                 architecture_id,
-                tasks or [],
-                links or [],
+                tasks,
+                links,
                 silent=True,
             )["id"]
         except ValueError:
