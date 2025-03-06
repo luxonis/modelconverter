@@ -709,8 +709,6 @@ def convert(
         upload(str(cfg.input_model), instance_id)
 
     target_options = get_target_specific_options(target, cfg, tool_version)
-    if "disable_onnx_optimization" in target_options:
-        del target_options["disable_onnx_optimization"]
     instance = _export(
         f"{variant_name} exported to {target}",
         instance_id,
