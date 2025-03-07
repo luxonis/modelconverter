@@ -24,7 +24,7 @@ def get_password_with_timeout(
 
 class Environ(BaseEnviron):
     HUBAI_API_KEY: Optional[str] = None
-    HUBAI_URL: str = "https://easyml.cloud.luxonis.com/models/"
+    HUBAI_URL: str = "https://easyml.cloud.luxonis.com/"
 
     @model_validator(mode="after")
     def validate_hubai_api_key(self) -> Self:
