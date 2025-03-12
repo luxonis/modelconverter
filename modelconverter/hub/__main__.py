@@ -8,6 +8,7 @@ import click
 import keyring
 import requests
 import typer
+from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
 from typing_extensions import Annotated
@@ -58,6 +59,9 @@ from modelconverter.cli import (
     TasksOption,
     VariantSlugOption,
     VersionOption,
+    YoloClassNamesOption,
+    YoloInputShapeOption,
+    YoloVersionOption,
     get_configs,
     get_resource_id,
     get_target_specific_options,
@@ -513,6 +517,8 @@ def _export(
     target: str,
     target_precision: str,
     quantization_data: str,
+    yolo_version: Optional[str] = None,
+    yolo_class_names: Optional[List[str]] = None,
     **kwargs,
 ) -> Dict[str, Any]:
     """Exports a model instance."""
@@ -522,6 +528,14 @@ def _export(
         "quantization_data": quantization_data,
         **kwargs,
     }
+    if yolo_version:
+        json["version"] = yolo_version
+    if yolo_class_names:
+        json["class_names"] = yolo_class_names
+    if yolo_version and not yolo_class_names:
+        logger.warning(
+            "YOLO class names are required for YOLO models. Please provide them using `--yolo-class-names`. Otherwise, default class names will be used."
+        )
     if target == "RVC4":
         json["target_precision"] = target_precision
     res = Request.post(
@@ -570,6 +584,9 @@ def convert(
     variant_id: ModelVersionIDOption = None,
     output_dir: OutputDirOption = None,
     tool_version: VersionOption = None,
+    yolo_input_shape: YoloInputShapeOption = None,
+    yolo_version: YoloVersionOption = None,
+    yolo_class_names: YoloClassNamesOption = None,
     opts: OptsArgument = None,
 ) -> Path:
     """Starts the online conversion process.
@@ -623,6 +640,12 @@ def convert(
         Available options are:
             - RVC2: "2021.4.0", "2022.3.0" (default)
             - RVC4: "2.23.0" (default), "2.24.0", "2.25.0", "2.26.2", "2.27.0"
+    @type yolo_input_shape: Optional[str]
+    @param yolo_input_shape: Input shape for YOLO models
+    @type yolo_version: Optional[str]
+    @param yolo_version: YOLO version
+    @type yolo_class_names: Optional[List[str]]
+    @param yolo_class_names: List of class names for YOLO models
 
     @type opts: Optional[List[str]]
     @param opts: Additional options for the conversion process.
@@ -641,6 +664,9 @@ def convert(
 
     if target_precision in {"FP16", "FP32"}:
         opts.extend(["disable_calibration", "True"])
+
+    if yolo_input_shape:
+        opts.extend(["yolo_input_shape", str(yolo_input_shape)])
 
     config_path = None
     if path and (is_archive or is_yaml(path)):
@@ -717,6 +743,8 @@ def convert(
         quantization_data=quantization_data.upper()
         if quantization_data
         else "RANDOM",
+        yolo_version=yolo_version,
+        yolo_class_names=yolo_class_names,
         **target_options,
     )
 

@@ -18,7 +18,7 @@ from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MODELS_DIR
 from modelconverter.utils.filesystem_utils import resolve_path
 from modelconverter.utils.layout import make_default_layout
-from modelconverter.utils.metadata import get_metadata
+from modelconverter.utils.metadata import Metadata, get_metadata
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -302,7 +302,34 @@ class SingleStageConfig(CustomBaseModel):
 
         input_file_type = InputFileType.from_path(data["input_model"])
         data["input_file_type"] = input_file_type
-        metadata = get_metadata(Path(data["input_model"]))
+        if input_file_type == InputFileType.PYTORCH:
+            logger.info(
+                "Detected PyTorch model. Only YOLO models are supported."
+            )
+            input_shape = data.pop("yolo_input_shape", [640, 640])
+            if isinstance(input_shape, str):
+                input_shape = (
+                    list(map(int, input_shape.split(" ")))
+                    if " " in input_shape
+                    else [int(input_shape)] * 2
+                )
+            else:
+                logger.warning(
+                    "yolo_input_shape is not provided. Using default shape [640, 640]."
+                )
+            input_shapes = {"images": input_shape}
+            input_dtypes = {"images": DataType.FLOAT32}
+            output_shapes = {"dummy": [0]}
+            output_dtypes = {"dummy": DataType.FLOAT32}
+
+            metadata = Metadata(
+                input_shapes=input_shapes,
+                input_dtypes=input_dtypes,
+                output_shapes=output_shapes,
+                output_dtypes=output_dtypes,
+            )
+        else:
+            metadata = get_metadata(Path(data["input_model"]))
 
         inputs = data.get("inputs")
         if not inputs:

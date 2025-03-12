@@ -133,6 +133,12 @@ modelconverter hub login
 modelconverter hub convert rvc4 --path configs/resnet18.yaml
 ```
 
+**CLI YOLO Example:**
+
+```bash
+modelconverter hub convert rvc4 --path yolov6nr4.pt --name "YOLOv6R4" --yolo-input-shape "480 480" --yolo-version "yolov6r4" --yolo-class-names "person, rabbit, cactus"
+```
+
 **Python Example:**
 
 ```python
