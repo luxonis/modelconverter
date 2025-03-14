@@ -97,7 +97,7 @@ class RVC4Benchmark(Benchmark):
             "num_images": 1000,
             "dai_benchmark": True,
             "repetitions": 10,
-            "num_threads": 1,
+            "num_threads": 2,
             "num_messages": 50,
         }
 
@@ -410,11 +410,7 @@ class RVC4Benchmark(Benchmark):
                     "performance_profile": profile,
                 }
             )
-            if num_threads > 1:
-                logger.warning(
-                    "num_threads > 1 is not supported for RVC4. Setting num_threads to 1."
-                )
-                num_threads = 1
+
             neuralNetwork.setNumInferenceThreads(num_threads)
 
             benchmarkIn = pipeline.create(dai.node.BenchmarkIn)
