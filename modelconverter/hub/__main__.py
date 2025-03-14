@@ -73,6 +73,7 @@ from modelconverter.cli import (
     wait_for_export,
 )
 from modelconverter.utils import environ
+from modelconverter.utils.types import InputFileType
 
 from .hub_requests import Request
 
@@ -534,7 +535,7 @@ def _export(
         json["class_names"] = yolo_class_names
     if yolo_version and not yolo_class_names:
         logger.warning(
-            "YOLO class names are required for YOLO models. Please provide them using `--yolo-class-names`. Otherwise, default class names will be used."
+            "It's recommended to provide YOLO class names via --yolo-class-names. If omitted, class names will be extracted from model weights if present, otherwise default names will be used."
         )
     if target == "RVC4":
         json["target_precision"] = target_precision
@@ -661,6 +662,11 @@ def convert(
 
     if path is not None and not is_archive and not is_yaml(path):
         opts.extend(["input_model", path])
+        input_file_type = InputFileType.from_path(path)
+        if input_file_type == InputFileType.PYTORCH and yolo_version is None:
+            raise ValueError(
+                "YOLO version is required for PyTorch YOLO models. Use --yolo-version to specify the version."
+            )
 
     if target_precision in {"FP16", "FP32"}:
         opts.extend(["disable_calibration", "True"])
