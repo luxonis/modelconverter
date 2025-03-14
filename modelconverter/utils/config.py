@@ -317,7 +317,7 @@ class SingleStageConfig(CustomBaseModel):
                 logger.warning(
                     "yolo_input_shape is not provided. Using default shape [640, 640]."
                 )
-            input_shapes = {"images": input_shape}
+            input_shapes = {"images": input_shape[::-1]}
             input_dtypes = {"images": DataType.FLOAT32}
             output_shapes = {"dummy": [0]}
             output_dtypes = {"dummy": DataType.FLOAT32}
