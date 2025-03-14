@@ -1,2 +1,2 @@
-depthai>=3.0.0a13
+depthai>=3.0.0a14
 pandas
