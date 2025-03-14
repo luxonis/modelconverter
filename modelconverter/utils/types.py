@@ -229,6 +229,7 @@ class InputFileType(Enum):
     TFLITE = "TFLITE"
     DLC = "DLC"
     HAR = "HAR"
+    PYTORCH = "PYTORCH"
 
     @classmethod
     def from_path(cls, path: Union[str, Path]) -> "InputFileType":
@@ -243,4 +244,6 @@ class InputFileType(Enum):
             return cls.DLC
         if path.suffix == ".har":
             return cls.HAR
+        if path.suffix in [".pt", ".pth"]:
+            return cls.PYTORCH
         raise ValueError(f"Unsupported file type: `{path}`")

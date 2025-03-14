@@ -50,6 +50,8 @@ class ModelType(str, Enum):
             return cls.TFLITE
         elif suffix in [".xml", ".bin"]:
             return cls.IR
+        elif suffix in [".pt", ".pth"]:
+            return cls.PYTORCH
         else:
             raise ValueError(f"Unsupported model format: {suffix}")
 
@@ -425,5 +427,43 @@ QuantizationOption = Annotated[
         click_type=click.Choice(
             ["driving", "food", "general", "indoors", "random", "warehouse"]
         ),
+    ),
+]
+
+YoloVersionOption = Annotated[
+    Optional[str],
+    typer.Option(
+        help="YOLO version",
+        click_type=click.Choice(
+            [
+                "yolov5",
+                "yolov6r1",
+                "yolov6r3",
+                "yolov6r4",
+                "yolov7",
+                "yolov8",
+                "yolov9",
+                "yolov10",
+                "yolov11",
+                "goldyolo",
+            ]
+        ),
+        show_default=False,
+    ),
+]
+
+YoloClassNamesOption = Annotated[
+    Optional[List[str]],
+    typer.Option(
+        help="Class names for YOLO model in the format 'class1, class2 ...'",
+        show_default=False,
+    ),
+]
+
+YoloInputShapeOption = Annotated[
+    Optional[str],
+    typer.Option(
+        help="Input shape for YOLO models in the format 'width height' or 'width'",
+        show_default=False,
     ),
 ]
