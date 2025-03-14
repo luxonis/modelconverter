@@ -198,7 +198,7 @@ def benchmark(
 
     - `--repetitions`: The number of repetitions to perform (dai-benchmark only). Default: `10`
 
-    - `--num-threads`: The number of threads to use for inference (dai-benchmark only). Default: `1`
+    - `--num-threads`: The number of threads to use for inference (dai-benchmark only). Default: `2`
 
     - `--num-messages`: The number of messages to measure for each report (dai-benchmark only). Default: `50`
 
