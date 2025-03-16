@@ -254,6 +254,9 @@ TasksOption = Annotated[
                 "image_embedding",
             ]
         ),
+        callback=lambda _, value: [item.upper() for item in value]
+        if value
+        else None,
     ),
 ]
 
