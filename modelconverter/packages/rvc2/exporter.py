@@ -1,3 +1,5 @@
+import os
+import shutil
 import subprocess
 import tempfile
 from functools import partial
@@ -12,6 +14,7 @@ from loguru import logger
 from rich.progress import track
 
 from modelconverter.utils import (
+    ONNXModifier,
     onnx_attach_normalization_to_inputs,
     subprocess_run,
 )
@@ -96,6 +99,31 @@ class RVC2Exporter(Exporter):
                 self.inputs,
                 reverse_only=True,
             )
+
+        if not self.config.disable_onnx_optimization:
+            onnx_modifier = ONNXModifier(
+                model_path=self.input_model,
+                output_path=self._attach_suffix(
+                    self.input_model, "modified_optimized.onnx"
+                ),
+            )
+
+            try:
+                if (
+                    onnx_modifier.modify_onnx()
+                    and onnx_modifier.compare_outputs()
+                ):
+                    logger.info("ONNX model has been optimized for RVC2.")
+                    shutil.move(onnx_modifier.output_path, self.input_model)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to optimize ONNX model: {e}. "
+                    "Proceeding with unoptimized model."
+                )
+            finally:
+                if os.path.exists(onnx_modifier.output_path):
+                    os.remove(onnx_modifier.output_path)
+
             for inp in self.inputs.values():
                 if inp.mean_values is not None and inp.encoding_mismatch:
                     inp.mean_values = inp.mean_values[::-1]
