@@ -99,6 +99,13 @@ class RVC2Exporter(Exporter):
                 self.inputs,
                 reverse_only=True,
             )
+            for inp in self.inputs.values():
+                if inp.mean_values is not None and inp.encoding_mismatch:
+                    inp.mean_values = inp.mean_values[::-1]
+                if inp.scale_values is not None and inp.encoding_mismatch:
+                    inp.scale_values = inp.scale_values[::-1]
+                inp.encoding.from_ = Encoding.BGR
+                inp.encoding.to = Encoding.BGR
 
         if not self.config.disable_onnx_optimization:
             onnx_modifier = ONNXModifier(
@@ -123,14 +130,6 @@ class RVC2Exporter(Exporter):
             finally:
                 if os.path.exists(onnx_modifier.output_path):
                     os.remove(onnx_modifier.output_path)
-
-            for inp in self.inputs.values():
-                if inp.mean_values is not None and inp.encoding_mismatch:
-                    inp.mean_values = inp.mean_values[::-1]
-                if inp.scale_values is not None and inp.encoding_mismatch:
-                    inp.scale_values = inp.scale_values[::-1]
-                inp.encoding.from_ = Encoding.BGR
-                inp.encoding.to = Encoding.BGR
 
         mean_values_str = ""
         scale_values_str = ""
