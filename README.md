@@ -23,23 +23,27 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 
 ## Table of Contents
 
-- [Installation](#installation)
-- [Configuration](#configuration)
-  - [YAML Configuration File](#yaml-configuration-file)
-  - [NN Archive Configuration File](#nn-archive-configuration-file)
-- [Online Usage](#online-usage)
-- [Local Usage](#local-usage)
-  - [Prerequisites](#prerequisites)
-    - [GPU Support](#gpu-support)
-  - [Sharing Files](#sharing-files)
-  - [Running ModelConverter](#running-modelconverter)
-    - [Examples](#examples)
-- [Multi-Stage Conversion](#multi-stage-conversion)
-- [Interactive Mode](#interactive-mode)
-- [Calibration Data](#calibration-data)
-- [Inference](#inference)
-  - [Inference Example](#inference-example)
-- [Benchmarking](#benchmarking)
+- [ModelConverter - Compilation Library](#modelconverter---compilation-library)
+  - [Status](#status)
+  - [Table of Contents](#table-of-contents)
+  - [Installation](#installation)
+  - [Configuration](#configuration)
+    - [YAML Configuration File](#yaml-configuration-file)
+    - [NN Archive Configuration File](#nn-archive-configuration-file)
+  - [Online Usage](#online-usage)
+  - [Local Usage](#local-usage)
+    - [Prerequisites](#prerequisites)
+      - [GPU Support](#gpu-support)
+    - [Sharing Files](#sharing-files)
+    - [Running ModelConverter](#running-modelconverter)
+      - [Examples](#examples)
+  - [Multi-Stage Conversion](#multi-stage-conversion)
+  - [Interactive Mode](#interactive-mode)
+  - [Calibration Data](#calibration-data)
+  - [Inference](#inference)
+    - [Inference Example](#inference-example)
+  - [\[RVC4\] DLC model analysis](#rvc4-dlc-model-analysis)
+  - [Benchmarking](#benchmarking)
 
 ## Installation
 
@@ -427,6 +431,58 @@ output_path/
 └── output3_yolov6r2
     └── <outputs>
 ```
+
+## \[RVC4\] DLC model analysis
+
+ModelConverter offers additional analysis tools for the RVC4 platform. The tools provide an in-depth look at the following:
+
+1. The outputs of all layers in comparison to the ground truth ONNX model,
+1. The cycle usage of each layer on an RVC4 device.
+1. Visualizations for fast and easy comparison of multiple models.
+
+This gives the user better insight into the successful quantization of a model, helps discover potential speed bottleneck layers, and allows for the comparison of different quantization parameters.
+
+To install the package with the analysis dependencies, use:
+
+```bash
+pip install modelconv[analysis]
+```
+
+There are several options to run the tools. The most general approach is:
+
+```bash
+modelconverter analyze 
+              <dlc_model> 
+              <onnx_model> 
+              <input_name_1> <path_to_input_images_1>
+              ...
+              <input_name_n> <path_to_input_images_n>
+```
+
+If the model accepts only one input, there is no need to specify the input name and the tools can simply be ran as:
+
+```bash
+modelconverter analyze <dlc_model> <onnx_model> <path_to_input_images>
+```
+
+For other usage instructions run `modelconverter analyze --help`
+
+> \[!NOTE\]
+> It is important to ensure that you are using the correct ONNX model for comparison. Before converting to DLC, ModelConverter can modify the ONNX files by adding normalization layers or simplifying the graph. The ONNX model that is actually converted to DLC is typically located at `shared_with_container/outputs/model_name/intermediate_outputs/model_name-modified.onnx`
+>
+> If the model has multiple inputs, make sure that each input directory has the same number of images. The tool alphabetically sorts images in each directory and assumes that images with the same index are used as one input.
+>
+> Recommended number of input images is less than 50.
+
+The tool creates two CSV files located in `shared_with_container/outputs/analysis/model_name/`. One file contains output statistics for each layer, while the other contains statistics on cycle usage.
+
+There is also a visualization option that displays all CSV files in `shared_with_container/outputs/analysis/`. This offers a fast and easy way to inspect different model conversion parameters. For more usage instructions, run `modelconverter visualize --help`. To create the visualizations, simply run:
+
+```bash
+modelconverter visualize <optional_path_to_dir>
+```
+
+This command will create interactive pyplot scatter plots and cycle usage bar plots in a local web browser, as well as save both HTML files for easier access in the future.
 
 ## Benchmarking
 

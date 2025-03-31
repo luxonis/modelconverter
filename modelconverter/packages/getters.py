@@ -2,9 +2,11 @@ from typing import Type
 
 from modelconverter.utils.types import Target
 
+from ..packages.base_analyze import Analyzer
 from ..packages.base_benchmark import Benchmark
 from ..packages.base_exporter import Exporter
 from ..packages.base_inferer import Inferer
+from ..packages.base_visualize import Visualizer
 
 
 def get_exporter(target: Target) -> Type[Exporter]:
@@ -71,3 +73,22 @@ def get_benchmark(target: Target) -> Type[Benchmark]:
         from modelconverter.packages.hailo.benchmark import HailoBenchmark
 
         return HailoBenchmark
+
+
+def get_analyzer(target) -> Type[Analyzer]:
+    if target == Target.RVC4:
+        from modelconverter.packages.rvc4.analyze import RVC4Analyzer
+
+        return RVC4Analyzer
+
+    else:
+        raise ValueError(f"Analyzer not available for {target.name}")
+
+
+def get_visualizer(target) -> Type[Visualizer]:
+    if target == Target.RVC4:
+        from modelconverter.packages.rvc4.visualize import RVC4Visualizer
+
+        return RVC4Visualizer
+    else:
+        raise ValueError(f"Visualizer not available for {target.name}")
