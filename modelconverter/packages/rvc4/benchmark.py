@@ -124,7 +124,7 @@ class RVC4Benchmark(Benchmark):
         start_index = content.find(start_marker)
         end_index = content.find(end_marker, start_index)
 
-        # Extract and load the relevant CSV part into a pandas DataFrame.
+        # Extract and load the relevant CSV part into a polars DataFrame.
         relevant_csv_part = content[start_index:end_index].strip()
         df = pl.read_csv(io.StringIO(relevant_csv_part))
         df = df.with_columns(
