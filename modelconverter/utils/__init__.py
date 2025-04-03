@@ -1,3 +1,4 @@
+from .adb_handler import AdbHandler
 from .calibration_data import download_calibration_data
 from .docker_utils import (
     check_docker,
@@ -62,4 +63,5 @@ __all__ = [
     "get_metadata",
     "archive_from_model",
     "environ",
+    "AdbHandler",
 ]

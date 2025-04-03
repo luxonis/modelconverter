@@ -2,10 +2,9 @@ import io
 import json
 import re
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, Final, List, Optional, Tuple, cast
+from typing import Dict, Final, List, Tuple, cast
 
 import depthai as dai
 import numpy as np
@@ -13,7 +12,7 @@ import polars as pl
 from loguru import logger
 from rich.progress import Progress
 
-from modelconverter.utils import environ, subprocess_run
+from modelconverter.utils import AdbHandler, environ, subprocess_run
 
 from ..base_benchmark import Benchmark, BenchmarkResult, Configuration
 
@@ -35,45 +34,6 @@ RUNTIMES: Dict[str, str] = {
     "dsp": "use_dsp",
     "cpu": "use_cpu",
 }
-
-
-class AdbHandler:
-    def __init__(self, device_id: Optional[str] = None) -> None:
-        self.device_args = ["-s", device_id] if device_id else []
-
-    def _adb_run(self, args, **kwargs) -> Tuple[int, str, str]:
-        result = subprocess.run(
-            ["adb", *self.device_args, *args],
-            **kwargs,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        stdout = result.stdout
-        stderr = result.stderr
-        assert result.returncode is not None
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"adb command {args[0]} failed with code {result.returncode}:\n"
-                f"args: {args}\n"
-                f"stdout:\n{stdout}\n"
-                f"stderr:\n{stderr}\n"
-            )
-        return (
-            result.returncode,
-            stdout.decode(errors="ignore"),
-            stderr.decode(errors="ignore"),
-        )
-
-    def shell(self, cmd: str) -> Tuple[int, str, str]:
-        return self._adb_run(
-            ["shell", cmd],
-        )
-
-    def pull(self, src: str, dst: str) -> Tuple[int, str, str]:
-        return self._adb_run(["pull", src, dst])
-
-    def push(self, src: str, dst: str) -> Tuple[int, str, str]:
-        return self._adb_run(["push", src, dst])
 
 
 class RVC4Benchmark(Benchmark):

@@ -35,6 +35,7 @@ version = {attr = "modelconverter.__version__"}
 
 [tool.setuptools.dynamic.optional-dependencies]
 bench = { file = ["requirements-bench.txt"] }
+analysis = { file = ["requirements-analysis.txt"] }
 dev = { file = ["requirements-dev.txt", "requirements-bench.txt"] }
 rvc2 = { file = ["modelconverter/packages/rvc2/requirements.txt"] }
 rvc3 = { file = ["modelconverter/packages/rvc3/requirements.txt"] }
