@@ -9,7 +9,7 @@ from typing import Dict, Final, List, Optional, Tuple, cast
 
 import depthai as dai
 import numpy as np
-import pandas as pd
+import polars as pl
 from loguru import logger
 from rich.progress import Progress
 
@@ -126,17 +126,14 @@ class RVC4Benchmark(Benchmark):
 
         # Extract and load the relevant CSV part into a pandas DataFrame.
         relevant_csv_part = content[start_index:end_index].strip()
-        df = pd.read_csv(io.StringIO(relevant_csv_part))
-        sizes = {
-            str(row["Input Name"]): list(
-                map(int, str(row["Dimensions"]).split(","))
-            )
-            for _, row in df.iterrows()
-        }
-        data_types = {
-            str(row["Input Name"]): str(row["Type"])
-            for _, row in df.iterrows()
-        }
+        df = pl.read_csv(io.StringIO(relevant_csv_part))
+        df = df.with_columns(
+            pl.col("Dimensions").str.split(",").cast(pl.List(pl.Int64))
+        )
+
+        rows = df.rows(named=True)
+        sizes = {row["Input Name"]: row["Dimensions"] for row in rows}
+        data_types = {row["Input Name"]: row["Type"] for row in rows}
 
         return sizes, data_types
 
@@ -233,7 +230,10 @@ class RVC4Benchmark(Benchmark):
 
         model_precision_type = "INT8"
         for instance in model_instances:
-            if instance["platforms"] == ["RVC4"]:
+            if instance["platforms"] == ["RVC4"] and (
+                self.model_instance is None
+                or instance["hash_short"] == self.model_instance
+            ):
                 model_precision_type = instance.get(
                     "model_precision_type", "INT8"
                 )

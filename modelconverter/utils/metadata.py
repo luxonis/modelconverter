@@ -1,7 +1,7 @@
 import io
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, cast
+from typing import Dict, List
 
 import onnx
 
@@ -39,7 +39,7 @@ def get_metadata(model_path: Path) -> Metadata:
 
 
 def _get_metadata_dlc(model_path: Path) -> Metadata:
-    import pandas as pd
+    import polars as pl
 
     csv_path = Path("info.csv")
     subprocess_run(
@@ -59,18 +59,29 @@ def _get_metadata_dlc(model_path: Path) -> Metadata:
         end_index = content.find(end_marker, start_index)
 
         relevant_csv_part = content[start_index:end_index].strip()
-        df = cast(pd.DataFrame, pd.read_csv(io.StringIO(relevant_csv_part)))
-        metadata[f"{typ}_shapes"] = {
-            str(row[f"{typ.capitalize()} Name"]): list(
-                map(int, str(row["Dimensions"]).split(","))
-            )
-            for _, row in df.iterrows()
-        }
+        if not relevant_csv_part:
+            continue
+
+        df = pl.read_csv(io.StringIO(relevant_csv_part))
+
+        shapes = df.select(
+            [
+                pl.col(f"{typ.capitalize()} Name"),
+                pl.col("Dimensions").str.split(",").cast(pl.List(pl.Int64)),
+            ]
+        ).to_dict(as_series=False)
+        metadata[f"{typ}_shapes"] = dict(
+            zip(shapes[f"{typ.capitalize()} Name"], shapes["Dimensions"])
+        )
+
+        dtypes = df.select(
+            [pl.col(f"{typ.capitalize()} Name"), pl.col("Type")]
+        ).to_dict(as_series=False)
         metadata[f"{typ}_dtypes"] = {
-            str(row[f"{typ.capitalize()} Name"]): DataType.from_dlc_dtype(
-                row["Type"]  # type: ignore
+            name: DataType.from_dlc_dtype(dtype)
+            for name, dtype in zip(
+                dtypes[f"{typ.capitalize()} Name"], dtypes["Type"]
             )
-            for _, row in df.iterrows()
         }
 
     return Metadata(**metadata)
