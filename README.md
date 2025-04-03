@@ -23,23 +23,27 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 
 ## Table of Contents
 
-- [Installation](#installation)
-- [Configuration](#configuration)
-  - [YAML Configuration File](#yaml-configuration-file)
-  - [NN Archive Configuration File](#nn-archive-configuration-file)
-- [Online Usage](#online-usage)
-- [Local Usage](#local-usage)
-  - [Prerequisites](#prerequisites)
-    - [GPU Support](#gpu-support)
-  - [Sharing Files](#sharing-files)
-  - [Running ModelConverter](#running-modelconverter)
-    - [Examples](#examples)
-- [Multi-Stage Conversion](#multi-stage-conversion)
-- [Interactive Mode](#interactive-mode)
-- [Calibration Data](#calibration-data)
-- [Inference](#inference)
-  - [Inference Example](#inference-example)
-- [Benchmarking](#benchmarking)
+- [ModelConverter - Compilation Library](#modelconverter---compilation-library)
+  - [Status](#status)
+  - [Table of Contents](#table-of-contents)
+  - [Installation](#installation)
+  - [Configuration](#configuration)
+    - [YAML Configuration File](#yaml-configuration-file)
+    - [NN Archive Configuration File](#nn-archive-configuration-file)
+  - [Online Usage](#online-usage)
+  - [Local Usage](#local-usage)
+    - [Prerequisites](#prerequisites)
+      - [GPU Support](#gpu-support)
+    - [Sharing Files](#sharing-files)
+    - [Running ModelConverter](#running-modelconverter)
+      - [Available CLI Options](#available-cli-options)
+      - [Examples](#examples)
+  - [Multi-Stage Conversion](#multi-stage-conversion)
+  - [Interactive Mode](#interactive-mode)
+  - [Calibration Data](#calibration-data)
+  - [Inference](#inference)
+    - [Inference Example](#inference-example)
+  - [Benchmarking](#benchmarking)
 
 ## Installation
 
@@ -282,6 +286,21 @@ You can run the built image either manually using the `docker run` command or us
     convert <target> \
     --path <s3_url_or_path> [ config overrides ]
   ```
+
+#### Available CLI Options
+
+Below is a table of common command-line options available when using the `modelconverter convert` command:
+
+| Option                                             | Short | Type   | Description                                                                                                                        |
+| -------------------------------------------------- | ----- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `--path`                                           |       | PATH   | Path to the configuration file or NN Archive                                                                                       |
+| `--to`                                             |       | CHOICE | Output format: `native` or `nn_archive`                                                                                            |
+| `--main-stage`                                     | `-m`  | TEXT   | Name of the stage with the main model                                                                                              |
+| `--version`                                        |       | TEXT   | Version of the underlying conversion tools to use. Available options differ based on the target platform (RVC2, RVC3, RVC4, HAILO) |
+| `--archive-preprocess` / `--no-archive-preprocess` |       | FLAG   | Add pre-processing to the NN archive instead of the model                                                                          |
+
+> \[!NOTE\]
+> This table is not exhaustive. For more detailed information about available options, run `modelconverter convert --help` in your command line interface. You can also check all the `[ config overrides ]` available at [defaults.yaml](shared_with_container/configs/defaults.yaml).
 
 #### Examples
 
