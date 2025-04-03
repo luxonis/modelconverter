@@ -4,7 +4,7 @@ from collections import namedtuple
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import pandas as pd
+import polars as pl
 from loguru import logger
 from typing_extensions import TypeAlias
 
@@ -22,7 +22,7 @@ i.e. `{"shaves": 4}` for RVC2
 
 class Benchmark(ABC):
     VALID_EXTENSIONS = (".tar.xz", ".blob", ".dlc")
-    HUB_MODEL_PATTERN = re.compile(r"^(?:([^/]+)/)?([^:]+):(.+)$")
+    HUB_MODEL_PATTERN = re.compile(r"^(?:([^/]+)/)?([^:]+):([^:]+)(?::(.+))?$")
 
     def __init__(
         self,
@@ -32,21 +32,28 @@ class Benchmark(ABC):
         if any(model_path.endswith(ext) for ext in self.VALID_EXTENSIONS):
             self.model_path = resolve_path(model_path, Path.cwd())
             self.model_name = self.model_path.stem
+            self.model_instance = None
         else:
             hub_match = self.HUB_MODEL_PATTERN.match(model_path)
             if not hub_match:
                 raise ValueError(
                     "Invalid 'model-path' format. Expected either:\n"
                     "- Model file path: path/to/model.blob, path/to/model.dlc or path/to/model.tar.xz\n"
-                    "- HubAI model slug: [team_name/]model_name:variant"
+                    "- HubAI model slug: [team_name/]model_name:variant[:model_instance]"
                 )
-            team_name, model_name, model_variant = hub_match.groups()
+            (
+                team_name,
+                model_name,
+                model_variant,
+                model_instance,
+            ) = hub_match.groups()
             if is_hubai_available(model_name, model_variant):
                 self.model_path = model_path
                 self.model_name = model_name
+                self.model_instance = model_instance
             else:
                 raise ValueError(
-                    f"Model {team_name+'/' if team_name else ''}{model_name}:{model_variant} not found in HubAI."
+                    f"Model {team_name+'/' if team_name else ''}{model_name}:{model_variant}{':'+model_instance if model_instance else ''} not found in HubAI."
                 )
 
         self.dataset_path = dataset_path
@@ -124,14 +131,14 @@ class Benchmark(ABC):
         self, results: List[Tuple[Configuration, BenchmarkResult]]
     ) -> None:
         assert results, "No results to save"
-        df = pd.DataFrame(
+        df = pl.DataFrame(
             [
                 {**configuration, **result._asdict()}
                 for configuration, result in results
             ]
         )
         file = f"{self.model_name}_benchmark_results.csv"
-        df.to_csv(file, index=False)
+        df.write_csv(file)
         logger.info(f"Benchmark results saved to {file}.")
 
     def run(self, full: bool = True, save: bool = False, **kwargs) -> None:

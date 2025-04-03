@@ -283,6 +283,21 @@ You can run the built image either manually using the `docker run` command or us
     --path <s3_url_or_path> [ config overrides ]
   ```
 
+#### Available CLI Options
+
+Below is a table of common command-line options available when using the `modelconverter convert` command:
+
+| Option                                             | Short | Type   | Description                                                                                                                        |
+| -------------------------------------------------- | ----- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `--path`                                           |       | PATH   | Path to the configuration file or NN Archive                                                                                       |
+| `--to`                                             |       | CHOICE | Output format: `native` or `nn_archive`                                                                                            |
+| `--main-stage`                                     | `-m`  | TEXT   | Name of the stage with the main model                                                                                              |
+| `--version`                                        |       | TEXT   | Version of the underlying conversion tools to use. Available options differ based on the target platform (RVC2, RVC3, RVC4, HAILO) |
+| `--archive-preprocess` / `--no-archive-preprocess` |       | FLAG   | Add pre-processing to the NN archive instead of the model                                                                          |
+
+> \[!NOTE\]
+> This table is not exhaustive. For more detailed information about available options, run `modelconverter convert --help` in your command line interface. You can also check all the `[ config overrides ]` available at [defaults.yaml](shared_with_container/configs/defaults.yaml).
+
 #### Examples
 
 Use `resnet18.yaml` config, but override `calibration.path`:
