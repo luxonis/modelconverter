@@ -62,10 +62,6 @@ class RVC4Analyzer(Analyzer):
             for k in image_names.keys():
                 input_matcher[i][k] = str(image_names[k][i])
 
-        # input_matcher = { 0 : {input_name1 : full_path_to_img1, input_name2 : full_path_to_img2},
-        #                   1 : {input_name1 : full_path_to_img2, input_name2 : full_path_to_img2},
-        #                   ....
-        #                   n : {input_name1 : full_path_to_imgn, input_name2 : full_path_to_imgn}}
         return input_matcher
 
     def _prepare_raw_inputs(

@@ -1,7 +1,7 @@
 import os
 from typing import Dict
 
-import pandas as pd
+import polars as pl
 import plotly.graph_objects as go
 
 from modelconverter.utils import constants
@@ -36,10 +36,12 @@ class RVC4Visualizer(Visualizer):
     def _visualize_cycles(self) -> go.Figure:
         layer_lists = []
         for model_name, csv_path in self.cycle_csvs.items():
-            df = pd.read_csv(csv_path)
-            df["model_name"] = model_name
-            df.columns = df.columns.str.strip()
-            layer_lists.append(df["layer_name"].tolist())
+            df = pl.read_csv(csv_path)
+            df = df.with_columns(pl.lit(model_name).alias("model_name"))
+            df.columns = df.columns
+            new_columns = {col: col.strip() for col in df.columns}
+            df = df.rename(new_columns)
+            layer_lists.append(df["layer_name"].to_list())
 
         x_labels = self._create_x_labels(layer_lists)
 
@@ -48,13 +50,16 @@ class RVC4Visualizer(Visualizer):
 
         traces_data = {}
         for model_name, csv_path in self.cycle_csvs.items():
-            df = pd.read_csv(csv_path)
-            df.columns = df.columns.str.strip()
-            df["Percentage_of_Total_Time"] = (
-                df["Percentage_of_Total_Time"].astype(float) * 100
+            df = pl.read_csv(csv_path)
+            new_columns = {col: col.strip() for col in df.columns}
+            df = df.rename(new_columns)
+            df = df.with_columns(
+                (pl.col("Percentage_of_Total_Time").cast(pl.Float32()) * 100).alias("Percentage_of_Total_Time")
             )
             metric_maps = {
-                metric: dict(zip(df["layer_name"], df[metric]))
+                metric: dict(
+                    zip(df["layer_name"].to_list(), df[metric].to_list())
+                )
                 for metric in metrics
             }
             model_data = {"x_axis": x_labels}
@@ -125,8 +130,10 @@ class RVC4Visualizer(Visualizer):
     def _visualize_layer_outputs(self) -> go.Figure:
         layer_lists = []
         for csv_path in self.layer_csvs.values():
-            df = pd.read_csv(csv_path)
-            layer_lists.append(df["layer_name"].tolist())
+            df = pl.read_csv(csv_path)
+            new_columns = {col: col.strip() for col in df.columns}
+            df = df.rename(new_columns)
+            layer_lists.append(df["layer_name"].to_list())
 
         x_labels = self._create_x_labels(layer_lists)
 
@@ -135,9 +142,13 @@ class RVC4Visualizer(Visualizer):
 
         traces_data = {}
         for model_name, csv_path in self.layer_csvs.items():
-            df = pd.read_csv(csv_path)
+            df = pl.read_csv(csv_path)
+            new_columns = {col: col.strip() for col in df.columns}
+            df = df.rename(new_columns)
             metric_maps = {
-                metric: dict(zip(df["layer_name"], df[metric]))
+                metric: dict(
+                    zip(df["layer_name"].to_list(), df[metric].to_list())
+                )
                 for metric in metrics
             }
             model_data = {"x_axis": x_labels}

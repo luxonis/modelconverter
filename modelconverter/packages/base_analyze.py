@@ -2,6 +2,7 @@ import io
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Dict, List, Tuple
+import os 
 
 import pandas as pd
 
@@ -13,7 +14,8 @@ class Analyzer(ABC):
         self.image_dirs: Dict[str, Path] = {}
         for key, value in image_dirs.items():
             self.image_dirs[key] = resolve_path(value, Path.cwd())
-
+        
+        self._check_dir_sizes()        
         self.dlc_model_path: Path = resolve_path(dlc_model_path, Path.cwd())
         self.model_name: str = self.dlc_model_path.stem
         self.input_sizes, self.data_types = self._get_input_sizes()
@@ -128,3 +130,11 @@ class Analyzer(ABC):
         output_sizes = df["Shape"].to_dict()
 
         return output_sizes
+    
+    def _check_dir_sizes(self):
+        dir_lengths = [ len(os.listdir(v)) for v in self.image_dirs.values() ]
+        
+        if len(set(dir_lengths)) > 1:
+            raise ValueError("All directories must have the same number of files.")
+        if len(dir_lengths) == 0:
+            raise ValueError("All directories must have at least one file.")

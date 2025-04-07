@@ -23,27 +23,24 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 
 ## Table of Contents
 
-- [ModelConverter - Compilation Library](#modelconverter---compilation-library)
-  - [Status](#status)
-  - [Table of Contents](#table-of-contents)
-  - [Installation](#installation)
-  - [Configuration](#configuration)
-    - [YAML Configuration File](#yaml-configuration-file)
-    - [NN Archive Configuration File](#nn-archive-configuration-file)
-  - [Online Usage](#online-usage)
-  - [Local Usage](#local-usage)
-    - [Prerequisites](#prerequisites)
-      - [GPU Support](#gpu-support)
-    - [Sharing Files](#sharing-files)
-    - [Running ModelConverter](#running-modelconverter)
-      - [Examples](#examples)
-  - [Multi-Stage Conversion](#multi-stage-conversion)
-  - [Interactive Mode](#interactive-mode)
-  - [Calibration Data](#calibration-data)
-  - [Inference](#inference)
-    - [Inference Example](#inference-example)
-  - [\[RVC4\] DLC model analysis](#rvc4-dlc-model-analysis)
-  - [Benchmarking](#benchmarking)
+- [Installation](#installation)
+- [Configuration](#configuration)
+  - [YAML Configuration File](#yaml-configuration-file)
+  - [NN Archive Configuration File](#nn-archive-configuration-file)
+- [Online Usage](#online-usage)
+- [Local Usage](#local-usage)
+  - [Prerequisites](#prerequisites)
+    - [GPU Support](#gpu-support)
+  - [Sharing Files](#sharing-files)
+  - [Running ModelConverter](#running-modelconverter)
+    - [Examples](#examples)
+- [Multi-Stage Conversion](#multi-stage-conversion)
+- [Interactive Mode](#interactive-mode)
+- [Calibration Data](#calibration-data)
+- [Inference](#inference)
+  - [Inference Example](#inference-example)
+- [\[RVC4\] DLC model analysis](#rvc4-dlc-model-analysis)
+- [Benchmarking](#benchmarking)
 
 ## Installation
 
@@ -437,8 +434,8 @@ output_path/
 ModelConverter offers additional analysis tools for the RVC4 platform. The tools provide an in-depth look at the following:
 
 1. The outputs of all layers in comparison to the ground truth ONNX model,
-1. The cycle usage of each layer on an RVC4 device.
-1. Visualizations for fast and easy comparison of multiple models.
+2. The cycle usage of each layer on an RVC4 device.
+3. Visualizations for fast and easy comparison of multiple models.
 
 This gives the user better insight into the successful quantization of a model, helps discover potential speed bottleneck layers, and allows for the comparison of different quantization parameters.
 

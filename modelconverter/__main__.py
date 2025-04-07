@@ -16,6 +16,8 @@ from modelconverter.cli import (
     FormatOption,
     GPUOption,
     ImagePathArgument,
+    AnalyzeCyclesOption,
+    AnalyzeOutputsOption,
     ModelPathArgument,
     ModelPathOption,
     OptsArgument,
@@ -235,6 +237,8 @@ def analyze(
     dlc_model_path: ModelPathArgument,
     onnx_model_path: ModelPathArgument,
     image_dirs: ImagePathArgument,
+    analyze_outputs: AnalyzeOutputsOption = True,
+    analyze_cycles: AnalyzeCyclesOption = True,
 ):
     """Runs layer and cycle analysis on the specified DLC model.
 
@@ -248,6 +252,10 @@ def analyze(
 
     - `--image-dirs`: A list of names and paths to directories with images for each input of the model.
         The names must match the input names of the model. If there is only one input, the name can be omitted.
+
+    - `--analyze-outputs`: Whether to analyze the layer outputs. Default: `True`
+
+    - `--analyze-cycles`: Whether to analyze the layer cycles. Default: `True`
     ---
 
     """
@@ -267,55 +275,10 @@ def analyze(
     Analyzer = get_analyzer(Target.RVC4)
     analyzer = Analyzer(dlc_model_path, image_dirs_dict)
 
-    analyzer.analyze_layer_outputs(resolve_path(onnx_model_path, Path.cwd()))
-    analyzer.analyze_layer_cycles()
-
-
-@app.command()
-def analyze_outputs(
-    dlc_model_path: ModelPathArgument,
-    onnx_model_path: ModelPathArgument,
-    image_dirs: ImagePathArgument,
-):
-    if len(image_dirs) == 1:
-        image_dirs_dict = {"default": image_dirs[0]}
-    else:
-        if len(image_dirs) % 2 != 0:
-            raise typer.BadParameter(
-                "Please supply the same amount of model input names and test image directories."
-            )
-        image_dirs_dict = {
-            image_dirs[i]: image_dirs[i + 1]
-            for i in range(0, len(image_dirs), 2)
-        }
-
-    Analyzer = get_analyzer(Target.RVC4)
-    analyzer = Analyzer(dlc_model_path, image_dirs_dict)
-
-    analyzer.analyze_layer_outputs(resolve_path(onnx_model_path, Path.cwd()))
-
-
-@app.command()
-def analyze_cycles(
-    dlc_model_path: ModelPathArgument, image_dirs: ImagePathArgument
-):
-    if len(image_dirs) == 1:
-        image_dirs_dict = {"default": image_dirs[0]}
-    else:
-        if len(image_dirs) % 2 != 0:
-            raise typer.BadParameter(
-                "Please supply the same amount of model input names and test image directories."
-            )
-        image_dirs_dict = {
-            image_dirs[i]: image_dirs[i + 1]
-            for i in range(0, len(image_dirs), 2)
-        }
-
-    Analyzer = get_analyzer(Target.RVC4)
-    analyzer = Analyzer(dlc_model_path, image_dirs_dict)
-
-    analyzer.analyze_layer_cycles()
-
+    if analyze_outputs:
+        analyzer.analyze_layer_outputs(resolve_path(onnx_model_path, Path.cwd()))
+    if analyze_cycles:
+        analyzer.analyze_layer_cycles()
 
 @app.command()
 def visualize(

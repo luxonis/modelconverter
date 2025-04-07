@@ -151,6 +151,21 @@ ImagePathArgument = Annotated[
     ),
 ]
 
+AnalyzeOutputsOption = Annotated[
+    bool,
+    typer.Option(
+        help="A boolean option for comparing DLC model outputs. Defaults to True.",
+    ),
+]
+
+AnalyzeCyclesOption = Annotated[
+    bool,
+    typer.Option(
+        help="A boolean option for comparing DLC model cycles. Defaults to True.",
+    ),
+]
+
+
 ComparisonPathArgument = Annotated[
     str,
     typer.Argument(
