@@ -4,10 +4,8 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 import os 
 
-import pandas as pd
-
+import polars as pl
 from modelconverter.utils import resolve_path, subprocess_run
-
 
 class Analyzer(ABC):
     def __init__(self, dlc_model_path: str, image_dirs: Dict[str, str]):
@@ -49,18 +47,15 @@ class Analyzer(ABC):
         start_index = content.find(start_marker)
         end_index = content.find(end_marker, start_index)
 
-        # Extract and load the relevant CSV part into a pandas DataFrame.
         relevant_csv_part = content[start_index:end_index].strip()
-        df = pd.read_csv(io.StringIO(relevant_csv_part))
+        df = pl.read_csv(io.StringIO(relevant_csv_part))
         sizes = {
-            str(row["Input Name"]): list(
-                map(int, str(row["Dimensions"]).split(","))
-            )
-            for _, row in df.iterrows()
+            str(row["Input Name"]): list(map(int, str(row["Dimensions"]).split(",")))
+            for row in df.to_dicts()
         }
         data_types = {
             str(row["Input Name"]): str(row["Type"])
-            for _, row in df.iterrows()
+            for row in df.to_dicts()
         }
 
         self._validate_inputs(sizes)
@@ -82,17 +77,21 @@ class Analyzer(ABC):
     def _replace_bad_layer_names(self, layer_names: List[str]) -> List[str]:
         new_layer_names = []
         for layer_name in layer_names:
-            ln = layer_name.replace("..", ".")
-            ln = ln.replace("__", "_")
-            ln = ln.replace(".", "_")
-            ln = ln.replace("/", "_")
-            ln = ln.strip("_")
-            ln = ln.replace("_output_0", "")
-            ln = ln.replace("(cycles)", "")
-
+            ln = self._replace_bad_layer_name(layer_name)
             new_layer_names.append(ln)
 
         return new_layer_names
+    
+    def _replace_bad_layer_name(self, ln: str) -> str:
+        ln = ln.replace("..", ".")
+        ln = ln.replace("__", "_")
+        ln = ln.replace(".", "_")
+        ln = ln.replace("/", "_")
+        ln = ln.replace("_output_0", "")
+        ln = ln.replace("(cycles)", "")
+        ln = ln.strip("_")
+        
+        return ln
 
     def _get_output_sizes(self) -> Dict[str, List[int]]:
         csv_path = Path("info.csv")
@@ -111,24 +110,23 @@ class Analyzer(ABC):
             for i, line in enumerate(lines[start_row:], start=start_row)
             if line.strip().startswith("Note:")
         )
+        csv_portion = "\n".join(lines[start_row:end_row])
+        df = pl.read_csv(io.StringIO(csv_portion))
+        df = df.drop_nulls()
 
-        df = pd.read_csv(
-            csv_path, skiprows=start_row, nrows=end_row - start_row
+        df = df.select(["Outputs", "Out Dims"])
+        df = df.rename({"Outputs": "Name", "Out Dims": "Shape"})
+
+        df = df.with_columns(
+            pl.col("Name").str.split(" ").list.first().alias("Name"),
+            pl.col("Shape").str.split("x").list.eval(pl.element().cast(int)).alias("Shape"),
         )
+        
+        names = self._replace_bad_layer_names(df["Name"].to_list())
+        df = df.with_columns(pl.Series("Name", names))
         csv_path.unlink()
-        df = df.dropna()
 
-        df = df[["Outputs", "Out Dims"]]
-        df.columns = ["Name", "Shape"]
-        df["Name"] = df["Name"].str.split(" ").str[0]
-        df["Shape"] = df["Shape"].str.replace("x", ",")
-        df["Shape"] = df["Shape"].apply(
-            lambda x: [int(d) for d in x.split(",")]
-        )
-        df["Name"] = self._replace_bad_layer_names(list(df["Name"]))
-        df.set_index("Name", inplace=True)
-        output_sizes = df["Shape"].to_dict()
-
+        output_sizes = {row["Name"]: row["Shape"] for row in df.to_dicts()}
         return output_sizes
     
     def _check_dir_sizes(self):

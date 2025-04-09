@@ -4,11 +4,11 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List, cast
 
+import polars as pl
 import numpy as np
 import onnx
 import onnx.onnx_pb
 import onnxruntime as rt
-import pandas as pd
 from PIL import Image
 
 from modelconverter.utils import AdbHandler, constants, subprocess_run
@@ -193,18 +193,26 @@ class RVC4Analyzer(Analyzer):
                 statistics.append([layer_name, *layer_stats])
 
         output_dir = f"{str(constants.OUTPUTS_DIR)}/analysis/{self.model_name}"
-        stats_df = pd.DataFrame(
+        stats_df = pl.DataFrame(
             statistics,
-            columns=["layer_name", "max_abs_diff", "MSE", "cos_sim"],
+            schema=["layer_name", "max_abs_diff", "MSE", "cos_sim"],
+            orient="row"
         )
-        stats_df = stats_df.groupby("layer_name").agg("mean").reset_index()
-
-        stats_df["layer_name"] = pd.Categorical(
-            stats_df["layer_name"], categories=layer_names, ordered=True
-        )
-        stats_df = stats_df.sort_values("layer_name")
-        stats_df.to_csv(f"{output_dir}/layer_comparison.csv", index=False)
-
+        grouped_df = stats_df.group_by("layer_name").agg([
+            pl.col("max_abs_diff").mean().alias("max_abs_diff"),
+            pl.col("MSE").mean().alias("MSE"),
+            pl.col("cos_sim").mean().alias("cos_sim")
+        ])
+        
+        layer_mapping = {name: idx for idx, name in enumerate(layer_names)}
+        grouped_df = grouped_df.with_columns(
+            pl.col("layer_name").map_elements(
+                lambda x: layer_mapping.get(x, -1), return_dtype=pl.Int32
+            ).alias("order")
+        ).sort("order")
+        
+        grouped_df = grouped_df.drop("order")
+        grouped_df.write_csv(f"{output_dir}/layer_comparison.csv")
         os.remove(Path(onnx_all_layers))
 
     def _calculate_statistics(
@@ -225,12 +233,14 @@ class RVC4Analyzer(Analyzer):
             f"/data/local/tmp/{self.model_name}/{self.model_name}.dlc",
         )
         self.adb.shell(f"rm -rf /data/local/tmp/{self.model_name}/output")
-
         self.adb.shell(f"cd /data/local/tmp/{self.model_name} && {command}")
-
+        
         target_dir = (
-            f"{str(constants.OUTPUTS_DIR)}/analysis/{self.model_name}/"
+            f"{str(constants.OUTPUTS_DIR)}/analysis/{self.model_name}"
         )
+        if os.path.exists(f"{target_dir}/output"):
+            shutil.rmtree(f"{target_dir}/output")
+
         os.makedirs(target_dir, exist_ok=True)
         self.adb.pull(
             f"/data/local/tmp/{self.model_name}/output", f"{target_dir}/output"
@@ -291,39 +301,32 @@ class RVC4Analyzer(Analyzer):
         self._cleanup_dlc_outputs()
 
     def _process_diagview_csv(self, csv_path: str):
-        df = pd.read_csv(csv_path, index_col=False)
-
-        filtered_df = df[df["Layer Id"].notna()]
+        df = pl.read_csv(csv_path)
+        df = df.drop_nans()
+        df = df.drop_nulls()
         layer_stats = (
-            filtered_df.groupby("Layer Id")
+            df.group_by("Layer Id")
             .agg(
-                {
-                    "Time": ["mean"],
-                    "Layer Name": "first",
-                    "Unit of Measurement": "first",
-                }
+                    pl.col("Time").mean().round(0).cast(int).alias("time_mean"),
+                    pl.col("Layer Name").first().alias("layer_name"),
+                    pl.col("Unit of Measurement").first().alias("unit"),
             )
-            .reset_index()
         )
-
-        layer_stats.columns = ["layer_id", "time_mean", "layer_name", "unit"]
-        layer_stats["time_mean"] = layer_stats["time_mean"].round(0)
-        layer_stats["time_mean"] = layer_stats["time_mean"].astype(int)
-        layer_stats["layer_id"] = layer_stats["layer_id"].astype(int)
-        layer_stats["layer_name"] = layer_stats["layer_name"].apply(
-            lambda x: x.split(":")[0]
-        )
-        layer_stats["layer_name"] = self._replace_bad_layer_names(
-            list(layer_stats["layer_name"])
-        )
+        layer_stats = layer_stats.rename({"Layer Id": "layer_id"})
+        
         total_time = layer_stats["time_mean"].sum()
-        layer_stats["Percentage_of_Total_Time"] = (
-            layer_stats["time_mean"] / total_time
-        ).round(4)
-
-        layer_stats.to_csv(
+        layer_stats = layer_stats.with_columns(
+            pl.col("layer_id").cast(int).alias("layer_id"),
+            pl.col("layer_name").str.split(":").list.first().map_elements(
+                    lambda x: self._replace_bad_layer_name(x), return_dtype=pl.Utf8
+                ).alias("layer_name"),
+            pl.col("time_mean").mul(1/ total_time).alias("Percentage_of_Total_Time"),
+        )
+        
+        layer_stats = layer_stats.sort("layer_id")
+        
+        layer_stats.write_csv(
             f"{str(constants.OUTPUTS_DIR)}/analysis/{self.model_name}/layer_cycles.csv",
-            index=False,
         )
 
     # cleanup
