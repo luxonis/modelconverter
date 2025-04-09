@@ -1,4 +1,3 @@
 tflite
 psutil
 numpy<2
-pandas
