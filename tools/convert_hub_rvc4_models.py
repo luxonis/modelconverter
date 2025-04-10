@@ -136,12 +136,14 @@ def export_models(variant_info, precision_to_params, args):
 def main():
     args = parse_arguments()
     model_list = model_ls(
-        is_public=args.is_public, luxonis_only=False, limit=args.limit
+        is_public=args.is_public, luxonis_only=True, limit=args.limit
     )
     logger.info(f"Models found: {len(model_list)}")
 
     for model_info in model_list:
-        version_list = variant_ls(model_id=model_info["id"])
+        version_list = variant_ls(
+            model_id=model_info["id"], is_public=args.is_public
+        )
         logger.info(f"Variants for {model_info['id']}: {version_list}")
 
         for variant_info in version_list:
@@ -152,6 +154,7 @@ def main():
                 model_id=model_info["id"],
                 variant_id=variant_info["id"],
                 model_type=None,
+                is_public=args.is_public,
             )
             precision_list = get_missing_model_precisions(
                 instance_list, args.snpe_version
