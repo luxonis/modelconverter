@@ -23,23 +23,28 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 
 ## Table of Contents
 
-- [Installation](#installation)
-- [Configuration](#configuration)
-  - [YAML Configuration File](#yaml-configuration-file)
-  - [NN Archive Configuration File](#nn-archive-configuration-file)
-- [Online Usage](#online-usage)
-- [Local Usage](#local-usage)
-  - [Prerequisites](#prerequisites)
-    - [GPU Support](#gpu-support)
-  - [Sharing Files](#sharing-files)
-  - [Running ModelConverter](#running-modelconverter)
-    - [Examples](#examples)
-- [Multi-Stage Conversion](#multi-stage-conversion)
-- [Interactive Mode](#interactive-mode)
-- [Calibration Data](#calibration-data)
-- [Inference](#inference)
-  - [Inference Example](#inference-example)
-- [Benchmarking](#benchmarking)
+- [ModelConverter - Compilation Library](#modelconverter---compilation-library)
+  - [Status](#status)
+  - [Table of Contents](#table-of-contents)
+  - [Installation](#installation)
+  - [Configuration](#configuration)
+    - [YAML Configuration File](#yaml-configuration-file)
+    - [NN Archive Configuration File](#nn-archive-configuration-file)
+  - [Online Usage](#online-usage)
+  - [Local Usage](#local-usage)
+    - [Prerequisites](#prerequisites)
+      - [GPU Support](#gpu-support)
+    - [Sharing Files](#sharing-files)
+    - [Running ModelConverter](#running-modelconverter)
+      - [Available CLI Options](#available-cli-options)
+      - [Handling Large ONNX Files (Exceeding 2GB)](#handling-large-onnx-files-exceeding-2gb)
+      - [Examples](#examples)
+  - [Multi-Stage Conversion](#multi-stage-conversion)
+  - [Interactive Mode](#interactive-mode)
+  - [Calibration Data](#calibration-data)
+  - [Inference](#inference)
+    - [Inference Example](#inference-example)
+  - [Benchmarking](#benchmarking)
 
 ## Installation
 
@@ -297,6 +302,28 @@ Below is a table of common command-line options available when using the `modelc
 
 > \[!NOTE\]
 > This table is not exhaustive. For more detailed information about available options, run `modelconverter convert --help` in your command line interface. You can also check all the `[ config overrides ]` available at [defaults.yaml](shared_with_container/configs/defaults.yaml).
+
+#### Handling Large ONNX Files (Exceeding 2GB)
+
+When working with ONNX models that exceed 2GB in size, the model data must be stored using ONNX's external data mechanism. This separates the model structure from the large weight data.
+
+For detailed instructions on creating ONNX models with external data, please refer to the [ONNX External Data documentation](https://onnx.ai/onnx/repo-docs/ExternalData.html).
+
+**Requirements for ModelConverter:**
+When using the ModelConverter with large ONNX models, the external data file **must** have the exact same name as the .onnx file, but with the `.onnx_data` suffix.
+For example:
+
+- Model file: `model.onnx`
+- External data file: `model.onnx_data`
+
+> \[!IMPORTANT\]
+> This naming convention is a **hard requirement** for the conversion process to work correctly.
+
+**NN Archive Requirements:**
+When providing an NN Archive as input to the converter:
+
+- Both the ONNX model file (`.onnx`) and its corresponding external data file (`.onnx_data`) must be included in the archive.
+- The naming convention described above must be maintained within the archive.
 
 #### Examples
 

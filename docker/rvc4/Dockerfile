@@ -56,7 +56,7 @@ EOF
 COPY --link requirements.txt requirements.txt
 COPY --link modelconverter/packages/rvc4/requirements.txt requirements-rvc4.txt
 
-RUN pip install --upgrade pip
+RUN pip install --upgrade pip setuptools wheel
 RUN pip install -r requirements.txt
 RUN pip install --upgrade -r requirements-rvc4.txt
 
