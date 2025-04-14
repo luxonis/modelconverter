@@ -139,6 +139,41 @@ ModelPathOption = Annotated[
     str, typer.Option(help="A URL or a path to the model file.")
 ]
 
+ModelPathArgument = Annotated[
+    str, typer.Argument(help="A URL or a path to the model file.")
+]
+
+ImagePathArgument = Annotated[
+    List[str],
+    typer.Argument(
+        help="In the case of single input models, only a path/to/image/dir can be specified. "
+        "If model has multiple inputs, specify key-value pairs like: input_name_1 path/to/images1 input_name_2 path/to/images2 ..."
+    ),
+]
+
+AnalyzeOutputsOption = Annotated[
+    bool,
+    typer.Option(
+        help="A boolean option for comparing DLC model outputs. Defaults to True.",
+    ),
+]
+
+AnalyzeCyclesOption = Annotated[
+    bool,
+    typer.Option(
+        help="A boolean option for comparing DLC model cycles. Defaults to True.",
+    ),
+]
+
+
+ComparisonPathArgument = Annotated[
+    str,
+    typer.Argument(
+        help="Base path where the models comparison files are stored."
+        "If no path is provided, all csv files in 'shared_with_container/outputs/analysis' will be visualized."
+    ),
+]
+
 DockerOption = Annotated[
     bool,
     typer.Option(
