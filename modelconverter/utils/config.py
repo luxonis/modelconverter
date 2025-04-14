@@ -159,6 +159,16 @@ class InputConfig(OutputConfig):
 
         return self
 
+    @model_validator(mode="after")
+    def _validate_dynamic_batch_size(self) -> Self:
+        if self.shape is not None and self.shape[0] == 0:
+            logger.info(
+                "Detected dynamic batch size (the first element "
+                "of the shape is set to 0). Setting batch size to 1. "
+            )
+            self.shape[0] = 1
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def _validate_encoding(cls, data: Dict[str, Any]) -> Dict[str, Any]:
