@@ -1,3 +1,4 @@
+import os
 from itertools import chain
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
@@ -642,6 +643,10 @@ def generate_renamed_onnx(
     output_path: Union[Path, str],
 ) -> None:
     model = onnx.load(str(onnx_path))
+    if os.path.exists(str(onnx_path).replace(".onnx", ".onnx_data")):
+        model_data_path = str(onnx_path).replace(".onnx", ".onnx_data")
+    else:
+        model_data_path = None
 
     for node in model.graph.node:
         for i, input_name in enumerate(node.input):
@@ -652,4 +657,12 @@ def generate_renamed_onnx(
             if output_name in rename_dict:
                 node.output[i] = rename_dict[output_name]
 
-    onnx.save(model, str(output_path))
+    if model_data_path:
+        onnx.save(
+            model,
+            str(output_path),
+            save_as_external_data=True,
+            location=f"{os.path.basename(str(output_path))}_data",
+        )
+    else:
+        onnx.save(model, str(output_path))

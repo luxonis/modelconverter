@@ -1,3 +1,5 @@
+import os
+import tempfile
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -22,6 +24,10 @@ def onnx_attach_normalization_to_inputs(
     reverse_only=False,
 ) -> Path:
     model = onnx.load(str(model_path))
+    if os.path.exists(str(model_path).replace(".onnx", ".onnx_data")):
+        model_data_path = str(model_path).replace(".onnx", ".onnx_data")
+    else:
+        model_data_path = None
 
     graph = model.graph
 
@@ -174,9 +180,18 @@ def onnx_attach_normalization_to_inputs(
 
     graph.initializer.extend(new_initializers)
 
-    checker.check_model(model)
+    if model_data_path:
+        onnx.save(
+            model,
+            str(save_path),
+            save_as_external_data=True,
+            location=f"{os.path.basename(str(save_path))}_data",
+        )
+    else:
+        onnx.save(model, str(save_path))
 
-    onnx.save(model, str(save_path))
+    checker.check_model(str(save_path))
+
     return save_path
 
 
@@ -200,6 +215,10 @@ class ONNXModifier:
         skip_optimization: bool = False,
     ) -> None:
         self.model_path = model_path
+        if os.path.exists(str(model_path).replace(".onnx", ".onnx_data")):
+            self.has_external_data = True
+        else:
+            self.has_external_data = False
         self.output_path = output_path
         self.skip_optimization = skip_optimization
         self.load_onnx()
@@ -249,7 +268,19 @@ class ONNXModifier:
             optimized_onnx_model, perform_optimization=False
         )
 
-        onnx.checker.check_model(optimized_onnx_model)
+        if self.has_external_data:
+            with tempfile.NamedTemporaryFile(
+                delete=True, suffix=".onnx"
+            ) as tmp_onnx_file:
+                onnx.save(
+                    optimized_onnx_model,
+                    tmp_onnx_file.name,
+                    save_as_external_data=True,
+                    location=f"{os.path.basename(tmp_onnx_file.name)}_data",
+                )
+                onnx.checker.check_model(tmp_onnx_file.name)
+        else:
+            onnx.checker.check_model(optimized_onnx_model)
 
         self.onnx_model, self.onnx_gs = (
             optimized_onnx_model,
@@ -265,7 +296,15 @@ class ONNXModifier:
 
         self.optimize_onnx(passes)
 
-        onnx.save(self.onnx_model, self.output_path)
+        if self.has_external_data:
+            onnx.save(
+                self.onnx_model,
+                str(self.output_path),
+                save_as_external_data=True,
+                location=f"{os.path.basename(str(self.output_path))}_data",
+            )
+        else:
+            onnx.save(self.onnx_model, self.output_path)
 
     def add_outputs(self, output_names: List[str]) -> None:
         """Add output nodes to the ONNX model.
