@@ -8,7 +8,7 @@ RUN <<EOF
     set -e
 
     apt-get update
-    apt-get install -y  \
+    apt-get install -y --fix-missing \
         cmake           \
         unzip           \
         perl            \
