@@ -245,22 +245,14 @@ class BlobBaseConfig(TargetConfig):
 
 class RVC2Config(BlobBaseConfig):
     number_of_shaves: int = 8
-    number_of_cmx_slices: int = 8
     superblob: bool = True
 
     @model_validator(mode="after")
-    def _validate_cmx_slices(self) -> Self:
-        if self.superblob:
-            self.number_of_cmx_slices = self.number_of_shaves = 8
+    def _validate_superblob(self) -> Self:
+        if self.superblob and self.number_of_shaves != 8:
+            logger.warning("Changing number_of_shaves to 8 for superblob.")
+            self.numer_of_shaves = 8
 
-        elif self.number_of_cmx_slices < self.number_of_shaves:
-            logger.warning(
-                "Number of CMX slices must be greater than or equal "
-                "to the number of shaves. "
-                "Setting `number_of_cmx_slices` to "
-                f"`number_of_shaves` ({self.number_of_shaves})."
-            )
-            self.number_of_cmx_slices = self.number_of_shaves
         return self
 
 

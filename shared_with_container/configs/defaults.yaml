@@ -144,9 +144,6 @@ stages:
       # Specifies number of shaves.
       number_of_shaves: 8
 
-      # Specifies number of CMX slices.
-      number_of_cmx_slices: 8
-
       # List of additional arguments to pass to the model optimizer.
       # The additional arguments are passed as-is and always take precedence
       # over the default arguments.
