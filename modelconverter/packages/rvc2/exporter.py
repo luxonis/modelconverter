@@ -40,6 +40,7 @@ class RVC2Exporter(Exporter):
         super().__init__(config=config, output_dir=output_dir)
         self.compress_to_fp16 = config.rvc2.compress_to_fp16
         self.number_of_shaves = config.rvc2.number_of_shaves
+        # Setting the number_of_cmx_slices equal to the number_of_shaves is intentional from the DAI's perspective to maximize RVC2 pipeline performance.
         self.number_of_cmx_slices = config.rvc2.number_of_shaves
         self.superblob = config.rvc2.superblob
         self.mo_args = config.rvc2.mo_args
