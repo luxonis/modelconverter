@@ -20,6 +20,7 @@ jobs:
           - "2.25.0"
           - "2.26.2"
           - "2.27.0"
+          - "2.33.0"
 
     uses: ./.github/workflows/publish.yaml
     secrets: inherit
