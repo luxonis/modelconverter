@@ -79,6 +79,7 @@ def onnx_attach_normalization_to_inputs(
                 inputs=[last_output],
                 outputs=split_names,
                 axis=1 if layout == "NCHW" else 3,
+                name=f"split_{input_name}",
             )
             new_nodes.append(split_node)
 
@@ -87,6 +88,7 @@ def onnx_attach_normalization_to_inputs(
                 inputs=split_names[::-1],
                 outputs=[f"normalized_{input_name}"],
                 axis=1 if layout == "NCHW" else 3,
+                name=f"concat_{input_name}",
             )
             new_nodes.append(concat_node)
             last_output = f"normalized_{input_name}"
@@ -105,6 +107,7 @@ def onnx_attach_normalization_to_inputs(
                 "Sub",
                 inputs=[last_output, f"mean_{input_name}"],
                 outputs=[sub_out],
+                name=f"sub_out_{input_name}",
             )
             new_nodes.append(sub_node)
             last_output = sub_out
@@ -133,6 +136,7 @@ def onnx_attach_normalization_to_inputs(
                 "Mul",
                 inputs=[last_output, f"scale_{input_name}"],
                 outputs=[div_out],
+                name=f"div_out_{input_name}",
             )
             new_nodes.append(div_node)
             last_output = div_out
