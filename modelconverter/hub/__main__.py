@@ -355,7 +355,7 @@ def instance_ls(
     order: OrderOption = Order.DESC,
 ):
     """Lists model instances."""
-    hub_ls(
+    return hub_ls(
         "modelInstances",
         platforms=[platform.name for platform in platforms]
         if platforms
