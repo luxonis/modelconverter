@@ -86,6 +86,26 @@ class Request:
         )
 
     @staticmethod
+    def put(endpoint: str = "", **kwargs) -> Any:
+        headers = Request.headers()
+        if "headers" in kwargs:
+            headers = {**headers, **kwargs.pop("headers")}
+        return Request._process_response(
+            requests.put(Request._get_url(endpoint), headers=headers, **kwargs)
+        )
+
+    @staticmethod
+    def patch(endpoint: str = "", **kwargs) -> Any:
+        headers = Request.headers()
+        if "headers" in kwargs:
+            headers = {**headers, **kwargs.pop("headers")}
+        return Request._process_response(
+            requests.patch(
+                Request._get_url(endpoint), headers=headers, **kwargs
+            )
+        )
+
+    @staticmethod
     def _get_url(endpoint: str, base_url: Optional[str] = None) -> str:
         base_url = base_url or Request.url()
         return f"{base_url}/{endpoint.lstrip('/')}".rstrip("/")
