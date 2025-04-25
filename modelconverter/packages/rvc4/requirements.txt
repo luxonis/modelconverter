@@ -1,3 +1,4 @@
 tflite
 psutil
 numpy<2
+polars

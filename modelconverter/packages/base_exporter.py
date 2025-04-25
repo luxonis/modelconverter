@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 from abc import ABC, abstractmethod
 from importlib.metadata import version
@@ -53,10 +54,24 @@ class Exporter(ABC):
             f.write(config.model_dump_json(indent=4))
 
         shutil.copy(self.input_model, self.intermediate_outputs_dir)
+        if os.path.exists(
+            str(self.input_model).replace(".onnx", ".onnx_data")
+        ):
+            shutil.copy(
+                str(self.input_model).replace(".onnx", ".onnx_data"),
+                self.intermediate_outputs_dir,
+            )
         if self.input_file_type == InputFileType.IR:
             assert self.config.input_bin is not None
             shutil.copy(self.config.input_bin, self.intermediate_outputs_dir)
         shutil.copy(self.input_model, self.output_dir)
+        if os.path.exists(
+            str(self.input_model).replace(".onnx", ".onnx_data")
+        ):
+            shutil.copy(
+                str(self.input_model).replace(".onnx", ".onnx_data"),
+                self.output_dir,
+            )
         self.input_model = (
             self.intermediate_outputs_dir / self.input_model.name
         )
@@ -109,7 +124,17 @@ class Exporter(ABC):
             self.input_model, "simplified.onnx"
         )
         logger.info(f"Saving simplified ONNX to {onnx_sim_path}")
-        onnx.save(onnx_sim, str(onnx_sim_path))
+        if os.path.exists(
+            str(self.input_model).replace(".onnx", ".onnx_data")
+        ):
+            onnx.save(
+                onnx_sim,
+                str(onnx_sim_path),
+                save_as_external_data=True,
+                location=f"{os.path.basename(str(onnx_sim_path))}_data",
+            )
+        else:
+            onnx.save(onnx_sim, str(onnx_sim_path))
         return onnx_sim_path
 
     @abstractmethod

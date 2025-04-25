@@ -44,7 +44,6 @@ DEFAULT_TARGET_CONFIGS = {
         "compile_tool_args": [],
         "superblob": True,
         "number_of_shaves": 8,
-        "number_of_cmx_slices": 8,
         "disable_calibration": False,
         "compress_to_fp16": True,
     },

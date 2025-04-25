@@ -1,3 +1,4 @@
+import os
 from itertools import chain
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
@@ -245,22 +246,14 @@ class BlobBaseConfig(TargetConfig):
 
 class RVC2Config(BlobBaseConfig):
     number_of_shaves: int = 8
-    number_of_cmx_slices: int = 8
     superblob: bool = True
 
     @model_validator(mode="after")
-    def _validate_cmx_slices(self) -> Self:
-        if self.superblob:
-            self.number_of_cmx_slices = self.number_of_shaves = 8
+    def _validate_superblob(self) -> Self:
+        if self.superblob and self.number_of_shaves != 8:
+            logger.warning("Changing number_of_shaves to 8 for superblob.")
+            self.number_of_shaves = 8
 
-        elif self.number_of_cmx_slices < self.number_of_shaves:
-            logger.warning(
-                "Number of CMX slices must be greater than or equal "
-                "to the number of shaves. "
-                "Setting `number_of_cmx_slices` to "
-                f"`number_of_shaves` ({self.number_of_shaves})."
-            )
-            self.number_of_cmx_slices = self.number_of_shaves
         return self
 
 
@@ -650,6 +643,10 @@ def generate_renamed_onnx(
     output_path: Union[Path, str],
 ) -> None:
     model = onnx.load(str(onnx_path))
+    if os.path.exists(str(onnx_path).replace(".onnx", ".onnx_data")):
+        model_data_path = str(onnx_path).replace(".onnx", ".onnx_data")
+    else:
+        model_data_path = None
 
     for node in model.graph.node:
         for i, input_name in enumerate(node.input):
@@ -660,4 +657,12 @@ def generate_renamed_onnx(
             if output_name in rename_dict:
                 node.output[i] = rename_dict[output_name]
 
-    onnx.save(model, str(output_path))
+    if model_data_path:
+        onnx.save(
+            model,
+            str(output_path),
+            save_as_external_data=True,
+            location=f"{os.path.basename(str(output_path))}_data",
+        )
+    else:
+        onnx.save(model, str(output_path))
