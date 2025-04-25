@@ -239,6 +239,7 @@ def analyze(
     image_dirs: ImagePathArgument,
     analyze_outputs: AnalyzeOutputsOption = True,
     analyze_cycles: AnalyzeCyclesOption = True,
+    dev: DevOption = False,
 ):
     """Runs layer and cycle analysis on the specified DLC model.
 
@@ -260,25 +261,61 @@ def analyze(
 
     """
 
-    if len(image_dirs) == 1:
-        image_dirs_dict = {"default": image_dirs[0]}
+    tag = "dev" if dev else "latest"
+    
+    if in_docker():
+        try:
+            logger.info("Starting analysis")
+            if len(image_dirs) == 1:
+                image_dirs_dict = {"default": image_dirs[0]}
+            else:
+                if len(image_dirs) % 2 != 0:
+                    raise typer.BadParameter(
+                        "Please supply the same amount of model input names and test image directories."
+                    )
+                image_dirs_dict = {
+                    image_dirs[i]: image_dirs[i + 1]
+                    for i in range(0, len(image_dirs), 2)
+                }
+
+            Analyzer = get_analyzer(Target.RVC4)
+            analyzer = Analyzer(dlc_model_path, image_dirs_dict)
+            if analyze_outputs:
+                logger.info("Analyzing layer outputs")
+                analyzer.analyze_layer_outputs(resolve_path(onnx_model_path, Path.cwd()))
+            if analyze_cycles:
+                logger.info("Analyzing layer cycles")
+                analyzer.analyze_layer_cycles()
+            logger.info("Analysis finished successfully")
+        except Exception:
+            logger.exception("Encountered an unexpected error!")
+            exit(2)
     else:
-        if len(image_dirs) % 2 != 0:
-            raise typer.BadParameter(
-                "Please supply the same amount of model input names and test image directories."
-            )
-        image_dirs_dict = {
-            image_dirs[i]: image_dirs[i + 1]
-            for i in range(0, len(image_dirs), 2)
-        }
-
-    Analyzer = get_analyzer(Target.RVC4)
-    analyzer = Analyzer(dlc_model_path, image_dirs_dict)
-
-    if analyze_outputs:
-        analyzer.analyze_layer_outputs(resolve_path(onnx_model_path, Path.cwd()))
-    if analyze_cycles:
-        analyzer.analyze_layer_cycles()
+        if dev:
+            docker_build("rvc4", bare_tag=tag)
+            
+        args =[
+            "analyze",
+            "--dlc-model-path",
+            dlc_model_path,
+            "--onnx-model-path",
+            onnx_model_path,
+            "--image-dirs",
+        ]
+        args.extend(image_dirs)
+        args.append(
+            "--analyze-outputs" if analyze_outputs else "--no-analyze-outputs")
+        args.append(
+            "--analyze-cycles" if analyze_cycles else "--no-analyze-cycles")
+        
+        docker_exec(
+            "rvc4",
+            *args,
+            bare_tag=tag,
+            use_gpu=False,
+        )
+        
+        
 
 @app.command()
 def visualize(
