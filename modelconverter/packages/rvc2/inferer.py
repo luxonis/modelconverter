@@ -2,13 +2,12 @@ from pathlib import Path
 
 import numpy as np
 
+from modelconverter.packages.base_inferer import Inferer
 from modelconverter.utils import read_image
-
-from ..base_inferer import Inferer
 
 
 class RVC2Inferer(Inferer):
-    def setup(self):
+    def setup(self) -> None:
         from openvino.inference_engine.ie_api import IECore
 
         self.xml_path = self.model_path

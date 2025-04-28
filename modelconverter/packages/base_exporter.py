@@ -1,5 +1,4 @@
 import json
-import os
 import shutil
 from abc import ABC, abstractmethod
 from importlib.metadata import version
@@ -54,9 +53,7 @@ class Exporter(ABC):
             f.write(config.model_dump_json(indent=4))
 
         shutil.copy(self.input_model, self.intermediate_outputs_dir)
-        if os.path.exists(
-            str(self.input_model).replace(".onnx", ".onnx_data")
-        ):
+        if self.input_model.with_suffix(".onnx_data").exists():
             shutil.copy(
                 str(self.input_model).replace(".onnx", ".onnx_data"),
                 self.intermediate_outputs_dir,
@@ -65,9 +62,7 @@ class Exporter(ABC):
             assert self.config.input_bin is not None
             shutil.copy(self.config.input_bin, self.intermediate_outputs_dir)
         shutil.copy(self.input_model, self.output_dir)
-        if os.path.exists(
-            str(self.input_model).replace(".onnx", ".onnx_data")
-        ):
+        if self.input_model.with_suffix(".onnx_data").exists():
             shutil.copy(
                 str(self.input_model).replace(".onnx", ".onnx_data"),
                 self.output_dir,
@@ -124,14 +119,12 @@ class Exporter(ABC):
             self.input_model, "simplified.onnx"
         )
         logger.info(f"Saving simplified ONNX to {onnx_sim_path}")
-        if os.path.exists(
-            str(self.input_model).replace(".onnx", ".onnx_data")
-        ):
+        if self.input_model.with_suffix(".onnx_data").exists():
             onnx.save(
                 onnx_sim,
                 str(onnx_sim_path),
                 save_as_external_data=True,
-                location=f"{os.path.basename(str(onnx_sim_path))}_data",
+                location=f"{onnx_sim_path.name}_data",
             )
         else:
             onnx.save(onnx_sim, str(onnx_sim_path))
@@ -213,10 +206,12 @@ class Exporter(ABC):
         return Path(str(Path(path).with_suffix("")) + f"-{suffix.lstrip('-')}")
 
     @staticmethod
-    def _add_args(args: list, new_args: list, index=0):
+    def _add_args(args: list, new_args: list, index: int = 0) -> None:
         if new_args[index] not in args:
             args.extend(new_args)
 
-    def _subprocess_run(self, args: list[str], meta_name: str, **kwargs):
+    def _subprocess_run(
+        self, args: list[str], meta_name: str, **kwargs
+    ) -> None:
         subprocess_run(args, **kwargs)
         self._cmd_info[meta_name] = [str(arg) for arg in args]

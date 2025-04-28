@@ -1,11 +1,16 @@
-from datetime import datetime
+import sys
+from datetime import datetime, timezone
 from statistics import median
 
 from loguru import logger
 from openvino.inference_engine.ie_api import IECore, StatusCode
 from rich.progress import track
 
-from ..base_benchmark import Benchmark, BenchmarkResult, Configuration
+from modelconverter.packages.base_benchmark import (
+    Benchmark,
+    BenchmarkResult,
+    Configuration,
+)
 
 
 class RVC3Benchmark(Benchmark):
@@ -39,7 +44,7 @@ class RVC3Benchmark(Benchmark):
         in_fly = set()
         iterations = 1000
         i = 0
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         for _ in track(
             range(max(requests, iterations)),
             description="Running inference",
@@ -64,9 +69,11 @@ class RVC3Benchmark(Benchmark):
             logger.critical(
                 f"Wait for all requests has failed with status code {status}!"
             )
-            exit(1)
+            sys.exit(1)
 
-        total_duration_sec = (datetime.utcnow() - start_time).total_seconds()
+        total_duration_sec = (
+            datetime.now(timezone.utc) - start_time
+        ).total_seconds()
         for infer_request_id in in_fly:
             times.append(infer_requests[infer_request_id].latency)
         times.sort()

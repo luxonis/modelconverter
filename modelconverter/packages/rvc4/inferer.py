@@ -3,14 +3,13 @@ from pathlib import Path
 
 import numpy as np
 
+from modelconverter.packages.base_inferer import Inferer
 from modelconverter.utils import read_image, subprocess_run
 from modelconverter.utils.types import DataType
 
-from ..base_inferer import Inferer
-
 
 class RVC4Inferer(Inferer):
-    def setup(self):
+    def setup(self) -> None:
         self.raw_images_path = Path("raw_images")
         self.header = f"%{' '.join(name for name in self.out_shapes)}"
 

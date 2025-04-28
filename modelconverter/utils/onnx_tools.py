@@ -1,4 +1,3 @@
-import os
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -21,10 +20,10 @@ def onnx_attach_normalization_to_inputs(
     save_path: Path,
     input_configs: dict[str, InputConfig],
     *,
-    reverse_only=False,
+    reverse_only: bool = False,
 ) -> Path:
     model = onnx.load(str(model_path))
-    if os.path.exists(str(model_path).replace(".onnx", ".onnx_data")):
+    if model_path.with_suffix(".onnx_data").exists():
         model_data_path = str(model_path).replace(".onnx", ".onnx_data")
     else:
         model_data_path = None
@@ -189,7 +188,7 @@ def onnx_attach_normalization_to_inputs(
             model,
             str(save_path),
             save_as_external_data=True,
-            location=f"{os.path.basename(str(save_path))}_data",
+            location=f"{save_path.name}_data",
         )
     else:
         onnx.save(model, str(save_path))
@@ -219,7 +218,7 @@ class ONNXModifier:
         skip_optimization: bool = False,
     ) -> None:
         self.model_path = model_path
-        if os.path.exists(str(model_path).replace(".onnx", ".onnx_data")):
+        if model_path.with_suffix(".onnx_data").exists():
             self.has_external_data = True
         else:
             self.has_external_data = False
@@ -281,7 +280,7 @@ class ONNXModifier:
                     optimized_onnx_model,
                     tmp_onnx_file.name,
                     save_as_external_data=True,
-                    location=f"{os.path.basename(tmp_onnx_file.name)}_data",
+                    location=f"{tmp_onnx_file.name}_data",
                 )
                 onnx.checker.check_model(tmp_onnx_file.name)
         else:
@@ -307,7 +306,7 @@ class ONNXModifier:
                 self.onnx_model,
                 str(self.output_path),
                 save_as_external_data=True,
-                location=f"{os.path.basename(str(self.output_path))}_data",
+                location=f"{self.output_path.name}_data",
             )
         else:
             onnx.save(self.onnx_model, self.output_path)
@@ -564,7 +563,7 @@ class ONNXModifier:
                 name=f"{name}_var",
                 values=var_values,
             )
-            bn_node = gs.Node(
+            return gs.Node(
                 op="BatchNormalization",
                 inputs=[
                     input_tensor,
@@ -576,7 +575,6 @@ class ONNXModifier:
                 outputs=[gs.Variable(name=f"{name}_output")],
                 name=name,
             )
-            return bn_node
 
         all_sequences = []
 
@@ -1099,14 +1097,14 @@ class ONNXModifier:
 
         self.optimize_onnx()
 
-    def revert_changes(self):
+    def revert_changes(self) -> None:
         """Reverts ONNX model to previous state."""
         self.onnx_model = self.prev_onnx_model
         self.onnx_gs = self.prev_onnx_gs
 
     def apply_optimization_step(
         self, step_name: str, optimization_func: Callable
-    ):
+    ) -> None:
         """Applies a single optimization step to the ONNX model.
 
         @param step_name: Name of the optimization step
@@ -1202,7 +1200,7 @@ class ONNXModifier:
         ort_session_1 = ort.InferenceSession(onnx_model_1)
         ort_session_2 = ort.InferenceSession(onnx_model_2)
 
-        inputs = dict()
+        inputs = {}
         for input in ort_session_1.get_inputs():
             if input.type in ["tensor(float64)"]:
                 input_type = np.float64
@@ -1230,7 +1228,7 @@ class ONNXModifier:
         outputs_2 = ort_session_2.run(None, inputs)
 
         equal_outputs = True
-        for out1, out2 in zip(outputs_1, outputs_2):
+        for out1, out2 in zip(outputs_1, outputs_2, strict=True):
             equal_outputs = equal_outputs and np.allclose(
                 out1, out2, rtol=5e-3, atol=5e-3
             )

@@ -31,4 +31,3 @@ jobs:
     with:
       package: hailo
       version: ${{ matrix.version }}
-

@@ -116,7 +116,11 @@ def get_precision_to_params(
     }
 
 
-def export_models(variant_info, precision_to_params, args):
+def export_models(
+    variant_info: dict[str, Any],
+    precision_to_params: dict[str, Any],
+    args: argparse.Namespace,
+) -> None:
     target_options = {
         "snpe_version": args.snpe_version,
         "disable_onnx_simplification": args.disable_onnx_simplification,

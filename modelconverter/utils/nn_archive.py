@@ -49,7 +49,7 @@ def process_nn_archive(
         if untar_path.suffix == ".tar":
             untar_path = MISC_DIR / untar_path.stem
 
-        def safe_members(tar):
+        def safe_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
             """Filter members to prevent path traversal attacks."""
             safe_files = []
             for member in tar.getmembers():
@@ -60,8 +60,9 @@ def process_nn_archive(
                     logger.warning(f"Skipping unsafe file: {member.name}")
             return safe_files
 
-        tf = tarfile.open(path, mode="r")
-        tf.extractall(untar_path, members=safe_members(tf))
+        with tarfile.open(path, mode="r") as tf:
+            for member in safe_members(tf):
+                tf.extract(member, path=untar_path)
 
     else:
         raise RuntimeError(f"Unknown NN Archive path: `{path}`")
@@ -281,9 +282,9 @@ def modelconverter_config_to_nn(
             raise NotImplementedError(
                 "Only 2-stage models are supported with NN Archive for now."
             )
-        post_stage_key = [
+        post_stage_key = next(
             key for key in config.stages if key != main_stage_key
-        ][0]
+        )
         if not archive.model.heads:
             raise ValueError(
                 "Multistage NN Archives must sxpecify 1 head in the archive config"

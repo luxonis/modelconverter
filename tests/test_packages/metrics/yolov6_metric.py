@@ -5,8 +5,8 @@ import numpy as np
 
 from modelconverter.utils import read_image
 from modelconverter.utils.types import Encoding, ResizeMethod
+from tests.test_packages.onnx_inferer import ONNXInferer
 
-from ..onnx_inferer import ONNXInferer
 from .base_metric import Metric
 
 
@@ -15,19 +15,19 @@ class YoloV6Metric(Metric):
         self.hits = 0
         self.misses = 0
 
-    def update(self, output: list[np.ndarray], labels) -> None:
-        outputs = parse_yolo_outputs_new(
-            output, [8, 16, 32], [None, None, None]
-        )
+    def update(self, output: list[np.ndarray], label: np.ndarray) -> None:
+        outputs = parse_yolo_outputs_new(output, [8, 16, 32])
         outputs = outputs[:, np.isfinite(outputs).all(axis=2).flatten()]
         predictions = non_max_suppression(outputs)[0]
         predictions = predictions[:, [5, 0, 1, 2, 3]]
 
         if len(predictions) == 0:
-            self.misses += len(labels)
+            self.misses += len(label)
             return
-        pred_boxes, _ = zip(*[(pred[1:], pred[0]) for pred in predictions])
-        gt_boxes, _ = zip(*[(gt[1:], gt[0]) for gt in labels])
+        pred_boxes, _ = zip(
+            *[(pred[1:], pred[0]) for pred in predictions], strict=True
+        )
+        gt_boxes, _ = zip(*[(gt[1:], gt[0]) for gt in label], strict=True)
 
         ious = np.array(
             [
@@ -53,7 +53,9 @@ class YoloV6Metric(Metric):
         self.misses = 0
 
     @staticmethod
-    def eval_onnx(onnx_path: Path | str, dataset_path: Path | str):
+    def eval_onnx(
+        onnx_path: Path | str, dataset_path: Path | str
+    ) -> dict[str, float]:
         dataset_path = Path(dataset_path)
         onnx_path = Path(onnx_path)
         onnx_inferer = ONNXInferer(onnx_path)
@@ -91,14 +93,13 @@ class YoloV6Metric(Metric):
         return x
 
 
-def make_grid_numpy(ny, nx, na):
+def make_grid_numpy(ny: int, nx: int, na: int) -> np.ndarray:
     y, x = np.arange(ny), np.arange(nx)
     yv, xv = np.meshgrid(y, x, indexing="ij")
-    grid = np.stack((xv, yv), 2).reshape(1, na, nx, ny, 2)
-    return grid
+    return np.stack((xv, yv), 2).reshape(1, na, nx, ny, 2)
 
 
-def xywh2xyxy(x):
+def xywh2xyxy(x: np.ndarray) -> np.ndarray:
     y = np.copy(x)
     y[:, 0] = x[:, 0] - x[:, 2] / 2  # top left x
     y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
@@ -107,7 +108,7 @@ def xywh2xyxy(x):
     return y
 
 
-def nms(dets, scores, thresh):
+def nms(dets: np.ndarray, scores: np.ndarray, thresh: float):
     x1 = dets[:, 0]
     y1 = dets[:, 1]
     x2 = dets[:, 2]
@@ -137,23 +138,18 @@ def nms(dets, scores, thresh):
 
 
 def non_max_suppression(
-    prediction,
-    conf_thres=0.4,
-    iou_thres=0.45,
-    classes=None,
-    agnostic=False,
-    multi_label=False,
-    max_det=300,
+    prediction: np.ndarray,
+    conf_thres: float = 0.4,
+    iou_thres: float = 0.45,
+    max_det: int = 300,
 ):
-    num_classes = prediction.shape[2] - 5
     pred_candidates = prediction[..., 4] > conf_thres
 
     max_wh = 4096  # maximum box width and height
     max_nms = 30000  # maximum number of boxes put into torchvision.ops.nms()
     time_limit = (
-        10.0
-    )  # quit the function when nms cost time exceed the limit time.
-    multi_label &= num_classes > 1  # multiple labels per box
+        10.0  # quit the function when nms cost time exceed the limit time.
+    )
 
     tik = time.time()
     output = [np.zeros((0, 6))] * prediction.shape[0]
@@ -165,27 +161,11 @@ def non_max_suppression(
 
         box = xywh2xyxy(x[:, :4])
 
-        if multi_label:
-            box_idx, class_idx = (
-                (x[:, 5:] > conf_thres).nonzero(as_tuple=False).T
-            )
-            x = np.concatenate(
-                (
-                    box[box_idx],
-                    x[box_idx, class_idx + 5, None],
-                    class_idx[:, None],
-                ),
-                1,
-            )
-        else:
-            class_idx = np.expand_dims(x[:, 5:].argmax(1), 1)
-            conf = x[:, 5:].max(1, keepdims=True)
-            x = np.concatenate((box, conf, class_idx), 1)[
-                conf.flatten() > conf_thres
-            ]
-
-        if classes is not None:
-            x = x[(x[:, 5:6] == np.array(classes)).any(1)]
+        class_idx = np.expand_dims(x[:, 5:].argmax(1), 1)
+        conf = x[:, 5:].max(1, keepdims=True)
+        x = np.concatenate((box, conf, class_idx), 1)[
+            conf.flatten() > conf_thres
+        ]
 
         num_box = x.shape[0]
         if not num_box:
@@ -195,7 +175,7 @@ def non_max_suppression(
                 x[:, 4].argsort(descending=True)[:max_nms]  # type: ignore
             ]
 
-        class_offset = x[:, 5:6] * (0 if agnostic else max_wh)
+        class_offset = x[:, 5:6] * max_wh
         boxes, scores = (
             x[:, :4] + class_offset,
             x[:, 4],
@@ -206,28 +186,25 @@ def non_max_suppression(
 
         output[img_idx] = x[keep_box_idx]
         if (time.time() - tik) > time_limit:
-            print(f"WARNING: NMS cost time exceed the limited {time_limit}s.")
             break
 
     return output
 
 
-def parse_yolo_outputs_new(outputs, strides, anchors):
-    output = None
-    for x, s, a in zip(outputs, strides, anchors):
-        out = parse_yolo_output_new(x, s, a)
-        output = (
-            out if output is None else np.concatenate((output, out), axis=1)
-        )
+def parse_yolo_outputs_new(
+    outputs: list[np.ndarray], strides: list[int]
+) -> np.ndarray:
+    outputs = []
+    for x, s in zip(outputs, strides, strict=True):
+        outputs.append(parse_yolo_output_new(x, s))
 
-    return output
+    return np.concatenate(outputs, axis=1)
 
 
-def parse_yolo_output_new(x, stride, anchors=None):
-    na = 1 if anchors is None else len(anchors)
+def parse_yolo_output_new(x: np.ndarray, stride: int) -> np.ndarray:
     bs, _, ny, nx = x.shape
-    grid = make_grid_numpy(ny, nx, na)
-    x = x.reshape(bs, na, -1, ny, nx).transpose((0, 1, 3, 4, 2))
+    grid = make_grid_numpy(ny, nx, 1)
+    x = x.reshape(bs, 1, -1, ny, nx).transpose((0, 1, 3, 4, 2))
 
     x1y1 = grid - x[..., 0:2] + 0.5
     x2y2 = grid + x[..., 2:4] + 0.5
@@ -237,11 +214,10 @@ def parse_yolo_output_new(x, stride, anchors=None):
     x[..., 0:2] = c_xy * stride
     x[..., 2:4] = wh * stride
 
-    x = x.reshape(bs, ny * nx, -1)
-    return x
+    return x.reshape(bs, ny * nx, -1)
 
 
-def calculate_iou(prediction_box, gt_box):
+def calculate_iou(prediction_box: tuple, gt_box: tuple) -> float:
     """Calculate Intersection over Union (IoU) for a single prediction
     and ground truth bounding box."""
     x1_p, y1_p, x2_p, y2_p = prediction_box
@@ -261,6 +237,4 @@ def calculate_iou(prediction_box, gt_box):
     union_area = prediction_area + ground_truth_area - intersection_area
 
     # Calculate IoU
-    iou = intersection_area / union_area
-
-    return iou
+    return intersection_area / union_area

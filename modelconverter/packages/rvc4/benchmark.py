@@ -3,6 +3,7 @@ import json
 import re
 import shutil
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 from typing import Final, cast
 
@@ -12,9 +13,12 @@ import polars as pl
 from loguru import logger
 from rich.progress import Progress
 
+from modelconverter.packages.base_benchmark import (
+    Benchmark,
+    BenchmarkResult,
+    Configuration,
+)
 from modelconverter.utils import AdbHandler, environ, subprocess_run
-
-from ..base_benchmark import Benchmark, BenchmarkResult, Configuration
 
 PROFILES: Final[list[str]] = [
     "low_balanced",
@@ -127,16 +131,11 @@ class RVC4Benchmark(Benchmark):
                 input_list += f"{name}:=/data/local/tmp/{self.model_name}/inputs/{name}_{i}.raw "
             input_list += "\n"
 
-        temp_path = tempfile.mktemp()
-        with open(temp_path, "w") as f:
-            f.write(input_list)
-            f.flush()
-        try:
+        with tempfile.NamedTemporaryFile() as f:
+            f.write(input_list.encode())
             self.adb.push(
-                temp_path, f"/data/local/tmp/{self.model_name}/input_list.txt"
+                f.name, f"/data/local/tmp/{self.model_name}/input_list.txt"
             )
-        finally:
-            Path(temp_path).unlink()
 
     def _get_data_type(self) -> dai.TensorInfo.DataType:
         """Retrieve the data type of the model inputs. If the model is
@@ -158,13 +157,11 @@ class RVC4Benchmark(Benchmark):
 
         model_variants = []
         for is_public in [True, False]:
-            try:
+            with suppress(Exception):
                 model_variants += Request.get(
                     "modelVersions/",
                     params={"model_id": model_id, "is_public": is_public},
                 )
-            except Exception:
-                continue
 
         model_version_id = None
         for version in model_variants:
@@ -177,7 +174,7 @@ class RVC4Benchmark(Benchmark):
 
         model_instances = []
         for is_public in [True, False]:
-            try:
+            with suppress(Exception):
                 model_instances += Request.get(
                     "modelInstances/",
                     params={
@@ -186,8 +183,6 @@ class RVC4Benchmark(Benchmark):
                         "is_public": is_public,
                     },
                 )
-            except Exception:
-                continue
 
         model_precision_type = "INT8"
         for instance in model_instances:
@@ -237,7 +232,7 @@ class RVC4Benchmark(Benchmark):
         profile: str,
         runtime: str,
     ) -> BenchmarkResult:
-        runtime = RUNTIMES[runtime] if runtime in RUNTIMES else "use_dsp"
+        runtime = RUNTIMES.get(runtime, "use_dsp")
 
         if isinstance(model_path, str):
             model_archive = dai.getModelFromZoo(
@@ -340,7 +335,7 @@ class RVC4Benchmark(Benchmark):
 
         data_type = self._get_data_type()
         inputData = dai.NNData()
-        for name, inputSize in zip(inputNames, inputSizes):
+        for name, inputSize in zip(inputNames, inputSizes, strict=True):
             img = np.random.randint(0, 255, inputSize, np.uint8)
             inputData.addTensor(name, img, dataType=data_type)
 
@@ -393,7 +388,7 @@ class RVC4Benchmark(Benchmark):
             while pipeline.isRunning() and rep < repetitions:
                 benchmarkReport = outputQueue.get()
                 if not isinstance(benchmarkReport, dai.BenchmarkReport):
-                    raise ValueError(
+                    raise TypeError(
                         f"Expected BenchmarkReport, got {type(benchmarkReport)}"
                     )
                 fps = benchmarkReport.fps
@@ -405,4 +400,4 @@ class RVC4Benchmark(Benchmark):
                 rep += 1
 
             # Currently, the latency measurement is only supported on RVC4 when using ImgFrame as the input to the BenchmarkOut which we don't do here.
-            return BenchmarkResult(np.mean(fps_list), "N/A")
+            return BenchmarkResult(float(np.mean(fps_list)), "N/A")

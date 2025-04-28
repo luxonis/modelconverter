@@ -1,6 +1,7 @@
 import importlib
 import shutil
 import sys
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ import numpy as np
 import tensorflow as tf
 from loguru import logger
 
+from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import exit_with, read_image
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
@@ -16,11 +18,9 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.types import Target
 
-from ..base_exporter import Exporter
-
 
 @contextmanager
-def _replace_module(original, substitute):
+def _replace_module(original: str, substitute: str) -> Generator:
     original_module = importlib.import_module(original)  # nosemgrep
     substitute_module = importlib.import_module(substitute)  # nosemgrep
 
@@ -32,12 +32,14 @@ def _replace_module(original, substitute):
 
 
 @contextmanager
-def _replace_pydantic():
+def _replace_pydantic() -> Generator:
     # NOTE: hailo_sdk_client is incompatible with pydantic v2, which
     # is used in `luxonis_ml`. This is a workaround to make it work.
-    with _replace_module("pydantic", "pydantic.v1"):
-        with _replace_module("pydantic.errors", "pydantic.v1.errors"):
-            yield
+    with (
+        _replace_module("pydantic", "pydantic.v1"),
+        _replace_module("pydantic.errors", "pydantic.v1.errors"),
+    ):
+        yield
 
 
 with _replace_pydantic():
@@ -71,7 +73,7 @@ class HailoExporter(Exporter):
             self.optimization_level = 0
             self.compression_level = 0
 
-    def _get_start_nodes(self):
+    def _get_start_nodes(self) -> tuple[list[str], dict[str, list[int]]]:
         start_nodes = []
         net_input_shapes = {}
         for name, inp in self.inputs.items():
@@ -79,13 +81,6 @@ class HailoExporter(Exporter):
             if inp.shape is not None:
                 net_input_shapes[inp.name] = inp.shape
         return start_nodes, net_input_shapes
-
-    def _get_end_nodes(self):
-        end_nodes = []
-        for name in self.outputs:
-            # TODO: output dtypes
-            end_nodes.append(name)
-        return end_nodes
 
     def export(self) -> Path:
         runner = ClientRunner(hw_arch=self.hw_arch)
@@ -98,7 +93,7 @@ class HailoExporter(Exporter):
                 self.input_model.stem,
                 start_node_names=start_nodes,
                 tensor_shapes=net_input_shapes,
-                end_node_names=self._get_end_nodes(),
+                end_node_names=self.outputs,
             )
         else:
             runner.translate_onnx_model(
@@ -106,7 +101,7 @@ class HailoExporter(Exporter):
                 self.input_model.stem,
                 start_node_names=start_nodes,
                 net_input_shapes=net_input_shapes,
-                end_node_names=self._get_end_nodes(),
+                end_node_names=self.outputs,
             )
         logger.info("Model translated to Hailo IR.")
         har_path = self.input_model.with_suffix(".har")

@@ -113,11 +113,11 @@ class MultiStageExporter:
                     safe_globals = {"__builtins__": {}}
 
                     try:
-                        exec(  # nosemgrep
+                        exec(  # nosemgrep  # noqa: S102
                             script, safe_globals, local_scope
                         )
                     except Exception as e:
-                        raise RuntimeError(f"Error executing script: {e}")
+                        raise RuntimeError("Error executing script") from e
 
                     if "run_script" not in local_scope:
                         raise RuntimeError(

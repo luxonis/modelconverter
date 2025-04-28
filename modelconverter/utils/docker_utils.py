@@ -49,7 +49,7 @@ def generate_compose_config(image: str, gpu: bool = False) -> str:
         "secrets": {
             "gcp-credentials": {
                 "file": environ.GOOGLE_APPLICATION_CREDENTIALS
-                or tempfile.NamedTemporaryFile(delete=False).name,
+                or tempfile.NamedTemporaryFile(delete=False).name,  # noqa: SIM115
             }
         },
     }

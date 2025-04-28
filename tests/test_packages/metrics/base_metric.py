@@ -1,24 +1,21 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+
+import numpy as np
 
 
 class Metric(ABC):
     @abstractmethod
-    def update(self, output: Any, label: Any):
-        pass
+    def update(self, output: list[np.ndarray], label: np.ndarray): ...
 
     @abstractmethod
-    def get_result(self) -> dict[str, float]:
-        pass
+    def get_result(self) -> dict[str, float]: ...
 
     @abstractmethod
-    def reset(self):
-        pass
+    def reset(self): ...
 
     @staticmethod
     @abstractmethod
     def eval_onnx(
         onnx_path: Path | str, dataset_path: Path | str
-    ) -> dict[str, float]:
-        pass
+    ) -> dict[str, float]: ...

@@ -1,4 +1,3 @@
-import os
 import shutil
 import subprocess
 import time
@@ -7,6 +6,7 @@ from typing import Any, NamedTuple, cast
 
 from loguru import logger
 
+from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
     exit_with,
@@ -24,8 +24,6 @@ from modelconverter.utils.types import (
     ResizeMethod,
     Target,
 )
-
-from ..base_exporter import Exporter
 
 
 class RVC4Exporter(Exporter):
@@ -82,8 +80,8 @@ class RVC4Exporter(Exporter):
                         "Proceeding with unoptimized model."
                     )
                 finally:
-                    if os.path.exists(onnx_modifier.output_path):
-                        os.remove(onnx_modifier.output_path)
+                    if onnx_modifier.output_path.exists():
+                        onnx_modifier.output_path.unlink()
         else:
             logger.warning(
                 "Input file type is not ONNX. Skipping pre-processing."
@@ -200,7 +198,7 @@ class RVC4Exporter(Exporter):
         i = 0
         with open(self.input_list_path, "w") as f:
             log = True
-            for entry in zip(*entries):
+            for entry in zip(*entries, strict=True):
                 entry_str = ""
                 for e in entry:
                     i += 1

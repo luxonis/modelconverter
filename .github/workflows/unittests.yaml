@@ -39,4 +39,3 @@ jobs:
         GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
         HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
       run: python -m pytest tests/test_utils
-

@@ -8,4 +8,3 @@
 +    mean_scale = get_mean_scale_dictionary(mean_values, scale_values, ','.join(argv.inputs_list))
      argv.mean_scale_values = mean_scale
      argv.layout_values = get_layout_values(argv.layout, argv.source_layout, argv.target_layout)
-

@@ -52,6 +52,7 @@ class Request:
             requests.get(
                 Request._get_url(endpoint),
                 headers=Request.headers(),
+                timeout=10,
                 **kwargs,
             )
         )
@@ -62,6 +63,7 @@ class Request:
             requests.get(
                 Request._get_url(endpoint, Request.dag_url()),
                 headers=Request.headers(),
+                timeout=10,
                 **kwargs,
             )
         )
@@ -73,7 +75,10 @@ class Request:
             headers = {**Request.headers(), **kwargs.pop("headers")}
         return Request._process_response(
             requests.post(
-                Request._get_url(endpoint), headers=headers, **kwargs
+                Request._get_url(endpoint),
+                headers=headers,
+                timeout=10,
+                **kwargs,
             )
         )
 
@@ -81,7 +86,10 @@ class Request:
     def delete(endpoint: str = "", **kwargs) -> Any:
         return Request._process_response(
             requests.delete(
-                Request._get_url(endpoint), headers=Request.headers(), **kwargs
+                Request._get_url(endpoint),
+                headers=Request.headers(),
+                timeout=10,
+                **kwargs,
             )
         )
 
@@ -91,7 +99,12 @@ class Request:
         if "headers" in kwargs:
             headers = {**headers, **kwargs.pop("headers")}
         return Request._process_response(
-            requests.put(Request._get_url(endpoint), headers=headers, **kwargs)
+            requests.put(
+                Request._get_url(endpoint),
+                headers=headers,
+                timeout=10,
+                **kwargs,
+            )
         )
 
     @staticmethod
@@ -101,7 +114,10 @@ class Request:
             headers = {**headers, **kwargs.pop("headers")}
         return Request._process_response(
             requests.patch(
-                Request._get_url(endpoint), headers=headers, **kwargs
+                Request._get_url(endpoint),
+                headers=headers,
+                timeout=10,
+                **kwargs,
             )
         )
 

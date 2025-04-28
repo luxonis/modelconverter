@@ -1,4 +1,3 @@
-import os
 import shutil
 import subprocess
 import tempfile
@@ -6,7 +5,6 @@ from collections.abc import Iterable
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from os import environ as env
-from os import path
 from pathlib import Path
 from typing import Any, Final
 
@@ -14,6 +12,7 @@ import tflite2onnx
 from loguru import logger
 from rich.progress import track
 
+from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
     onnx_attach_normalization_to_inputs,
@@ -26,8 +25,6 @@ from modelconverter.utils.types import (
     InputFileType,
     Target,
 )
-
-from ..base_exporter import Exporter
 
 OV_2021: Final[bool] = env.get("VERSION") == "2021.4.0"
 
@@ -53,7 +50,7 @@ class RVC2Exporter(Exporter):
             "is_superblob": self.superblob,
             "number_of_shaves": self.number_of_shaves
             if not self.superblob
-            else [i for i in range(1, 17)],
+            else list(range(1, 17)),
             "number_of_cmx_slices": self.number_of_cmx_slices,
         }
 
@@ -130,8 +127,8 @@ class RVC2Exporter(Exporter):
                     "Proceeding with unoptimized model."
                 )
             finally:
-                if os.path.exists(onnx_modifier.output_path):
-                    os.remove(onnx_modifier.output_path)
+                if onnx_modifier.output_path.exists():
+                    onnx_modifier.output_path.unlink()
 
         mean_values_str = ""
         scale_values_str = ""
@@ -172,7 +169,7 @@ class RVC2Exporter(Exporter):
         logger.info(f"OpenVINO IR exported to {self.output_dir}")
         return self.input_model.with_suffix(".xml")
 
-    def _check_reverse_channels(self):
+    def _check_reverse_channels(self) -> bool:
         reverses = [inp.encoding_mismatch for inp in self.inputs.values()]
         return all(reverses) or not any(reverses)
 
@@ -276,8 +273,8 @@ class RVC2Exporter(Exporter):
         orig_args = args.copy()
 
         default_blob_path = self.compile_blob(
-            orig_args
-            + [
+            [
+                *orig_args,
                 "-o",
                 blobs_directory
                 / f"{self.model_name}_{DEFAULT_SUPER_SHAVES}shave.blob",
@@ -316,12 +313,12 @@ class RVC2Exporter(Exporter):
 
         with open(superblob_path, "wb") as superblob_file:
             # Write header = default blob size, patch size for each patch
-            header = path.getsize(default_blob_path).to_bytes(
+            header = default_blob_path.stat().st_size.to_bytes(
                 8, byteorder="big"
             )
             for patch_idx in range(1, 17):
                 patchsize = (
-                    path.getsize(idx2patch[patch_idx])
+                    idx2patch[patch_idx].stat().st_size
                     if patch_idx in idx2patch
                     else 0
                 )

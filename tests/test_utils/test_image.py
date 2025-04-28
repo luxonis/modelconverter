@@ -29,12 +29,12 @@ def test_read_calib_dir():
     assert read_files == expected_files
 
 
-def assert_image_equal(img1, img2):
+def assert_image_equal(img1: np.ndarray, img2: np.ndarray) -> None:
     assert img1.shape == img2.shape
     assert np.allclose(img1, img2)
 
 
-def read_and_compare(expected: np.ndarray, *args, **kwargs):
+def read_and_compare(expected: np.ndarray, *args, **kwargs) -> None:
     img = read_image(*args, **kwargs)
     assert_image_equal(img, expected)
 

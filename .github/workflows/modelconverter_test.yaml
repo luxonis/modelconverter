@@ -80,4 +80,3 @@ jobs:
     - name: Run Tests
       run: |
         pytest -x "tests/test_packages/test_${PACKAGE}.py" --tool-version "${VERSION}"
-

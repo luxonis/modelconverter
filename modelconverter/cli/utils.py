@@ -1,7 +1,8 @@
 import re
 import shutil
+import sys
 from contextlib import suppress
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from time import sleep
 from typing import Any, Literal
@@ -12,11 +13,12 @@ from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
+from luxonis_ml.typing import Params
 from packaging.version import Version
 from requests.exceptions import HTTPError
 from rich import print
 from rich.box import ROUNDED
-from rich.console import Console, Group
+from rich.console import Console, Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.pretty import Pretty
@@ -44,7 +46,7 @@ from .types import ModelType
 def get_output_dir_name(
     target: Target, name: str, output_dir: str | None
 ) -> Path:
-    date = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
     if output_dir is not None:
         if (OUTPUTS_DIR / output_dir).exists():
             shutil.rmtree(OUTPUTS_DIR / output_dir)
@@ -78,7 +80,7 @@ def get_configs(
         raise ValueError(
             "Invalid number of overrides. See --help for more information."
         )
-    overrides = {opts[i]: opts[i + 1] for i in range(0, len(opts), 2)}
+    overrides: Params = {opts[i]: opts[i + 1] for i in range(0, len(opts), 2)}
     if path is not None:
         path_ = resolve_path(path, MISC_DIR)
         if path_.is_dir() or is_nn_archive(path_):
@@ -170,7 +172,7 @@ def print_hub_resource_info(
         if key in ["created", "updated", "last_version_added"]:
             value = model.get(key, "N/A")
 
-            def format_date(date_str):
+            def format_date(date_str: str) -> RenderableType:
                 try:
                     date_obj = datetime.strptime(
                         date_str, "%Y-%m-%dT%H:%M:%S.%f"
@@ -268,9 +270,10 @@ def hub_ls(
 def is_valid_uuid(uuid_string: str) -> bool:
     try:
         UUID(uuid_string)
-        return True
     except Exception:
         return False
+    else:
+        return True
 
 
 def slug_to_id(
@@ -307,7 +310,7 @@ def request_info(
         return Request.get(f"{endpoint}/{resource_id}/")
     except HTTPError:
         typer.echo(f"Resource with ID '{resource_id}' not found.")
-        exit(1)
+        sys.exit(1)
 
 
 def get_variant_name(
@@ -379,9 +382,9 @@ def get_target_specific_options(
     if target == "rvc4":
         options["snpe_onnx_to_dlc_args"] = cfg.rvc4.snpe_onnx_to_dlc_args
         options["snpe_dlc_quant_args"] = cfg.rvc4.snpe_dlc_quant_args
-        options[
-            "snpe_dlc_graph_prepare_args"
-        ] = cfg.rvc4.snpe_dlc_graph_prepare_args
+        options["snpe_dlc_graph_prepare_args"] = (
+            cfg.rvc4.snpe_dlc_graph_prepare_args
+        )
         if tool_version is not None:
             options["snpe_version"] = tool_version
     elif target in ["rvc2", "rvc3"]:

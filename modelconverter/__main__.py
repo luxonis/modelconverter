@@ -1,3 +1,4 @@
+import sys
 from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated
@@ -91,7 +92,7 @@ def infer(
         typer.Option(help="Use GPU for conversion. Only relevant for HAILO."),
     ] = True,
     opts: OptsArgument = None,
-):
+) -> None:
     """Runs inference on the specified target platform."""
 
     tag = "dev" if dev else "latest"
@@ -109,7 +110,7 @@ def infer(
             ).run()
         except Exception:
             logger.exception("Encountered an unexpected error!")
-            exit(2)
+            sys.exit(2)
     else:
         if dev:
             docker_build(target.value, bare_tag=tag, version=version)
@@ -138,7 +139,7 @@ def shell(
     dev: DevOption = False,
     version: VersionOption = None,
     gpu: GPUOption = True,
-):
+) -> None:
     """Boots up a shell inside a docker container for the specified
     target platform."""
     if dev:
@@ -170,7 +171,7 @@ def benchmark(
     save: Annotated[
         bool, typer.Option(..., help="Saves the benchmark results to a file.")
     ] = False,
-):
+) -> None:
     """Runs benchmark on the specified target platform.
 
     Specific target options:
@@ -214,7 +215,7 @@ def benchmark(
     """
 
     kwargs = {}
-    for key, value in zip(ctx.args[::2], ctx.args[1::2]):
+    for key, value in zip(ctx.args[::2], ctx.args[1::2], strict=True):
         if key.startswith("--"):
             key = key[2:].replace("-", "_")
         else:
@@ -240,7 +241,7 @@ def analyze(
     analyze_outputs: AnalyzeOutputsOption = True,
     analyze_cycles: AnalyzeCyclesOption = True,
     dev: DevOption = False,
-):
+) -> None:
     """Runs layer and cycle analysis on the specified DLC model.
 
     ---
@@ -291,7 +292,7 @@ def analyze(
             logger.info("Analysis finished successfully")
         except Exception:
             logger.exception("Encountered an unexpected error!")
-            exit(2)
+            sys.exit(2)
     else:
         if dev:
             docker_build("rvc4", bare_tag=tag)
@@ -323,7 +324,7 @@ def analyze(
 @app.command()
 def visualize(
     dir_path: ComparisonPathArgument = "",
-):
+) -> None:
     """Visualizes the analysis results.
 
     ---
@@ -362,7 +363,7 @@ def convert(
     ] = None,
     archive_preprocess: ArchivePreprocessOption = False,
     opts: OptsArgument = None,
-):
+) -> None:
     """Exports the model for the specified target platform."""
 
     tag = "dev" if dev else "latest"
@@ -434,9 +435,9 @@ def convert(
                     save_path=str(output_path),
                     cfg_dict=nn_archive.model_dump(),
                     executables_paths=[
-                        str(out_model) for out_model in out_models
-                    ]
-                    + [str(output_path / "buildinfo.json")],
+                        *out_models,
+                        output_path / "buildinfo.json",
+                    ],
                 )
                 out_models = [generator.make_archive()]
                 logger.info(f"Model exported to {out_models[0]}")
@@ -463,10 +464,10 @@ def convert(
             logger.exception(
                 "Encountered an exception in the conversion process!"
             )
-            exit(1)
+            sys.exit(1)
         except Exception:
             logger.exception("Encountered an unexpected error!")
-            exit(2)
+            sys.exit(2)
     else:
         if dev:
             docker_build(target.value, bare_tag=tag, version=version)
@@ -514,7 +515,7 @@ def archive(
             help="The name of the plugin to use for uploading the file."
         ),
     ] = None,
-):
+) -> None:
     model_path = resolve_path(path, MODELS_DIR)
     cfg = archive_from_model(model_path)
     save_path = save_path or f"{cfg.model.metadata.name}.tar.xz"
@@ -551,7 +552,7 @@ def archive(
         logger.info(f"Archive saved to {save_path}")
 
 
-def version_callback(value: bool):
+def version_callback(value: bool) -> None:
     if value:
         typer.echo(f"ModelConverter Version: {version('modelconv')}")
         raise typer.Exit
@@ -568,7 +569,7 @@ def common(
             help="Show version and exit.",
         ),
     ] = False,
-):
+) -> None:
     pass
 
 

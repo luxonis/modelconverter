@@ -1,16 +1,12 @@
-import os
 from itertools import chain
 from pathlib import Path
-from typing import (
-    Annotated,
-    Any,
-    Literal,
-    cast,
-)
+from typing import Annotated, Any, Literal, cast
 
 import onnx
 from loguru import logger
+from luxonis_ml.typing import PathType
 from luxonis_ml.utils import LuxonisConfig
+from onnx import TypeProto
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -186,11 +182,11 @@ class InputConfig(OutputConfig):
             return data
         if isinstance(encoding, str):
             data["encoding"] = {"from": encoding, "to": encoding}
-        if isinstance(encoding, dict):
-            if ("from" in encoding and encoding["from"] == "GRAY") or (
-                "to" in encoding and encoding["to"] == "GRAY"
-            ):
-                data["encoding"] = {"from": "GRAY", "to": "GRAY"}
+        if isinstance(encoding, dict) and (
+            ("from" in encoding and encoding["from"] == "GRAY")
+            or ("to" in encoding and encoding["to"] == "GRAY")
+        ):
+            data["encoding"] = {"from": "GRAY", "to": "GRAY"}
         return data
 
     @model_validator(mode="before")
@@ -219,10 +215,9 @@ class InputConfig(OutputConfig):
         """Resolves named values from the config."""
         if value is None:
             return None
-        if isinstance(value, str):
-            if value in NAMED_VALUES:
-                return NAMED_VALUES[value][values_type]
-        if isinstance(value, (float, int)):
+        if isinstance(value, str) and value in NAMED_VALUES:
+            return NAMED_VALUES[value][values_type]
+        if isinstance(value, float | int):
             return [value, value, value]
         return value
 
@@ -510,7 +505,7 @@ def _extract_bin_xml_from_ir(ir_path: Any) -> tuple[Path, Path]:
     """
 
     if not isinstance(ir_path, str) and not isinstance(ir_path, Path):
-        raise ValueError("`input_path` must be str or Path.")
+        raise TypeError("`input_path` must be str or Path.")
     ir_path = Path(ir_path)
 
     if ir_path.suffix == ".bin":
@@ -586,7 +581,9 @@ def _get_onnx_tensor_info(
 ) -> tuple[list[int], DataType]:
     model = onnx.load(str(model_path))
 
-    def extract_tensor_info(tensor_type):
+    def extract_tensor_info(
+        tensor_type: TypeProto.Tensor,
+    ) -> tuple[list[int], DataType]:
         shape = [dim.dim_value for dim in tensor_type.shape.dim]
         if any(dim == 0 for dim in shape):
             raise ValueError(
@@ -643,13 +640,15 @@ def _get_onnx_inter_info(
 
 
 def generate_renamed_onnx(
-    onnx_path: Path | str,
+    onnx_path: PathType,
     rename_dict: dict[str, str],
-    output_path: Path | str,
+    output_path: PathType,
 ) -> None:
+    onnx_path = Path(onnx_path)
+    output_path = Path(output_path)
     model = onnx.load(str(onnx_path))
-    if os.path.exists(str(onnx_path).replace(".onnx", ".onnx_data")):
-        model_data_path = str(onnx_path).replace(".onnx", ".onnx_data")
+    if onnx_path.with_suffix(".onnx_data").exists():
+        model_data_path = onnx_path.with_suffix(".onnx_data")
     else:
         model_data_path = None
 
@@ -667,7 +666,7 @@ def generate_renamed_onnx(
             model,
             str(output_path),
             save_as_external_data=True,
-            location=f"{os.path.basename(str(output_path))}_data",
+            location=f"{output_path.name}_data",
         )
     else:
         onnx.save(model, str(output_path))

@@ -39,14 +39,14 @@ def download_from_remote(
             if i == max_files:
                 break
             if not local_path.exists() or not os.getenv(
-                "MODELCONVERTER_UNSAFE_CACHE", False
+                "MODELCONVERTER_UNSAFE_CACHE"
             ):
                 fs.get_file(
                     remote_file, str(local_path / Path(remote_file).name)
                 )
 
     elif not local_path.exists() or not os.getenv(
-        "MODELCONVERTER_UNSAFE_CACHE", False
+        "MODELCONVERTER_UNSAFE_CACHE"
     ):
         fs.get_file(remote_path, str(local_path))
 

@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from modelconverter.utils import subprocess_run
+from tests.conftest import ConvertEnv
 
 from .metrics import MNISTMetric, ResnetMetric, YoloV6Metric
 
@@ -18,12 +19,13 @@ def compare_metrics(
         assert value == pytest.approx(expected_metrics[metric], abs=TOLERANCE)
 
 
-def check_convert(convert_env):
+def check_convert(convert_env: ConvertEnv):
     *_, result, _ = convert_env
+    assert result is not None
     assert result.returncode == 0
 
 
-def mnist_infer(mnist_env, tool_version: str):
+def mnist_infer(mnist_env: ConvertEnv, tool_version: str):
     (
         config_url,
         converted_model_path,
@@ -60,7 +62,7 @@ def mnist_infer(mnist_env, tool_version: str):
     compare_metrics(metric.get_result(), expected_metric)
 
 
-def resnet18_infer(resnet18_env, tool_version: str):
+def resnet18_infer(resnet18_env: ConvertEnv, tool_version: str):
     (
         config_url,
         converted_model_path,
@@ -102,7 +104,7 @@ def resnet18_infer(resnet18_env, tool_version: str):
     compare_metrics(metric.get_result(), expected_metric)
 
 
-def yolov6n_infer(yolov6n_env, tool_version: str):
+def yolov6n_infer(yolov6n_env: ConvertEnv, tool_version: str):
     output_names = [f"output{i}_yolov6r2" for i in range(1, 4)]
     (
         config_url,
@@ -144,6 +146,7 @@ def yolov6n_infer(yolov6n_env, tool_version: str):
         (dest / output_names[0]).iterdir(),
         (dest / output_names[1]).iterdir(),
         (dest / output_names[2]).iterdir(),
+        strict=True,
     ):
         output = [
             np.load(output1),

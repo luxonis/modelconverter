@@ -4,20 +4,19 @@ from pathlib import Path
 
 import numpy as np
 
+from modelconverter.packages.base_inferer import Inferer
 from modelconverter.packages.hailo.exporter import (
     HailoExporter,
     _replace_pydantic,
 )
 from modelconverter.utils import read_image
 
-from ..base_inferer import Inferer
-
 with _replace_pydantic():
     from hailo_sdk_client import ClientRunner, InferenceContext
 
 
 class HailoInferer(Inferer):
-    def setup(self):
+    def setup(self) -> None:
         self.runner = ClientRunner(
             hw_arch=self.config.hailo.hw_arch
             if self.config is not None
@@ -30,9 +29,7 @@ class HailoInferer(Inferer):
         if orig_meta is None:
             raise RuntimeError("Could not get original model metadata.")
 
-        self.output_names = [
-            k for k in orig_meta["inverse_postprocess_io_map"]
-        ]
+        self.output_names = list(orig_meta["inverse_postprocess_io_map"])
         if len(self.output_names) > 1:
             raise NotImplementedError(
                 "Multiple outputs are not supported at the moment."
@@ -54,16 +51,17 @@ class HailoInferer(Inferer):
             for name, path in inputs.items()
         }
 
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(
-            stderr
-        ):
-            with self.runner.infer_context(
+        with (
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+            self.runner.infer_context(
                 InferenceContext.SDK_QUANTIZED
-            ) as context:
-                outputs = self.runner.infer(
-                    context=context, dataset=arr_inputs, batch_size=1
-                )
-                return {
-                    self.output_names[idx]: output
-                    for idx, output in enumerate(outputs)
-                }
+            ) as context,
+        ):
+            outputs = self.runner.infer(
+                context=context, dataset=arr_inputs, batch_size=1
+            )
+            return {
+                self.output_names[idx]: output
+                for idx, output in enumerate(outputs)
+            }

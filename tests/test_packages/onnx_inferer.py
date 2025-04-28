@@ -14,6 +14,4 @@ class ONNXInferer:
 
     def infer(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         outputs = self.session.run(self.output_names, inputs)
-        return {
-            name: output for name, output in zip(self.output_names, outputs)
-        }
+        return dict(zip(self.output_names, outputs, strict=True))

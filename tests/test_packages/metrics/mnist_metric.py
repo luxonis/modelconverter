@@ -4,8 +4,8 @@ import numpy as np
 
 from modelconverter.utils import read_image
 from modelconverter.utils.types import Encoding, ResizeMethod
+from tests.test_packages.onnx_inferer import ONNXInferer
 
-from ..onnx_inferer import ONNXInferer
 from .base_metric import Metric
 
 
@@ -29,7 +29,9 @@ class MNISTMetric(Metric):
         self.misses = 0
 
     @staticmethod
-    def eval_onnx(onnx_path: Path | str, dataset_path: Path | str):
+    def eval_onnx(
+        onnx_path: Path | str, dataset_path: Path | str
+    ) -> dict[str, float]:
         dataset_path = Path(dataset_path)
         onnx_path = Path(onnx_path)
         onnx_inferer = ONNXInferer(onnx_path)

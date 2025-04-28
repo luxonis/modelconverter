@@ -2,6 +2,7 @@ import shutil
 import subprocess
 from itertools import chain
 from pathlib import Path
+from typing import TypeAlias
 
 import pytest
 from luxonis_ml.utils import setup_logging
@@ -15,6 +16,17 @@ from .test_packages.metrics import (
     ResnetMetric,
     YoloV6Metric,
 )
+
+ConvertEnv: TypeAlias = tuple[
+    str,
+    Path,
+    Path,
+    dict[str, float],
+    list[Path],
+    Path,
+    subprocess.CompletedProcess | None,
+    str,
+]
 
 MODEL_CONFIGS = chain(
     *[
@@ -90,7 +102,7 @@ MODEL_CONFIGS = chain(
 setup_logging()
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--tool-version",
         action="store",
@@ -101,15 +113,20 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture(scope="session")
-def tool_version(request):
+def tool_version(request: pytest.FixtureRequest):
     return request.config.getoption("--tool-version")
 
 
 def prepare_fixture(
-    service, model_name, dataset_url, metric, input_names, extra_args
+    service: str,
+    model_name: str,
+    dataset_url: str,
+    metric: type[Metric],
+    input_names: list[str],
+    extra_args: str,
 ):
     @pytest.fixture(scope="session")
-    def _fixture(tool_version):
+    def _fixture(tool_version: str) -> ConvertEnv:
         return prepare(
             service=service,
             model_name=model_name,
@@ -136,7 +153,7 @@ for (
     fixture_function = prepare_fixture(
         service, model, url, metric, inputs, extra_args
     )
-    exec(f"{fixture_name} = fixture_function")
+    exec(f"{fixture_name} = fixture_function")  # noqa: S102
 
 
 def prepare(
@@ -148,16 +165,7 @@ def prepare(
     tool_version: str,
     model_type: str = "onnx",
     extra_args: str = "",
-) -> tuple[
-    str,
-    Path,
-    Path,
-    dict[str, float],
-    list[Path],
-    Path,
-    subprocess.CompletedProcess | None,
-    str,
-]:
+) -> ConvertEnv:
     onnx_url = (
         f"s3://luxonis-test-bucket/modelconverter-test/{model_name}.onnx"
     )

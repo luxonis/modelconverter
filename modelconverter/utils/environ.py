@@ -9,8 +9,8 @@ from typing_extensions import Self
 
 def get_password_with_timeout(
     service_name: str, username: str, timeout: float = 5
-):
-    def _get_password():
+) -> str | None:
+    def _get_password() -> str | None:
         return keyring.get_password(service_name, username)
 
     with ThreadPoolExecutor(max_workers=1) as executor:

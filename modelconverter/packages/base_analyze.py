@@ -1,5 +1,4 @@
 import io
-import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -66,11 +65,11 @@ class Analyzer(ABC):
 
     def _validate_inputs(self, input_sizes: dict[str, list[int]]) -> None:
         if len(self.image_dirs.keys()) == 1 and len(input_sizes.keys()) == 1:
-            new_input_name = list(input_sizes.keys())[0]
+            new_input_name = next(iter(input_sizes.keys()))
             self.image_dirs = {new_input_name: self.image_dirs.popitem()[1]}
             return
 
-        for name in self.image_dirs.keys():
+        for name in self.image_dirs:
             if name not in input_sizes:
                 raise ValueError(
                     f"The provided input name '{name}' does not match any of the DLC model's input names: {input_sizes.keys()}"
@@ -91,9 +90,7 @@ class Analyzer(ABC):
         ln = ln.replace("/", "_")
         ln = ln.replace("_output_0", "")
         ln = ln.replace("(cycles)", "")
-        ln = ln.strip("_")
-
-        return ln
+        return ln.strip("_")
 
     def _get_output_sizes(self) -> dict[str, list[int]]:
         csv_path = Path("info.csv")
@@ -131,11 +128,12 @@ class Analyzer(ABC):
         df = df.with_columns(pl.Series("Name", names))
         csv_path.unlink()
 
-        output_sizes = {row["Name"]: row["Shape"] for row in df.to_dicts()}
-        return output_sizes
+        return {row["Name"]: row["Shape"] for row in df.to_dicts()}
 
-    def _check_dir_sizes(self):
-        dir_lengths = [len(os.listdir(v)) for v in self.image_dirs.values()]
+    def _check_dir_sizes(self) -> None:
+        dir_lengths = [
+            len(list(v.iterdir())) for v in self.image_dirs.values()
+        ]
 
         if len(set(dir_lengths)) > 1:
             raise ValueError(

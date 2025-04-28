@@ -11,7 +11,7 @@ from .exceptions import SubprocessException
 def subprocess_run(
     cmd: str | list[Any],
     *,
-    silent=False,
+    silent: bool = False,
 ) -> subprocess.CompletedProcess:
     """Wrapper around `subprocess.run` that logs the command and its
     output.
@@ -39,9 +39,7 @@ def subprocess_run(
         logger.info(f"Executing `{cmd}`")
     start_time = time.time()
 
-    result = subprocess.run(
-        args, stderr=subprocess.PIPE, stdout=subprocess.PIPE, check=False
-    )
+    result = subprocess.run(args, capture_output=True, check=False)
     t = time.time() - start_time
 
     info_string = (

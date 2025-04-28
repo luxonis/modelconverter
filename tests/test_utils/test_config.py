@@ -9,6 +9,7 @@ import numpy as np
 import onnx
 import pytest
 from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
+from luxonis_ml.typing import Params
 from onnx import checker, helper
 from onnx.onnx_pb import TensorProto
 
@@ -169,7 +170,7 @@ def setup():
 def set_nested_config_value(
     config: dict, keys: list[str], values: list[str]
 ) -> dict:
-    for key, value in zip(keys, values):
+    for key, value in zip(keys, values, strict=True):
         keys = key.split(".")
         current_level = config["model"]
 
@@ -271,7 +272,7 @@ def load_and_compare(
     expected: dict,
     multistage: bool = False,
 ):
-    overrides = {opts[i]: opts[i + 1] for i in range(0, len(opts), 2)}
+    overrides: Params = {opts[i]: opts[i + 1] for i in range(0, len(opts), 2)}
     config = Config.get_config(path, overrides).model_dump()
     if not multistage:
         name = expected["input_model"].stem
@@ -605,7 +606,7 @@ def test_no_top_level():
 
 
 @pytest.mark.parametrize(
-    "key, value",
+    ("key", "value"),
     [
         ("non_existent", "value"),
         ("inputs.0.non_existent", "value"),
@@ -625,7 +626,7 @@ def test_missing(key: str, value: str):
 
 
 @pytest.mark.parametrize(
-    "key, value",
+    ("key", "value"),
     [
         ("inputs.0.encoding.from", "RGBA"),
         ("mean_values", "scale"),
@@ -647,7 +648,7 @@ def test_incorrect_type(key: str, value: str):
 
 
 @pytest.mark.parametrize(
-    "keys, values",
+    ("keys", "values"),
     [
         (
             [],
@@ -744,7 +745,7 @@ def test_incorrect_type(key: str, value: str):
     ],
 )
 def test_modified_onnx(keys: list[str], values: list[str]):
-    overrides = {keys[i]: values[i] for i in range(len(keys))}
+    overrides: Params = {keys[i]: values[i] for i in range(len(keys))}
     overrides["input_model"] = str(DATA_DIR / "dummy_model.onnx")
     config = Config.get_config(
         None,
@@ -817,7 +818,7 @@ def test_modified_onnx(keys: list[str], values: list[str]):
 
 
 @pytest.mark.parametrize(
-    "keys, values, nn_preprocess, expected",
+    ("keys", "values", "nn_preprocess", "expected"),
     [
         (
             [],
@@ -925,7 +926,7 @@ def test_output_nn_config_from_yaml(
     nn_preprocess: bool,
     expected: list[dict],
 ):
-    overrides = {keys[i]: values[i] for i in range(len(keys))}
+    overrides: Params = {keys[i]: values[i] for i in range(len(keys))}
     overrides["input_model"] = str(DATA_DIR / "dummy_model.onnx")
     config = Config.get_config(
         None,
@@ -966,7 +967,7 @@ def test_output_nn_config_from_yaml(
 
 
 @pytest.mark.parametrize(
-    "keys, values, nn_preprocess, expected",
+    ("keys", "values", "nn_preprocess", "expected"),
     [
         (
             [],
@@ -1172,7 +1173,7 @@ def test_output_nn_config_from_nn_archive(
 
 
 @pytest.mark.parametrize(
-    "key, value, expected",
+    ("key", "value", "expected"),
     [
         (
             "",
@@ -1232,7 +1233,7 @@ def test_encoding(key: str, value: str, expected: EncodingConfig):
 
 
 @pytest.mark.parametrize(
-    "keys, values, expected",
+    ("keys", "values", "expected"),
     [
         (
             [],

@@ -31,7 +31,7 @@ where = ["."]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
-version = {attr = "modelconverter.__version__"}
+version = { attr = "modelconverter.__version__" }
 
 [tool.setuptools.dynamic.optional-dependencies]
 bench = { file = ["requirements-bench.txt"] }
@@ -93,6 +93,7 @@ ignore = [
   "ANN204",
   "ANN401",
   "D1",
+  "DTZ007",
   "E501",
   "F403",
   "ICN002",
@@ -109,11 +110,19 @@ ignore = [
   "S101",
   "S311",
   "S603",
+  "S606",
+  "S607",
   "SIM108",
+  "PT011",
   "TRY003",
+  "TRY301",
   "W191",
 ]
 unfixable = ["B905", "PLC0208"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN201"]
+"__main__.py" = ["ANN201"]
 
 [tool.docformatter]
 black = true

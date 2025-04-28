@@ -18,8 +18,7 @@ def read_image(
 ) -> np.ndarray:
     path = Path(path)
     if path.suffix == ".npy":
-        arr = np.load(path)
-        return arr
+        return np.load(path)
 
     if path.suffix == ".raw":
         if data_type is None:
@@ -27,10 +26,9 @@ def read_image(
                 "Input data type must be specified when"
                 "using `.raw` files for calibration."
             )
-        arr = np.fromfile(path, dtype=data_type.as_numpy_dtype()).reshape(
+        return np.fromfile(path, dtype=data_type.as_numpy_dtype()).reshape(
             shape
         )
-        return arr
 
     if len(shape) == 2:
         h, w, c = *shape, 1

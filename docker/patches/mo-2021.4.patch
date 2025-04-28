@@ -10,7 +10,7 @@
  from mo.utils.find_ie_version import find_ie_version
  from mo.utils.get_ov_update_message import get_ov_update_message
 @@ -206,7 +206,13 @@
- 
+
      mean_values = parse_tuple_pairs(argv.mean_values)
      scale_values = parse_tuple_pairs(argv.scale_values)
 -    mean_scale = get_mean_scale_dictionary(mean_values, scale_values, argv.input)
@@ -22,5 +22,5 @@
 +    __input_names = ",".join(__input_names)
 +    mean_scale = get_mean_scale_dictionary(mean_values, scale_values, __input_names)
      argv.mean_scale_values = mean_scale
- 
+
      if not os.path.exists(argv.output_dir):
