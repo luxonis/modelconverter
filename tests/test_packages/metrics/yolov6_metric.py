@@ -194,11 +194,12 @@ def non_max_suppression(
 def parse_yolo_outputs_new(
     outputs: list[np.ndarray], strides: list[int]
 ) -> np.ndarray:
-    outputs = []
+    out = []
     for x, s in zip(outputs, strides, strict=False):
-        outputs.append(parse_yolo_output_new(x, s))
+        out.append(parse_yolo_output_new(x, s))
 
-    return np.concatenate(outputs, axis=1)
+    assert out
+    return np.concatenate(out, axis=1)
 
 
 def parse_yolo_output_new(x: np.ndarray, stride: int) -> np.ndarray:
