@@ -195,7 +195,7 @@ def parse_yolo_outputs_new(
     outputs: list[np.ndarray], strides: list[int]
 ) -> np.ndarray:
     outputs = []
-    for x, s in zip(outputs, strides, strict=True):
+    for x, s in zip(outputs, strides, strict=False):
         outputs.append(parse_yolo_output_new(x, s))
 
     return np.concatenate(outputs, axis=1)
