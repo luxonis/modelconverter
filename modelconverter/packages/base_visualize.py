@@ -8,7 +8,7 @@ class Visualizer(ABC):
         self.dir_path: str = (
             dir_path
             if dir_path != ""
-            else f"{str(constants.OUTPUTS_DIR)}/analysis"
+            else f"{constants.OUTPUTS_DIR!s}/analysis"
         )
 
     @abstractmethod

@@ -1,7 +1,6 @@
 import shutil
 import zipfile
 from pathlib import Path
-from typing import List, Optional
 
 import cv2
 from loguru import logger
@@ -13,7 +12,7 @@ from .filesystem_utils import download_from_remote, get_protocol
 from .image import read_calib_dir
 
 
-def read_img_dir(path: Path, max_images: int) -> List[Path]:
+def read_img_dir(path: Path, max_images: int) -> list[Path]:
     imgs = read_calib_dir(path)
     if not imgs:
         exit_with(FileNotFoundError(f"No images found in {path}"))
@@ -50,8 +49,7 @@ def download_calibration_data(string: str, max_images: int = -1) -> Path:
     if path.exists():
         if path.is_dir():
             return path
-        else:
-            raise ModelconverterException(f"Path {path} is not a directory")
+        raise ModelconverterException(f"Path {path} is not a directory")
     try:
         try_dataset_split = string.split(":")
         if len(try_dataset_split) == 2:
@@ -72,7 +70,7 @@ def download_calibration_data(string: str, max_images: int = -1) -> Path:
 
 
 def load_from_ldf(
-    dataset_name: str, view: str, loader_plugin: Optional[str] = None
+    dataset_name: str, view: str, loader_plugin: str | None = None
 ) -> Path:
     calibration_data_dir = CALIBRATION_DIR / f"{dataset_name}"
     calibration_data_dir.mkdir(parents=True, exist_ok=True)

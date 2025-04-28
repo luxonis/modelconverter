@@ -1,5 +1,5 @@
 from json import JSONDecodeError
-from typing import Any, Dict, Optional
+from typing import Any
 
 import requests
 from requests import HTTPError, Response
@@ -17,7 +17,7 @@ class Request:
         return f"{environ.HUBAI_URL.rstrip('/')}/dags/api/v1"
 
     @staticmethod
-    def headers() -> Dict[str, str]:
+    def headers() -> dict[str, str]:
         if environ.HUBAI_API_KEY is None:
             raise ValueError("HUBAI_API_KEY is not set")
 
@@ -106,6 +106,6 @@ class Request:
         )
 
     @staticmethod
-    def _get_url(endpoint: str, base_url: Optional[str] = None) -> str:
+    def _get_url(endpoint: str, base_url: str | None = None) -> str:
         base_url = base_url or Request.url()
         return f"{base_url}/{endpoint.lstrip('/')}".rstrip("/")

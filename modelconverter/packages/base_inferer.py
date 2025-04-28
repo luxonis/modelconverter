@@ -3,7 +3,6 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import numpy as np
 from loguru import logger
@@ -21,13 +20,13 @@ class Inferer(ABC):
     model_path: Path
     src: Path
     dest: Path
-    in_shapes: Dict[str, List[int]]
-    in_dtypes: Dict[str, DataType]
-    out_shapes: Dict[str, List[int]]
-    out_dtypes: Dict[str, DataType]
-    resize_method: Dict[str, ResizeMethod]
-    encoding: Dict[str, Encoding]
-    config: Optional[SingleStageConfig] = None
+    in_shapes: dict[str, list[int]]
+    in_dtypes: dict[str, DataType]
+    out_shapes: dict[str, list[int]]
+    out_dtypes: dict[str, DataType]
+    resize_method: dict[str, ResizeMethod]
+    encoding: dict[str, Encoding]
+    config: SingleStageConfig | None = None
 
     def __post_init__(self):
         if self.dest.exists():
@@ -77,7 +76,7 @@ class Inferer(ABC):
         pass
 
     @abstractmethod
-    def infer(self, inputs: Dict[str, Path]) -> Dict[str, np.ndarray]:
+    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
         pass
 
     def run(self):

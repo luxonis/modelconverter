@@ -1,6 +1,5 @@
 import time
 from pathlib import Path
-from typing import Dict, List, Union
 
 import numpy as np
 
@@ -16,7 +15,7 @@ class YoloV6Metric(Metric):
         self.hits = 0
         self.misses = 0
 
-    def update(self, output: List[np.ndarray], labels) -> None:
+    def update(self, output: list[np.ndarray], labels) -> None:
         outputs = parse_yolo_outputs_new(
             output, [8, 16, 32], [None, None, None]
         )
@@ -46,7 +45,7 @@ class YoloV6Metric(Metric):
         self.hits += matches
         self.misses += len(predictions) - matches
 
-    def get_result(self) -> Dict[str, float]:
+    def get_result(self) -> dict[str, float]:
         return {"accuracy": self.hits / (self.hits + self.misses)}
 
     def reset(self) -> None:
@@ -54,7 +53,7 @@ class YoloV6Metric(Metric):
         self.misses = 0
 
     @staticmethod
-    def eval_onnx(onnx_path: Union[Path, str], dataset_path: Union[Path, str]):
+    def eval_onnx(onnx_path: Path | str, dataset_path: Path | str):
         dataset_path = Path(dataset_path)
         onnx_path = Path(onnx_path)
         onnx_inferer = ONNXInferer(onnx_path)
@@ -83,7 +82,7 @@ class YoloV6Metric(Metric):
 
     @staticmethod
     def read_label(path: str) -> np.ndarray:
-        with open(path, "r") as f:
+        with open(path) as f:
             lines = f.readlines()
 
         x = np.array([line.split() for line in lines], dtype=np.float32)
@@ -191,7 +190,7 @@ def non_max_suppression(
         num_box = x.shape[0]
         if not num_box:
             continue
-        elif num_box > max_nms:
+        if num_box > max_nms:
             x = x[
                 x[:, 4].argsort(descending=True)[:max_nms]  # type: ignore
             ]
@@ -243,8 +242,8 @@ def parse_yolo_output_new(x, stride, anchors=None):
 
 
 def calculate_iou(prediction_box, gt_box):
-    """Calculate Intersection over Union (IoU) for a single prediction and ground truth
-    bounding box."""
+    """Calculate Intersection over Union (IoU) for a single prediction
+    and ground truth bounding box."""
     x1_p, y1_p, x2_p, y2_p = prediction_box
     x1_g, y1_g, x2_g, y2_g = gt_box
 

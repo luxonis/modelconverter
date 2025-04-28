@@ -4,7 +4,7 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Dict, Final, List, Tuple, cast
+from typing import Final, cast
 
 import depthai as dai
 import numpy as np
@@ -16,7 +16,7 @@ from modelconverter.utils import AdbHandler, environ, subprocess_run
 
 from ..base_benchmark import Benchmark, BenchmarkResult, Configuration
 
-PROFILES: Final[List[str]] = [
+PROFILES: Final[list[str]] = [
     "low_balanced",
     "balanced",
     "default",
@@ -30,7 +30,7 @@ PROFILES: Final[List[str]] = [
     "system_settings",
 ]
 
-RUNTIMES: Dict[str, str] = {
+RUNTIMES: dict[str, str] = {
     "dsp": "use_dsp",
     "cpu": "use_cpu",
 }
@@ -62,10 +62,10 @@ class RVC4Benchmark(Benchmark):
         }
 
     @property
-    def all_configurations(self) -> List[Configuration]:
+    def all_configurations(self) -> list[Configuration]:
         return [{"profile": profile} for profile in PROFILES]
 
-    def _get_input_sizes(self) -> Tuple[Dict[str, List[int]], Dict[str, str]]:
+    def _get_input_sizes(self) -> tuple[dict[str, list[int]], dict[str, str]]:
         csv_path = Path("info.csv")
         subprocess_run(
             [
@@ -139,8 +139,9 @@ class RVC4Benchmark(Benchmark):
             Path(temp_path).unlink()
 
     def _get_data_type(self) -> dai.TensorInfo.DataType:
-        """Retrieve the data type of the model inputs. If the model is not a HubAI
-        model, it defaults to dai.TensorInfo.DataType.U8F (INT8).
+        """Retrieve the data type of the model inputs. If the model is
+        not a HubAI model, it defaults to dai.TensorInfo.DataType.U8F
+        (INT8).
 
         @return: The data type of the model inputs.
         @rtype: dai.TensorInfo.DataType
@@ -201,7 +202,7 @@ class RVC4Benchmark(Benchmark):
 
         if model_precision_type == "FP16":
             return dai.TensorInfo.DataType.FP16
-        elif model_precision_type == "FP32":
+        if model_precision_type == "FP32":
             self.force_cpu = True
             return dai.TensorInfo.DataType.FP32
 
@@ -214,15 +215,14 @@ class RVC4Benchmark(Benchmark):
                 for key in ["dai_benchmark", "num_images"]:
                     configuration.pop(key)
                 return self._benchmark_dai(self.model_path, **configuration)
-            else:
-                for key in [
-                    "dai_benchmark",
-                    "repetitions",
-                    "num_threads",
-                    "num_messages",
-                ]:
-                    configuration.pop(key)
-                return self._benchmark_snpe(self.model_path, **configuration)
+            for key in [
+                "dai_benchmark",
+                "repetitions",
+                "num_threads",
+                "num_messages",
+            ]:
+                configuration.pop(key)
+            return self._benchmark_snpe(self.model_path, **configuration)
         finally:
             if not dai_benchmark:
                 # so we don't delete the wrong directory

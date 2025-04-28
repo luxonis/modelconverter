@@ -4,7 +4,6 @@ import shutil
 import tarfile
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import numpy as np
 import onnx
@@ -168,8 +167,8 @@ def setup():
 
 
 def set_nested_config_value(
-    config: Dict, keys: List[str], values: List[str]
-) -> Dict:
+    config: dict, keys: list[str], values: list[str]
+) -> dict:
     for key, value in zip(keys, values):
         keys = key.split(".")
         current_level = config["model"]
@@ -187,7 +186,7 @@ def set_nested_config_value(
 
 
 def create_json(
-    keys: Optional[List[str]] = None, values: Optional[List[str]] = None
+    keys: list[str] | None = None, values: list[str] | None = None
 ) -> str:
     config = {
         "config_version": "1.0",
@@ -267,8 +266,8 @@ inputs:
 
 
 def load_and_compare(
-    path: Optional[str],
-    opts: List[str],
+    path: str | None,
+    opts: list[str],
     expected: dict,
     multistage: bool = False,
 ):
@@ -744,7 +743,7 @@ def test_incorrect_type(key: str, value: str):
         ),
     ],
 )
-def test_modified_onnx(keys: List[str], values: List[str]):
+def test_modified_onnx(keys: list[str], values: list[str]):
     overrides = {keys[i]: values[i] for i in range(len(keys))}
     overrides["input_model"] = str(DATA_DIR / "dummy_model.onnx")
     config = Config.get_config(
@@ -921,10 +920,10 @@ def test_modified_onnx(keys: List[str], values: List[str]):
     ],
 )
 def test_output_nn_config_from_yaml(
-    keys: List[str],
-    values: List[str],
+    keys: list[str],
+    values: list[str],
     nn_preprocess: bool,
-    expected: List[Dict],
+    expected: list[dict],
 ):
     overrides = {keys[i]: values[i] for i in range(len(keys))}
     overrides["input_model"] = str(DATA_DIR / "dummy_model.onnx")
@@ -1119,10 +1118,10 @@ def test_output_nn_config_from_yaml(
     ],
 )
 def test_output_nn_config_from_nn_archive(
-    keys: List[str],
-    values: List[str],
+    keys: list[str],
+    values: list[str],
     nn_preprocess: bool,
-    expected: List[Dict],
+    expected: list[dict],
 ):
     nn_archive_path = DATA_DIR / "dummy_model.tar.xz"
     with tempfile.TemporaryDirectory() as tmpdirname:
@@ -1310,7 +1309,7 @@ def test_encoding(key: str, value: str, expected: EncodingConfig):
     ],
 )
 def test_encoding_nn_archive(
-    keys: List[str], values: List[str], expected: EncodingConfig
+    keys: list[str], values: list[str], expected: EncodingConfig
 ):
     nn_archive_path = DATA_DIR / "dummy_model.tar.xz"
     with tempfile.TemporaryDirectory() as tmpdirname:

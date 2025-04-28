@@ -1,7 +1,6 @@
 import contextlib
 from io import StringIO
 from pathlib import Path
-from typing import Dict
 
 import numpy as np
 
@@ -42,7 +41,7 @@ class HailoInferer(Inferer):
             if hn_name in output_hn_names:
                 self.output_names.extend(params["original_names"])
 
-    def infer(self, inputs: Dict[str, Path]) -> Dict[str, np.ndarray]:
+    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
         stdout = stderr = StringIO()
         arr_inputs = {
             HailoExporter._get_hn_layer_info(self.runner, name)[0]: read_image(

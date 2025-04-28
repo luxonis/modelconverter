@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Dict
 
 import numpy as np
 
@@ -18,7 +17,7 @@ class RVC2Inferer(Inferer):
         net = ie.read_network(model=self.xml_path, weights=self.bin_path)
         self.exec_net = ie.load_network(network=net, device_name="CPU")
 
-    def infer(self, inputs: Dict[str, Path]) -> Dict[str, np.ndarray]:
+    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
         arr_inputs = {
             name: read_image(
                 path,

@@ -1,14 +1,16 @@
 import subprocess
-from typing import Optional, Tuple
 
 
 class AdbHandler:
-    def __init__(self, device_id: Optional[str] = None) -> None:
+    def __init__(self, device_id: str | None = None) -> None:
         self.device_args = ["-s", device_id] if device_id else []
 
-    def _adb_run(self, args, **kwargs) -> Tuple[int, str, str]:
+    def _adb_run(self, args, **kwargs) -> tuple[int, str, str]:
         subprocess.run(
-            ["adb", "root"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            ["adb", "root"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
         )
         result = subprocess.run(
             ["adb", *self.device_args, *args],
@@ -32,13 +34,13 @@ class AdbHandler:
             stderr.decode(errors="ignore"),
         )
 
-    def shell(self, cmd: str) -> Tuple[int, str, str]:
+    def shell(self, cmd: str) -> tuple[int, str, str]:
         return self._adb_run(
             ["shell", cmd],
         )
 
-    def pull(self, src: str, dst: str) -> Tuple[int, str, str]:
+    def pull(self, src: str, dst: str) -> tuple[int, str, str]:
         return self._adb_run(["pull", src, dst])
 
-    def push(self, src: str, dst: str) -> Tuple[int, str, str]:
+    def push(self, src: str, dst: str) -> tuple[int, str, str]:
         return self._adb_run(["push", src, dst])

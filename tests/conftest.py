@@ -2,7 +2,6 @@ import shutil
 import subprocess
 from itertools import chain
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Type
 
 import pytest
 from luxonis_ml.utils import setup_logging
@@ -144,19 +143,19 @@ def prepare(
     service: str,
     model_name: str,
     dataset_url: str,
-    metric: Type[Metric],
-    input_names: List[str],
+    metric: type[Metric],
+    input_names: list[str],
     tool_version: str,
     model_type: str = "onnx",
     extra_args: str = "",
-) -> Tuple[
+) -> tuple[
     str,
     Path,
     Path,
-    Dict[str, float],
-    List[Path],
+    dict[str, float],
+    list[Path],
     Path,
-    Optional[subprocess.CompletedProcess],
+    subprocess.CompletedProcess | None,
     str,
 ]:
     onnx_url = (

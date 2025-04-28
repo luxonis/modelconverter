@@ -1,6 +1,5 @@
 import shutil
 from pathlib import Path
-from typing import Dict
 
 import numpy as np
 import pytest
@@ -13,7 +12,7 @@ TOLERANCE: float = 0.05
 
 
 def compare_metrics(
-    metrics: Dict[str, float], expected_metrics: Dict[str, float]
+    metrics: dict[str, float], expected_metrics: dict[str, float]
 ):
     for metric, value in metrics.items():
         assert value == pytest.approx(expected_metrics[metric], abs=TOLERANCE)

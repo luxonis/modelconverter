@@ -1,6 +1,5 @@
 from datetime import datetime
 from statistics import median
-from typing import List
 
 from loguru import logger
 from openvino.inference_engine.ie_api import IECore, StatusCode
@@ -18,7 +17,7 @@ class RVC3Benchmark(Benchmark):
         return {"requests": 1}
 
     @property
-    def all_configurations(self) -> List[Configuration]:
+    def all_configurations(self) -> list[Configuration]:
         return [{"requests": i} for i in range(1, 6)]
 
     def benchmark(self, configuration: Configuration) -> BenchmarkResult:
@@ -42,7 +41,7 @@ class RVC3Benchmark(Benchmark):
         i = 0
         start_time = datetime.utcnow()
         for _ in track(
-            range(iterations if iterations > requests else requests),
+            range(max(requests, iterations)),
             description="Running inference",
         ):
             infer_request_id = exe_network.get_idle_request_id()

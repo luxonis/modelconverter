@@ -1,7 +1,7 @@
 import shutil
 import subprocess
 import time
-from typing import Any, List, Union
+from typing import Any
 
 from loguru import logger
 
@@ -9,14 +9,16 @@ from .exceptions import SubprocessException
 
 
 def subprocess_run(
-    cmd: Union[str, List[Any]],
+    cmd: str | list[Any],
     *,
     silent=False,
 ) -> subprocess.CompletedProcess:
-    """Wrapper around `subprocess.run` that logs the command and its output.
+    """Wrapper around `subprocess.run` that logs the command and its
+    output.
 
     @type cmd: Union[str, List[Any]]
-    @param cmd: Command to execute. Can be a string or a list of arguments.
+    @param cmd: Command to execute. Can be a string or a list of
+        arguments.
     @type silent: bool
     @param silent: If True, the command will not be logged.
     """
@@ -38,7 +40,7 @@ def subprocess_run(
     start_time = time.time()
 
     result = subprocess.run(
-        args, stderr=subprocess.PIPE, stdout=subprocess.PIPE
+        args, stderr=subprocess.PIPE, stdout=subprocess.PIPE, check=False
     )
     t = time.time() - start_time
 

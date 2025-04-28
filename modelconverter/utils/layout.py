@@ -1,7 +1,4 @@
-from typing import List
-
-
-def make_default_layout(shape: List[int]) -> str:
+def make_default_layout(shape: list[int]) -> str:
     """Creates a default layout for the given shape.
 
     Tries to guess most common layouts for the given shape pattern.
@@ -21,7 +18,7 @@ def make_default_layout(shape: List[int]) -> str:
     if len(shape) - i == 3:
         if shape[i] < shape[i + 1] and shape[i] < shape[i + 2]:
             return "".join(layout + ["C", "H", "W"])
-        elif shape[-1] < shape[-2] and shape[-1] < shape[-3]:
+        if shape[-1] < shape[-2] and shape[-1] < shape[-3]:
             return "".join(layout + ["H", "W", "C"])
     i = 0
     while len(layout) < len(shape):
@@ -34,7 +31,7 @@ def make_default_layout(shape: List[int]) -> str:
 
 
 def guess_new_layout(
-    old_layout: str, old_shape: List[int], new_shape: List[int]
+    old_layout: str, old_shape: list[int], new_shape: list[int]
 ) -> str:
     """Tries to guess the layout of the new shape.
 

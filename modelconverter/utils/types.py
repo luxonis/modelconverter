@@ -1,11 +1,10 @@
 from enum import Enum
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 from onnx.onnx_pb import TensorProto
 
-__all__ = ["Encoding", "DataType", "ResizeMethod", "PotDevice", "Target"]
+__all__ = ["DataType", "Encoding", "PotDevice", "ResizeMethod", "Target"]
 
 
 class Layout(Enum):
@@ -232,7 +231,7 @@ class InputFileType(Enum):
     PYTORCH = "PYTORCH"
 
     @classmethod
-    def from_path(cls, path: Union[str, Path]) -> "InputFileType":
+    def from_path(cls, path: str | Path) -> "InputFileType":
         path = Path(path)
         if path.suffix == ".onnx":
             return cls.ONNX

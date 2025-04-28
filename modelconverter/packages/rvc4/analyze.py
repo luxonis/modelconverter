@@ -2,13 +2,13 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Dict, List, cast
+from typing import cast
 
-import polars as pl
 import numpy as np
 import onnx
 import onnx.onnx_pb
 import onnxruntime as rt
+import polars as pl
 from PIL import Image
 
 from modelconverter.utils import AdbHandler, constants, subprocess_run
@@ -17,7 +17,7 @@ from ..base_analyze import Analyzer
 
 
 class RVC4Analyzer(Analyzer):
-    def __init__(self, dlc_model_path: str, image_dirs: Dict[str, str]):
+    def __init__(self, dlc_model_path: str, image_dirs: dict[str, str]):
         super().__init__(dlc_model_path, image_dirs)
         self.adb = AdbHandler()
 
@@ -38,7 +38,7 @@ class RVC4Analyzer(Analyzer):
         self._cleanup_dlc_outputs()
 
     def _resize_image(
-        self, img_path: str, input_sizes: List[int]
+        self, img_path: str, input_sizes: list[int]
     ) -> np.ndarray:
         image = Image.open(img_path)
         image = image.resize(input_sizes)
@@ -47,7 +47,7 @@ class RVC4Analyzer(Analyzer):
 
         return image.astype(np.uint8)
 
-    def _prepare_input_matcher(self) -> Dict[str, Dict[str, str]]:
+    def _prepare_input_matcher(self) -> dict[str, dict[str, str]]:
         image_names = {
             k: sorted(Path(v).glob("*")) for k, v in self.image_dirs.items()
         }
@@ -59,14 +59,14 @@ class RVC4Analyzer(Analyzer):
         input_matcher = {}
         for i in range(len(next(iter(image_names.values())))):
             input_matcher[i] = {}
-            for k in image_names.keys():
+            for k in image_names:
                 input_matcher[i][k] = str(image_names[k][i])
 
         return input_matcher
 
     def _prepare_raw_inputs(
-        self, input_matcher: Dict[str, Dict[str, str]], type: type = np.uint8
-    ) -> Dict[str, str]:
+        self, input_matcher: dict[str, dict[str, str]], type: type = np.uint8
+    ) -> dict[str, str]:
         self.adb.shell(f"rm -rf /data/local/tmp/{self.model_name}")
         self.adb.shell(f"mkdir -p /data/local/tmp/{self.model_name}/inputs")
 
@@ -136,8 +136,8 @@ class RVC4Analyzer(Analyzer):
     def _compare_to_onnx(
         self,
         onnx_model_path: str,
-        input_matcher: Dict[str, Dict[str, str]],
-        dlc_matcher: Dict[str, str],
+        input_matcher: dict[str, dict[str, str]],
+        dlc_matcher: dict[str, str],
     ) -> None:
         onnx_all_layers = self._add_outputs_to_all_layers(str(onnx_model_path))
         session = rt.InferenceSession(onnx_all_layers)
@@ -192,32 +192,36 @@ class RVC4Analyzer(Analyzer):
                 )
                 statistics.append([layer_name, *layer_stats])
 
-        output_dir = f"{str(constants.OUTPUTS_DIR)}/analysis/{self.model_name}"
+        output_dir = f"{constants.OUTPUTS_DIR!s}/analysis/{self.model_name}"
         stats_df = pl.DataFrame(
             statistics,
             schema=["layer_name", "max_abs_diff", "MSE", "cos_sim"],
-            orient="row"
+            orient="row",
         )
-        grouped_df = stats_df.group_by("layer_name").agg([
-            pl.col("max_abs_diff").mean().alias("max_abs_diff"),
-            pl.col("MSE").mean().alias("MSE"),
-            pl.col("cos_sim").mean().alias("cos_sim")
-        ])
-        
+        grouped_df = stats_df.group_by("layer_name").agg(
+            [
+                pl.col("max_abs_diff").mean().alias("max_abs_diff"),
+                pl.col("MSE").mean().alias("MSE"),
+                pl.col("cos_sim").mean().alias("cos_sim"),
+            ]
+        )
+
         layer_mapping = {name: idx for idx, name in enumerate(layer_names)}
         grouped_df = grouped_df.with_columns(
-            pl.col("layer_name").map_elements(
+            pl.col("layer_name")
+            .map_elements(
                 lambda x: layer_mapping.get(x, -1), return_dtype=pl.Int32
-            ).alias("order")
+            )
+            .alias("order")
         ).sort("order")
-        
+
         grouped_df = grouped_df.drop("order")
         grouped_df.write_csv(f"{output_dir}/layer_comparison.csv")
         os.remove(Path(onnx_all_layers))
 
     def _calculate_statistics(
         self, onnx_output: np.ndarray, dlc_output: np.ndarray
-    ) -> List:
+    ) -> list:
         max_abs_diff = np.max(np.abs(onnx_output - dlc_output))
         mse = np.mean((onnx_output - dlc_output) ** 2)
         cosine_sim = np.dot(onnx_output.flatten(), dlc_output.flatten()) / (
@@ -234,10 +238,8 @@ class RVC4Analyzer(Analyzer):
         )
         self.adb.shell(f"rm -rf /data/local/tmp/{self.model_name}/output")
         self.adb.shell(f"cd /data/local/tmp/{self.model_name} && {command}")
-        
-        target_dir = (
-            f"{str(constants.OUTPUTS_DIR)}/analysis/{self.model_name}"
-        )
+
+        target_dir = f"{constants.OUTPUTS_DIR!s}/analysis/{self.model_name}"
         if os.path.exists(f"{target_dir}/output"):
             shutil.rmtree(f"{target_dir}/output")
 
@@ -248,7 +250,7 @@ class RVC4Analyzer(Analyzer):
 
         return f"{target_dir}/output"
 
-    def _flatten_dlc_outputs(self, dlc_matcher: Dict[str, str]) -> None:
+    def _flatten_dlc_outputs(self, dlc_matcher: dict[str, str]) -> None:
         for _, result_path in dlc_matcher.items():
             for root, _, files in os.walk(result_path):
                 for file in files:
@@ -304,29 +306,32 @@ class RVC4Analyzer(Analyzer):
         df = pl.read_csv(csv_path)
         df = df.drop_nans()
         df = df.drop_nulls()
-        layer_stats = (
-            df.group_by("Layer Id")
-            .agg(
-                    pl.col("Time").mean().round(0).cast(int).alias("time_mean"),
-                    pl.col("Layer Name").first().alias("layer_name"),
-                    pl.col("Unit of Measurement").first().alias("unit"),
-            )
+        layer_stats = df.group_by("Layer Id").agg(
+            pl.col("Time").mean().round(0).cast(int).alias("time_mean"),
+            pl.col("Layer Name").first().alias("layer_name"),
+            pl.col("Unit of Measurement").first().alias("unit"),
         )
         layer_stats = layer_stats.rename({"Layer Id": "layer_id"})
-        
+
         total_time = layer_stats["time_mean"].sum()
         layer_stats = layer_stats.with_columns(
             pl.col("layer_id").cast(int).alias("layer_id"),
-            pl.col("layer_name").str.split(":").list.first().map_elements(
-                    lambda x: self._replace_bad_layer_name(x), return_dtype=pl.Utf8
-                ).alias("layer_name"),
-            pl.col("time_mean").mul(1/ total_time).alias("Percentage_of_Total_Time"),
+            pl.col("layer_name")
+            .str.split(":")
+            .list.first()
+            .map_elements(
+                lambda x: self._replace_bad_layer_name(x), return_dtype=pl.Utf8
+            )
+            .alias("layer_name"),
+            pl.col("time_mean")
+            .mul(1 / total_time)
+            .alias("Percentage_of_Total_Time"),
         )
-        
+
         layer_stats = layer_stats.sort("layer_id")
-        
+
         layer_stats.write_csv(
-            f"{str(constants.OUTPUTS_DIR)}/analysis/{self.model_name}/layer_cycles.csv",
+            f"{constants.OUTPUTS_DIR!s}/analysis/{self.model_name}/layer_cycles.csv",
         )
 
     # cleanup
@@ -334,7 +339,7 @@ class RVC4Analyzer(Analyzer):
         self.adb.shell(f"rm -rf /data/local/tmp/{self.model_name}")
 
         output_dir = Path(
-            f"{str(constants.OUTPUTS_DIR)}/analysis/{self.model_name}/output"
+            f"{constants.OUTPUTS_DIR!s}/analysis/{self.model_name}/output"
         )
         if output_dir.exists() and output_dir.is_dir():
             shutil.rmtree(output_dir)

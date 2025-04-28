@@ -1,7 +1,7 @@
 import webbrowser
 from pathlib import Path
 from time import sleep
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any
 from urllib.parse import unquote, urlparse
 
 import click
@@ -11,7 +11,6 @@ import typer
 from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
-from typing_extensions import Annotated
 
 from modelconverter.cli import (
     ArchitectureIDOption,
@@ -149,7 +148,7 @@ def model_ls(
     limit: LimitOption = 50,
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Lists models."""
     return hub_ls(
         "models",
@@ -205,7 +204,7 @@ def model_create(
     tasks: TasksOption = None,
     links: LinksOption = None,
     silent: SilentOption = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Creates a new model resource."""
     data = {
         "name": name,
@@ -250,7 +249,7 @@ def variant_ls(
     limit: LimitOption = 50,
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Lists model versions."""
     return hub_ls(
         "modelVersions",
@@ -269,7 +268,7 @@ def variant_ls(
 @variant.command(name="info")
 def variant_info(
     identifier: IdentifierArgument, json: JSONOption = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Prints information about a model version."""
     return print_hub_resource_info(
         request_info(identifier, "modelVersions"),
@@ -301,7 +300,7 @@ def variant_create(
     domain: DomainOption = None,
     tags: TagsOption = None,
     silent: SilentOption = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Creates a new variant of a model."""
     data = {
         "model_id": model_id,
@@ -342,7 +341,7 @@ def instance_ls(
     variant_id: ModelVersionIDOption = None,
     model_type: ModelTypeOption = None,
     parent_id: ParentIDOption = None,
-    model_class: Optional[ModelClass] = None,
+    model_class: ModelClass | None = None,
     name: NameOption = None,
     hash: HashOption = None,
     status: StatusOption = None,
@@ -388,7 +387,7 @@ def instance_ls(
 @instance.command(name="info")
 def instance_info(
     identifier: IdentifierArgument, json: JSONOption = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Prints information about a model instance."""
     return print_hub_resource_info(
         request_info(identifier, "modelInstances"),
@@ -457,10 +456,10 @@ def instance_create(
     model_precision_type: TargetPrecisionOption = None,
     quantization_data: QuantizationOption = None,
     tags: TagsOption = None,
-    input_shape: Optional[List[int]] = None,
-    is_deployable: Optional[bool] = None,
+    input_shape: list[int] | None = None,
+    is_deployable: bool | None = None,
     silent: SilentOption = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Creates a new model instance."""
     data = {
         "name": name,
@@ -518,13 +517,13 @@ def _export(
     target: str,
     target_precision: str,
     quantization_data: str,
-    yolo_version: Optional[str] = None,
-    yolo_class_names: Optional[List[str]] = None,
+    yolo_version: str | None = None,
+    yolo_class_names: list[str] | None = None,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Exports a model instance."""
     model_instance_id = get_resource_id(identifier, "modelInstances")
-    json: Dict[str, Any] = {
+    json: dict[str, Any] = {
         "name": name,
         "quantization_data": quantization_data,
         **kwargs,

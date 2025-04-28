@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any
 
 
 class Metric(ABC):
@@ -9,7 +9,7 @@ class Metric(ABC):
         pass
 
     @abstractmethod
-    def get_result(self) -> Dict[str, float]:
+    def get_result(self) -> dict[str, float]:
         pass
 
     @abstractmethod
@@ -19,6 +19,6 @@ class Metric(ABC):
     @staticmethod
     @abstractmethod
     def eval_onnx(
-        onnx_path: Union[Path, str], dataset_path: Union[Path, str]
-    ) -> Dict[str, float]:
+        onnx_path: Path | str, dataset_path: Path | str
+    ) -> dict[str, float]:
         pass

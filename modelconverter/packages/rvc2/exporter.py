@@ -2,12 +2,13 @@ import os
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Iterable
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from os import environ as env
 from os import path
 from pathlib import Path
-from typing import Any, Dict, Final, Iterable
+from typing import Any, Final
 
 import tflite2onnx
 from loguru import logger
@@ -365,15 +366,17 @@ class RVC2Exporter(Exporter):
         patch_file = blob_path.with_suffix(".patch")
         bsdiff4.file_diff(default_blob_path, blob_path, patch_file)
 
-    def exporter_buildinfo(self) -> Dict[str, Any]:
+    def exporter_buildinfo(self) -> dict[str, Any]:
         mo_version = (
-            subprocess.run(["mo", "--version"], capture_output=True)
+            subprocess.run(
+                ["mo", "--version"], capture_output=True, check=False
+            )
             .stdout.decode()
             .split(":", 1)[1]
             .strip()
         )
         compile_tool_version, compile_tool_build = (
-            subprocess.run(["compile_tool"], capture_output=True)
+            subprocess.run(["compile_tool"], capture_output=True, check=False)
             .stdout.decode()
             .splitlines()[:2]
         )

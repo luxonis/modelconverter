@@ -4,7 +4,7 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from time import sleep
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Literal
 from uuid import UUID
 
 import typer
@@ -42,7 +42,7 @@ from .types import ModelType
 
 
 def get_output_dir_name(
-    target: Target, name: str, output_dir: Optional[str]
+    target: Target, name: str, output_dir: str | None
 ) -> Path:
     date = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     if output_dir is not None:
@@ -60,8 +60,8 @@ def init_dirs() -> None:
 
 
 def get_configs(
-    path: Optional[str], opts: Optional[List[str]] = None
-) -> Tuple[Config, Optional[NNArchiveConfig], Optional[str]]:
+    path: str | None, opts: list[str] | None = None
+) -> tuple[Config, NNArchiveConfig | None, str | None]:
     """Sets up the configuration.
 
     @type path: Optional[str]
@@ -69,8 +69,8 @@ def get_configs(
     @type opts: Optional[List[str]]
     @param opts: Optional CLI overrides of the config file.
     @rtype: Tuple[Config, Optional[NNArchiveConfig], Optional[str]]
-    @return: Tuple of the parsed modelconverter L{Config}, L{NNArchiveConfig} and the
-        main stage key.
+    @return: Tuple of the parsed modelconverter L{Config},
+        L{NNArchiveConfig} and the main stage key.
     """
 
     opts = opts or []
@@ -100,7 +100,7 @@ def get_configs(
 
 def extract_preprocessing(
     cfg: Config,
-) -> Tuple[Config, Dict[str, PreprocessingBlock]]:
+) -> tuple[Config, dict[str, PreprocessingBlock]]:
     if len(cfg.stages) > 1:
         raise ValueError(
             "Only single-stage models are supported with NN archive."
@@ -140,12 +140,12 @@ def extract_preprocessing(
 
 
 def print_hub_resource_info(
-    model: Dict[str, Any],
-    keys: List[str],
+    model: dict[str, Any],
+    keys: list[str],
     json: bool,
-    rename: Optional[Dict[str, str]] = None,
+    rename: dict[str, str] | None = None,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     rename = rename or {}
 
     if json:
@@ -241,10 +241,10 @@ def print_hub_resource_info(
 
 def hub_ls(
     endpoint: str,
-    keys: List[str],
-    rename: Optional[Dict[str, str]] = None,
+    keys: list[str],
+    rename: dict[str, str] | None = None,
     **kwargs,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     rename = rename or {}
     data = Request.get(f"{endpoint}/", params=kwargs)
     table = Table(row_styles=["yellow", "cyan"], box=ROUNDED)
@@ -300,7 +300,7 @@ def get_resource_id(
 def request_info(
     identifier: str,
     endpoint: Literal["models", "modelVersions", "modelInstances"],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     resource_id = get_resource_id(identifier, endpoint)
 
     try:
@@ -320,7 +320,7 @@ def get_variant_name(
         if layout is not None and "H" in layout and "W" in layout:
             h, w = shape[layout.index("H")], shape[layout.index("W")]
             return f"{name} {h}x{w}"
-        elif len(shape) == 4:
+        if len(shape) == 4:
             if model_type == ModelType.TFLITE:
                 h, w = shape[1], shape[2]
             else:
@@ -343,7 +343,7 @@ def get_version_number(model_id: str) -> str:
 
 
 def wait_for_export(run_id: str) -> None:
-    def _get_run(run_id: str) -> Dict[str, Any]:
+    def _get_run(run_id: str) -> dict[str, Any]:
         return Request.dag_get(f"runs/{run_id}")
 
     def _clean_logs(logs: str) -> str:
@@ -367,8 +367,8 @@ def wait_for_export(run_id: str) -> None:
 
 
 def get_target_specific_options(
-    target: str, cfg: SingleStageConfig, tool_version: Optional[str] = None
-) -> Dict[str, Any]:
+    target: str, cfg: SingleStageConfig, tool_version: str | None = None
+) -> dict[str, Any]:
     target = target.lower()
     json_cfg = cfg.model_dump(mode="json")
     options = {

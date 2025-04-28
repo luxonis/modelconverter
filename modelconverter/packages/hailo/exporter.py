@@ -3,7 +3,7 @@ import shutil
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import numpy as np
 import tensorflow as tf
@@ -62,7 +62,7 @@ class HailoExporter(Exporter):
         self.compression_level = config.hailo.compression_level
         self.batch_size = config.hailo.batch_size
         self.disable_compilation = config.hailo.disable_compilation
-        self._alls: List[str] = []
+        self._alls: list[str] = []
         self.hw_arch = config.hailo.hw_arch
         if not tf.config.list_physical_devices("GPU"):
             logger.error(
@@ -140,7 +140,7 @@ class HailoExporter(Exporter):
 
     def _get_calibration_data(
         self, runner: ClientRunner
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         data = {}
         for orig_name, inp in self.inputs.items():
             name, shape = self._get_hn_layer_info(runner, orig_name)
@@ -196,7 +196,7 @@ class HailoExporter(Exporter):
     @staticmethod
     def _get_hn_layer_info(
         runner: ClientRunner, name: str
-    ) -> Tuple[str, List[int]]:
+    ) -> tuple[str, list[int]]:
         for hn_name, params in runner.get_hn_dict()["layers"].items():
             if name in params.get("original_names", []):
                 return hn_name, [1, *(params["input_shapes"][0])[1:]]
@@ -246,7 +246,7 @@ class HailoExporter(Exporter):
         self._alls = alls
         return "\n".join(alls)
 
-    def exporter_buildinfo(self) -> Dict[str, Any]:
+    def exporter_buildinfo(self) -> dict[str, Any]:
         return {
             "hailo_version": hailo_sdk_client.__version__,
             "optimization_level": self.optimization_level,

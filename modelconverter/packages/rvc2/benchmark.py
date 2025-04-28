@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import List
 
 import depthai as dai
 import numpy as np
@@ -20,7 +19,7 @@ class RVC2Benchmark(Benchmark):
         return {"repetitions": 10, "num_messages": 50, "num_threads": 2}
 
     @property
-    def all_configurations(self) -> List[Configuration]:
+    def all_configurations(self) -> list[Configuration]:
         return [
             {"repetitions": 10, "num_messages": 50, "num_threads": 1},
             {"repetitions": 10, "num_messages": 50, "num_threads": 2},

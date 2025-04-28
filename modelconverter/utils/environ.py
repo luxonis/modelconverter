@@ -1,6 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
-from typing import Optional, Union
 
 import keyring
 from luxonis_ml.utils import Environ as BaseEnviron
@@ -9,7 +8,7 @@ from typing_extensions import Self
 
 
 def get_password_with_timeout(
-    service_name: str, username: str, timeout: Union[float, int] = 5
+    service_name: str, username: str, timeout: float = 5
 ):
     def _get_password():
         return keyring.get_password(service_name, username)
@@ -23,7 +22,7 @@ def get_password_with_timeout(
 
 
 class Environ(BaseEnviron):
-    HUBAI_API_KEY: Optional[str] = None
+    HUBAI_API_KEY: str | None = None
     HUBAI_URL: str = "https://easyml.cloud.luxonis.com/"
 
     @model_validator(mode="after")

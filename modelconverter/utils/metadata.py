@@ -1,7 +1,6 @@
 import io
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
 
 import onnx
 
@@ -11,10 +10,10 @@ from modelconverter.utils.types import DataType
 
 @dataclass
 class Metadata:
-    input_shapes: Dict[str, List[int]]
-    input_dtypes: Dict[str, DataType]
-    output_shapes: Dict[str, List[int]]
-    output_dtypes: Dict[str, DataType]
+    input_shapes: dict[str, list[int]]
+    input_dtypes: dict[str, DataType]
+    output_shapes: dict[str, list[int]]
+    output_dtypes: dict[str, DataType]
 
 
 def get_metadata(model_path: Path) -> Metadata:

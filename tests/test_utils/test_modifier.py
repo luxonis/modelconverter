@@ -2,7 +2,6 @@ import json
 import os
 import shutil
 from pathlib import Path
-from typing import Tuple
 
 import wget
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
@@ -98,7 +97,7 @@ def download_onnx_models():
     return onnx_models
 
 
-def get_config(nn_config: Path) -> Tuple[Config, str]:
+def get_config(nn_config: Path) -> tuple[Config, str]:
     with open(nn_config) as f:
         archive_config = NNArchiveConfig(**json.load(f))
 

@@ -1,14 +1,15 @@
 from importlib.metadata import version
 from pathlib import Path
-from typing import Optional
+from typing import Annotated
 
 import typer
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator
 from luxonis_ml.utils import LuxonisFileSystem, setup_logging
-from typing_extensions import Annotated
 
 from modelconverter.cli import (
+    AnalyzeCyclesOption,
+    AnalyzeOutputsOption,
     ArchivePreprocessOption,
     ComparisonPathArgument,
     DevOption,
@@ -16,8 +17,6 @@ from modelconverter.cli import (
     FormatOption,
     GPUOption,
     ImagePathArgument,
-    AnalyzeCyclesOption,
-    AnalyzeOutputsOption,
     ModelPathArgument,
     ModelPathOption,
     OptsArgument,
@@ -77,7 +76,7 @@ def infer(
     path: PathOption,
     output_dir: OutputDirOption,
     stage: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             ...,
             "--stage",
@@ -140,7 +139,8 @@ def shell(
     version: VersionOption = None,
     gpu: GPUOption = True,
 ):
-    """Boots up a shell inside a docker container for the specified target platform."""
+    """Boots up a shell inside a docker container for the specified
+    target platform."""
     if dev:
         docker_build(target.value, bare_tag="dev", version=version)
     docker_exec(
@@ -262,7 +262,7 @@ def analyze(
     """
 
     tag = "dev" if dev else "latest"
-    
+
     if in_docker():
         try:
             logger.info("Starting analysis")
@@ -282,7 +282,9 @@ def analyze(
             analyzer = Analyzer(dlc_model_path, image_dirs_dict)
             if analyze_outputs:
                 logger.info("Analyzing layer outputs")
-                analyzer.analyze_layer_outputs(resolve_path(onnx_model_path, Path.cwd()))
+                analyzer.analyze_layer_outputs(
+                    resolve_path(onnx_model_path, Path.cwd())
+                )
             if analyze_cycles:
                 logger.info("Analyzing layer cycles")
                 analyzer.analyze_layer_cycles()
@@ -293,8 +295,8 @@ def analyze(
     else:
         if dev:
             docker_build("rvc4", bare_tag=tag)
-            
-        args =[
+
+        args = [
             "analyze",
             "--dlc-model-path",
             dlc_model_path,
@@ -304,18 +306,19 @@ def analyze(
         ]
         args.extend(image_dirs)
         args.append(
-            "--analyze-outputs" if analyze_outputs else "--no-analyze-outputs")
+            "--analyze-outputs" if analyze_outputs else "--no-analyze-outputs"
+        )
         args.append(
-            "--analyze-cycles" if analyze_cycles else "--no-analyze-cycles")
-        
+            "--analyze-cycles" if analyze_cycles else "--no-analyze-cycles"
+        )
+
         docker_exec(
             "rvc4",
             *args,
             bare_tag=tag,
             use_gpu=False,
         )
-        
-        
+
 
 @app.command()
 def visualize(
@@ -346,7 +349,7 @@ def convert(
     gpu: GPUOption = True,
     version: VersionOption = None,
     main_stage: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             ...,
             "--main-stage",
@@ -496,7 +499,7 @@ def archive(
         str, typer.Argument(help="Path or an URL of the model file.")
     ],
     save_path: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "-s",
             "--save-path",
@@ -506,7 +509,7 @@ def archive(
         ),
     ] = None,
     put_file_plugin: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="The name of the plugin to use for uploading the file."
         ),
@@ -551,7 +554,7 @@ def archive(
 def version_callback(value: bool):
     if value:
         typer.echo(f"ModelConverter Version: {version('modelconv')}")
-        raise typer.Exit()
+        raise typer.Exit
 
 
 @app.callback()

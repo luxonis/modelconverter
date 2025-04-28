@@ -1,7 +1,7 @@
 import json
 import tarfile
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from loguru import logger
 from luxonis_ml.nn_archive.config import CONFIG_VERSION
@@ -29,8 +29,8 @@ def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
 
 
 def process_nn_archive(
-    path: Path, overrides: Optional[Dict[str, Any]]
-) -> Tuple[Config, NNArchiveConfig, str]:
+    path: Path, overrides: dict[str, Any] | None
+) -> tuple[Config, NNArchiveConfig, str]:
     """Extracts the archive from tar and parses its config.
 
     @type path: Path
@@ -38,7 +38,8 @@ def process_nn_archive(
     @type overrides: Optional[Dict[str, Any]]
     @param overrides: Config overrides.
     @rtype: Tuple[Config, NNArchiveConfig, str]
-    @return: Tuple of the parsed config, NNArchiveConfig and the main stage key.
+    @return: Tuple of the parsed config, NNArchiveConfig and the main
+        stage key.
     """
 
     untar_path = MISC_DIR / path.stem
@@ -192,8 +193,8 @@ def process_nn_archive(
 def modelconverter_config_to_nn(
     config: Config,
     model_name: Path,
-    orig_nn: Optional[NNArchiveConfig],
-    preprocessing: Dict[str, PreprocessingBlock],
+    orig_nn: NNArchiveConfig | None,
+    preprocessing: dict[str, PreprocessingBlock],
     main_stage_key: str,
     model_path: Path,
 ) -> NNArchiveConfig:

@@ -1,4 +1,5 @@
 import argparse
+from typing import Any
 
 from loguru import logger
 
@@ -11,7 +12,7 @@ from modelconverter.hub.__main__ import (
 )
 
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Convert models from Luxonis Hub to RVC4 format using the specified SNPE version. The script requires HUBAI_API_KEY to be set in the environment variables."
     )
@@ -69,7 +70,9 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def get_missing_model_precisions(instance_list, snpe_version):
+def get_missing_model_precisions(
+    instance_list: list[dict[str, Any]], snpe_version: str
+) -> set:
     model_precision_types = {
         inst["model_precision_type"]
         for inst in instance_list
@@ -85,8 +88,11 @@ def get_missing_model_precisions(instance_list, snpe_version):
 
 
 def get_precision_to_params(
-    instance_list, precision_list, snpe_version, force_reexport=False
-):
+    instance_list: list[dict[str, Any]],
+    precision_list: set[str],
+    snpe_version: str,
+    force_reexport: bool = False,
+) -> dict[str, dict[str, Any]]:
     return {
         inst["model_precision_type"]: {
             "id": inst["id"],
@@ -97,10 +103,15 @@ def get_precision_to_params(
         for inst in instance_list
         if inst["model_type"] == "RVC4"
         and (
-            inst["hardware_parameters"].get("snpe_version") != snpe_version
-            and inst["model_precision_type"] in precision_list
-            or force_reexport
-            and inst["hardware_parameters"].get("snpe_version") == snpe_version
+            (
+                inst["hardware_parameters"].get("snpe_version") != snpe_version
+                and inst["model_precision_type"] in precision_list
+            )
+            or (
+                force_reexport
+                and inst["hardware_parameters"].get("snpe_version")
+                == snpe_version
+            )
         )
     }
 
@@ -133,7 +144,7 @@ def export_models(variant_info, precision_to_params, args):
         )
 
 
-def main():
+def main() -> None:
     args = parse_arguments()
     model_list = model_ls(
         is_public=args.is_public, luxonis_only=True, limit=args.limit

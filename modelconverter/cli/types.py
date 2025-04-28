@@ -1,9 +1,8 @@
 from enum import Enum
-from typing import List, Optional
+from typing import Annotated
 
 import click
 import typer
-from typing_extensions import Annotated
 
 from modelconverter.utils.types import Target
 
@@ -46,14 +45,13 @@ class ModelType(str, Enum):
     def from_suffix(cls, suffix: str) -> "ModelType":
         if suffix == ".onnx":
             return cls.ONNX
-        elif suffix == ".tflite":
+        if suffix == ".tflite":
             return cls.TFLITE
-        elif suffix in [".xml", ".bin"]:
+        if suffix in [".xml", ".bin"]:
             return cls.IR
-        elif suffix in [".pt", ".pth"]:
+        if suffix in [".pt", ".pth"]:
             return cls.PYTORCH
-        else:
-            raise ValueError(f"Unsupported model format: {suffix}")
+        raise ValueError(f"Unsupported model format: {suffix}")
 
 
 class Format(str, Enum):
@@ -71,7 +69,7 @@ FormatOption = Annotated[
 ]
 
 VersionOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(
         help="""Version of the underlying conversion tools to use.
         Available options differ based on the target platform:
@@ -98,7 +96,7 @@ VersionOption = Annotated[
 ]
 
 PathOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(
         help="Path to the configuration file or NN Archive.",
         metavar="PATH",
@@ -108,7 +106,7 @@ PathOption = Annotated[
 
 
 OptsArgument = Annotated[
-    Optional[List[str]],
+    list[str] | None,
     typer.Argument(
         help="A list of optional CLI overrides of the config file.",
         show_default=False,
@@ -144,7 +142,7 @@ ModelPathArgument = Annotated[
 ]
 
 ImagePathArgument = Annotated[
-    List[str],
+    list[str],
     typer.Argument(
         help="In the case of single input models, only a path/to/image/dir can be specified. "
         "If model has multiple inputs, specify key-value pairs like: input_name_1 path/to/images1 input_name_2 path/to/images2 ..."
@@ -189,7 +187,7 @@ GPUOption = Annotated[
 ]
 
 OutputDirOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(
         ..., "--output-dir", "-o", help="Name of the output directory."
     ),
@@ -216,7 +214,7 @@ ModelIDArgument = Annotated[
 ]
 
 ModelIDOption = Annotated[
-    Optional[str], typer.Option(help="The ID of the model", show_default=False)
+    str | None, typer.Option(help="The ID of the model", show_default=False)
 ]
 
 ModelIDOptionRequired = Annotated[
@@ -224,7 +222,7 @@ ModelIDOptionRequired = Annotated[
 ]
 
 ModelVersionIDOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="The ID of the model version", show_default=False),
 ]
 
@@ -233,7 +231,7 @@ ModelVersionIDOptionRequired = Annotated[
 ]
 
 TargetPrecisionOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(
         help="Precision of the model",
         show_default=False,
@@ -242,11 +240,11 @@ TargetPrecisionOption = Annotated[
 ]
 
 ModelInstanceIDOption = Annotated[
-    Optional[str], typer.Option(help="The ID of the model instance")
+    str | None, typer.Option(help="The ID of the model instance")
 ]
 
 SlugArgument = Annotated[
-    Optional[str],
+    str | None,
     typer.Argument(show_default=False, help="Slug of the model"),
 ]
 
@@ -262,13 +260,13 @@ JSONOption = Annotated[
 ]
 
 RepositoryUrlOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="The repository URL", show_default=False),
 ]
 
 
 TasksOption = Annotated[
-    Optional[List[str]],
+    list[str] | None,
     typer.Option(
         help="Tasks supported by the model",
         show_default=False,
@@ -296,27 +294,27 @@ TasksOption = Annotated[
 ]
 
 LinksOption = Annotated[
-    Optional[List[str]],
+    list[str] | None,
     typer.Option(help="Links", show_default=False),
 ]
 
 HubVersionOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="Version number", show_default=False),
 ]
 
 DomainOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="Domain of the version", show_default=False),
 ]
 
 TagsOption = Annotated[
-    Optional[List[str]],
+    list[str] | None,
     typer.Option(help="Tags", show_default=False),
 ]
 
 CommitHashOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="Commit hash", show_default=False),
 ]
 
@@ -330,12 +328,12 @@ NameArgument = Annotated[
 ]
 
 ArchitectureIDOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="The architecture ID", show_default=False),
 ]
 
 DescriptionOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="Description of the model", show_default=False),
 ]
 
@@ -352,7 +350,7 @@ LicenseTypeOptionRequired = Annotated[
     ),
 ]
 LicenseTypeOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(
         help="License type.",
         show_default=False,
@@ -361,34 +359,34 @@ LicenseTypeOption = Annotated[
 ]
 
 IsPublicOption = Annotated[
-    Optional[bool],
+    bool | None,
     typer.Option(
         help="Whether to query public or private models", show_default=False
     ),
 ]
 
 SlugOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="Slug of the model", show_default=False),
 ]
 
 PlatformsOption = Annotated[
-    Optional[List[ModelType]],
+    list[ModelType] | None,
     typer.Option(help="Platforms supported by the model", show_default=False),
 ]
 
 ModelTypeOption = Annotated[
-    Optional[ModelType],
+    ModelType | None,
     typer.Option(help="Type of the model", show_default=False),
 ]
 
 ParentIDOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="The parent ID", show_default=False),
 ]
 
 VariantSlugOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="Slug of the model variant", show_default=False),
 ]
 
@@ -399,7 +397,7 @@ SilentOption = Annotated[
     ),
 ]
 CompressionLevelOption = Annotated[
-    Optional[int],
+    int | None,
     typer.Option(
         help="Compression level of the exported model. Only relevant for HAILO",
         show_default=False,
@@ -407,7 +405,7 @@ CompressionLevelOption = Annotated[
 ]
 
 OptimizationLevelOption = Annotated[
-    Optional[int],
+    int | None,
     typer.Option(
         help="Optimization level of the exported model. Only relevant for HAILO",
         show_default=False,
@@ -415,17 +413,17 @@ OptimizationLevelOption = Annotated[
 ]
 
 HashOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="Hash of the instance", show_default=False),
 ]
 
 NameOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="Name of the model", show_default=False),
 ]
 
 StatusOption = Annotated[
-    Optional[Status],
+    Status | None,
     typer.Option(help="Status of the model", show_default=False),
 ]
 
@@ -434,7 +432,7 @@ ModelInstanceIDArgument = Annotated[
 ]
 
 ProjectIDOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(help="The project ID", show_default=False),
 ]
 
@@ -444,7 +442,7 @@ LuxonisOnlyOption = Annotated[
 ]
 
 LimitOption = Annotated[
-    Optional[int],
+    int | None,
     typer.Option(help="How many records to display"),
 ]
 
@@ -459,7 +457,7 @@ OrderOption = Annotated[
 ]
 
 QuantizationOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(
         help="Quantization type",
         click_type=click.Choice(
@@ -469,7 +467,7 @@ QuantizationOption = Annotated[
 ]
 
 YoloVersionOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(
         help="YOLO version",
         click_type=click.Choice(
@@ -491,7 +489,7 @@ YoloVersionOption = Annotated[
 ]
 
 YoloClassNamesOption = Annotated[
-    Optional[List[str]],
+    list[str] | None,
     typer.Option(
         help="Class names for YOLO model in the format 'class1, class2 ...'",
         show_default=False,
@@ -499,7 +497,7 @@ YoloClassNamesOption = Annotated[
 ]
 
 YoloInputShapeOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(
         help="Input shape for YOLO models in the format 'width height' or 'width'",
         show_default=False,

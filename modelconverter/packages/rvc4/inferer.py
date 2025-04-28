@@ -1,6 +1,5 @@
 import shutil
 from pathlib import Path
-from typing import Dict
 
 import numpy as np
 
@@ -15,7 +14,7 @@ class RVC4Inferer(Inferer):
         self.raw_images_path = Path("raw_images")
         self.header = f"%{' '.join(name for name in self.out_shapes)}"
 
-    def infer(self, inputs: Dict[str, Path]) -> Dict[str, np.ndarray]:
+    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
         outputs_path = Path("output")
         shutil.rmtree(self.raw_images_path, ignore_errors=True)
         self.raw_images_path.mkdir(parents=True)

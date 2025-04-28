@@ -1,8 +1,7 @@
 import os
-from typing import Dict
 
-import polars as pl
 import plotly.graph_objects as go
+import polars as pl
 
 from modelconverter.utils import constants
 
@@ -54,7 +53,9 @@ class RVC4Visualizer(Visualizer):
             new_columns = {col: col.strip() for col in df.columns}
             df = df.rename(new_columns)
             df = df.with_columns(
-                (pl.col("Percentage_of_Total_Time").cast(pl.Float32()) * 100).alias("Percentage_of_Total_Time")
+                (
+                    pl.col("Percentage_of_Total_Time").cast(pl.Float32()) * 100
+                ).alias("Percentage_of_Total_Time")
             )
             metric_maps = {
                 metric: dict(
@@ -214,9 +215,9 @@ class RVC4Visualizer(Visualizer):
 
     def _get_csv_paths(
         self, dir_path: str, comparison_type: str = "layer_comparison"
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         dir_path = (
-            dir_path if dir_path else f"{str(constants.OUTPUTS_DIR)}/analysis"
+            dir_path if dir_path else f"{constants.OUTPUTS_DIR!s}/analysis"
         )
         csv_paths = {}
 

@@ -1,5 +1,3 @@
-from typing import Type
-
 from modelconverter.utils.types import Target
 
 from ..packages.base_analyze import Analyzer
@@ -9,86 +7,84 @@ from ..packages.base_inferer import Inferer
 from ..packages.base_visualize import Visualizer
 
 
-def get_exporter(target: Target) -> Type[Exporter]:
+def get_exporter(target: Target) -> type[Exporter]:
     if target == Target.RVC2:
         from modelconverter.packages.rvc2.exporter import RVC2Exporter
 
         return RVC2Exporter
 
-    elif target == Target.RVC3:
+    if target == Target.RVC3:
         from modelconverter.packages.rvc3.exporter import RVC3Exporter
 
         return RVC3Exporter
 
-    elif target == Target.RVC4:
+    if target == Target.RVC4:
         from modelconverter.packages.rvc4.exporter import RVC4Exporter
 
         return RVC4Exporter
 
-    elif target == Target.HAILO:
+    if target == Target.HAILO:
         from modelconverter.packages.hailo.exporter import HailoExporter
 
         return HailoExporter
 
 
-def get_inferer(target: Target) -> Type[Inferer]:
+def get_inferer(target: Target) -> type[Inferer]:
     if target == Target.RVC2:
         from modelconverter.packages.rvc2.inferer import RVC2Inferer
 
         return RVC2Inferer
 
-    elif target == Target.RVC3:
+    if target == Target.RVC3:
         from modelconverter.packages.rvc3.inferer import RVC3Inferer
 
         return RVC3Inferer
 
-    elif target == Target.RVC4:
+    if target == Target.RVC4:
         from modelconverter.packages.rvc4.inferer import RVC4Inferer
 
         return RVC4Inferer
 
-    elif target == Target.HAILO:
+    if target == Target.HAILO:
         from modelconverter.packages.hailo.inferer import HailoInferer
 
         return HailoInferer
 
 
-def get_benchmark(target: Target) -> Type[Benchmark]:
+def get_benchmark(target: Target) -> type[Benchmark]:
     if target == Target.RVC2:
         from modelconverter.packages.rvc2.benchmark import RVC2Benchmark
 
         return RVC2Benchmark
 
-    elif target == Target.RVC3:
+    if target == Target.RVC3:
         from modelconverter.packages.rvc3.benchmark import RVC3Benchmark
 
         return RVC3Benchmark
 
-    elif target == Target.RVC4:
+    if target == Target.RVC4:
         from modelconverter.packages.rvc4.benchmark import RVC4Benchmark
 
         return RVC4Benchmark
 
-    elif target == Target.HAILO:
+    if target == Target.HAILO:
         from modelconverter.packages.hailo.benchmark import HailoBenchmark
 
         return HailoBenchmark
 
 
-def get_analyzer(target) -> Type[Analyzer]:
+def get_analyzer(target) -> type[Analyzer]:
     if target == Target.RVC4:
         from modelconverter.packages.rvc4.analyze import RVC4Analyzer
 
         return RVC4Analyzer
 
-    else:
-        raise ValueError(f"Analyzer not available for {target.name}")
+    raise ValueError(f"Analyzer not available for {target.name}")
 
 
-def get_visualizer(target) -> Type[Visualizer]:
+def get_visualizer(target) -> type[Visualizer]:
     if target == Target.RVC4:
         from modelconverter.packages.rvc4.visualize import RVC4Visualizer
 
         return RVC4Visualizer
-    else:
-        raise ValueError(f"Visualizer not available for {target.name}")
+    raise ValueError(f"Visualizer not available for {target.name}")
