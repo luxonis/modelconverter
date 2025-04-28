@@ -10,10 +10,15 @@ from typing_extensions import Annotated
 
 from modelconverter.cli import (
     ArchivePreprocessOption,
+    ComparisonPathArgument,
     DevOption,
     Format,
     FormatOption,
     GPUOption,
+    ImagePathArgument,
+    AnalyzeCyclesOption,
+    AnalyzeOutputsOption,
+    ModelPathArgument,
     ModelPathOption,
     OptsArgument,
     OutputDirOption,
@@ -27,9 +32,11 @@ from modelconverter.cli import (
 )
 from modelconverter.hub.__main__ import app as hub_app
 from modelconverter.packages import (
+    get_analyzer,
     get_benchmark,
     get_exporter,
     get_inferer,
+    get_visualizer,
 )
 from modelconverter.utils import (
     ModelconverterException,
@@ -43,6 +50,7 @@ from modelconverter.utils import (
 )
 from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.constants import MODELS_DIR
+from modelconverter.utils.types import Target
 
 app = typer.Typer(
     help="Modelconverter CLI",
@@ -222,6 +230,110 @@ def benchmark(
     Benchmark = get_benchmark(target)
     benchmark = Benchmark(str(model_path))
     benchmark.run(full=full, save=save, **kwargs)
+
+
+@app.command()
+def analyze(
+    dlc_model_path: ModelPathArgument,
+    onnx_model_path: ModelPathArgument,
+    image_dirs: ImagePathArgument,
+    analyze_outputs: AnalyzeOutputsOption = True,
+    analyze_cycles: AnalyzeCyclesOption = True,
+    dev: DevOption = False,
+):
+    """Runs layer and cycle analysis on the specified DLC model.
+
+    ---
+
+    **RVC4**
+
+    - `--dlc-model-path`: The path to the DLC model file.
+
+    - `--onnx-model-path`: The path to the corresponding ONNX model file that was used for converting to DLC.
+
+    - `--image-dirs`: A list of names and paths to directories with images for each input of the model.
+        The names must match the input names of the model. If there is only one input, the name can be omitted.
+
+    - `--analyze-outputs`: Whether to analyze the layer outputs. Default: `True`
+
+    - `--analyze-cycles`: Whether to analyze the layer cycles. Default: `True`
+    ---
+
+    """
+
+    tag = "dev" if dev else "latest"
+    
+    if in_docker():
+        try:
+            logger.info("Starting analysis")
+            if len(image_dirs) == 1:
+                image_dirs_dict = {"default": image_dirs[0]}
+            else:
+                if len(image_dirs) % 2 != 0:
+                    raise typer.BadParameter(
+                        "Please supply the same amount of model input names and test image directories."
+                    )
+                image_dirs_dict = {
+                    image_dirs[i]: image_dirs[i + 1]
+                    for i in range(0, len(image_dirs), 2)
+                }
+
+            Analyzer = get_analyzer(Target.RVC4)
+            analyzer = Analyzer(dlc_model_path, image_dirs_dict)
+            if analyze_outputs:
+                logger.info("Analyzing layer outputs")
+                analyzer.analyze_layer_outputs(resolve_path(onnx_model_path, Path.cwd()))
+            if analyze_cycles:
+                logger.info("Analyzing layer cycles")
+                analyzer.analyze_layer_cycles()
+            logger.info("Analysis finished successfully")
+        except Exception:
+            logger.exception("Encountered an unexpected error!")
+            exit(2)
+    else:
+        if dev:
+            docker_build("rvc4", bare_tag=tag)
+            
+        args =[
+            "analyze",
+            "--dlc-model-path",
+            dlc_model_path,
+            "--onnx-model-path",
+            onnx_model_path,
+            "--image-dirs",
+        ]
+        args.extend(image_dirs)
+        args.append(
+            "--analyze-outputs" if analyze_outputs else "--no-analyze-outputs")
+        args.append(
+            "--analyze-cycles" if analyze_cycles else "--no-analyze-cycles")
+        
+        docker_exec(
+            "rvc4",
+            *args,
+            bare_tag=tag,
+            use_gpu=False,
+        )
+        
+        
+
+@app.command()
+def visualize(
+    dir_path: ComparisonPathArgument = "",
+):
+    """Visualizes the analysis results.
+
+    ---
+
+    - `--dir-path`: The path to the directory cointaining CSV files in any of its subdirectories.
+    The default search path is `shared_with_container/outputs/analysis`.
+
+    ---
+
+    """
+    Visualizer = get_visualizer(Target.RVC4)
+    visualizer = Visualizer(dir_path)
+    visualizer.visualize()
 
 
 @app.command()
