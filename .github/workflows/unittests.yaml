@@ -20,6 +20,19 @@ on:
         description: 'modelconverter version (branch/tag/SHA)'
         required: true
         type: string
+  
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      AWS_S3_ENDPOINT_URL:
+        required: true
+      GCP_CREDENTIALS:
+        description: 'Google service account JSON'
+        required: true
+      HUBAI_API_KEY:
+        required: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
