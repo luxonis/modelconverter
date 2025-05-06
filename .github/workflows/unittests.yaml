@@ -43,8 +43,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout at conv_ref (workflow_call)
-      if: ${{ github.event_name == 'workflow_call' }}
+    - name: Checkout at conv_ref
+      if: ${{ github.event_name != 'pull_request' }}
       uses: actions/checkout@v4
       with:
         ref: ${{ inputs.conv_ref }}
@@ -63,7 +63,7 @@ jobs:
       run: python -m pip install -e .[dev] --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local/
 
     - name: Install specified luxonis-ml
-      if: ${{ github.event_name == 'workflow_call' }}
+      if: ${{ github.event_name != 'pull_request'}}
       run: |
         pip uninstall luxonis-ml -y || true
         pip install "luxonis-ml[all] @ git+https://github.com/luxonis/luxonis-ml.git@${{ inputs.ml_ref || steps.determine-refs.outputs.ml_ref }}" \
