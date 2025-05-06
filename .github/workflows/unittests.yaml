@@ -47,11 +47,15 @@ jobs:
       if: ${{ github.event_name != 'pull_request' }}
       uses: actions/checkout@v4
       with:
-        ref: ${{ inputs.conv_ref }}
+        repository: Luxonis/modelconverter
+        ref:        ${{ inputs.conv_ref }}
+        path:       modelconverter
 
     - name: Checkout code
       if: ${{ github.event_name == 'pull_request' }}
       uses: actions/checkout@v4
+      with:
+        path: modelconverter
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -60,6 +64,7 @@ jobs:
         cache: pip
 
     - name: Install package
+      working-directory: modelconverter
       run: python -m pip install -e .[dev] --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local/
 
     - name: Install specified luxonis-ml
@@ -70,6 +75,7 @@ jobs:
           --upgrade --force-reinstall
 
     - name: Run Unit Tests
+      working-directory: modelconverter
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
