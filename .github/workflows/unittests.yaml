@@ -68,11 +68,10 @@ jobs:
       run: python -m pip install -e .[dev] --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local/
 
     - name: Install specified luxonis-ml
-      if: ${{ github.event_name != 'pull_request'}}
+      if: ${{ github.event_name != 'pull_request' }}
       run: |
-        pip uninstall luxonis-ml -y || true
-        pip install "luxonis-ml[data,nn_archive] @ git+https://github.com/luxonis/luxonis-ml.git@${{ inputs.ml_ref || steps.determine-refs.outputs.ml_ref }}" \
-          --upgrade --force-reinstall
+        pip uninstall luxonis-ml -y;
+        pip install "luxonis-ml[data,nn_archive] @ git+https://github.com/luxonis/luxonis-ml.git@${{ inputs.ml_ref || steps.determine-refs.outputs.ml_ref }}" --upgrade --force-reinstall
 
     - name: Run Unit Tests
       working-directory: modelconverter
