@@ -70,7 +70,7 @@ jobs:
     - name: Install specified luxonis-ml
       shell: bash
       env:
-        ML_REF: ${{ inputs.ml_ref || steps.determine-refs.outputs.ml_ref }}
+        ML_REF: ${{ inputs.ml_ref }}
       if: ${{ inputs.ml_ref != '' }}
       run: |
         pip uninstall luxonis-ml -y
