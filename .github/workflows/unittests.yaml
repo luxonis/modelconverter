@@ -44,7 +44,7 @@ jobs:
 
     steps:
     - name: Checkout at modelconv_ref
-      if: ${{ github.event_name != 'pull_request' }}
+      if: ${{ inputs.modelconv_ref != '' }}
       uses: actions/checkout@v4
       with:
         repository: Luxonis/modelconverter
@@ -71,7 +71,7 @@ jobs:
       shell: bash
       env:
         ML_REF: ${{ inputs.ml_ref || steps.determine-refs.outputs.ml_ref }}
-      if: ${{ github.event_name != 'pull_request' }}
+      if: ${{ inputs.ml_ref != '' }}
       run: |
         pip uninstall luxonis-ml -y
         pip install \
