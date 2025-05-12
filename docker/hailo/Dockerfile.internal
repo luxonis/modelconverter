@@ -2,7 +2,7 @@
 # If you want to build the Model Converter Docker image,
 # please use the `docker/hailo/Dockerfile` file instead.
 
-ARG VERSION=2024.07
+ARG VERSION=2025.04
 
 FROM ghcr.io/luxonis/modelconverter-hailo:${VERSION//-/.}-base
 WORKDIR /app
@@ -19,10 +19,6 @@ RUN <<EOF
 
     pip install --upgrade pip
     pip install -r requirements.txt
-
-    if [ "${VERSION}" = "2024-04" ]; then
-        pip install --upgrade numpy==1.22.0  --no-cache-dir
-    fi
 
 EOF
 

@@ -1,18 +1,14 @@
 import contextlib
 from io import StringIO
 from pathlib import Path
+from typing import cast
 
 import numpy as np
+from hailo_sdk_client import ClientRunner, InferenceContext
 
 from modelconverter.packages.base_inferer import Inferer
-from modelconverter.packages.hailo.exporter import (
-    HailoExporter,
-    _replace_pydantic,
-)
+from modelconverter.packages.hailo.exporter import HailoExporter
 from modelconverter.utils import read_image
-
-with _replace_pydantic():
-    from hailo_sdk_client import ClientRunner, InferenceContext
 
 
 class HailoInferer(Inferer):
@@ -23,7 +19,7 @@ class HailoInferer(Inferer):
             else "hailo8",
             har=str(self.model_path),
         )
-        hn_dict = self.runner.get_hn_dict()
+        hn_dict = cast(dict, self.runner.get_hn_dict())
         output_hn_names = hn_dict["net_params"]["output_layers_order"]
         orig_meta = self.runner._original_model_meta
         if orig_meta is None:
@@ -34,7 +30,7 @@ class HailoInferer(Inferer):
             raise NotImplementedError(
                 "Multiple outputs are not supported at the moment."
             )
-        for hn_name, params in hn_dict["layers"].items():  # type: ignore
+        for hn_name, params in hn_dict["layers"].items():
             if hn_name in output_hn_names:
                 self.output_names.extend(params["original_names"])
 

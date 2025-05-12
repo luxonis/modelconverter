@@ -2,7 +2,7 @@
 name = "modelconv"
 description = "Converter for neural models into various formats."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 authors = [{ name = "Luxonis", email = "support@luxonis.com" }]
 maintainers = [{ name = "Luxonis", email = "support@luxonis.com" }]
 keywords = ["ml", "onnx", "openvino", "nn", "ai", "embedded"]

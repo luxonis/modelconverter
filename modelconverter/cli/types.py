@@ -89,8 +89,8 @@ VersionOption = Annotated[
             - `2.27.0`
 
           - `HAILO`:
-              - `2024.04` (default),
-              - `2024.07`""",
+              - `2025.01`,
+              - `2025.04` (default)""",
         show_default=False,
     ),
 ]

@@ -1,13 +1,12 @@
-import importlib
 import shutil
-import sys
-from collections.abc import Generator
-from contextlib import contextmanager
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+import hailo_sdk_client
 import numpy as np
 import tensorflow as tf
+from hailo_sdk_client import ClientRunner
 from loguru import logger
 
 from modelconverter.packages.base_exporter import Exporter
@@ -17,42 +16,6 @@ from modelconverter.utils.config import (
     SingleStageConfig,
 )
 from modelconverter.utils.types import Target
-
-
-@contextmanager
-def _replace_module(original: str, substitute: str) -> Generator:
-    original_module = importlib.import_module(original)  # nosemgrep
-    substitute_module = importlib.import_module(substitute)  # nosemgrep
-
-    sys.modules[original] = substitute_module
-    try:
-        yield
-    finally:
-        sys.modules[original] = original_module
-
-
-@contextmanager
-def _replace_pydantic() -> Generator:
-    # NOTE: hailo_sdk_client is incompatible with pydantic v2, which
-    # is used in `luxonis_ml`. This is a workaround to make it work.
-    with (
-        _replace_module("pydantic", "pydantic.v1"),
-        _replace_module("pydantic.errors", "pydantic.v1.errors"),
-    ):
-        yield
-
-
-with _replace_pydantic():
-    import hailo_model_optimization.acceleras.utils.logger as _acc_logger
-    import hailo_sdk_common.logger.logger as _cmn_logger
-
-    # NOTE: Replacing built-in hailo loggers with our own.
-    logger.verbose = logger.debug  # type: ignore
-    logger.important = logger.info  # type: ignore
-    _cmn_logger._g_logger = logger
-    _acc_logger._g_logger = logger
-    import hailo_sdk_client
-    from hailo_sdk_client import ClientRunner
 
 
 class HailoExporter(Exporter):
@@ -88,20 +51,20 @@ class HailoExporter(Exporter):
 
         logger.info("Translating model to Hailo IR.")
         if self.is_tflite:
-            runner.translate_tf_model(
+            cast(Callable[..., None], runner.translate_tf_model)(
                 str(self.input_model),
                 self.input_model.stem,
                 start_node_names=start_nodes,
                 tensor_shapes=net_input_shapes,
-                end_node_names=self.outputs,
+                end_node_names=list(self.outputs.keys()),
             )
         else:
-            runner.translate_onnx_model(
+            cast(Callable[..., None], runner.translate_onnx_model)(
                 str(self.input_model),
                 self.input_model.stem,
                 start_node_names=start_nodes,
                 net_input_shapes=net_input_shapes,
-                end_node_names=self.outputs,
+                end_node_names=list(self.outputs.keys()),
             )
         logger.info("Model translated to Hailo IR.")
         har_path = self.input_model.with_suffix(".har")

@@ -1,4 +1,4 @@
-ARG VERSION=2024.04
+ARG VERSION=2025.04
 
 FROM hailo_ai_sw_suite_${VERSION//./-}:1
 
@@ -42,11 +42,6 @@ EOF
 RUN <<EOF
 
     set -e
-
-    if [[ "${VERSION}" = "2024-04" ]]; then
-        pip install --upgrade numpy==1.22.0 --no-cache-dir
-    fi
-
     pip install psutil  --no-cache-dir
 
 EOF
