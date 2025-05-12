@@ -1,6 +1,8 @@
 import io
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import onnx
 
@@ -210,7 +212,9 @@ def _get_metadata_hailo(model_path: Path) -> Metadata:
     output_shapes = {}
     output_dtypes = {}
     runner = ClientRunner(hw_arch="hailo8", har=str(model_path))
-    for params in runner.get_hn_dict()["layers"].values():
+    for params in cast(Callable[..., dict], runner.get_hn_dict)()[
+        "layers"
+    ].values():
         if params["type"] in ["input_layer", "output_layer"]:
             name = params["original_names"][0]
             shape = list(params["input_shapes"][0])

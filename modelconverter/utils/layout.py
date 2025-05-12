@@ -32,7 +32,7 @@ def make_default_layout(shape: list[int]) -> str:
 
 def guess_new_layout(
     old_layout: str, old_shape: list[int], new_shape: list[int]
-) -> str:
+) -> str | None:
     """Tries to guess the layout of the new shape.
 
     The new shape must contain the same elements as the old one.
@@ -58,11 +58,11 @@ def guess_new_layout(
     """
     if len(new_shape) != len(old_layout):
         raise ValueError(
-            "The length of the new shape must be the same as the old one."
+            "The length of the new shape must be the same as the old one"
         )
     if sorted(old_shape) != sorted(new_shape):
         raise ValueError(
-            "The new shape must contain the same elements as the old one."
+            "The new shape must contain the same elements as the old one"
         )
     old_shape_tuples = list(zip(old_layout, old_shape, strict=True))
 

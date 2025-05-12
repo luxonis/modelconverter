@@ -258,7 +258,16 @@ def modelconverter_config_to_nn(
         new_shape = model_metadata.output_shapes[out.name]
         if out.shape is not None and not any(s == 0 for s in out.shape):
             assert out.layout is not None
-            layout = guess_new_layout(out.layout, out.shape, new_shape)
+            try:
+                layout = guess_new_layout(out.layout, out.shape, new_shape)
+            except ValueError as e:
+                layout = make_default_layout(new_shape)
+                logger.warning(
+                    f"Unable to infer layout for layer '{out.name}': {e}. "
+                    f"The original shape was `{out.shape}`, which is incompatible "
+                    f"with the shape of the converted model: `{new_shape}`. "
+                    f"Changing the layout of the converted model to `{layout}`. "
+                )
         else:
             layout = make_default_layout(new_shape)
 
