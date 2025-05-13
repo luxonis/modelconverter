@@ -33,7 +33,6 @@ from modelconverter.hub.typing import (
     Status,
     TargetPrecision,
     Task,
-    Visibility,
     YoloVersion,
 )
 from modelconverter.utils import environ
@@ -108,7 +107,6 @@ def model_ls(
     tasks: list[Task] | None = None,
     license_type: License | None = None,
     is_public: bool | None = None,
-    visibility: Visibility | None = None,
     slug: str | None = None,
     project_id: str | None = None,
     luxonis_only: bool = False,
@@ -126,8 +124,6 @@ def model_ls(
         Filter the listed models by license type.
     is_public : bool | None
         Filter the listed models by visibility.
-    visibility : Visibility | None
-        Filter the listed models by visibility.
     slug : str | None
         Filter the listed models by slug.
     project_id : str | None
@@ -141,13 +137,6 @@ def model_ls(
     order : Literal["asc", "desc"] | None
         By which order to sort the models.
     """
-
-    if visibility is not None:
-        is_public = None
-        if visibility == "public":
-            is_public = True
-        elif visibility == "private":
-            is_public = False
 
     hub_ls(
         "models",
