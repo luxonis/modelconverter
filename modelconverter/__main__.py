@@ -467,7 +467,7 @@ def launcher(
             group=docker_parameters,
             help="If ``True``, uses the GPU version of the docker-compose file. ",
         ),
-    ] = False,
+    ] = True,
     tool_version: Annotated[
         str | None,
         Parameter(
