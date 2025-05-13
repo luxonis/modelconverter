@@ -11,16 +11,6 @@ ENV IN_DOCKER=
 
 WORKDIR /app
 
-RUN rm -rf \
-    /local/workspace/tappas \
-    /opt/google \
-    /local/workspace/doc \
-    /local/workspace/hailort_examples \
-    /usr/share \
-    /usr/bin/docker* \
-    /usr/bin/containerd* \
-    /local/workspace/hailo_virtualenv/lib/python3.8/site-packages/hailo_tutorials
-
 COPY --link requirements.txt requirements.txt
 COPY --link modelconverter/packages/hailo/requirements.txt requirements-hailo.txt
 
@@ -32,20 +22,14 @@ RUN <<EOF
     pip install -r requirements.txt --no-cache-dir
     pip install --extra-index-url \
         https://developer.download.nvidia.com/compute/redist \
-        nvidia-dali-cuda110 --no-cache-dir
+        nvidia-dali-cuda120 --no-cache-dir
     pip install --extra-index-url \
         https://developer.download.nvidia.com/compute/redist \
-        nvidia-dali-tf-plugin-cuda110 --no-cache-dir
+        nvidia-dali-tf-plugin-cuda120 --no-cache-dir
+    pip uninstall protobuf -y
+    pip install protobuf==3.20.3 --no-cache-dir
 
 EOF
-
-RUN <<EOF
-
-    set -e
-    pip install psutil  --no-cache-dir
-
-EOF
-
 
 COPY --link modelconverter /app/modelconverter/
 COPY --link pyproject.toml /app/pyproject.toml
@@ -62,6 +46,5 @@ RUN <<EOF
     chmod +x /app/entrypoint.sh
 
 EOF
-
 
 ENTRYPOINT ["/app/entrypoint.sh"]

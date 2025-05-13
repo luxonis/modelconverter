@@ -14,6 +14,13 @@ on:
         description: >
           Which version of underlying conversion tools to use
 
+      os:
+        required: false
+        type: string
+        description: >
+          Which OS to use for the tests. If not specified, the default is 'ubuntu-latest'.
+        default: 'ubuntu-latest'
+
 permissions:
   contents: read
   packages: read
@@ -28,7 +35,7 @@ env:
 jobs:
   tests:
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.os }}
 
     steps:
     - name: Checkout code
@@ -74,7 +81,9 @@ jobs:
               "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
               "docker/extra_packages/openvino-${VERSION}.tar.gz"
         elif [ "${PACKAGE}" = "hailo" ]; then
-            mv docker/hailo/Dockerfile.internal docker/hailo/Dockerfile
+            gcloud storage cp                                    \
+              "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
+            docker load -i "hailo-${VERSION}.tar.gz"
         fi
 
     - name: Run Tests
