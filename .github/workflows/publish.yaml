@@ -14,6 +14,13 @@ on:
         description: >
           Which version of underlying conversion tools to use
 
+      os:
+        required: false
+        type: string
+        description: >
+          Which OS to use for the tests. If not specified, the default is 'ubuntu-latest'.
+        default: 'ubuntu-latest'
+
 permissions:
   contents: read
   packages: write
@@ -28,7 +35,7 @@ env:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.os }}
     env:
       LOCAL_NAME: luxonis/modelconverter-${{ inputs.package }}:${{ inputs.version }}-latest
 
@@ -75,14 +82,15 @@ jobs:
             gcloud storage cp                                    \
               "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
               "openvino-${VERSION}.tar.gz"
+        elif [ "${PACKAGE}" = "hailo" ]; then
+            gcloud storage cp                                    \
+              "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
+            docker load -i "hailo-${VERSION}.tar.gz"
         fi
 
     - name: Build image
       run: |
         DOCKERFILE="docker/${PACKAGE}/Dockerfile"
-        if [ $PACKAGE = "hailo" ]; then
-            DOCKERFILE="${DOCKERFILE}.internal"
-        fi
         docker build -f "${DOCKERFILE}" -t "${LOCAL_NAME}" . --build-arg VERSION="${VERSION}"
 
     - name: GHCR publish latest

@@ -39,12 +39,6 @@ RUN <<EOF
 
 EOF
 
-RUN <<EOF
-
-    set -e
-    pip install psutil  --no-cache-dir
-
-EOF
 
 
 COPY --link modelconverter /app/modelconverter/

@@ -31,3 +31,4 @@ jobs:
     with:
       package: hailo
       version: ${{ matrix.version }}
+      os: ubuntu-22.04-2core
