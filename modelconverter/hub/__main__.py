@@ -1,66 +1,20 @@
+import sys
 import webbrowser
 from pathlib import Path
 from time import sleep
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from urllib.parse import unquote, urlparse
 
-import click
 import keyring
 import requests
-import typer
+from cyclopts import App, Parameter
 from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
+from rich.prompt import Prompt
 
 from modelconverter.cli import (
-    ArchitectureIDOption,
-    CommitHashOption,
-    CompressionLevelOption,
-    DescriptionOption,
-    DescriptionShortOption,
-    DomainOption,
-    HashOption,
-    HubVersionOption,
-    HubVersionOptionRequired,
-    IdentifierArgument,
-    IsPublicOption,
-    JSONOption,
-    LicenseTypeOption,
-    LicenseTypeOptionRequired,
-    LimitOption,
-    LinksOption,
-    LuxonisOnlyOption,
-    ModelClass,
-    ModelIDOption,
-    ModelIDOptionRequired,
     ModelType,
-    ModelTypeOption,
-    ModelVersionIDOption,
-    ModelVersionIDOptionRequired,
-    NameArgument,
-    NameOption,
-    OptimizationLevelOption,
-    OptsArgument,
-    Order,
-    OrderOption,
-    OutputDirOption,
-    ParentIDOption,
-    PlatformsOption,
-    ProjectIDOption,
-    QuantizationOption,
-    RepositoryUrlOption,
-    SilentOption,
-    SlugOption,
-    SortOption,
-    StatusOption,
-    TagsOption,
-    TargetPrecisionOption,
-    TasksOption,
-    VariantSlugOption,
-    VersionOption,
-    YoloClassNamesOption,
-    YoloInputShapeOption,
-    YoloVersionOption,
     get_configs,
     get_resource_id,
     get_target_specific_options,
@@ -71,38 +25,43 @@ from modelconverter.cli import (
     request_info,
     wait_for_export,
 )
+from modelconverter.hub.typing import (
+    License,
+    ModelClass,
+    Order,
+    Quantization,
+    Status,
+    TargetPrecision,
+    Task,
+    Visibility,
+    YoloVersion,
+)
 from modelconverter.utils import environ
-from modelconverter.utils.types import InputFileType
+from modelconverter.utils.types import InputFileType, Target
 
 from .hub_requests import Request
 
-app = typer.Typer(
-    help="Hub CLI",
-    add_completion=False,
-    rich_markup_mode="markdown",
-)
+app = App(help="Interactions with resources on HubAI.", group="HubAI Commands")
 
-model = typer.Typer(
-    help="Models Interactions",
-    add_completion=False,
-    rich_markup_mode="markdown",
+app.command(
+    model := App(
+        name="model", help="Models Interactions", group="Resource Management"
+    )
 )
-
-variant = typer.Typer(
-    help="Hub Versions Interactions",
-    add_completion=False,
-    rich_markup_mode="markdown",
+app.command(
+    variant := App(
+        name="variant",
+        help="Model Variants Interactions",
+        group="Resource Management",
+    )
 )
-
-instance = typer.Typer(
-    help="Hub Instances Interactions",
-    add_completion=False,
-    rich_markup_mode="markdown",
+app.command(
+    instance := App(
+        name="instance",
+        help="Model Instances Interactions",
+        group="Resource Management",
+    )
 )
-
-app.add_typer(model, name="model", help="Models Interactions")
-app.add_typer(variant, name="variant", help="Model Variants Interactions")
-app.add_typer(instance, name="instance", help="Model Instances Interactions")
 
 
 def validate_api_key(_: str) -> bool:
@@ -110,47 +69,87 @@ def validate_api_key(_: str) -> bool:
     return True
 
 
-@app.command()
+@app.command(group="Admin")
 def login(
     relogin: Annotated[
         bool,
-        typer.Option("--relogin", "-r", help="Relogin if already logged in"),
+        Parameter(["--relogin", "-r"], help="Relogin if already logged in"),
     ] = False,
 ) -> None:
-    """Login to the Hub."""
+    """Login to HubAI.
+
+    Parameters
+    ----------
+    relogin : bool
+        Relogin if already logged in.
+    """
     if environ.HUBAI_API_KEY and not relogin:
-        typer.echo(
+        print(
             "User already logged in. Use `modelconverter hub --relogin` to relogin."
         )
         return
 
-    typer.echo("User not logged in. Follow the link to get your API key.")
+    print("User not logged in. Follow the link to get your API key.")
     webbrowser.open("https://hub.luxonis.com/team-settings", new=2)
     sleep(0.1)
-    api_key = typer.prompt("Enter your API key: ", hide_input=True)
+    api_key = Prompt.ask("Enter your API key: ", password=True)
     if not validate_api_key(api_key):
-        typer.echo("Invalid API key. Please try again.", err=True)
-        raise typer.Exit(1)
+        print("Invalid API key. Please try again.")
+        sys.exit(1)
 
     keyring.set_password("ModelConverter", "api_key", api_key)
 
-    typer.echo("API key stored successfully.")
+    print("API key stored successfully.")
 
 
 @model.command(name="ls")
 def model_ls(
-    tasks: TasksOption = None,
-    license_type: LicenseTypeOption = None,
-    is_public: IsPublicOption = None,
-    slug: SlugOption = None,
-    project_id: ProjectIDOption = None,
-    luxonis_only: LuxonisOnlyOption = False,
-    limit: LimitOption = 50,
-    sort: SortOption = "updated",
-    order: OrderOption = Order.DESC,
-) -> list[dict[str, Any]]:
-    """Lists models."""
-    return hub_ls(
+    *,
+    tasks: list[Task] | None = None,
+    license_type: License | None = None,
+    is_public: bool | None = None,
+    visibility: Visibility | None = None,
+    slug: str | None = None,
+    project_id: str | None = None,
+    luxonis_only: bool = False,
+    limit: int = 50,
+    sort: str = "updated",
+    order: Order = "desc",
+) -> None:
+    """Lists model resources.
+
+    Parameters
+    ----------
+    tasks : list[Task] | None
+        Filter the listed models by supportd tasks.
+    license_type : License | None
+        Filter the listed models by license type.
+    is_public : bool | None
+        Filter the listed models by visibility.
+    visibility : Visibility | None
+        Filter the listed models by visibility.
+    slug : str | None
+        Filter the listed models by slug.
+    project_id : str | None
+        Filter the listed models by project ID.
+    luxonis_only : bool
+        Show only Luxonis models.
+    limit : int
+        Limit the number of models to show.
+    sort : str
+        Sort the models by this field.
+    order : Literal["asc", "desc"] | None
+        By which order to sort the models.
+    """
+
+    if visibility is not None:
+        is_public = None
+        if visibility == "public":
+            is_public = True
+        elif visibility == "private":
+            is_public = False
+
+    hub_ls(
         "models",
         tasks=list(tasks) if tasks else [],
         license_type=license_type,
@@ -167,11 +166,20 @@ def model_ls(
 
 @model.command(name="info")
 def model_info(
-    identifier: IdentifierArgument,
-    json: JSONOption = False,
-):
-    """Prints information about a model."""
-    return print_hub_resource_info(
+    identifier: str,
+    *,
+    json: bool = False,
+) -> None:
+    """Prints information about a model.
+
+    Parameters
+    ----------
+    identifier : str
+        The model ID or slug.
+    json : bool
+        Whether to print the information in JSON format.
+    """
+    print_hub_resource_info(
         request_info(identifier, "models"),
         title="Model Info",
         json=json,
@@ -195,17 +203,40 @@ def model_info(
 
 @model.command(name="create")
 def model_create(
-    name: NameArgument,
-    license_type: LicenseTypeOptionRequired = "undefined",
-    is_public: IsPublicOption = False,
-    description: DescriptionOption = None,
-    description_short: DescriptionShortOption = "<empty>",
-    architecture_id: ArchitectureIDOption = None,
-    tasks: TasksOption = None,
-    links: LinksOption = None,
-    silent: SilentOption = False,
+    name: str,
+    *,
+    license_type: License = "undefined",
+    is_public: bool | None = False,
+    description: str | None = None,
+    description_short: str = "<empty>",
+    architecture_id: str | None = None,
+    tasks: list[Task] | None = None,
+    links: list[str] | None = None,
+    silent: bool = False,
 ) -> dict[str, Any]:
-    """Creates a new model resource."""
+    """Creates a new model resource.
+
+    Parameters
+    ----------
+    name : str
+        The name of the model.
+    license_type : License
+        The type of the license.
+    is_public : bool | None
+        Whether the model is public (True), private (False), or team (None).
+    description : str | None
+        Full description of the model.
+    description_short : str
+        Short description of the model.
+    architecture_id : str | None
+        The architecture ID.
+    tasks : list[Task] | None
+        List of tasks this model supports.
+    links : list[str] | None
+        List of links to related resources.
+    silent : bool
+        Whether to print the model information after creation.
+    """
     data = {
         "name": name,
         "license_type": license_type,
@@ -232,8 +263,14 @@ def model_create(
 
 
 @model.command(name="delete")
-def model_delete(identifier: IdentifierArgument) -> None:
-    """Deletes a model."""
+def model_delete(identifier: str) -> None:
+    """Deletes a model.
+
+    Parameters
+    ----------
+    identifier : str
+        The model ID or slug.
+    """
     model_id = get_resource_id(identifier, "models")
     Request.delete(f"models/{model_id}")
     print(f"Model '{identifier}' deleted")
@@ -241,16 +278,36 @@ def model_delete(identifier: IdentifierArgument) -> None:
 
 @variant.command(name="ls")
 def variant_ls(
-    model_id: ModelIDOption = None,
-    slug: SlugOption = None,
-    variant_slug: VariantSlugOption = None,
-    version: HubVersionOption = None,
-    is_public: IsPublicOption = None,
-    limit: LimitOption = 50,
-    sort: SortOption = "updated",
-    order: OrderOption = Order.DESC,
+    model_id: str | None = None,
+    slug: str | None = None,
+    variant_slug: str | None = None,
+    version: str | None = None,
+    is_public: bool | None = None,
+    limit: int = 50,
+    sort: str = "updated",
+    order: Order = "desc",
 ) -> list[dict[str, Any]]:
-    """Lists model versions."""
+    """Lists model versions.
+
+    Parameters
+    ----------
+    model_id : str | None
+        Filter the listed model versions by model ID.
+    slug : str | None
+        Filter the listed model versions by slug.
+    variant_slug : str | None
+        Filter the listed model versions by variant slug.
+    version : str | None
+        Filter the listed model versions by version.
+    is_public : bool | None
+        Filter the listed model versions by visibility.
+    limit : int
+        Limit the number of model versions to show.
+    sort : str
+        Sort the model versions by this field.
+    order : Literal["asc", "desc"]
+        By which order to sort the model versions.
+    """
     return hub_ls(
         "modelVersions",
         model_id=model_id,
@@ -266,10 +323,16 @@ def variant_ls(
 
 
 @variant.command(name="info")
-def variant_info(
-    identifier: IdentifierArgument, json: JSONOption = False
-) -> dict[str, Any]:
-    """Prints information about a model version."""
+def variant_info(identifier: str, *, json: bool = False) -> None:
+    """Prints information about a model version.
+
+    Parameters
+    ----------
+    identifier : str
+        The model version ID or slug.
+    json : bool
+        Whether to print the information in JSON format.
+    """
     return print_hub_resource_info(
         request_info(identifier, "modelVersions"),
         title="Model Variant Info",
@@ -291,17 +354,40 @@ def variant_info(
 
 @variant.command(name="create")
 def variant_create(
-    name: NameArgument,
-    model_id: ModelIDOptionRequired,
-    version: HubVersionOptionRequired,
-    description: DescriptionOption = None,
-    repository_url: RepositoryUrlOption = None,
-    commit_hash: CommitHashOption = None,
-    domain: DomainOption = None,
-    tags: TagsOption = None,
-    silent: SilentOption = False,
+    name: str,
+    *,
+    model_id: str,
+    version: str,
+    description: str | None = None,
+    repository_url: str | None = None,
+    commit_hash: str | None = None,
+    domain: str | None = None,
+    tags: list[str] | None = None,
+    silent: bool = False,
 ) -> dict[str, Any]:
-    """Creates a new variant of a model."""
+    """Creates a new variant of a model.
+
+    Parameters
+    ----------
+    name : str
+        The name of the model variant.
+    model_id : str
+        The ID of the model to create a variant for.
+    version : str
+        The version of the model variant.
+    description : str | None
+        Full description of the model variant.
+    repository_url : str | None
+        URL of the related repository.
+    commit_hash : str | None
+        Commit hash.
+    domain : str | None
+        Domain of the model variant.
+    tags : list[str] | None
+        List of tags for the model variant.
+    silent : bool
+        Whether to print the model variant information after creation.
+    """
     data = {
         "model_id": model_id,
         "name": name,
@@ -327,8 +413,14 @@ def variant_create(
 
 
 @variant.command(name="delete")
-def variant_delete(identifier: IdentifierArgument) -> None:
-    """Deletes a model variant."""
+def variant_delete(identifier: str) -> None:
+    """Deletes a model variant.
+
+    Parameters
+    ----------
+    identifier : str
+        The model variant ID or slug.
+    """
     variant_id = get_resource_id(identifier, "modelVersions")
     Request.delete(f"modelVersions/{variant_id}")
     print(f"Model variant '{variant_id}' deleted")
@@ -336,24 +428,62 @@ def variant_delete(identifier: IdentifierArgument) -> None:
 
 @instance.command(name="ls")
 def instance_ls(
-    platforms: PlatformsOption = None,
-    model_id: ModelIDOption = None,
-    variant_id: ModelVersionIDOption = None,
-    model_type: ModelTypeOption = None,
-    parent_id: ParentIDOption = None,
+    platforms: list[ModelType] | None = None,
+    model_id: str | None = None,
+    variant_id: str | None = None,
+    model_type: ModelType | None = None,
+    parent_id: str | None = None,
     model_class: ModelClass | None = None,
-    name: NameOption = None,
-    hash: HashOption = None,
-    status: StatusOption = None,
-    is_public: IsPublicOption = None,
-    compression_level: CompressionLevelOption = None,
-    optimization_level: OptimizationLevelOption = None,
-    slug: SlugOption = None,
-    limit: LimitOption = 50,
-    sort: SortOption = "updated",
-    order: OrderOption = Order.DESC,
+    name: str | None = None,
+    hash: str | None = None,
+    status: Status | None = None,
+    is_public: bool | None = None,
+    compression_level: Literal[0, 1, 2, 3, 4, 5] | None = None,
+    optimization_level: Literal[-100, 0, 1, 2, 3, 4] | None = None,
+    slug: str | None = None,
+    limit: int = 50,
+    sort: str = "updated",
+    order: Order = "desc",
 ):
-    """Lists model instances."""
+    """Lists model instances.
+
+    Parameters
+    ----------
+    platforms : list[ModelType] | None
+        Filter the listed model instances by platforms.
+    model_id : str | None
+        Filter the listed model instances by model ID.
+    variant_id : str | None
+        Filter the listed model instances by variant ID.
+    model_type : ModelType | None
+        Filter the listed model instances by model type.
+    parent_id : str | None
+        Filter the listed model instances by parent ID.
+    model_class : ModelClass | None
+        Filter the listed model instances by model class.
+    name : str | None
+        Filter the listed model instances by name.
+    hash : str | None
+        Filter the listed model instances by hash.
+    status : Status | None
+        Filter the listed model instances by status.
+    is_public : bool | None
+        Filter the listed model instances by visibility.
+    compression_level : Literal[0, 1, 2, 3, 4, 5] | None
+        Filter the listed model instances by compression level.
+        Only relevant for Hailo models.
+    optimization_level : Literal[-100, 0, 1, 2, 3, 4] | None
+        Filter the listed model instances by optimization level.
+        Only relevant for Hailo models.
+    slug : str | None
+        Filter the listed model instances by slug.
+    limit : int
+        Limit the number of model instances to show.
+    sort : str
+        Sort the model instances by this field.
+    order : Literal["asc", "desc"]
+        By which order to sort the model instances.
+    """
     return hub_ls(
         "modelInstances",
         platforms=[platform.name for platform in platforms]
@@ -385,10 +515,16 @@ def instance_ls(
 
 
 @instance.command(name="info")
-def instance_info(
-    identifier: IdentifierArgument, json: JSONOption = False
-) -> dict[str, Any]:
-    """Prints information about a model instance."""
+def instance_info(identifier: str, *, json: bool = False) -> None:
+    """Prints information about a model instance.
+
+    Parameters
+    ----------
+    identifier : str
+        The model instance ID or slug.
+    json : bool
+        Whether to print the information in JSON format.
+    """
     return print_hub_resource_info(
         request_info(identifier, "modelInstances"),
         title="Model Instance Info",
@@ -412,10 +548,17 @@ def instance_info(
 
 
 @instance.command(name="download")
-def instance_download(
-    identifier: IdentifierArgument, output_dir: OutputDirOption = None
-) -> Path:
-    """Downloads files from a model instance."""
+def instance_download(identifier: str, output_dir: str | None = None) -> Path:
+    """Downloads files from a model instance.
+
+    Parameters
+    ----------
+    identifier : str
+        The model instance ID or slug.
+    output_dir : str | None
+        The directory to save the downloaded files.
+        If not specified, the files will be saved in the current directory.
+    """
     dest = Path(output_dir) if output_dir else None
     model_instance_id = get_resource_id(identifier, "modelInstances")
     downloaded_path = None
@@ -449,18 +592,43 @@ def instance_download(
 
 @instance.command(name="create")
 def instance_create(
-    name: NameArgument,
-    variant_id: ModelVersionIDOptionRequired,
-    model_type: ModelTypeOption,
-    parent_id: ParentIDOption = None,
-    model_precision_type: TargetPrecisionOption = None,
-    quantization_data: QuantizationOption = None,
-    tags: TagsOption = None,
+    name: str,
+    *,
+    variant_id: str,
+    model_type: ModelType | None = None,
+    parent_id: str | None = None,
+    model_precision_type: TargetPrecision | None = None,
+    quantization_data: Quantization | None = None,
+    tags: list[str] | None = None,
     input_shape: list[int] | None = None,
     is_deployable: bool | None = None,
-    silent: SilentOption = False,
+    silent: bool = False,
 ) -> dict[str, Any]:
-    """Creates a new model instance."""
+    """Creates a new model instance.
+
+    Parameters
+    ----------
+    name : str
+        The name of the model instance.
+    variant_id : str
+        The ID of the model variant to create an instance for.
+    model_type : ModelType | None
+        The type of the model.
+    parent_id : str | None
+        The ID of the parent model instance.
+    model_precision_type : TargetPrecision | None
+        The precision type of the model.
+    quantization_data : Quantization | None
+        The quantization data for the model.
+    tags : list[str] | None
+        List of tags for the model instance.
+    input_shape : list[int] | None
+        The input shape of the model instance.
+    is_deployable : bool | None
+        Whether the model instance is deployable.
+    silent : bool
+        Whether to print the model instance information after creation.
+    """
     data = {
         "name": name,
         "model_version_id": variant_id,
@@ -480,30 +648,56 @@ def instance_create(
 
 
 @instance.command(name="delete")
-def instance_delete(identifier: IdentifierArgument) -> None:
-    """Deletes a model instance."""
+def instance_delete(identifier: str) -> None:
+    """Deletes a model instance.
+
+    Parameters
+    ----------
+    identifier : str
+        The model instance ID or slug.
+    """
     instance_id = get_resource_id(identifier, "modelInstances")
     Request.delete(f"modelInstances/{instance_id}")
     print(f"Model instance '{identifier}' deleted")
 
 
-@instance.command()
-def config(identifier: IdentifierArgument) -> None:
-    """Prints the configuration of a model instance."""
+@instance.command
+def config(identifier: str) -> None:
+    """Prints the configuration of a model instance.
+
+    Parameters
+    ----------
+    identifier : str
+        The model instance ID or slug.
+    """
     model_instance_id = get_resource_id(identifier, "modelInstances")
     print(Request.get(f"modelInstances/{model_instance_id}/config"))
 
 
-@instance.command()
-def files(identifier: IdentifierArgument) -> None:
-    """Prints the configuration of a model instance."""
+@instance.command
+def files(identifier: str) -> None:
+    """Prints the configuration of a model instance.
+
+    Parameters
+    ----------
+    identifier : str
+        The model instance ID or slug.
+    """
     model_instance_id = get_resource_id(identifier, "modelInstances")
     print(Request.get(f"modelInstances/{model_instance_id}/files"))
 
 
-@instance.command()
-def upload(file_path: str, identifier: IdentifierArgument) -> None:
-    """Uploads a file to a model instance."""
+@instance.command
+def upload(file_path: str, identifier: str) -> None:
+    """Uploads a file to a model instance.
+
+    Parameters
+    ----------
+    file_path : str
+        The path to the file to upload.
+    identifier : str
+        The model instance ID or slug.
+    """
     model_instance_id = get_resource_id(identifier, "modelInstances")
     with open(file_path, "rb") as file:
         files = {"files": file}
@@ -511,146 +705,91 @@ def upload(file_path: str, identifier: IdentifierArgument) -> None:
     print(f"File '{file_path}' uploaded to model instance '{identifier}'")
 
 
-def _export(
-    name: str,
-    identifier: str,
-    target: str,
-    target_precision: str,
-    quantization_data: str,
-    yolo_version: str | None = None,
-    yolo_class_names: list[str] | None = None,
-    **kwargs,
-) -> dict[str, Any]:
-    """Exports a model instance."""
-    model_instance_id = get_resource_id(identifier, "modelInstances")
-    json: dict[str, Any] = {
-        "name": name,
-        "quantization_data": quantization_data,
-        **kwargs,
-    }
-    if yolo_version:
-        json["version"] = yolo_version
-    if yolo_class_names:
-        json["class_names"] = yolo_class_names
-    if yolo_version and not yolo_class_names:
-        logger.warning(
-            "It's recommended to provide YOLO class names via --yolo-class-names. If omitted, class names will be extracted from model weights if present, otherwise default names will be used."
-        )
-    if target == "RVC4":
-        json["target_precision"] = target_precision
-    res = Request.post(
-        f"modelInstances/{model_instance_id}/export/{target.lower()}",
-        json=json,
-    )
-    print(
-        f"Model instance '{name}' created for {target} export with ID '{res['id']}'"
-    )
-    return res
-
-
-@app.command()
+@app.command
 def convert(
-    target: Annotated[
-        str,
-        typer.Argument(
-            help="Target platform to convert to.",
-            show_default=False,
-            click_type=click.Choice(["hailo", "rvc2", "rvc3", "rvc4"]),
-        ),
-    ],
-    path: Annotated[
-        str,
-        typer.Option(
-            help="Path to the model, configuration file or NN Archive",
-            metavar="PATH",
-        ),
-    ],
-    name: NameOption = None,
-    license_type: LicenseTypeOptionRequired = "undefined",
-    is_public: IsPublicOption = False,
-    description_short: DescriptionShortOption = "<empty>",
-    description: DescriptionOption = None,
-    architecture_id: ArchitectureIDOption = None,
-    tasks: TasksOption = None,
-    links: LinksOption = None,
-    model_id: ModelIDOption = None,
-    version: HubVersionOption = None,
-    repository_url: RepositoryUrlOption = None,
-    commit_hash: CommitHashOption = None,
-    target_precision: TargetPrecisionOption = "INT8",
-    quantization_data: QuantizationOption = "random",
-    domain: DomainOption = None,
-    tags: TagsOption = None,
-    variant_id: ModelVersionIDOption = None,
-    output_dir: OutputDirOption = None,
-    tool_version: VersionOption = None,
-    yolo_input_shape: YoloInputShapeOption = None,
-    yolo_version: YoloVersionOption = None,
-    yolo_class_names: YoloClassNamesOption = None,
-    opts: OptsArgument = None,
+    target: Target,
+    opts: list[str] | None = None,
+    /,
+    *,
+    path: str,
+    name: str | None = None,
+    license_type: License = "undefined",
+    is_public: bool | None = False,
+    description_short: str = "<empty>",
+    description: str | None = None,
+    architecture_id: str | None = None,
+    tasks: list[Task] | None = None,
+    links: list[str] | None = None,
+    model_id: str | None = None,
+    version: str | None = None,
+    repository_url: str | None = None,
+    commit_hash: str | None = None,
+    target_precision: TargetPrecision = "INT8",
+    quantization_data: Quantization = "random",
+    domain: str | None = None,
+    tags: list[str] | None = None,
+    variant_id: str | None = None,
+    output_dir: str | None = None,
+    tool_version: str | None = None,
+    yolo_input_shape: str | None = None,
+    yolo_version: YoloVersion | None = None,
+    yolo_class_names: list[str] | None = None,
 ) -> Path:
     """Starts the online conversion process.
 
-    @type target: Target
-    @param target: Target platform, one of ['RVC2', 'RVC3', 'RVC4', 'HAILO']
-    @type path: Path
-    @param path: Path to the model file, NN Archive, or configuration file
-    @type name: Optional[str]
-    @param name: Name of the model.
-        If not specified, the name will be taken from the configuration file or the model file
-    @type license_type: License
-    @param license_type: License type. Default: "UNDEFINED"
-    @type is_public: bool
-    @param is_public: Whether the model is public. Default: True
-    @type description_short: str
-    @param description_short: Short description of the model. Default: "<empty>"
-    @type description: Optional[str]
-    @param description: Full description of the model
-    @type architecture_id: Optional[int]
-    @param architecture_id: Architecture ID
-    @type tasks: Optional[List[str]]
-    @param tasks: List of tasks this model supports
-    @type links: Optional[List[str]]
-    @param links: List of links to related resources
-    @type model_id: Optional[int]
-    @param model_id: ID of an existind Model resource.
-        If specified, this model will be used instead of creating a new one
-    @type version: Optional[str]
-    @param version: Version of the model. If not specified, the version will be auto-incremented
-        from the latest version of the model. If no versions exist, the version will be "0.1.0"
-    @type repository_url: Optional[str]
-    @param repository_url: URL of the repository
-    @type commit_hash: Optional[str]
-    @param commit_hash: Commit hash
-    @type target_precision: Literal["FP16", "FP32", "INT8"]
-    @param target_precision: Target precision. Default: "INT8"
-    @type quantization_data: Literal["RANDOM", "GENERAL", "DRIVING", "FOOD", "INDOORS", "WAREHOUSE"]
-    @param quantization_data: Quantization data. Default: "RANDOM"
-    @type domain: Optional[str]
-    @param domain: Domain of the model
-    @type tags: Optional[List[str]]
-    @param tags: List of tags for the model
-    @type variant_id: Optional[int]
-    @param variant_id: ID of an existing Model Version resource.
-        If specified, this version will be used instead of creating a new one
-    @type output_dir: Optional[Path]
-    @param output_dir: Output directory for the downloaded files
-    @type tool_version: Optional[str]
-    @param tool_version: Version of the tool used for conversion.
-        Available options are:
-            - RVC2: "2021.4.0", "2022.3.0" (default)
-            - RVC4: "2.23.0" (default), "2.24.0", "2.25.0", "2.26.2", "2.27.0"
-    @type yolo_input_shape: Optional[str]
-    @param yolo_input_shape: Input shape for YOLO models
-    @type yolo_version: Optional[str]
-    @param yolo_version: YOLO version
-    @type yolo_class_names: Optional[List[str]]
-    @param yolo_class_names: List of class names for YOLO models
-
-    @type opts: Optional[List[str]]
-    @param opts: Additional options for the conversion process.
-    @rtype: Path
-    @return: Path to the downloaded converted model
+    Parameters
+    ----------
+    target: Target
+        The target platform.
+    path: str
+        Path to the model file, NN Archive, or configuration file.
+    name: str, optional
+        Name of the model. If not specified, the name will be taken from the configuration file or the model file.
+    license_type: License, optional
+        The type of the license.
+    is_public: bool, optional
+        Whether the model is public (True), private (False), or team (None).
+    description_short : str, optional
+        Short description of the model.
+    description : str, optional
+        Full description of the model.
+    architecture_id : str, optional
+        The architecture ID.
+    tasks : list[Task], optional
+        List of tasks this model supports.
+    links : list[str], optional
+        List of links to related resources.
+    model_id : str, optional
+        ID of an existing Model resource. If specified, this model will be used instead of creating a new one.
+    version : str, optional
+        Version of the model. If not specified, the version will be auto-incremented from the latest version of the model.
+        If no versions exist, the version will be "0.1.0".
+    repository_url : str, optional
+        URL of the repository.
+    commit_hash : str, optional
+        Commit hash.
+    target_precision : TargetPrecision
+        Target precision.
+    quantization_data : Quantization
+        Quantization data.
+    domain : str, optional
+        Domain of the model.
+    tags : list[str], optional
+        List of tags for the model.
+    variant_id : str, optional
+        ID of an existing Model Version resource. If specified, this version will be used instead of creating a new one.
+    output_dir : str, optional
+        Output directory for the downloaded files.
+    tool_version : str, optional
+        Version of the tool used for conversion.
+    yolo_input_shape : str, optional
+        Input shape for YOLO models.
+    yolo_version : YoloVersion, optional
+        YOLO version.
+    yolo_class_names : list[str], optional
+        List of class names for YOLO models.
+    opts : list[str], optional
+        Additional options for the conversion process.
     """
     opts = opts or []
 
@@ -695,13 +834,13 @@ def convert(
         try:
             model_id = model_create(
                 name,
-                license_type,
-                is_public,
-                description,
-                description_short,
-                architecture_id,
-                tasks or [],
-                links or [],
+                license_type=license_type,
+                is_public=is_public,
+                description=description,
+                description_short=description_short,
+                architecture_id=architecture_id,
+                tasks=tasks or [],
+                links=links or [],
                 silent=True,
             )["id"]
         except ValueError:
@@ -717,13 +856,13 @@ def convert(
 
         variant_id = variant_create(
             variant_name,
-            model_id,
-            version,
-            description,
-            repository_url,
-            commit_hash,
-            domain,
-            tags or [],
+            model_id=model_id,
+            version=version,
+            description=description,
+            repository_url=repository_url,
+            commit_hash=commit_hash,
+            domain=domain,
+            tags=tags or [],
             silent=True,
         )["id"]
 
@@ -731,7 +870,11 @@ def convert(
     shape = cfg.inputs[0].shape
     instance_name = f"{variant_name} base instance"
     instance_id = instance_create(
-        instance_name, variant_id, model_type, input_shape=shape, silent=True
+        instance_name,
+        variant_id=variant_id,
+        model_type=model_type,
+        input_shape=shape,
+        silent=True,
     )["id"]
 
     if path is not None and is_nn_archive(path):
@@ -743,7 +886,7 @@ def convert(
     instance = _export(
         f"{variant_name} exported to {target}",
         instance_id,
-        target,
+        target=target,
         target_precision=target_precision or "INT8",
         quantization_data=quantization_data.upper()
         if quantization_data
@@ -756,3 +899,40 @@ def convert(
     wait_for_export(instance["dag_run_id"])
 
     return instance_download(instance["id"], output_dir)
+
+
+def _export(
+    name: str,
+    identifier: str,
+    target: Target,
+    target_precision: str,
+    quantization_data: str,
+    yolo_version: str | None = None,
+    yolo_class_names: list[str] | None = None,
+    **kwargs,
+) -> dict[str, Any]:
+    """Exports a model instance."""
+    model_instance_id = get_resource_id(identifier, "modelInstances")
+    json: dict[str, Any] = {
+        "name": name,
+        "quantization_data": quantization_data,
+        **kwargs,
+    }
+    if yolo_version:
+        json["version"] = yolo_version
+    if yolo_class_names:
+        json["class_names"] = yolo_class_names
+    if yolo_version and not yolo_class_names:
+        logger.warning(
+            "It's recommended to provide YOLO class names via --yolo-class-names. If omitted, class names will be extracted from model weights if present, otherwise default names will be used."
+        )
+    if target is Target.RVC4:
+        json["target_precision"] = target_precision
+    res = Request.post(
+        f"modelInstances/{model_instance_id}/export/{target.value}",
+        json=json,
+    )
+    print(
+        f"Model instance '{name}' created for {target.name} export with ID '{res['id']}'"
+    )
+    return res

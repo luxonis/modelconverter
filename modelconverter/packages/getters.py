@@ -32,22 +32,22 @@ def get_inferer(target: Target, *args, **kwargs) -> Inferer:
     if target is Target.RVC2:
         from modelconverter.packages.rvc2.inferer import RVC2Inferer
 
-        return RVC2Inferer(*args, **kwargs)
+        return RVC2Inferer.from_config(*args, **kwargs)
 
     if target is Target.RVC3:
         from modelconverter.packages.rvc3.inferer import RVC3Inferer
 
-        return RVC3Inferer(*args, **kwargs)
+        return RVC3Inferer.from_config(*args, **kwargs)
 
     if target is Target.RVC4:
         from modelconverter.packages.rvc4.inferer import RVC4Inferer
 
-        return RVC4Inferer(*args, **kwargs)
+        return RVC4Inferer.from_config(*args, **kwargs)
 
     if target is Target.HAILO:
         from modelconverter.packages.hailo.inferer import HailoInferer
 
-        return HailoInferer(*args, **kwargs)
+        return HailoInferer.from_config(*args, **kwargs)
 
 
 def get_benchmark(target: Target, *args, **kwargs) -> Benchmark:

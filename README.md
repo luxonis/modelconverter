@@ -295,7 +295,7 @@ Below is a table of common command-line options available when using the `modelc
 | `--path`                                           |       | PATH   | Path to the configuration file or NN Archive                                                                                       |
 | `--to`                                             |       | CHOICE | Output format: `native` or `nn_archive`                                                                                            |
 | `--main-stage`                                     | `-m`  | TEXT   | Name of the stage with the main model                                                                                              |
-| `--version`                                        |       | TEXT   | Version of the underlying conversion tools to use. Available options differ based on the target platform (RVC2, RVC3, RVC4, HAILO) |
+| `--tool-version`                                   |       | TEXT   | Version of the underlying conversion tools to use. Available options differ based on the target platform (RVC2, RVC3, RVC4, HAILO) |
 | `--archive-preprocess` / `--no-archive-preprocess` |       | FLAG   | Add pre-processing to the NN archive instead of the model                                                                          |
 
 > \[!NOTE\]

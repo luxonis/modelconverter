@@ -3,6 +3,7 @@ import shutil
 import sys
 from contextlib import suppress
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from time import sleep
 from typing import Any, Literal
@@ -40,7 +41,28 @@ from modelconverter.utils.constants import (
 )
 from modelconverter.utils.types import DataType, Encoding, Target
 
-from .types import ModelType
+
+class ModelType(str, Enum):
+    ONNX = "ONNX"
+    IR = "IR"
+    PYTORCH = "PYTORCH"
+    TFLITE = "TFLITE"
+    RVC2 = "RVC2"
+    RVC3 = "RVC3"
+    RVC4 = "RVC4"
+    HAILO = "HAILO"
+
+    @classmethod
+    def from_suffix(cls, suffix: str) -> "ModelType":
+        if suffix == ".onnx":
+            return cls.ONNX
+        if suffix == ".tflite":
+            return cls.TFLITE
+        if suffix in [".xml", ".bin"]:
+            return cls.IR
+        if suffix in [".pt", ".pth"]:
+            return cls.PYTORCH
+        raise ValueError(f"Unsupported model format: {suffix}")
 
 
 def get_output_dir_name(
@@ -147,12 +169,12 @@ def print_hub_resource_info(
     json: bool,
     rename: dict[str, str] | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> None:
     rename = rename or {}
 
     if json:
         print(model)
-        return model
+        return
 
     console = Console()
 
@@ -238,7 +260,6 @@ def print_hub_resource_info(
     )
 
     console.print(main_panel)
-    return model
 
 
 def hub_ls(
@@ -361,6 +382,10 @@ def wait_for_export(run_id: str) -> None:
             run = _get_run(run_id)
 
     if run["status"] == "FAILURE":
+        if run["logs"] is None:
+            raise RuntimeError("Export failed with no logs.")
+
+        logs = run["logs"]
         while len(run["logs"].split("\n")) < 5:
             run = _get_run(run_id)
             sleep(5)
@@ -370,16 +395,15 @@ def wait_for_export(run_id: str) -> None:
 
 
 def get_target_specific_options(
-    target: str, cfg: SingleStageConfig, tool_version: str | None = None
+    target: Target, cfg: SingleStageConfig, tool_version: str | None = None
 ) -> dict[str, Any]:
-    target = target.lower()
     json_cfg = cfg.model_dump(mode="json")
     options = {
         "disable_onnx_simplification": cfg.disable_onnx_simplification,
         "disable_onnx_optimization": cfg.disable_onnx_optimization,
         "inputs": json_cfg["inputs"],
     }
-    if target == "rvc4":
+    if target is Target.RVC4:
         options["snpe_onnx_to_dlc_args"] = cfg.rvc4.snpe_onnx_to_dlc_args
         options["snpe_dlc_quant_args"] = cfg.rvc4.snpe_dlc_quant_args
         options["snpe_dlc_graph_prepare_args"] = (
@@ -387,15 +411,15 @@ def get_target_specific_options(
         )
         if tool_version is not None:
             options["snpe_version"] = tool_version
-    elif target in ["rvc2", "rvc3"]:
-        target_cfg = getattr(cfg, target)
+    elif target in [Target.RVC2, Target.RVC3]:
+        target_cfg = getattr(cfg, target.value)
         options["mo_args"] = target_cfg.mo_args
         options["compile_tool_args"] = target_cfg.compile_tool_args
         if tool_version is not None:
             options["ir_version"] = tool_version
-        if target == "rvc3":
+        if target is Target.RVC3:
             options["pot_target_device"] = cfg.rvc3.pot_target_device
-    elif target == "hailo":
+    elif target is Target.HAILO:
         options["optimization_level"] = cfg.hailo.optimization_level
         options["compression_level"] = cfg.hailo.compression_level
         options["batch_size"] = cfg.hailo.batch_size

@@ -16,6 +16,7 @@ from modelconverter.cli import (
     get_output_dir_name,
     init_dirs,
 )
+from modelconverter.hub.__main__ import app as hub_app
 from modelconverter.packages import (
     get_analyzer,
     get_benchmark,
@@ -42,6 +43,7 @@ app = App(
     name="Modelconverter",
     version=lambda: f"ModelConverter v{importlib.metadata.version('modelconv')}",
 )
+app.command(hub_app, name="hub")
 
 app.meta.group_parameters = Group("Global Parameters", sort_key=0)
 app["--help"].group = app.meta.group_parameters
@@ -186,6 +188,7 @@ def infer(
     input_path: Path,
     output_dir: str,
     config: str | None = None,
+    path: str | None = None,
     stage: str | None = None,
 ) -> None:
     """Runs inference on the specified target platform.
@@ -204,18 +207,22 @@ def infer(
         Name of the directory where the inference results will be saved.
     config: str | None
         A URL or a path to the configuration file.
+    path: str | None
+        An alias for ``config``. Deprecated.
     stage: str | None
         Name of the stage to run. Only needed for multistage configs.
         If not provided, the first stage will be used.
     """
 
+    if path is not None:
+        config = path
     setup_logging(file="modelconverter.log")
     logger.info("Starting inference")
     with catch_exceptions():
         mult_cfg, _, _ = get_configs(str(config), opts)
         cfg = mult_cfg.get_stage_config(stage)
-        get_inferer(target).from_config(
-            model_path, input_path, Path(output_dir), cfg
+        get_inferer(
+            target, model_path, input_path, Path(output_dir), cfg
         ).run()
 
 
@@ -461,7 +468,7 @@ def launcher(
             help="If ``True``, uses the GPU version of the docker-compose file. ",
         ),
     ] = False,
-    version: Annotated[
+    tool_version: Annotated[
         str | None,
         Parameter(
             group=docker_parameters,
@@ -480,14 +487,14 @@ def launcher(
     target = bound.arguments["target"]
 
     if dev:
-        docker_build(target.value, bare_tag=tag, version=version)
+        docker_build(target.value, bare_tag=tag, version=tool_version)
 
     docker_exec(
         target.value,
         *tokens,
         bare_tag=tag,
         use_gpu=gpu,
-        version=version,
+        version=tool_version,
     )
 
 
