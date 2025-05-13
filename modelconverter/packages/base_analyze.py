@@ -20,12 +20,10 @@ class Analyzer(ABC):
         self.output_sizes: dict[str, list[int]] = self._get_output_sizes()
 
     @abstractmethod
-    def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
-        pass
+    def analyze_layer_outputs(self, onnx_model_path: Path) -> None: ...
 
     @abstractmethod
-    def analyze_layer_cycles(self) -> None:
-        pass
+    def analyze_layer_cycles(self) -> None: ...
 
     def _get_input_sizes(self) -> tuple[dict[str, list[int]], dict[str, str]]:
         csv_path = Path("info.csv")
