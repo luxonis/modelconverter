@@ -43,7 +43,7 @@ app = App(
     name="Modelconverter",
     version=lambda: f"ModelConverter v{importlib.metadata.version('modelconv')}",
 )
-app.command(hub_app, name="hub")
+app.meta.command(hub_app, name="hub")
 
 app.meta.group_parameters = Group("Global Parameters", sort_key=0)
 app["--help"].group = app.meta.group_parameters
