@@ -266,6 +266,8 @@ def hub_ls(
     endpoint: str,
     keys: list[str],
     rename: dict[str, str] | None = None,
+    *,
+    _silent: bool = False,
     **kwargs,
 ) -> list[dict[str, Any]]:
     rename = rename or {}
@@ -283,8 +285,9 @@ def hub_ls(
             renderables.append(value)
         table.add_row(*renderables)
 
-    console = Console()
-    console.print(table)
+    if not _silent:
+        console = Console()
+        console.print(table)
     return data
 
 

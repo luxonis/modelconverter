@@ -101,6 +101,15 @@ def login(
     print("API key stored successfully.")
 
 
+def _model_ls(*args, **kwargs) -> list[dict[str, Any]]:
+    return hub_ls(
+        "models",
+        *args,
+        **kwargs,
+        keys=["name", "id", "slug"],
+    )
+
+
 @model.command(name="ls")
 def model_ls(
     *,
@@ -138,8 +147,7 @@ def model_ls(
         By which order to sort the models.
     """
 
-    hub_ls(
-        "models",
+    _model_ls(
         tasks=list(tasks) if tasks else [],
         license_type=license_type,
         is_public=is_public,
@@ -149,7 +157,7 @@ def model_ls(
         limit=limit,
         sort=sort,
         order=order,
-        keys=["name", "id", "slug"],
+        _silent=False,
     )
 
 
@@ -265,6 +273,15 @@ def model_delete(identifier: str) -> None:
     print(f"Model '{identifier}' deleted")
 
 
+def _variant_ls(*args, **kwargs) -> list[dict[str, Any]]:
+    return hub_ls(
+        "modelVersions",
+        *args,
+        **kwargs,
+        keys=["name", "version", "slug", "platforms"],
+    )
+
+
 @variant.command(name="ls")
 def variant_ls(
     model_id: str | None = None,
@@ -297,8 +314,7 @@ def variant_ls(
     order : Literal["asc", "desc"]
         By which order to sort the model versions.
     """
-    return hub_ls(
-        "modelVersions",
+    return _variant_ls(
         model_id=model_id,
         is_public=is_public,
         slug=slug,
@@ -307,7 +323,7 @@ def variant_ls(
         limit=limit,
         sort=sort,
         order=order,
-        keys=["name", "version", "slug", "platforms"],
+        _silent=False,
     )
 
 
@@ -415,8 +431,24 @@ def variant_delete(identifier: str) -> None:
     print(f"Model variant '{variant_id}' deleted")
 
 
+def _instance_ls(*args, **kwargs) -> list[dict[str, Any]]:
+    return hub_ls(
+        "modelInstances",
+        *args,
+        **kwargs,
+        keys=[
+            "name",
+            "slug",
+            "platforms",
+            "is_nn_archive",
+            "hash",
+        ],
+    )
+
+
 @instance.command(name="ls")
 def instance_ls(
+    *,
     platforms: list[ModelType] | None = None,
     model_id: str | None = None,
     variant_id: str | None = None,
@@ -473,8 +505,7 @@ def instance_ls(
     order : Literal["asc", "desc"]
         By which order to sort the model instances.
     """
-    return hub_ls(
-        "modelInstances",
+    return _instance_ls(
         platforms=[platform.name for platform in platforms]
         if platforms
         else [],
@@ -493,13 +524,7 @@ def instance_ls(
         limit=limit,
         sort=sort,
         order=order,
-        keys=[
-            "name",
-            "slug",
-            "platforms",
-            "is_nn_archive",
-            "hash",
-        ],
+        _silent=False,
     )
 
 
