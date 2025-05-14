@@ -386,9 +386,12 @@ def wait_for_export(run_id: str) -> None:
 
     if run["status"] == "FAILURE":
         if run["logs"] is None:
+            print(run["id"])
             raise RuntimeError("Export failed with no logs.")
 
-        logs = run["logs"]
+        if run["logs"] is None:
+            raise RuntimeError("Export failed with no logs.")
+
         while len(run["logs"].split("\n")) < 5:
             run = _get_run(run_id)
             sleep(5)
