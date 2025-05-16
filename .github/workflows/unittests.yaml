@@ -52,7 +52,7 @@ jobs:
         path:       modelconverter
 
     - name: Checkout code
-      if: ${{ github.event_name == 'pull_request' }}
+      if: ${{ inputs.modelconv_ref == '' && inputs.ml_ref == '' }}
       uses: actions/checkout@v4
       with:
         path: modelconverter
