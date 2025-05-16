@@ -7,7 +7,7 @@ onnxsim
 s3fs
 s3transfer
 click==8.1.8
-typer
+cyclopts
 docker
 keyring
 onnx_graphsurgeon

@@ -220,7 +220,7 @@ def prepare(
             f"--path {config_url} "
             f"--output-dir _{model_name}-test "
             "--dev "
-            f"--version {tool_version} "
+            f"--tool-version {tool_version} "
             "--no-gpu "
             f"input_model {file_url} "
             "hailo.compression_level 0 "

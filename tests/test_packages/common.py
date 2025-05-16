@@ -45,9 +45,9 @@ def mnist_infer(mnist_env: ConvertEnv, tool_version: str):
         f"--model-path {converted_model_path} "
         f"--output-dir {dest} "
         f"--input-path {input_files_dir.parent} "
-        f"--path {config_url} "
+        f"--config {config_url} "
         "--dev "
-        f"--version {tool_version} "
+        f"--tool-version {tool_version} "
         "--no-gpu"
     )
     assert result.returncode == 0, result.stderr + result.stdout
@@ -87,9 +87,9 @@ def resnet18_infer(resnet18_env: ConvertEnv, tool_version: str):
         f"--model-path {converted_model_path} "
         f"--output-dir {dest} "
         f"--input-path {input_files_dir.parent} "
-        f"--path {config_url} "
+        f"--config {config_url} "
         "--dev "
-        f"--version {tool_version} "
+        f"--tool-version {tool_version} "
         "--no-gpu"
     )
     assert result.returncode == 0, result.stderr + result.stdout
@@ -133,9 +133,9 @@ def yolov6n_infer(yolov6n_env: ConvertEnv, tool_version: str):
         f"--model-path {converted_model_path} "
         f"--output-dir {dest} "
         f"--input-path {input_files_dir.parent} "
-        f"--path {config_url} "
+        f"--config {config_url} "
         "--dev "
-        f"--version {tool_version} "
+        f"--tool-version {tool_version} "
         "--no-gpu"
     )
     assert result.returncode == 0, result.stderr + result.stdout

@@ -8,7 +8,7 @@ from modelconverter.utils import constants
 
 
 class RVC4Visualizer(Visualizer):
-    def __init__(self, dir_path: str = "") -> None:
+    def __init__(self, dir_path: str | None = None) -> None:
         super().__init__(dir_path=dir_path)
         self.layer_csvs = self._get_csv_paths(
             dir_path=self.dir_path, comparison_type="layer_comparison"
@@ -20,13 +20,13 @@ class RVC4Visualizer(Visualizer):
     def visualize(self) -> None:
         fig_layers = self._visualize_layer_outputs()
         fig_layers.write_html(
-            f"{self.dir_path}/layer_outputs_visual.html",
+            self.dir_path / "layer_outputs_visual.html",
             include_plotlyjs="cdn",
         )
 
         fig_cycles = self._visualize_cycles()
         fig_cycles.write_html(
-            f"{self.dir_path}/layer_cycles_visual.html", include_plotlyjs="cdn"
+            self.dir_path / "layer_cycles_visual.html", include_plotlyjs="cdn"
         )
         fig_layers.show()
         fig_cycles.show()

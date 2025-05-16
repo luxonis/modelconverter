@@ -73,7 +73,7 @@ def _get_metadata_dlc(model_path: Path) -> Metadata:
         ).to_dict(as_series=False)
         metadata[f"{typ}_shapes"] = dict(
             zip(
-                shapes[f"{typ.capitalize()} Name"],
+                map(str, shapes[f"{typ.capitalize()} Name"]),
                 shapes["Dimensions"],
                 strict=True,
             )
@@ -83,7 +83,7 @@ def _get_metadata_dlc(model_path: Path) -> Metadata:
             [pl.col(f"{typ.capitalize()} Name"), pl.col("Type")]
         ).to_dict(as_series=False)
         metadata[f"{typ}_dtypes"] = {
-            name: DataType.from_dlc_dtype(dtype)
+            str(name): DataType.from_dlc_dtype(dtype)
             for name, dtype in zip(
                 dtypes[f"{typ.capitalize()} Name"], dtypes["Type"], strict=True
             )

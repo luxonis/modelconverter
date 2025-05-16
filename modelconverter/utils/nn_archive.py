@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
+from luxonis_ml.nn_archive import ArchiveGenerator
 from luxonis_ml.nn_archive.config import CONFIG_VERSION
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import (
@@ -18,7 +19,7 @@ from modelconverter.utils.config import Config
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
 from modelconverter.utils.metadata import get_metadata
-from modelconverter.utils.types import DataType, Encoding
+from modelconverter.utils.types import DataType, Encoding, Target
 
 
 def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
@@ -350,3 +351,40 @@ def archive_from_model(model_path: Path) -> NNArchiveConfig:
         )
 
     return NNArchiveConfig(**archive_cfg)
+
+
+def generate_archive(
+    target: Target,
+    cfg: Config,
+    main_stage: str,
+    out_models: list[Path],
+    output_path: Path,
+    archive_cfg: NNArchiveConfig | None,
+    preprocessing: dict[str, PreprocessingBlock],
+    inference_model_path: Path,
+) -> Path:
+    logger.info("Converting to NN archive")
+    if len(out_models) > 1:
+        model_name = f"{main_stage}{out_models[0].suffix}"
+    else:
+        model_name = out_models[0].name
+    nn_archive = modelconverter_config_to_nn(
+        cfg,
+        Path(model_name),
+        archive_cfg,
+        preprocessing,
+        main_stage,
+        inference_model_path,
+    )
+    generator = ArchiveGenerator(
+        archive_name=f"{cfg.name}.{target.value.lower()}",
+        save_path=str(output_path),
+        cfg_dict=nn_archive.model_dump(),
+        executables_paths=[
+            *out_models,
+            output_path / "buildinfo.json",
+        ],
+    )
+    archive = generator.make_archive()
+    logger.info(f"Model exported to {archive}")
+    return archive
