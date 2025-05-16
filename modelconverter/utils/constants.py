@@ -12,9 +12,9 @@ MODELS_DIR: Final[Path] = SHARED_DIR / "models"
 LOADERS = Registry(name="loaders")
 
 __all__ = [
-    "SHARED_DIR",
-    "CONFIGS_DIR",
-    "OUTPUTS_DIR",
     "CALIBRATION_DIR",
+    "CONFIGS_DIR",
     "MODELS_DIR",
+    "OUTPUTS_DIR",
+    "SHARED_DIR",
 ]

@@ -1,56 +1,21 @@
-import importlib
 import shutil
-import sys
-from contextlib import contextmanager
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, cast
 
+import hailo_sdk_client
 import numpy as np
 import tensorflow as tf
+from hailo_sdk_client import ClientRunner
 from loguru import logger
 
+from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import exit_with, read_image
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
 )
 from modelconverter.utils.types import Target
-
-from ..base_exporter import Exporter
-
-
-@contextmanager
-def _replace_module(original, substitute):
-    original_module = importlib.import_module(original)  # nosemgrep
-    substitute_module = importlib.import_module(substitute)  # nosemgrep
-
-    sys.modules[original] = substitute_module
-    try:
-        yield
-    finally:
-        sys.modules[original] = original_module
-
-
-@contextmanager
-def _replace_pydantic():
-    # NOTE: hailo_sdk_client is incompatible with pydantic v2, which
-    # is used in `luxonis_ml`. This is a workaround to make it work.
-    with _replace_module("pydantic", "pydantic.v1"):
-        with _replace_module("pydantic.errors", "pydantic.v1.errors"):
-            yield
-
-
-with _replace_pydantic():
-    import hailo_model_optimization.acceleras.utils.logger as _acc_logger
-    import hailo_sdk_common.logger.logger as _cmn_logger
-
-    # NOTE: Replacing built-in hailo loggers with our own.
-    logger.verbose = logger.debug  # type: ignore
-    logger.important = logger.info  # type: ignore
-    _cmn_logger._g_logger = logger
-    _acc_logger._g_logger = logger
-    import hailo_sdk_client
-    from hailo_sdk_client import ClientRunner
 
 
 class HailoExporter(Exporter):
@@ -62,7 +27,7 @@ class HailoExporter(Exporter):
         self.compression_level = config.hailo.compression_level
         self.batch_size = config.hailo.batch_size
         self.disable_compilation = config.hailo.disable_compilation
-        self._alls: List[str] = []
+        self._alls: list[str] = []
         self.hw_arch = config.hailo.hw_arch
         if not tf.config.list_physical_devices("GPU"):
             logger.error(
@@ -71,7 +36,7 @@ class HailoExporter(Exporter):
             self.optimization_level = 0
             self.compression_level = 0
 
-    def _get_start_nodes(self):
+    def _get_start_nodes(self) -> tuple[list[str], dict[str, list[int]]]:
         start_nodes = []
         net_input_shapes = {}
         for name, inp in self.inputs.items():
@@ -80,33 +45,26 @@ class HailoExporter(Exporter):
                 net_input_shapes[inp.name] = inp.shape
         return start_nodes, net_input_shapes
 
-    def _get_end_nodes(self):
-        end_nodes = []
-        for name in self.outputs:
-            # TODO: output dtypes
-            end_nodes.append(name)
-        return end_nodes
-
     def export(self) -> Path:
         runner = ClientRunner(hw_arch=self.hw_arch)
         start_nodes, net_input_shapes = self._get_start_nodes()
 
         logger.info("Translating model to Hailo IR.")
         if self.is_tflite:
-            runner.translate_tf_model(
+            cast(Callable[..., None], runner.translate_tf_model)(
                 str(self.input_model),
                 self.input_model.stem,
                 start_node_names=start_nodes,
                 tensor_shapes=net_input_shapes,
-                end_node_names=self._get_end_nodes(),
+                end_node_names=list(self.outputs.keys()),
             )
         else:
-            runner.translate_onnx_model(
+            cast(Callable[..., None], runner.translate_onnx_model)(
                 str(self.input_model),
                 self.input_model.stem,
                 start_node_names=start_nodes,
                 net_input_shapes=net_input_shapes,
-                end_node_names=self._get_end_nodes(),
+                end_node_names=list(self.outputs.keys()),
             )
         logger.info("Model translated to Hailo IR.")
         har_path = self.input_model.with_suffix(".har")
@@ -140,7 +98,7 @@ class HailoExporter(Exporter):
 
     def _get_calibration_data(
         self, runner: ClientRunner
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         data = {}
         for orig_name, inp in self.inputs.items():
             name, shape = self._get_hn_layer_info(runner, orig_name)
@@ -196,7 +154,7 @@ class HailoExporter(Exporter):
     @staticmethod
     def _get_hn_layer_info(
         runner: ClientRunner, name: str
-    ) -> Tuple[str, List[int]]:
+    ) -> tuple[str, list[int]]:
         for hn_name, params in runner.get_hn_dict()["layers"].items():
             if name in params.get("original_names", []):
                 return hn_name, [1, *(params["input_shapes"][0])[1:]]
@@ -246,7 +204,7 @@ class HailoExporter(Exporter):
         self._alls = alls
         return "\n".join(alls)
 
-    def exporter_buildinfo(self) -> Dict[str, Any]:
+    def exporter_buildinfo(self) -> dict[str, Any]:
         return {
             "hailo_version": hailo_sdk_client.__version__,
             "optimization_level": self.optimization_level,

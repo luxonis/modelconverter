@@ -1,7 +1,7 @@
 import webbrowser
 from pathlib import Path
 from time import sleep
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any
 from urllib.parse import unquote, urlparse
 
 import click
@@ -11,7 +11,6 @@ import typer
 from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
-from typing_extensions import Annotated
 
 from modelconverter.cli import (
     ArchitectureIDOption,
@@ -117,7 +116,7 @@ def login(
         bool,
         typer.Option("--relogin", "-r", help="Relogin if already logged in"),
     ] = False,
-):
+) -> None:
     """Login to the Hub."""
     if environ.HUBAI_API_KEY and not relogin:
         typer.echo(
@@ -149,11 +148,11 @@ def model_ls(
     limit: LimitOption = 50,
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Lists models."""
     return hub_ls(
         "models",
-        tasks=[task for task in tasks] if tasks else [],
+        tasks=list(tasks) if tasks else [],
         license_type=license_type,
         is_public=is_public,
         slug=slug,
@@ -205,7 +204,7 @@ def model_create(
     tasks: TasksOption = None,
     links: LinksOption = None,
     silent: SilentOption = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Creates a new model resource."""
     data = {
         "name": name,
@@ -225,7 +224,7 @@ def model_create(
             and e.response.json().get("detail") == "Unique constraint error."
         ):
             raise ValueError(f"Model '{name}' already exists") from e
-        raise e
+        raise
     print(f"Model '{res['name']}' created with ID '{res['id']}'")
     if not silent:
         model_info(res["id"])
@@ -233,7 +232,7 @@ def model_create(
 
 
 @model.command(name="delete")
-def model_delete(identifier: IdentifierArgument):
+def model_delete(identifier: IdentifierArgument) -> None:
     """Deletes a model."""
     model_id = get_resource_id(identifier, "models")
     Request.delete(f"models/{model_id}")
@@ -250,7 +249,7 @@ def variant_ls(
     limit: LimitOption = 50,
     sort: SortOption = "updated",
     order: OrderOption = Order.DESC,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Lists model versions."""
     return hub_ls(
         "modelVersions",
@@ -269,7 +268,7 @@ def variant_ls(
 @variant.command(name="info")
 def variant_info(
     identifier: IdentifierArgument, json: JSONOption = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Prints information about a model version."""
     return print_hub_resource_info(
         request_info(identifier, "modelVersions"),
@@ -301,7 +300,7 @@ def variant_create(
     domain: DomainOption = None,
     tags: TagsOption = None,
     silent: SilentOption = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Creates a new variant of a model."""
     data = {
         "model_id": model_id,
@@ -320,7 +319,7 @@ def variant_create(
             raise ValueError(
                 f"Model variant '{name}' already exists for model '{model_id}'"
             ) from e
-        raise e
+        raise
     print(f"Model variant '{res['name']}' created with ID '{res['id']}'")
     if not silent:
         variant_info(res["id"])
@@ -328,7 +327,7 @@ def variant_create(
 
 
 @variant.command(name="delete")
-def variant_delete(identifier: IdentifierArgument):
+def variant_delete(identifier: IdentifierArgument) -> None:
     """Deletes a model variant."""
     variant_id = get_resource_id(identifier, "modelVersions")
     Request.delete(f"modelVersions/{variant_id}")
@@ -342,7 +341,7 @@ def instance_ls(
     variant_id: ModelVersionIDOption = None,
     model_type: ModelTypeOption = None,
     parent_id: ParentIDOption = None,
-    model_class: Optional[ModelClass] = None,
+    model_class: ModelClass | None = None,
     name: NameOption = None,
     hash: HashOption = None,
     status: StatusOption = None,
@@ -388,7 +387,7 @@ def instance_ls(
 @instance.command(name="info")
 def instance_info(
     identifier: IdentifierArgument, json: JSONOption = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Prints information about a model instance."""
     return print_hub_resource_info(
         request_info(identifier, "modelInstances"),
@@ -425,7 +424,7 @@ def instance_download(
         raise ValueError("No files to download")
 
     for url in urls:
-        with requests.get(url, stream=True) as response:
+        with requests.get(url, stream=True, timeout=10) as response:
             response.raise_for_status()
 
             filename = unquote(Path(urlparse(url).path).name)
@@ -457,10 +456,10 @@ def instance_create(
     model_precision_type: TargetPrecisionOption = None,
     quantization_data: QuantizationOption = None,
     tags: TagsOption = None,
-    input_shape: Optional[List[int]] = None,
-    is_deployable: Optional[bool] = None,
+    input_shape: list[int] | None = None,
+    is_deployable: bool | None = None,
     silent: SilentOption = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Creates a new model instance."""
     data = {
         "name": name,
@@ -481,7 +480,7 @@ def instance_create(
 
 
 @instance.command(name="delete")
-def instance_delete(identifier: IdentifierArgument):
+def instance_delete(identifier: IdentifierArgument) -> None:
     """Deletes a model instance."""
     instance_id = get_resource_id(identifier, "modelInstances")
     Request.delete(f"modelInstances/{instance_id}")
@@ -489,21 +488,21 @@ def instance_delete(identifier: IdentifierArgument):
 
 
 @instance.command()
-def config(identifier: IdentifierArgument):
+def config(identifier: IdentifierArgument) -> None:
     """Prints the configuration of a model instance."""
     model_instance_id = get_resource_id(identifier, "modelInstances")
     print(Request.get(f"modelInstances/{model_instance_id}/config"))
 
 
 @instance.command()
-def files(identifier: IdentifierArgument):
+def files(identifier: IdentifierArgument) -> None:
     """Prints the configuration of a model instance."""
     model_instance_id = get_resource_id(identifier, "modelInstances")
     print(Request.get(f"modelInstances/{model_instance_id}/files"))
 
 
 @instance.command()
-def upload(file_path: str, identifier: IdentifierArgument):
+def upload(file_path: str, identifier: IdentifierArgument) -> None:
     """Uploads a file to a model instance."""
     model_instance_id = get_resource_id(identifier, "modelInstances")
     with open(file_path, "rb") as file:
@@ -518,13 +517,13 @@ def _export(
     target: str,
     target_precision: str,
     quantization_data: str,
-    yolo_version: Optional[str] = None,
-    yolo_class_names: Optional[List[str]] = None,
+    yolo_version: str | None = None,
+    yolo_class_names: list[str] | None = None,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Exports a model instance."""
     model_instance_id = get_resource_id(identifier, "modelInstances")
-    json: Dict[str, Any] = {
+    json: dict[str, Any] = {
         "name": name,
         "quantization_data": quantization_data,
         **kwargs,

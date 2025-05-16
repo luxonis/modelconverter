@@ -1,7 +1,7 @@
 import json
 import tarfile
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from loguru import logger
 from luxonis_ml.nn_archive.config import CONFIG_VERSION
@@ -29,8 +29,8 @@ def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
 
 
 def process_nn_archive(
-    path: Path, overrides: Optional[Dict[str, Any]]
-) -> Tuple[Config, NNArchiveConfig, str]:
+    path: Path, overrides: dict[str, Any] | None
+) -> tuple[Config, NNArchiveConfig, str]:
     """Extracts the archive from tar and parses its config.
 
     @type path: Path
@@ -38,7 +38,8 @@ def process_nn_archive(
     @type overrides: Optional[Dict[str, Any]]
     @param overrides: Config overrides.
     @rtype: Tuple[Config, NNArchiveConfig, str]
-    @return: Tuple of the parsed config, NNArchiveConfig and the main stage key.
+    @return: Tuple of the parsed config, NNArchiveConfig and the main
+        stage key.
     """
 
     untar_path = MISC_DIR / path.stem
@@ -48,7 +49,7 @@ def process_nn_archive(
         if untar_path.suffix == ".tar":
             untar_path = MISC_DIR / untar_path.stem
 
-        def safe_members(tar):
+        def safe_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
             """Filter members to prevent path traversal attacks."""
             safe_files = []
             for member in tar.getmembers():
@@ -59,8 +60,9 @@ def process_nn_archive(
                     logger.warning(f"Skipping unsafe file: {member.name}")
             return safe_files
 
-        tf = tarfile.open(path, mode="r")
-        tf.extractall(untar_path, members=safe_members(tf))
+        with tarfile.open(path, mode="r") as tf:
+            for member in safe_members(tf):
+                tf.extract(member, path=untar_path)
 
     else:
         raise RuntimeError(f"Unknown NN Archive path: `{path}`")
@@ -192,8 +194,8 @@ def process_nn_archive(
 def modelconverter_config_to_nn(
     config: Config,
     model_name: Path,
-    orig_nn: Optional[NNArchiveConfig],
-    preprocessing: Dict[str, PreprocessingBlock],
+    orig_nn: NNArchiveConfig | None,
+    preprocessing: dict[str, PreprocessingBlock],
     main_stage_key: str,
     model_path: Path,
 ) -> NNArchiveConfig:
@@ -256,7 +258,16 @@ def modelconverter_config_to_nn(
         new_shape = model_metadata.output_shapes[out.name]
         if out.shape is not None and not any(s == 0 for s in out.shape):
             assert out.layout is not None
-            layout = guess_new_layout(out.layout, out.shape, new_shape)
+            try:
+                layout = guess_new_layout(out.layout, out.shape, new_shape)
+            except ValueError as e:
+                layout = make_default_layout(new_shape)
+                logger.warning(
+                    f"Unable to infer layout for layer '{out.name}': {e}. "
+                    f"The original shape was `{out.shape}`, which is incompatible "
+                    f"with the shape of the converted model: `{new_shape}`. "
+                    f"Changing the layout of the converted model to `{layout}`. "
+                )
         else:
             layout = make_default_layout(new_shape)
 
@@ -280,9 +291,9 @@ def modelconverter_config_to_nn(
             raise NotImplementedError(
                 "Only 2-stage models are supported with NN Archive for now."
             )
-        post_stage_key = [
+        post_stage_key = next(
             key for key in config.stages if key != main_stage_key
-        ][0]
+        )
         if not archive.model.heads:
             raise ValueError(
                 "Multistage NN Archives must sxpecify 1 head in the archive config"

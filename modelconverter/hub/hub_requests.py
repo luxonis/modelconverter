@@ -1,5 +1,5 @@
 from json import JSONDecodeError
-from typing import Any, Dict, Optional
+from typing import Any
 
 import requests
 from requests import HTTPError, Response
@@ -17,7 +17,7 @@ class Request:
         return f"{environ.HUBAI_URL.rstrip('/')}/dags/api/v1"
 
     @staticmethod
-    def headers() -> Dict[str, str]:
+    def headers() -> dict[str, str]:
         if environ.HUBAI_API_KEY is None:
             raise ValueError("HUBAI_API_KEY is not set")
 
@@ -52,6 +52,7 @@ class Request:
             requests.get(
                 Request._get_url(endpoint),
                 headers=Request.headers(),
+                timeout=10,
                 **kwargs,
             )
         )
@@ -62,6 +63,7 @@ class Request:
             requests.get(
                 Request._get_url(endpoint, Request.dag_url()),
                 headers=Request.headers(),
+                timeout=10,
                 **kwargs,
             )
         )
@@ -73,7 +75,10 @@ class Request:
             headers = {**Request.headers(), **kwargs.pop("headers")}
         return Request._process_response(
             requests.post(
-                Request._get_url(endpoint), headers=headers, **kwargs
+                Request._get_url(endpoint),
+                headers=headers,
+                timeout=10,
+                **kwargs,
             )
         )
 
@@ -81,7 +86,10 @@ class Request:
     def delete(endpoint: str = "", **kwargs) -> Any:
         return Request._process_response(
             requests.delete(
-                Request._get_url(endpoint), headers=Request.headers(), **kwargs
+                Request._get_url(endpoint),
+                headers=Request.headers(),
+                timeout=10,
+                **kwargs,
             )
         )
 
@@ -91,7 +99,12 @@ class Request:
         if "headers" in kwargs:
             headers = {**headers, **kwargs.pop("headers")}
         return Request._process_response(
-            requests.put(Request._get_url(endpoint), headers=headers, **kwargs)
+            requests.put(
+                Request._get_url(endpoint),
+                headers=headers,
+                timeout=10,
+                **kwargs,
+            )
         )
 
     @staticmethod
@@ -101,11 +114,14 @@ class Request:
             headers = {**headers, **kwargs.pop("headers")}
         return Request._process_response(
             requests.patch(
-                Request._get_url(endpoint), headers=headers, **kwargs
+                Request._get_url(endpoint),
+                headers=headers,
+                timeout=10,
+                **kwargs,
             )
         )
 
     @staticmethod
-    def _get_url(endpoint: str, base_url: Optional[str] = None) -> str:
+    def _get_url(endpoint: str, base_url: str | None = None) -> str:
         base_url = base_url or Request.url()
         return f"{base_url}/{endpoint.lstrip('/')}".rstrip("/")

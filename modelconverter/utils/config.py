@@ -1,11 +1,12 @@
-import os
 from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
+from typing import Annotated, Any, Literal, cast
 
 import onnx
 from loguru import logger
+from luxonis_ml.typing import PathType
 from luxonis_ml.utils import LuxonisConfig
+from onnx import TypeProto
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -13,7 +14,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import Annotated, Self
+from typing_extensions import Self
 
 from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MODELS_DIR
@@ -42,8 +43,8 @@ class CustomBaseModel(BaseModel):
 
 class LinkCalibrationConfig(CustomBaseModel):
     stage: str
-    output: Optional[str] = None
-    script: Optional[str] = None
+    output: str | None = None
+    script: str | None = None
 
     @model_validator(mode="after")
     def _validate(self) -> Self:
@@ -55,7 +56,7 @@ class LinkCalibrationConfig(CustomBaseModel):
 
     @field_validator("script", mode="after")
     @staticmethod
-    def _download_calibration_script(script: Any) -> Optional[Path]:
+    def _download_calibration_script(script: Any) -> Path | None:
         if script is None:
             return None
         if script.endswith(".py"):
@@ -71,7 +72,7 @@ class ImageCalibrationConfig(CustomBaseModel):
 
     @field_validator("path", mode="before")
     @staticmethod
-    def _download_calibration_data(value: Any) -> Optional[Path]:
+    def _download_calibration_data(value: Any) -> Path | None:
         if value is None:
             return None
         return download_calibration_data(str(value))
@@ -88,18 +89,18 @@ class RandomCalibrationConfig(CustomBaseModel):
 
 class OutputConfig(CustomBaseModel):
     name: str
-    shape: Optional[List[int]] = None
-    layout: Optional[str] = None
+    shape: list[int] | None = None
+    layout: str | None = None
     data_type: DataType = DataType.FLOAT32
 
     @model_validator(mode="before")
     @classmethod
-    def _make_default_layout(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _make_default_layout(cls, data: dict[str, Any]) -> dict[str, Any]:
         shape = data.get("shape")
         layout = data.get("layout")
         if shape is None and layout is not None:
             raise ValueError("`layout` cannot be provided without `shape`.")
-        elif shape is None:
+        if shape is None:
             return data
         if layout is None:
             layout = make_default_layout(shape)
@@ -127,12 +128,14 @@ class EncodingConfig(CustomBaseModel):
 
 
 class InputConfig(OutputConfig):
-    calibration: Union[
-        ImageCalibrationConfig, RandomCalibrationConfig, LinkCalibrationConfig
-    ] = RandomCalibrationConfig()
-    scale_values: Optional[Annotated[List[float], Field(min_length=1)]] = None
-    mean_values: Optional[Annotated[List[float], Field(min_length=1)]] = None
-    frozen_value: Optional[Any] = None
+    calibration: (
+        ImageCalibrationConfig
+        | RandomCalibrationConfig
+        | LinkCalibrationConfig
+    ) = RandomCalibrationConfig()
+    scale_values: Annotated[list[float], Field(min_length=1)] | None = None
+    mean_values: Annotated[list[float], Field(min_length=1)] | None = None
+    frozen_value: Any | None = None
     encoding: EncodingConfig = EncodingConfig()
 
     @property
@@ -172,26 +175,23 @@ class InputConfig(OutputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def _validate_encoding(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _validate_encoding(cls, data: dict[str, Any]) -> dict[str, Any]:
         encoding = data.get("encoding")
         if encoding is None or encoding == {}:
             data["encoding"] = {"from": "RGB", "to": "BGR"}
             return data
         if isinstance(encoding, str):
             data["encoding"] = {"from": encoding, "to": encoding}
-        if isinstance(encoding, dict):
-            if (
-                "from" in encoding
-                and encoding["from"] == "GRAY"
-                or "to" in encoding
-                and encoding["to"] == "GRAY"
-            ):
-                data["encoding"] = {"from": "GRAY", "to": "GRAY"}
+        if isinstance(encoding, dict) and (
+            ("from" in encoding and encoding["from"] == "GRAY")
+            or ("to" in encoding and encoding["to"] == "GRAY")
+        ):
+            data["encoding"] = {"from": "GRAY", "to": "GRAY"}
         return data
 
     @model_validator(mode="before")
     @classmethod
-    def _random_calibration(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _random_calibration(cls, data: dict[str, Any]) -> dict[str, Any]:
         if data.get("calibration") in ["random", None]:
             data["calibration"] = RandomCalibrationConfig()
         return data
@@ -215,10 +215,9 @@ class InputConfig(OutputConfig):
         """Resolves named values from the config."""
         if value is None:
             return None
-        if isinstance(value, str):
-            if value in NAMED_VALUES:
-                return NAMED_VALUES[value][values_type]
-        if isinstance(value, (float, int)):
+        if isinstance(value, str) and value in NAMED_VALUES:
+            return NAMED_VALUES[value][values_type]
+        if isinstance(value, float | int):
             return [value, value, value]
         return value
 
@@ -232,15 +231,15 @@ class HailoConfig(TargetConfig):
     compression_level: Literal[0, 1, 2, 3, 4, 5] = 2
     batch_size: int = 8
     disable_compilation: bool = False
-    alls: List[str] = []
+    alls: list[str] = []
     hw_arch: Literal[
         "hailo8", "hailo8l", "hailo8r", "hailo10h", "hailo15h", "hailo15m"
     ] = "hailo8"
 
 
 class BlobBaseConfig(TargetConfig):
-    mo_args: List[str] = []
-    compile_tool_args: List[str] = []
+    mo_args: list[str] = []
+    compile_tool_args: list[str] = []
     compress_to_fp16: bool = True
 
 
@@ -262,30 +261,30 @@ class RVC3Config(BlobBaseConfig):
 
 
 class RVC4Config(TargetConfig):
-    snpe_onnx_to_dlc_args: List[str] = []
-    snpe_dlc_quant_args: List[str] = []
-    snpe_dlc_graph_prepare_args: List[str] = []
+    snpe_onnx_to_dlc_args: list[str] = []
+    snpe_dlc_quant_args: list[str] = []
+    snpe_dlc_graph_prepare_args: list[str] = []
     keep_raw_images: bool = False
     use_per_channel_quantization: bool = True
     use_per_row_quantization: bool = False
-    htp_socs: List[
+    htp_socs: list[
         Literal["sm8350", "sm8450", "sm8550", "sm8650", "qcs6490", "qcs8550"]
     ] = ["sm8550"]
 
 
 class SingleStageConfig(CustomBaseModel):
     input_model: Path
-    input_bin: Optional[Path] = None
+    input_bin: Path | None = None
     input_file_type: InputFileType
 
-    inputs: Annotated[List[InputConfig], Field(min_length=1)] = []
-    outputs: Annotated[List[OutputConfig], Field(min_length=1)] = []
+    inputs: Annotated[list[InputConfig], Field(min_length=1)] = []
+    outputs: Annotated[list[OutputConfig], Field(min_length=1)] = []
 
     keep_intermediate_outputs: bool = True
     disable_onnx_simplification: bool = False
     disable_onnx_optimization: bool = False
-    output_remote_url: Optional[str] = None
-    put_file_plugin: Optional[str] = None
+    output_remote_url: str | None = None
+    put_file_plugin: str | None = None
 
     hailo: HailoConfig = HailoConfig()
     rvc2: RVC2Config = RVC2Config()
@@ -294,7 +293,7 @@ class SingleStageConfig(CustomBaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _validate_model(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _validate_model(cls, data: dict[str, Any]) -> dict[str, Any]:
         mean_values = data.pop("mean_values", None)
         scale_values = data.pop("scale_values", None)
         encoding = data.pop("encoding", {})
@@ -380,7 +379,7 @@ class SingleStageConfig(CustomBaseModel):
                 else scale_values
             )
 
-            inp_calibration: Dict[str, Any] = inp.get("calibration", {})
+            inp_calibration: dict[str, Any] = inp.get("calibration", {})
             if not inp_calibration and not top_level_calibration:
                 inp["calibration"] = None
             elif top_level_calibration == "random":
@@ -415,7 +414,7 @@ class SingleStageConfig(CustomBaseModel):
         data["inputs"] = inputs
         data["outputs"] = outputs
 
-        disable_calibration: Optional[bool] = data.pop(
+        disable_calibration: bool | None = data.pop(
             "disable_calibration", None
         )
         if disable_calibration is None:
@@ -430,7 +429,7 @@ class SingleStageConfig(CustomBaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _download_input_model(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+    def _download_input_model(cls, value: dict[str, Any]) -> dict[str, Any]:
         if "input_model" not in value:
             raise ValueError("`input_model` must be provided.")
         input_file_type = InputFileType.from_path(value["input_model"])
@@ -449,10 +448,10 @@ class SingleStageConfig(CustomBaseModel):
 
 # TODO: Output remote url
 class Config(LuxonisConfig):
-    stages: Annotated[Dict[str, SingleStageConfig], Field(min_length=1)]
+    stages: Annotated[dict[str, SingleStageConfig], Field(min_length=1)]
     name: str
 
-    def get_stage_config(self, stage: Optional[str]) -> SingleStageConfig:
+    def get_stage_config(self, stage: str | None) -> SingleStageConfig:
         if stage is None:
             if len(self.stages) == 1:
                 return next(iter(self.stages.values()))
@@ -461,14 +460,14 @@ class Config(LuxonisConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def _validate_name(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _validate_name(cls, data: dict[str, Any]) -> dict[str, Any]:
         if data.get("name") is None:
             data["name"] = "-".join(data["stages"].keys())
         return data
 
     @model_validator(mode="before")
     @classmethod
-    def _validate_stages(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _validate_stages(cls, data: dict[str, Any]) -> dict[str, Any]:
         if "stages" not in data:
             name = data.pop("name", "default_stage")
             data = {
@@ -488,7 +487,8 @@ class Config(LuxonisConfig):
 
     @model_validator(mode="after")
     def _validate_single_stage_name(self) -> Self:
-        """Changes the default 'default_stage' name to the name of the input model."""
+        """Changes the default 'default_stage' name to the name of the
+        input model."""
         if len(self.stages) == 1 and "default_stage" in self.stages:
             stage = next(iter(self.stages.values()))
             model_name = stage.input_model.stem
@@ -497,15 +497,15 @@ class Config(LuxonisConfig):
         return self
 
 
-def _extract_bin_xml_from_ir(ir_path: Any) -> Tuple[Path, Path]:
+def _extract_bin_xml_from_ir(ir_path: Any) -> tuple[Path, Path]:
     """Extracts the corresponding second path from a single IR path.
 
-    We assume that the base filename matches between the .bin and .xml file. Otherwise,
-    an error will be thrown.
+    We assume that the base filename matches between the .bin and .xml
+    file. Otherwise, an error will be thrown.
     """
 
     if not isinstance(ir_path, str) and not isinstance(ir_path, Path):
-        raise ValueError("`input_path` must be str or Path.")
+        raise TypeError("`input_path` must be str or Path.")
     ir_path = Path(ir_path)
 
     if ir_path.suffix == ".bin":
@@ -545,7 +545,7 @@ def _extract_bin_xml_from_ir(ir_path: Any) -> Tuple[Path, Path]:
 
 def _get_onnx_node_info(
     model_path: Path, node_name: str
-) -> Tuple[List[int], DataType]:
+) -> tuple[list[int], DataType]:
     onnx_model = onnx.load(str(model_path))
     graph = onnx_model.graph
 
@@ -577,11 +577,13 @@ def _get_onnx_node_info(
 
 
 def _get_onnx_tensor_info(
-    model_path: Union[Path, str], tensor_name: str
-) -> Tuple[List[int], DataType]:
+    model_path: Path | str, tensor_name: str
+) -> tuple[list[int], DataType]:
     model = onnx.load(str(model_path))
 
-    def extract_tensor_info(tensor_type):
+    def extract_tensor_info(
+        tensor_type: TypeProto.Tensor,
+    ) -> tuple[list[int], DataType]:
         shape = [dim.dim_value for dim in tensor_type.shape.dim]
         if any(dim == 0 for dim in shape):
             raise ValueError(
@@ -609,7 +611,7 @@ def _get_onnx_tensor_info(
 
 def _get_onnx_inter_info(
     model_path: Path, name: str
-) -> Tuple[Optional[List[int]], Optional[DataType]]:
+) -> tuple[list[int] | None, DataType | None]:
     try:
         logger.info(
             f"Attempting to find shape and data type for tensor '{name}'."
@@ -638,13 +640,15 @@ def _get_onnx_inter_info(
 
 
 def generate_renamed_onnx(
-    onnx_path: Union[Path, str],
-    rename_dict: Dict[str, str],
-    output_path: Union[Path, str],
+    onnx_path: PathType,
+    rename_dict: dict[str, str],
+    output_path: PathType,
 ) -> None:
+    onnx_path = Path(onnx_path)
+    output_path = Path(output_path)
     model = onnx.load(str(onnx_path))
-    if os.path.exists(str(onnx_path).replace(".onnx", ".onnx_data")):
-        model_data_path = str(onnx_path).replace(".onnx", ".onnx_data")
+    if onnx_path.with_suffix(".onnx_data").exists():
+        model_data_path = onnx_path.with_suffix(".onnx_data")
     else:
         model_data_path = None
 
@@ -662,7 +666,7 @@ def generate_renamed_onnx(
             model,
             str(output_path),
             save_as_external_data=True,
-            location=f"{os.path.basename(str(output_path))}_data",
+            location=f"{output_path.name}_data",
         )
     else:
         onnx.save(model, str(output_path))

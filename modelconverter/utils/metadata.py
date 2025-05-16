@@ -1,7 +1,8 @@
 import io
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import cast
 
 import onnx
 
@@ -11,10 +12,10 @@ from modelconverter.utils.types import DataType
 
 @dataclass
 class Metadata:
-    input_shapes: Dict[str, List[int]]
-    input_dtypes: Dict[str, DataType]
-    output_shapes: Dict[str, List[int]]
-    output_dtypes: Dict[str, DataType]
+    input_shapes: dict[str, list[int]]
+    input_dtypes: dict[str, DataType]
+    output_shapes: dict[str, list[int]]
+    output_dtypes: dict[str, DataType]
 
 
 def get_metadata(model_path: Path) -> Metadata:
@@ -71,7 +72,11 @@ def _get_metadata_dlc(model_path: Path) -> Metadata:
             ]
         ).to_dict(as_series=False)
         metadata[f"{typ}_shapes"] = dict(
-            zip(shapes[f"{typ.capitalize()} Name"], shapes["Dimensions"])
+            zip(
+                shapes[f"{typ.capitalize()} Name"],
+                shapes["Dimensions"],
+                strict=True,
+            )
         )
 
         dtypes = df.select(
@@ -80,7 +85,7 @@ def _get_metadata_dlc(model_path: Path) -> Metadata:
         metadata[f"{typ}_dtypes"] = {
             name: DataType.from_dlc_dtype(dtype)
             for name, dtype in zip(
-                dtypes[f"{typ.capitalize()} Name"], dtypes["Type"]
+                dtypes[f"{typ.capitalize()} Name"], dtypes["Type"], strict=True
             )
         }
 
@@ -104,13 +109,13 @@ def _get_metadata_ir(bin_path: Path, xml_path: Path) -> Metadata:
     output_dtypes = {}
 
     for inp in model.inputs:
-        name = list(inp.names)[0]
+        name = next(iter(inp.names))
         input_shapes[name] = list(inp.shape)
         input_dtypes[name] = DataType.from_ir_runtime_dtype(
             inp.element_type.get_type_name()
         )
     for output in model.outputs:
-        name = list(output.names)[0]
+        name = next(iter(output.names))
         output_shapes[name] = list(output.shape)
         output_dtypes[name] = DataType.from_ir_runtime_dtype(
             output.element_type.get_type_name()
@@ -207,7 +212,9 @@ def _get_metadata_hailo(model_path: Path) -> Metadata:
     output_shapes = {}
     output_dtypes = {}
     runner = ClientRunner(hw_arch="hailo8", har=str(model_path))
-    for params in runner.get_hn_dict()["layers"].values():
+    for params in cast(Callable[..., dict], runner.get_hn_dict)()[
+        "layers"
+    ].values():
         if params["type"] in ["input_layer", "output_layer"]:
             name = params["original_names"][0]
             shape = list(params["input_shapes"][0])

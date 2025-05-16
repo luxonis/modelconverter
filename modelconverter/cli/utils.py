@@ -1,10 +1,11 @@
 import re
 import shutil
+import sys
 from contextlib import suppress
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from time import sleep
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Literal
 from uuid import UUID
 
 import typer
@@ -12,11 +13,12 @@ from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
+from luxonis_ml.typing import Params
 from packaging.version import Version
 from requests.exceptions import HTTPError
 from rich import print
 from rich.box import ROUNDED
-from rich.console import Console, Group
+from rich.console import Console, Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.pretty import Pretty
@@ -42,9 +44,9 @@ from .types import ModelType
 
 
 def get_output_dir_name(
-    target: Target, name: str, output_dir: Optional[str]
+    target: Target, name: str, output_dir: str | None
 ) -> Path:
-    date = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
     if output_dir is not None:
         if (OUTPUTS_DIR / output_dir).exists():
             shutil.rmtree(OUTPUTS_DIR / output_dir)
@@ -60,8 +62,8 @@ def init_dirs() -> None:
 
 
 def get_configs(
-    path: Optional[str], opts: Optional[List[str]] = None
-) -> Tuple[Config, Optional[NNArchiveConfig], Optional[str]]:
+    path: str | None, opts: list[str] | None = None
+) -> tuple[Config, NNArchiveConfig | None, str | None]:
     """Sets up the configuration.
 
     @type path: Optional[str]
@@ -69,8 +71,8 @@ def get_configs(
     @type opts: Optional[List[str]]
     @param opts: Optional CLI overrides of the config file.
     @rtype: Tuple[Config, Optional[NNArchiveConfig], Optional[str]]
-    @return: Tuple of the parsed modelconverter L{Config}, L{NNArchiveConfig} and the
-        main stage key.
+    @return: Tuple of the parsed modelconverter L{Config},
+        L{NNArchiveConfig} and the main stage key.
     """
 
     opts = opts or []
@@ -78,7 +80,7 @@ def get_configs(
         raise ValueError(
             "Invalid number of overrides. See --help for more information."
         )
-    overrides = {opts[i]: opts[i + 1] for i in range(0, len(opts), 2)}
+    overrides: Params = {opts[i]: opts[i + 1] for i in range(0, len(opts), 2)}
     if path is not None:
         path_ = resolve_path(path, MISC_DIR)
         if path_.is_dir() or is_nn_archive(path_):
@@ -100,7 +102,7 @@ def get_configs(
 
 def extract_preprocessing(
     cfg: Config,
-) -> Tuple[Config, Dict[str, PreprocessingBlock]]:
+) -> tuple[Config, dict[str, PreprocessingBlock]]:
     if len(cfg.stages) > 1:
         raise ValueError(
             "Only single-stage models are supported with NN archive."
@@ -140,12 +142,12 @@ def extract_preprocessing(
 
 
 def print_hub_resource_info(
-    model: Dict[str, Any],
-    keys: List[str],
+    model: dict[str, Any],
+    keys: list[str],
     json: bool,
-    rename: Optional[Dict[str, str]] = None,
+    rename: dict[str, str] | None = None,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     rename = rename or {}
 
     if json:
@@ -170,7 +172,7 @@ def print_hub_resource_info(
         if key in ["created", "updated", "last_version_added"]:
             value = model.get(key, "N/A")
 
-            def format_date(date_str):
+            def format_date(date_str: str) -> RenderableType:
                 try:
                     date_obj = datetime.strptime(
                         date_str, "%Y-%m-%dT%H:%M:%S.%f"
@@ -241,10 +243,10 @@ def print_hub_resource_info(
 
 def hub_ls(
     endpoint: str,
-    keys: List[str],
-    rename: Optional[Dict[str, str]] = None,
+    keys: list[str],
+    rename: dict[str, str] | None = None,
     **kwargs,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     rename = rename or {}
     data = Request.get(f"{endpoint}/", params=kwargs)
     table = Table(row_styles=["yellow", "cyan"], box=ROUNDED)
@@ -268,9 +270,10 @@ def hub_ls(
 def is_valid_uuid(uuid_string: str) -> bool:
     try:
         UUID(uuid_string)
-        return True
     except Exception:
         return False
+    else:
+        return True
 
 
 def slug_to_id(
@@ -300,14 +303,14 @@ def get_resource_id(
 def request_info(
     identifier: str,
     endpoint: Literal["models", "modelVersions", "modelInstances"],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     resource_id = get_resource_id(identifier, endpoint)
 
     try:
         return Request.get(f"{endpoint}/{resource_id}/")
     except HTTPError:
         typer.echo(f"Resource with ID '{resource_id}' not found.")
-        exit(1)
+        sys.exit(1)
 
 
 def get_variant_name(
@@ -320,7 +323,7 @@ def get_variant_name(
         if layout is not None and "H" in layout and "W" in layout:
             h, w = shape[layout.index("H")], shape[layout.index("W")]
             return f"{name} {h}x{w}"
-        elif len(shape) == 4:
+        if len(shape) == 4:
             if model_type == ModelType.TFLITE:
                 h, w = shape[1], shape[2]
             else:
@@ -343,7 +346,7 @@ def get_version_number(model_id: str) -> str:
 
 
 def wait_for_export(run_id: str) -> None:
-    def _get_run(run_id: str) -> Dict[str, Any]:
+    def _get_run(run_id: str) -> dict[str, Any]:
         return Request.dag_get(f"runs/{run_id}")
 
     def _clean_logs(logs: str) -> str:
@@ -367,8 +370,8 @@ def wait_for_export(run_id: str) -> None:
 
 
 def get_target_specific_options(
-    target: str, cfg: SingleStageConfig, tool_version: Optional[str] = None
-) -> Dict[str, Any]:
+    target: str, cfg: SingleStageConfig, tool_version: str | None = None
+) -> dict[str, Any]:
     target = target.lower()
     json_cfg = cfg.model_dump(mode="json")
     options = {
@@ -379,9 +382,9 @@ def get_target_specific_options(
     if target == "rvc4":
         options["snpe_onnx_to_dlc_args"] = cfg.rvc4.snpe_onnx_to_dlc_args
         options["snpe_dlc_quant_args"] = cfg.rvc4.snpe_dlc_quant_args
-        options[
-            "snpe_dlc_graph_prepare_args"
-        ] = cfg.rvc4.snpe_dlc_graph_prepare_args
+        options["snpe_dlc_graph_prepare_args"] = (
+            cfg.rvc4.snpe_dlc_graph_prepare_args
+        )
         if tool_version is not None:
             options["snpe_version"] = tool_version
     elif target in ["rvc2", "rvc3"]:

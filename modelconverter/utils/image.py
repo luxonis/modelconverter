@@ -1,6 +1,5 @@
 from itertools import chain
 from pathlib import Path
-from typing import List, Optional, Union
 
 import numpy as np
 from PIL import Image
@@ -10,17 +9,16 @@ from modelconverter.utils.types import DataType, Encoding, ResizeMethod
 
 
 def read_image(
-    path: Union[str, Path],
-    shape: List[int],
+    path: str | Path,
+    shape: list[int],
     encoding: Encoding,
     resize_method: ResizeMethod,
-    data_type: Optional[DataType] = None,
+    data_type: DataType | None = None,
     transpose: bool = True,
 ) -> np.ndarray:
     path = Path(path)
     if path.suffix == ".npy":
-        arr = np.load(path)
-        return arr
+        return np.load(path)
 
     if path.suffix == ".raw":
         if data_type is None:
@@ -28,10 +26,9 @@ def read_image(
                 "Input data type must be specified when"
                 "using `.raw` files for calibration."
             )
-        arr = np.fromfile(path, dtype=data_type.as_numpy_dtype()).reshape(
+        return np.fromfile(path, dtype=data_type.as_numpy_dtype()).reshape(
             shape
         )
-        return arr
 
     if len(shape) == 2:
         h, w, c = *shape, 1
@@ -100,7 +97,7 @@ def read_image(
     return img_arr
 
 
-def read_calib_dir(path: Path) -> List[Path]:
+def read_calib_dir(path: Path) -> list[Path]:
     return list(
         chain(
             *[

@@ -1,10 +1,9 @@
 import json
-import os
 import shutil
 from abc import ABC, abstractmethod
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import numpy as np
 import onnx
@@ -33,7 +32,7 @@ class Exporter(ABC):
         self.input_model = config.input_model
         self.input_file_type = config.input_file_type
         self.inputs = {inp.name: inp for inp in config.inputs}
-        self._inference_model_path: Optional[Path] = None
+        self._inference_model_path: Path | None = None
 
         self.outputs = {out.name: out for out in config.outputs}
         self.keep_intermediate_outputs = config.keep_intermediate_outputs
@@ -47,16 +46,14 @@ class Exporter(ABC):
         )
         self.intermediate_outputs_dir.mkdir(parents=True, exist_ok=True)
 
-        self._cmd_info: Dict[str, List[str]] = {}
+        self._cmd_info: dict[str, list[str]] = {}
         self.is_tflite = self.input_file_type == InputFileType.TFLITE
 
         with open(self.output_dir / "config.yaml", "w") as f:
             f.write(config.model_dump_json(indent=4))
 
         shutil.copy(self.input_model, self.intermediate_outputs_dir)
-        if os.path.exists(
-            str(self.input_model).replace(".onnx", ".onnx_data")
-        ):
+        if self.input_model.with_suffix(".onnx_data").exists():
             shutil.copy(
                 str(self.input_model).replace(".onnx", ".onnx_data"),
                 self.intermediate_outputs_dir,
@@ -65,9 +62,7 @@ class Exporter(ABC):
             assert self.config.input_bin is not None
             shutil.copy(self.config.input_bin, self.intermediate_outputs_dir)
         shutil.copy(self.input_model, self.output_dir)
-        if os.path.exists(
-            str(self.input_model).replace(".onnx", ".onnx_data")
-        ):
+        if self.input_model.with_suffix(".onnx_data").exists():
             shutil.copy(
                 str(self.input_model).replace(".onnx", ".onnx_data"),
                 self.output_dir,
@@ -124,21 +119,19 @@ class Exporter(ABC):
             self.input_model, "simplified.onnx"
         )
         logger.info(f"Saving simplified ONNX to {onnx_sim_path}")
-        if os.path.exists(
-            str(self.input_model).replace(".onnx", ".onnx_data")
-        ):
+        if self.input_model.with_suffix(".onnx_data").exists():
             onnx.save(
                 onnx_sim,
                 str(onnx_sim_path),
                 save_as_external_data=True,
-                location=f"{os.path.basename(str(onnx_sim_path))}_data",
+                location=f"{onnx_sim_path.name}_data",
             )
         else:
             onnx.save(onnx_sim, str(onnx_sim_path))
         return onnx_sim_path
 
     @abstractmethod
-    def exporter_buildinfo(self) -> Dict[str, Any]:
+    def exporter_buildinfo(self) -> dict[str, Any]:
         pass
 
     @abstractmethod
@@ -169,7 +162,7 @@ class Exporter(ABC):
 
         return new_output_path
 
-    def read_img_dir(self, path: Path, max_images: int) -> List[Path]:
+    def read_img_dir(self, path: Path, max_images: int) -> list[Path]:
         imgs = read_calib_dir(path)
         if not imgs:
             exit_with(FileNotFoundError(f"No images found in {path}"))
@@ -209,14 +202,16 @@ class Exporter(ABC):
             self.inputs[name].calibration = ImageCalibrationConfig(path=dest)
 
     @staticmethod
-    def _attach_suffix(path: Union[Path, str], suffix: str) -> Path:
+    def _attach_suffix(path: Path | str, suffix: str) -> Path:
         return Path(str(Path(path).with_suffix("")) + f"-{suffix.lstrip('-')}")
 
     @staticmethod
-    def _add_args(args: list, new_args: list, index=0):
+    def _add_args(args: list, new_args: list, index: int = 0) -> None:
         if new_args[index] not in args:
             args.extend(new_args)
 
-    def _subprocess_run(self, args: List[str], meta_name: str, **kwargs):
+    def _subprocess_run(
+        self, args: list[str], meta_name: str, **kwargs
+    ) -> None:
         subprocess_run(args, **kwargs)
         self._cmd_info[meta_name] = [str(arg) for arg in args]

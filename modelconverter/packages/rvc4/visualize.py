@@ -1,12 +1,10 @@
-import os
-from typing import Dict
+from pathlib import Path
 
-import polars as pl
 import plotly.graph_objects as go
+import polars as pl
 
+from modelconverter.packages.base_visualize import Visualizer
 from modelconverter.utils import constants
-
-from ..base_visualize import Visualizer
 
 
 class RVC4Visualizer(Visualizer):
@@ -54,11 +52,17 @@ class RVC4Visualizer(Visualizer):
             new_columns = {col: col.strip() for col in df.columns}
             df = df.rename(new_columns)
             df = df.with_columns(
-                (pl.col("Percentage_of_Total_Time").cast(pl.Float32()) * 100).alias("Percentage_of_Total_Time")
+                (
+                    pl.col("Percentage_of_Total_Time").cast(pl.Float32()) * 100
+                ).alias("Percentage_of_Total_Time")
             )
             metric_maps = {
                 metric: dict(
-                    zip(df["layer_name"].to_list(), df[metric].to_list())
+                    zip(
+                        df["layer_name"].to_list(),
+                        df[metric].to_list(),
+                        strict=True,
+                    )
                 )
                 for metric in metrics
             }
@@ -86,43 +90,43 @@ class RVC4Visualizer(Visualizer):
         for metric in metrics:
             new_y = []
             new_hovertemplates = []
-            for model in self.layer_csvs.keys():
+            for model in self.layer_csvs:
                 new_y.append(traces_data[model][metric])
                 new_hovertemplates.append(
                     f"Model: {model}<br>Layer: %{{x}}<br>{metric}: %{{y}}<extra></extra>"
                 )
 
-            button = dict(
-                label=metric,
-                method="update",
-                args=[
+            button = {
+                "label": metric,
+                "method": "update",
+                "args": [
                     {"y": new_y, "hovertemplate": new_hovertemplates},
                     {"yaxis": {"title": metric}},
                 ],
-            )
+            }
             buttons.append(button)
 
         fig.update_layout(
             updatemenus=[
-                dict(
-                    type="buttons",
-                    buttons=buttons,
-                    direction="right",
-                    showactive=True,
-                    x=0.5,
-                    xanchor="center",
-                    y=1.15,
-                    yanchor="top",
-                    pad={"r": 10, "t": 10},
-                )
+                {
+                    "type": "buttons",
+                    "buttons": buttons,
+                    "direction": "right",
+                    "showactive": True,
+                    "x": 0.5,
+                    "xanchor": "center",
+                    "y": 1.15,
+                    "yanchor": "top",
+                    "pad": {"r": 10, "t": 10},
+                }
             ],
             xaxis_title="Layer",
             yaxis_title=initial_metric,
             title="CPU Cycles per Layer by Model",
-            hoverlabel=dict(
-                font=dict(size=16),
-            ),
-            xaxis=dict(tickfont=dict(size=16), tickangle=45),
+            hoverlabel={
+                "font": {"size": 16},
+            },
+            xaxis={"tickfont": {"size": 16}, "tickangle": 45},
         )
 
         return fig
@@ -147,7 +151,11 @@ class RVC4Visualizer(Visualizer):
             df = df.rename(new_columns)
             metric_maps = {
                 metric: dict(
-                    zip(df["layer_name"].to_list(), df[metric].to_list())
+                    zip(
+                        df["layer_name"].to_list(),
+                        df[metric].to_list(),
+                        strict=True,
+                    )
                 )
                 for metric in metrics
             }
@@ -159,7 +167,7 @@ class RVC4Visualizer(Visualizer):
             traces_data[model_name] = model_data
 
         fig = go.Figure()
-        for model in self.layer_csvs.keys():
+        for model in self.layer_csvs:
             fig.add_trace(
                 go.Scatter(
                     x=traces_data[model]["x_axis"],
@@ -173,62 +181,57 @@ class RVC4Visualizer(Visualizer):
         for metric in metrics:
             new_y = []
             new_hovertemplates = []
-            for model in self.layer_csvs.keys():
+            for model in self.layer_csvs:
                 new_y.append(traces_data[model][metric])
                 new_hovertemplates.append(
                     f"Model: {model}<br>Layer: %{{x}}<br>{metric}: %{{y}}<extra></extra>"
                 )
 
-            button = dict(
-                label=metric,
-                method="update",
-                args=[
+            button = {
+                "label": metric,
+                "method": "update",
+                "args": [
                     {"y": new_y, "hovertemplate": new_hovertemplates},
                     {"yaxis": {"title": metric}},
                 ],
-            )
+            }
             buttons.append(button)
 
         fig.update_layout(
             updatemenus=[
-                dict(
-                    type="buttons",
-                    buttons=buttons,
-                    direction="right",
-                    showactive=True,
-                    x=0.5,
-                    xanchor="center",
-                    y=1.15,
-                    yanchor="top",
-                    pad={"r": 10, "t": 10},
-                )
+                {
+                    "type": "buttons",
+                    "buttons": buttons,
+                    "direction": "right",
+                    "showactive": True,
+                    "x": 0.5,
+                    "xanchor": "center",
+                    "y": 1.15,
+                    "yanchor": "top",
+                    "pad": {"r": 10, "t": 10},
+                }
             ],
             xaxis_title="Layer",
             yaxis_title=initial_metric,
             title="Layer Performance Metrics by Model",
-            hoverlabel=dict(font=dict(size=16)),
-            xaxis=dict(tickfont=dict(size=16), tickangle=45),
+            hoverlabel={"font": {"size": 16}},
+            xaxis={"tickfont": {"size": 16}, "tickangle": 45},
         )
 
         return fig
 
     def _get_csv_paths(
-        self, dir_path: str, comparison_type: str = "layer_comparison"
-    ) -> Dict[str, str]:
-        dir_path = (
-            dir_path if dir_path else f"{str(constants.OUTPUTS_DIR)}/analysis"
-        )
+        self, dir_path: Path, comparison_type: str = "layer_comparison"
+    ) -> dict[str, str]:
+        dir_path = dir_path if dir_path else constants.OUTPUTS_DIR / "analysis"
         csv_paths = {}
 
-        for root, _, files in os.walk(dir_path):
-            for file in files:
-                if comparison_type in file and file.endswith(".csv"):
-                    model_name = root.split("/")[-1]
-                    csv_paths[model_name] = os.path.join(root, file)
+        for file in dir_path.glob(f"*{comparison_type}*.csv"):
+            csv_paths[file.parent.name] = file
 
         return csv_paths
 
-    def _create_x_labels(self, layer_lists):
+    def _create_x_labels(self, layer_lists: list) -> list:
         pointers = [0] * len(layer_lists)
         x_labels = []
 

@@ -7,9 +7,9 @@ from .getters import (
 )
 
 __all__ = [
+    "get_analyzer",
     "get_benchmark",
     "get_exporter",
     "get_inferer",
-    "get_analyzer",
     "get_visualizer",
 ]

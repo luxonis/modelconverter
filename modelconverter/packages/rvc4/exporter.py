@@ -1,12 +1,12 @@
-import os
 import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, cast
+from typing import Any, NamedTuple, cast
 
 from loguru import logger
 
+from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
     exit_with,
@@ -24,8 +24,6 @@ from modelconverter.utils.types import (
     ResizeMethod,
     Target,
 )
-
-from ..base_exporter import Exporter
 
 
 class RVC4Exporter(Exporter):
@@ -82,8 +80,8 @@ class RVC4Exporter(Exporter):
                         "Proceeding with unoptimized model."
                     )
                 finally:
-                    if os.path.exists(onnx_modifier.output_path):
-                        os.remove(onnx_modifier.output_path)
+                    if onnx_modifier.output_path.exists():
+                        onnx_modifier.output_path.unlink()
         else:
             logger.warning(
                 "Input file type is not ONNX. Skipping pre-processing."
@@ -156,16 +154,16 @@ class RVC4Exporter(Exporter):
 
         return quantized_dlc_path
 
-    def prepare_calibration_data(self) -> Optional[Path]:
+    def prepare_calibration_data(self) -> Path | None:
         class Entry(NamedTuple):
             name: str
             path: Path
             encoding: Encoding
             resize_method: ResizeMethod
-            shape: List[int]
+            shape: list[int]
             data_type: DataType
 
-        entries: List[List[Entry]] = []
+        entries: list[list[Entry]] = []
 
         for name, inp in self.inputs.items():
             calib = inp.calibration
@@ -176,7 +174,7 @@ class RVC4Exporter(Exporter):
                 )
             if not all(x is not None for x in inp.shape):
                 exit_with(ValueError(f"Input `{name}` has dynamic shape."))
-            shape = cast(List[int], inp.shape)
+            shape = cast(list[int], inp.shape)
             if self.is_tflite:
                 shape = [shape[0], shape[3], shape[1], shape[2]]
             entries.append(
@@ -200,7 +198,7 @@ class RVC4Exporter(Exporter):
         i = 0
         with open(self.input_list_path, "w") as f:
             log = True
-            for entry in zip(*entries):
+            for entry in zip(*entries, strict=True):
                 entry_str = ""
                 for e in entry:
                     i += 1
@@ -285,9 +283,9 @@ class RVC4Exporter(Exporter):
         logger.info("Exported for RVC4")
         return self.input_model.with_suffix(".dlc")
 
-    def exporter_buildinfo(self) -> Dict[str, Any]:
+    def exporter_buildinfo(self) -> dict[str, Any]:
         snpe_version = subprocess.run(
-            ["snpe-dlc-quant", "--version"], capture_output=True
+            ["snpe-dlc-quant", "--version"], capture_output=True, check=False
         )
         return {
             "snpe_version": snpe_version.stdout.decode("utf-8").strip(),

@@ -1,23 +1,22 @@
 import re
 from abc import ABC, abstractmethod
-from collections import namedtuple
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Literal, NamedTuple, TypeAlias
 
 import polars as pl
 from loguru import logger
-from typing_extensions import TypeAlias
 
 from modelconverter.utils import is_hubai_available, resolve_path
 
-BenchmarkResult = namedtuple("Result", ["fps", "latency"])
-"""Benchmark result, tuple (FPS, latency in ms)"""
 
-Configuration: TypeAlias = Dict[str, Any]
-"""Configuration dictionary, package specific.
+class BenchmarkResult(NamedTuple):
+    """Benchmark result, tuple (FPS, latency in ms)"""
 
-i.e. `{"shaves": 4}` for RVC2
-"""
+    fps: float
+    latency: float | Literal["N/A"]
+
+
+Configuration: TypeAlias = dict[str, Any]
 
 
 class Benchmark(ABC):
@@ -27,7 +26,7 @@ class Benchmark(ABC):
     def __init__(
         self,
         model_path: str,
-        dataset_path: Optional[Path] = None,
+        dataset_path: Path | None = None,
     ):
         if any(model_path.endswith(ext) for ext in self.VALID_EXTENSIONS):
             self.model_path = resolve_path(model_path, Path.cwd())
@@ -48,12 +47,12 @@ class Benchmark(ABC):
                 model_instance,
             ) = hub_match.groups()
             if is_hubai_available(model_name, model_variant):
-                self.model_path = model_path
+                self.model_path = Path(model_path)
                 self.model_name = model_name
                 self.model_instance = model_instance
             else:
                 raise ValueError(
-                    f"Model {team_name+'/' if team_name else ''}{model_name}:{model_variant}{':'+model_instance if model_instance else ''} not found in HubAI."
+                    f"Model {team_name + '/' if team_name else ''}{model_name}:{model_variant}{':' + model_instance if model_instance else ''} not found in HubAI."
                 )
 
         self.dataset_path = dataset_path
@@ -75,11 +74,11 @@ class Benchmark(ABC):
 
     @property
     @abstractmethod
-    def all_configurations(self) -> List[Configuration]:
+    def all_configurations(self) -> list[Configuration]:
         pass
 
     def print_results(
-        self, results: List[Tuple[Configuration, BenchmarkResult]]
+        self, results: list[tuple[Configuration, BenchmarkResult]]
     ) -> None:
         assert results, "No results to print"
 
@@ -118,7 +117,7 @@ class Benchmark(ABC):
                     else "green"
                 )
             table.add_row(
-                *map(lambda x: f"[magenta]{x}", configuration.values()),
+                *(f"[magenta]{x}" for x in configuration.values()),
                 f"[{fps_color}]{result.fps:.2f}",
                 f"[{latency_color}]{result.latency}"
                 if isinstance(result.latency, str)
@@ -128,7 +127,7 @@ class Benchmark(ABC):
         console.print(table)
 
     def save_results(
-        self, results: List[Tuple[Configuration, BenchmarkResult]]
+        self, results: list[tuple[Configuration, BenchmarkResult]]
     ) -> None:
         assert results, "No results to save"
         df = pl.DataFrame(
@@ -152,7 +151,7 @@ class Benchmark(ABC):
             if not full
             else self.all_configurations
         )
-        results: List[Tuple[Configuration, BenchmarkResult]] = [
+        results: list[tuple[Configuration, BenchmarkResult]] = [
             (configuration, self.benchmark(configuration))
             for configuration in configurations
         ]

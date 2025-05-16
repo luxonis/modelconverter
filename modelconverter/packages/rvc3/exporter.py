@@ -4,6 +4,8 @@ from pathlib import Path
 import cv2
 from loguru import logger
 
+from modelconverter.packages.base_exporter import Exporter
+from modelconverter.packages.rvc2.exporter import RVC2Exporter
 from modelconverter.utils import exit_with, read_image
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
@@ -16,9 +18,6 @@ from modelconverter.utils.types import (
     InputFileType,
     Target,
 )
-
-from ..base_exporter import Exporter
-from ..rvc2.exporter import RVC2Exporter
 
 
 class RVC3Exporter(RVC2Exporter):
@@ -83,7 +82,7 @@ class RVC3Exporter(RVC2Exporter):
         return blob_output_path
 
     def calibrate(self, xml_path: Path) -> Path:
-        inp = list(self.inputs.values())[0]
+        inp = next(iter(self.inputs.values()))
         calib = inp.calibration
         assert isinstance(calib, ImageCalibrationConfig)
 

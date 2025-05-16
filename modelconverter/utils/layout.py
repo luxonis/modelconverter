@@ -1,7 +1,4 @@
-from typing import List
-
-
-def make_default_layout(shape: List[int]) -> str:
+def make_default_layout(shape: list[int]) -> str:
     """Creates a default layout for the given shape.
 
     Tries to guess most common layouts for the given shape pattern.
@@ -20,9 +17,9 @@ def make_default_layout(shape: List[int]) -> str:
         i += 1
     if len(shape) - i == 3:
         if shape[i] < shape[i + 1] and shape[i] < shape[i + 2]:
-            return "".join(layout + ["C", "H", "W"])
-        elif shape[-1] < shape[-2] and shape[-1] < shape[-3]:
-            return "".join(layout + ["H", "W", "C"])
+            return "".join([*layout, "C", "H", "W"])
+        if shape[-1] < shape[-2] and shape[-1] < shape[-3]:
+            return "".join([*layout, "H", "W", "C"])
     i = 0
     while len(layout) < len(shape):
         # Starting with "C" for more sensible defaults
@@ -34,8 +31,8 @@ def make_default_layout(shape: List[int]) -> str:
 
 
 def guess_new_layout(
-    old_layout: str, old_shape: List[int], new_shape: List[int]
-) -> str:
+    old_layout: str, old_shape: list[int], new_shape: list[int]
+) -> str | None:
     """Tries to guess the layout of the new shape.
 
     The new shape must contain the same elements as the old one.
@@ -61,13 +58,13 @@ def guess_new_layout(
     """
     if len(new_shape) != len(old_layout):
         raise ValueError(
-            "The length of the new shape must be the same as the old one."
+            "The length of the new shape must be the same as the old one"
         )
     if sorted(old_shape) != sorted(new_shape):
         raise ValueError(
-            "The new shape must contain the same elements as the old one."
+            "The new shape must contain the same elements as the old one"
         )
-    old_shape_tuples = list(zip(old_layout, old_shape))
+    old_shape_tuples = list(zip(old_layout, old_shape, strict=True))
 
     new_layout = []
     for dim in new_shape:

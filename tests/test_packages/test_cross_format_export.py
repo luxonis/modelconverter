@@ -9,7 +9,7 @@ URL_PREFIX: Final[str] = "gs://luxonis-test-bucket/modelconverter/"
 
 
 @pytest.mark.parametrize(
-    "from_format, to_format, model",
+    ("from_format", "to_format", "model"),
     [
         (f, t, m)
         for (f, t, m) in product(
@@ -20,7 +20,7 @@ URL_PREFIX: Final[str] = "gs://luxonis-test-bucket/modelconverter/"
         if (f, t, m) != ("native", "nn_archive", "yolov8n_seg")
     ],
 )
-def test_convert(from_format: str, to_format: str, model: str):
+def test_convert(from_format: str, to_format: str, model: str) -> None:
     if from_format == "nn_archive":
         url = f"{URL_PREFIX}{model}.tar.xz"
     else:

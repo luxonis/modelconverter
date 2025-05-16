@@ -3,10 +3,10 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import numpy as np
 from loguru import logger
+from typing_extensions import Self
 
 from modelconverter.utils import resolve_path
 from modelconverter.utils.config import (
@@ -21,13 +21,13 @@ class Inferer(ABC):
     model_path: Path
     src: Path
     dest: Path
-    in_shapes: Dict[str, List[int]]
-    in_dtypes: Dict[str, DataType]
-    out_shapes: Dict[str, List[int]]
-    out_dtypes: Dict[str, DataType]
-    resize_method: Dict[str, ResizeMethod]
-    encoding: Dict[str, Encoding]
-    config: Optional[SingleStageConfig] = None
+    in_shapes: dict[str, list[int]]
+    in_dtypes: dict[str, DataType]
+    out_shapes: dict[str, list[int]]
+    out_dtypes: dict[str, DataType]
+    resize_method: dict[str, ResizeMethod]
+    encoding: dict[str, Encoding]
+    config: SingleStageConfig | None = None
 
     def __post_init__(self):
         if self.dest.exists():
@@ -39,10 +39,11 @@ class Inferer(ABC):
     @classmethod
     def from_config(
         cls, model_path: str, src: Path, dest: Path, config: SingleStageConfig
-    ):
-        for container, typ_name in zip(
-            [config.inputs, config.outputs], ["input", "output"]
-        ):
+    ) -> Self:
+        for container, typ_name in [
+            (config.inputs, "input"),
+            (config.outputs, "output"),
+        ]:
             for node in container:
                 if node.shape is None:
                     raise ValueError(
@@ -73,18 +74,16 @@ class Inferer(ABC):
         )
 
     @abstractmethod
-    def setup(self):
-        pass
+    def setup(self) -> None: ...
 
     @abstractmethod
-    def infer(self, inputs: Dict[str, Path]) -> Dict[str, np.ndarray]:
-        pass
+    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]: ...
 
-    def run(self):
+    def run(self) -> None:
         t = time.time()
         logger.info(f"Starting inference on {self.src}.")
         iterators = [input_name.iterdir() for input_name in self.src.iterdir()]
-        for input_files in zip(*iterators):
+        for input_files in zip(*iterators, strict=True):
             inputs = {
                 file_path.parent.name: file_path for file_path in input_files
             }

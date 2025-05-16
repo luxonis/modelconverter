@@ -1,12 +1,11 @@
 from pathlib import Path
-from typing import Dict, Union
 
 import numpy as np
 
 from modelconverter.utils import read_image
 from modelconverter.utils.types import Encoding, ResizeMethod
+from tests.test_packages.onnx_inferer import ONNXInferer
 
-from ..onnx_inferer import ONNXInferer
 from .base_metric import Metric
 
 
@@ -22,7 +21,7 @@ class MNISTMetric(Metric):
         else:
             self.misses += 1
 
-    def get_result(self) -> Dict[str, float]:
+    def get_result(self) -> dict[str, float]:
         return {"accuracy": self.hits / (self.hits + self.misses)}
 
     def reset(self) -> None:
@@ -30,7 +29,9 @@ class MNISTMetric(Metric):
         self.misses = 0
 
     @staticmethod
-    def eval_onnx(onnx_path: Union[Path, str], dataset_path: Union[Path, str]):
+    def eval_onnx(
+        onnx_path: Path | str, dataset_path: Path | str
+    ) -> dict[str, float]:
         dataset_path = Path(dataset_path)
         onnx_path = Path(onnx_path)
         onnx_inferer = ONNXInferer(onnx_path)

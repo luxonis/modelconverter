@@ -4,12 +4,12 @@ import shutil
 import tarfile
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import numpy as np
 import onnx
 import pytest
 from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
+from luxonis_ml.typing import Params
 from onnx import checker, helper
 from onnx.onnx_pb import TensorProto
 
@@ -168,9 +168,9 @@ def setup():
 
 
 def set_nested_config_value(
-    config: Dict, keys: List[str], values: List[str]
-) -> Dict:
-    for key, value in zip(keys, values):
+    config: dict, keys: list[str], values: list[str]
+) -> dict:
+    for key, value in zip(keys, values, strict=True):
         keys = key.split(".")
         current_level = config["model"]
 
@@ -187,7 +187,7 @@ def set_nested_config_value(
 
 
 def create_json(
-    keys: Optional[List[str]] = None, values: Optional[List[str]] = None
+    keys: list[str] | None = None, values: list[str] | None = None
 ) -> str:
     config = {
         "config_version": "1.0",
@@ -267,12 +267,12 @@ inputs:
 
 
 def load_and_compare(
-    path: Optional[str],
-    opts: List[str],
+    path: str | None,
+    opts: list[str],
     expected: dict,
     multistage: bool = False,
 ):
-    overrides = {opts[i]: opts[i + 1] for i in range(0, len(opts), 2)}
+    overrides: Params = {opts[i]: opts[i + 1] for i in range(0, len(opts), 2)}
     config = Config.get_config(path, overrides).model_dump()
     if not multistage:
         name = expected["input_model"].stem
@@ -606,7 +606,7 @@ def test_no_top_level():
 
 
 @pytest.mark.parametrize(
-    "key, value",
+    ("key", "value"),
     [
         ("non_existent", "value"),
         ("inputs.0.non_existent", "value"),
@@ -626,7 +626,7 @@ def test_missing(key: str, value: str):
 
 
 @pytest.mark.parametrize(
-    "key, value",
+    ("key", "value"),
     [
         ("inputs.0.encoding.from", "RGBA"),
         ("mean_values", "scale"),
@@ -648,7 +648,7 @@ def test_incorrect_type(key: str, value: str):
 
 
 @pytest.mark.parametrize(
-    "keys, values",
+    ("keys", "values"),
     [
         (
             [],
@@ -744,8 +744,8 @@ def test_incorrect_type(key: str, value: str):
         ),
     ],
 )
-def test_modified_onnx(keys: List[str], values: List[str]):
-    overrides = {keys[i]: values[i] for i in range(len(keys))}
+def test_modified_onnx(keys: list[str], values: list[str]):
+    overrides: Params = {keys[i]: values[i] for i in range(len(keys))}
     overrides["input_model"] = str(DATA_DIR / "dummy_model.onnx")
     config = Config.get_config(
         None,
@@ -818,7 +818,7 @@ def test_modified_onnx(keys: List[str], values: List[str]):
 
 
 @pytest.mark.parametrize(
-    "keys, values, nn_preprocess, expected",
+    ("keys", "values", "nn_preprocess", "expected"),
     [
         (
             [],
@@ -921,12 +921,12 @@ def test_modified_onnx(keys: List[str], values: List[str]):
     ],
 )
 def test_output_nn_config_from_yaml(
-    keys: List[str],
-    values: List[str],
+    keys: list[str],
+    values: list[str],
     nn_preprocess: bool,
-    expected: List[Dict],
+    expected: list[dict],
 ):
-    overrides = {keys[i]: values[i] for i in range(len(keys))}
+    overrides: Params = {keys[i]: values[i] for i in range(len(keys))}
     overrides["input_model"] = str(DATA_DIR / "dummy_model.onnx")
     config = Config.get_config(
         None,
@@ -967,7 +967,7 @@ def test_output_nn_config_from_yaml(
 
 
 @pytest.mark.parametrize(
-    "keys, values, nn_preprocess, expected",
+    ("keys", "values", "nn_preprocess", "expected"),
     [
         (
             [],
@@ -1119,10 +1119,10 @@ def test_output_nn_config_from_yaml(
     ],
 )
 def test_output_nn_config_from_nn_archive(
-    keys: List[str],
-    values: List[str],
+    keys: list[str],
+    values: list[str],
     nn_preprocess: bool,
-    expected: List[Dict],
+    expected: list[dict],
 ):
     nn_archive_path = DATA_DIR / "dummy_model.tar.xz"
     with tempfile.TemporaryDirectory() as tmpdirname:
@@ -1173,7 +1173,7 @@ def test_output_nn_config_from_nn_archive(
 
 
 @pytest.mark.parametrize(
-    "key, value, expected",
+    ("key", "value", "expected"),
     [
         (
             "",
@@ -1233,7 +1233,7 @@ def test_encoding(key: str, value: str, expected: EncodingConfig):
 
 
 @pytest.mark.parametrize(
-    "keys, values, expected",
+    ("keys", "values", "expected"),
     [
         (
             [],
@@ -1310,7 +1310,7 @@ def test_encoding(key: str, value: str, expected: EncodingConfig):
     ],
 )
 def test_encoding_nn_archive(
-    keys: List[str], values: List[str], expected: EncodingConfig
+    keys: list[str], values: list[str], expected: EncodingConfig
 ):
     nn_archive_path = DATA_DIR / "dummy_model.tar.xz"
     with tempfile.TemporaryDirectory() as tmpdirname:

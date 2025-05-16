@@ -3,7 +3,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Literal, Optional, cast
+from typing import Literal, cast
 
 import yaml
 from loguru import logger
@@ -21,7 +21,7 @@ def get_default_target_version(
         "rvc2": "2022.3.0",
         "rvc3": "2022.3.0",
         "rvc4": "2.23.0",
-        "hailo": "2024.04",
+        "hailo": "2025.04",
     }[target]
 
 
@@ -49,7 +49,7 @@ def generate_compose_config(image: str, gpu: bool = False) -> str:
         "secrets": {
             "gcp-credentials": {
                 "file": environ.GOOGLE_APPLICATION_CREDENTIALS
-                or tempfile.NamedTemporaryFile(delete=False).name,
+                or tempfile.NamedTemporaryFile(delete=False).name,  # noqa: SIM115
             }
         },
     }
@@ -77,7 +77,7 @@ def check_docker() -> None:
 def docker_build(
     target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
     bare_tag: str,
-    version: Optional[str] = None,
+    version: str | None = None,
 ) -> str:
     check_docker()
     if version is None:
@@ -98,7 +98,7 @@ def docker_build(
     ]
     if version is not None:
         args += ["--build-arg", f"VERSION={version}"]
-    result = subprocess.run(args)
+    result = subprocess.run(args, check=False)
     if result.returncode != 0:
         raise RuntimeError("Failed to build the docker image")
     return image
@@ -138,7 +138,7 @@ def docker_exec(
     *args: str,
     bare_tag: str,
     use_gpu: bool,
-    version: Optional[str] = None,
+    version: str | None = None,
 ) -> None:
     version = version or get_default_target_version(target)
     image = get_docker_image(target, bare_tag, version)

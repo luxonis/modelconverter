@@ -473,8 +473,8 @@ output_path/
 ModelConverter offers additional analysis tools for the RVC4 platform. The tools provide an in-depth look at the following:
 
 1. The outputs of all layers in comparison to the ground truth ONNX model,
-2. The cycle usage of each layer on an RVC4 device.
-3. Visualizations for fast and easy comparison of multiple models.
+1. The cycle usage of each layer on an RVC4 device.
+1. Visualizations for fast and easy comparison of multiple models.
 
 This gives the user better insight into the successful quantization of a model, helps discover potential speed bottleneck layers, and allows for the comparison of different quantization parameters.
 
@@ -487,9 +487,9 @@ pip install modelconv[analysis]
 There are several options to run the tools. The most general approach is:
 
 ```bash
-modelconverter analyze 
-              <dlc_model> 
-              <onnx_model> 
+modelconverter analyze
+              <dlc_model>
+              <onnx_model>
               <input_name_1> <path_to_input_images_1>
               ...
               <input_name_n> <path_to_input_images_n>

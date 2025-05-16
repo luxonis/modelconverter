@@ -1,49 +1,55 @@
-import os
+from tests.conftest import ConvertEnv
 
 from .common import check_convert, mnist_infer, resnet18_infer, yolov6n_infer
 
 
-def test_mnist_convert(rvc2_mnist_onnx_env):
+def test_mnist_convert(rvc2_mnist_onnx_env: ConvertEnv):
     check_convert(rvc2_mnist_onnx_env)
 
 
-def test_mnist_infer(rvc2_mnist_onnx_env, tool_version):
+def test_mnist_infer(rvc2_mnist_onnx_env: ConvertEnv, tool_version: str):
     mnist_infer(rvc2_mnist_onnx_env, tool_version)
 
 
-def test_resnet18_convert(rvc2_resnet18_onnx_env):
+def test_resnet18_convert(rvc2_resnet18_onnx_env: ConvertEnv):
     check_convert(rvc2_resnet18_onnx_env)
 
 
-def test_resnet18_ir_convert(rvc2_resnet18_ir_env):
+def test_resnet18_ir_convert(rvc2_resnet18_ir_env: ConvertEnv):
     check_convert(rvc2_resnet18_ir_env)
 
 
-def test_resnet18_archive_convert(rvc2_resnet18_archive_env):
+def test_resnet18_archive_convert(rvc2_resnet18_archive_env: ConvertEnv):
     check_convert(rvc2_resnet18_archive_env)
 
 
-def test_resnet18_infer(rvc2_resnet18_onnx_env, tool_version):
+def test_resnet18_infer(rvc2_resnet18_onnx_env: ConvertEnv, tool_version: str):
     resnet18_infer(rvc2_resnet18_onnx_env, tool_version)
 
 
-def test_resnet18_archive_infer(rvc2_resnet18_archive_env, tool_version):
+def test_resnet18_archive_infer(
+    rvc2_resnet18_archive_env: ConvertEnv, tool_version: str
+):
     resnet18_infer(rvc2_resnet18_archive_env, tool_version)
 
 
-def test_yolov6_convert(rvc2_yolov6n_onnx_env):
+def test_yolov6_convert(rvc2_yolov6n_onnx_env: ConvertEnv):
     check_convert(rvc2_yolov6n_onnx_env)
 
 
-def test_yolov6n_infer(rvc2_yolov6n_onnx_env, tool_version):
+def test_yolov6n_infer(rvc2_yolov6n_onnx_env: ConvertEnv, tool_version: str):
     yolov6n_infer(rvc2_yolov6n_onnx_env, tool_version)
 
 
-def test_resnet18_superblob_convert(rvc2_superblob_resnet18_onnx_env):
+def test_resnet18_superblob_convert(
+    rvc2_superblob_resnet18_onnx_env: ConvertEnv,
+):
     check_convert(rvc2_superblob_resnet18_onnx_env)
 
 
-def test_resnet18_superblob_valid(rvc2_superblob_resnet18_onnx_env):
+def test_resnet18_superblob_valid(
+    rvc2_superblob_resnet18_onnx_env: ConvertEnv,
+):
     """
     Check that superblob has the following structure:
     - Header (8 bytes): blob size
@@ -61,9 +67,9 @@ def test_resnet18_superblob_valid(rvc2_superblob_resnet18_onnx_env):
     _, superblob_path, *_ = rvc2_superblob_resnet18_onnx_env
     HEADER_SIZE = 8 + 16 * 8
 
-    assert (
-        os.path.getsize(superblob_path) >= HEADER_SIZE
-    ), "Superblob is too small to contain a header"
+    assert superblob_path.stat().st_size >= HEADER_SIZE, (
+        "Superblob is too small to contain a header"
+    )
 
     with open(superblob_path, "rb") as f:
         superblob_bytes = f.read()
@@ -75,7 +81,7 @@ def test_resnet18_superblob_valid(rvc2_superblob_resnet18_onnx_env):
     ]
 
     assert (
-        os.path.getsize(superblob_path)
+        superblob_path.stat().st_size
         == blob_size + sum(patch_sizes) + HEADER_SIZE
     ), "Superblob size does not match the header"
 

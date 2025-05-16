@@ -1,5 +1,4 @@
 Pillow
-PyYAML
 gcsfs
 luxonis-ml[data,nn_archive]>=0.6.4,<0.7.0
 onnx>=1.17.0
@@ -7,6 +6,7 @@ onnxruntime
 onnxsim
 s3fs
 s3transfer
+click==8.1.8
 typer
 docker
 keyring
@@ -14,4 +14,3 @@ onnx_graphsurgeon
 onnxoptimizer
 wget
 aiobotocore<2.18
-polars

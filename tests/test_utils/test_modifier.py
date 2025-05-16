@@ -1,9 +1,8 @@
 import json
-import os
 import shutil
 from pathlib import Path
-from typing import Tuple
 
+import pytest
 import wget
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import InputType
@@ -29,9 +28,9 @@ EXCEMPT_OPTIMIZATION = [
 ]
 
 
-def download_onnx_models():
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR)
+def download_onnx_models() -> list[Path]:
+    if not DATA_DIR.exists():
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     hub_ai_models = Request.get(
         "models/", params={"is_public": True, "limit": 10}
@@ -41,8 +40,8 @@ def download_onnx_models():
         if "ONNX" in model["exportable_types"]:
             model_name = model["name"]
             model_dir = DATA_DIR / f"{model_name}"
-            if not os.path.exists(model_dir):
-                os.makedirs(model_dir)
+            if not model_dir.exists():
+                model_dir.mkdir(parents=True, exist_ok=True)
             model_id = model["id"]
 
             model_variants = Request.get(
@@ -86,7 +85,7 @@ def download_onnx_models():
 
                 shutil.rmtree(model_dir)
             else:
-                os.remove(filename)
+                Path(filename).unlink()
 
     onnx_models = []
     for onnx_file in DATA_DIR.glob("*.onnx"):
@@ -98,7 +97,7 @@ def download_onnx_models():
     return onnx_models
 
 
-def get_config(nn_config: Path) -> Tuple[Config, str]:
+def get_config(nn_config: Path) -> tuple[Config, str]:
     with open(nn_config) as f:
         archive_config = NNArchiveConfig(**json.load(f))
 
@@ -200,15 +199,13 @@ def get_config(nn_config: Path) -> Tuple[Config, str]:
     return Config.get_config(config, None), main_stage_key
 
 
-def pytest_generate_tests(metafunc):
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     params = download_onnx_models()
     metafunc.parametrize("onnx_file", params)
 
 
-def test_onnx_model(onnx_file):
-    skip_optimization = (
-        True if onnx_file.stem in EXCEMPT_OPTIMIZATION else False
-    )
+def test_onnx_model(onnx_file: Path):
+    skip_optimization = onnx_file.stem in EXCEMPT_OPTIMIZATION
     nn_config = onnx_file.parent / f"{onnx_file.stem}_config.json"
     cfg, main_stage_key = get_config(nn_config)
 
@@ -216,8 +213,8 @@ def test_onnx_model(onnx_file):
         input_config.name: input_config
         for input_config in cfg.stages[main_stage_key].inputs
     }
-    for input_name in input_configs:
-        input_configs[input_name].layout = "NCHW"
+    for input_config in input_configs.values():
+        input_config.layout = "NCHW"
 
     modified_onnx = onnx_file.parent / f"{onnx_file.stem}_modified.onnx"
     onnx_attach_normalization_to_inputs(
@@ -236,6 +233,5 @@ def test_onnx_model(onnx_file):
     if onnx_modifier.has_dynamic_shape:
         return
 
-    assert (
-        onnx_modifier.modify_onnx() and onnx_modifier.compare_outputs()
-    ), f"Test failed for {onnx_file.name}"
+    assert onnx_modifier.modify_onnx()
+    assert onnx_modifier.compare_outputs()

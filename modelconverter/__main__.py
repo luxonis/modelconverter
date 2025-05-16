@@ -1,14 +1,16 @@
+import sys
 from importlib.metadata import version
 from pathlib import Path
-from typing import Optional
+from typing import Annotated
 
 import typer
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator
 from luxonis_ml.utils import LuxonisFileSystem, setup_logging
-from typing_extensions import Annotated
 
 from modelconverter.cli import (
+    AnalyzeCyclesOption,
+    AnalyzeOutputsOption,
     ArchivePreprocessOption,
     ComparisonPathArgument,
     DevOption,
@@ -16,8 +18,6 @@ from modelconverter.cli import (
     FormatOption,
     GPUOption,
     ImagePathArgument,
-    AnalyzeCyclesOption,
-    AnalyzeOutputsOption,
     ModelPathArgument,
     ModelPathOption,
     OptsArgument,
@@ -77,7 +77,7 @@ def infer(
     path: PathOption,
     output_dir: OutputDirOption,
     stage: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             ...,
             "--stage",
@@ -92,7 +92,7 @@ def infer(
         typer.Option(help="Use GPU for conversion. Only relevant for HAILO."),
     ] = True,
     opts: OptsArgument = None,
-):
+) -> None:
     """Runs inference on the specified target platform."""
 
     tag = "dev" if dev else "latest"
@@ -110,7 +110,7 @@ def infer(
             ).run()
         except Exception:
             logger.exception("Encountered an unexpected error!")
-            exit(2)
+            sys.exit(2)
     else:
         if dev:
             docker_build(target.value, bare_tag=tag, version=version)
@@ -139,8 +139,9 @@ def shell(
     dev: DevOption = False,
     version: VersionOption = None,
     gpu: GPUOption = True,
-):
-    """Boots up a shell inside a docker container for the specified target platform."""
+) -> None:
+    """Boots up a shell inside a docker container for the specified
+    target platform."""
     if dev:
         docker_build(target.value, bare_tag="dev", version=version)
     docker_exec(
@@ -170,7 +171,7 @@ def benchmark(
     save: Annotated[
         bool, typer.Option(..., help="Saves the benchmark results to a file.")
     ] = False,
-):
+) -> None:
     """Runs benchmark on the specified target platform.
 
     Specific target options:
@@ -214,7 +215,7 @@ def benchmark(
     """
 
     kwargs = {}
-    for key, value in zip(ctx.args[::2], ctx.args[1::2]):
+    for key, value in zip(ctx.args[::2], ctx.args[1::2], strict=True):
         if key.startswith("--"):
             key = key[2:].replace("-", "_")
         else:
@@ -240,7 +241,7 @@ def analyze(
     analyze_outputs: AnalyzeOutputsOption = True,
     analyze_cycles: AnalyzeCyclesOption = True,
     dev: DevOption = False,
-):
+) -> None:
     """Runs layer and cycle analysis on the specified DLC model.
 
     ---
@@ -262,7 +263,7 @@ def analyze(
     """
 
     tag = "dev" if dev else "latest"
-    
+
     if in_docker():
         try:
             logger.info("Starting analysis")
@@ -282,19 +283,21 @@ def analyze(
             analyzer = Analyzer(dlc_model_path, image_dirs_dict)
             if analyze_outputs:
                 logger.info("Analyzing layer outputs")
-                analyzer.analyze_layer_outputs(resolve_path(onnx_model_path, Path.cwd()))
+                analyzer.analyze_layer_outputs(
+                    resolve_path(onnx_model_path, Path.cwd())
+                )
             if analyze_cycles:
                 logger.info("Analyzing layer cycles")
                 analyzer.analyze_layer_cycles()
             logger.info("Analysis finished successfully")
         except Exception:
             logger.exception("Encountered an unexpected error!")
-            exit(2)
+            sys.exit(2)
     else:
         if dev:
             docker_build("rvc4", bare_tag=tag)
-            
-        args =[
+
+        args = [
             "analyze",
             "--dlc-model-path",
             dlc_model_path,
@@ -304,23 +307,24 @@ def analyze(
         ]
         args.extend(image_dirs)
         args.append(
-            "--analyze-outputs" if analyze_outputs else "--no-analyze-outputs")
+            "--analyze-outputs" if analyze_outputs else "--no-analyze-outputs"
+        )
         args.append(
-            "--analyze-cycles" if analyze_cycles else "--no-analyze-cycles")
-        
+            "--analyze-cycles" if analyze_cycles else "--no-analyze-cycles"
+        )
+
         docker_exec(
             "rvc4",
             *args,
             bare_tag=tag,
             use_gpu=False,
         )
-        
-        
+
 
 @app.command()
 def visualize(
     dir_path: ComparisonPathArgument = "",
-):
+) -> None:
     """Visualizes the analysis results.
 
     ---
@@ -346,7 +350,7 @@ def convert(
     gpu: GPUOption = True,
     version: VersionOption = None,
     main_stage: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             ...,
             "--main-stage",
@@ -359,7 +363,7 @@ def convert(
     ] = None,
     archive_preprocess: ArchivePreprocessOption = False,
     opts: OptsArgument = None,
-):
+) -> None:
     """Exports the model for the specified target platform."""
 
     tag = "dev" if dev else "latest"
@@ -431,9 +435,9 @@ def convert(
                     save_path=str(output_path),
                     cfg_dict=nn_archive.model_dump(),
                     executables_paths=[
-                        str(out_model) for out_model in out_models
-                    ]
-                    + [str(output_path / "buildinfo.json")],
+                        *out_models,
+                        output_path / "buildinfo.json",
+                    ],
                 )
                 out_models = [generator.make_archive()]
                 logger.info(f"Model exported to {out_models[0]}")
@@ -460,10 +464,10 @@ def convert(
             logger.exception(
                 "Encountered an exception in the conversion process!"
             )
-            exit(1)
+            sys.exit(1)
         except Exception:
             logger.exception("Encountered an unexpected error!")
-            exit(2)
+            sys.exit(2)
     else:
         if dev:
             docker_build(target.value, bare_tag=tag, version=version)
@@ -496,7 +500,7 @@ def archive(
         str, typer.Argument(help="Path or an URL of the model file.")
     ],
     save_path: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "-s",
             "--save-path",
@@ -506,12 +510,12 @@ def archive(
         ),
     ] = None,
     put_file_plugin: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="The name of the plugin to use for uploading the file."
         ),
     ] = None,
-):
+) -> None:
     model_path = resolve_path(path, MODELS_DIR)
     cfg = archive_from_model(model_path)
     save_path = save_path or f"{cfg.model.metadata.name}.tar.xz"
@@ -548,10 +552,10 @@ def archive(
         logger.info(f"Archive saved to {save_path}")
 
 
-def version_callback(value: bool):
+def version_callback(value: bool) -> None:
     if value:
         typer.echo(f"ModelConverter Version: {version('modelconv')}")
-        raise typer.Exit()
+        raise typer.Exit
 
 
 @app.callback()
@@ -565,7 +569,7 @@ def common(
             help="Show version and exit.",
         ),
     ] = False,
-):
+) -> None:
     pass
 
 

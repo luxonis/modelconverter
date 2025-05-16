@@ -1,13 +1,15 @@
 from pathlib import Path
-from typing import List
 
 import depthai as dai
 import numpy as np
 from rich.progress import Progress
 
+from modelconverter.packages.base_benchmark import (
+    Benchmark,
+    BenchmarkResult,
+    Configuration,
+)
 from modelconverter.utils import environ
-
-from ..base_benchmark import Benchmark, BenchmarkResult, Configuration
 
 
 class RVC2Benchmark(Benchmark):
@@ -20,7 +22,7 @@ class RVC2Benchmark(Benchmark):
         return {"repetitions": 10, "num_messages": 50, "num_threads": 2}
 
     @property
-    def all_configurations(self) -> List[Configuration]:
+    def all_configurations(self) -> list[Configuration]:
         return [
             {"repetitions": 10, "num_messages": 50, "num_threads": 1},
             {"repetitions": 10, "num_messages": 50, "num_threads": 2},
@@ -44,16 +46,20 @@ class RVC2Benchmark(Benchmark):
             )
 
         if isinstance(model_path, str):
-            modelPath = dai.getModelFromZoo(
-                dai.NNModelDescription(
-                    model_path,
-                    platform=device.getPlatformAsString(),
-                ),
-                apiKey=environ.HUBAI_API_KEY if environ.HUBAI_API_KEY else "",
+            modelPath = Path(
+                dai.getModelFromZoo(
+                    dai.NNModelDescription(
+                        model_path,
+                        platform=device.getPlatformAsString(),
+                    ),
+                    apiKey=environ.HUBAI_API_KEY
+                    if environ.HUBAI_API_KEY
+                    else "",
+                )
             )
-        elif str(model_path).endswith(".tar.xz"):
-            modelPath = str(model_path)
-        elif str(model_path).endswith(".blob"):
+        elif (
+            str(model_path).endswith(".tar.xz") or model_path.suffix == ".blob"
+        ):
             modelPath = model_path
         else:
             raise ValueError(
@@ -63,7 +69,7 @@ class RVC2Benchmark(Benchmark):
         inputSizes = []
         inputNames = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            modelArhive = dai.NNArchive(modelPath)
+            modelArhive = dai.NNArchive(str(modelPath))
             for input in modelArhive.getConfig().model.inputs:
                 inputSizes.append(input.shape[::-1])
                 inputNames.append(input.name)
@@ -74,7 +80,7 @@ class RVC2Benchmark(Benchmark):
                 inputNames.append(input)
 
         inputData = dai.NNData()
-        for name, inputSize in zip(inputNames, inputSizes):
+        for name, inputSize in zip(inputNames, inputSizes, strict=True):
             img = np.random.randint(
                 0, 255, (inputSize[1], inputSize[0], 3), np.uint8
             )
@@ -118,7 +124,7 @@ class RVC2Benchmark(Benchmark):
             while pipeline.isRunning() and rep < repetitions:
                 benchmarkReport = outputQueue.get()
                 if not isinstance(benchmarkReport, dai.BenchmarkReport):
-                    raise ValueError(
+                    raise TypeError(
                         f"Expected BenchmarkReport, got {type(benchmarkReport)}"
                     )
                 fps = benchmarkReport.fps
@@ -130,4 +136,4 @@ class RVC2Benchmark(Benchmark):
                 rep += 1
 
             # Currently, the latency measurement is not supported on RVC2 by the depthai library.
-            return BenchmarkResult(np.mean(fps_list), "N/A")
+            return BenchmarkResult(float(np.mean(fps_list)), "N/A")

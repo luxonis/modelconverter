@@ -1,7 +1,6 @@
 import json
 import shutil
 from pathlib import Path
-from typing import List
 
 import numpy as np
 from loguru import logger
@@ -114,11 +113,11 @@ class MultiStageExporter:
                     safe_globals = {"__builtins__": {}}
 
                     try:
-                        exec(  # nosemgrep
+                        exec(  # nosemgrep  # noqa: S102
                             script, safe_globals, local_scope
                         )
                     except Exception as e:
-                        raise RuntimeError(f"Error executing script: {e}")
+                        raise RuntimeError("Error executing script") from e
 
                     if "run_script" not in local_scope:
                         raise RuntimeError(
@@ -131,7 +130,7 @@ class MultiStageExporter:
 
                 inp_config.calibration = ImageCalibrationConfig(path=dest)
 
-    def run(self) -> List[Path]:
+    def run(self) -> list[Path]:
         output_paths = []
         buildinfo = {}
         for stage_name in self.config.stages:

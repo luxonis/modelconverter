@@ -1,3 +1,4 @@
+import sys
 from typing import NoReturn
 
 from loguru import logger
@@ -21,4 +22,4 @@ class SubprocessException(ModelconverterException):
 
 def exit_with(exception: BaseException, code: int = 1) -> NoReturn:
     logger.exception(exception)
-    exit(code)
+    sys.exit(code)

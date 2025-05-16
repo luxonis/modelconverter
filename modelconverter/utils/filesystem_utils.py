@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Optional, Union
 
 from luxonis_ml.utils import LuxonisFileSystem
 
@@ -22,7 +21,7 @@ def resolve_path(string: str, dest: Path) -> Path:
 
 
 def download_from_remote(
-    url: str, dest: Union[Path, str], max_files: int = -1
+    url: str, dest: Path | str, max_files: int = -1
 ) -> Path:
     """Downloads file(s) from remote bucket storage.
 
@@ -40,25 +39,24 @@ def download_from_remote(
             if i == max_files:
                 break
             if not local_path.exists() or not os.getenv(
-                "MODELCONVERTER_UNSAFE_CACHE", False
+                "MODELCONVERTER_UNSAFE_CACHE"
             ):
                 fs.get_file(
                     remote_file, str(local_path / Path(remote_file).name)
                 )
 
-    else:
-        if not local_path.exists() or not os.getenv(
-            "MODELCONVERTER_UNSAFE_CACHE", False
-        ):
-            fs.get_file(remote_path, str(local_path))
+    elif not local_path.exists() or not os.getenv(
+        "MODELCONVERTER_UNSAFE_CACHE"
+    ):
+        fs.get_file(remote_path, str(local_path))
 
     return local_path
 
 
 def upload_file_to_remote(
-    local_path: Union[Path, str],
+    local_path: Path | str,
     url: str,
-    put_file_plugin: Optional[str] = None,
+    put_file_plugin: str | None = None,
 ) -> None:
     """Uploads a file to remote bucket storage."""
 
