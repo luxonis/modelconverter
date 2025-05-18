@@ -741,32 +741,37 @@ def convert(
     is_yolo: bool = False,
     model_id: str | None = None,
     version: str | None = None,
+    variant_description: str | None = None,
     repository_url: str | None = None,
     commit_hash: str | None = None,
     target_precision: TargetPrecision = "INT8",
-    quantization_data: Quantization = "random",
     domain: str | None = None,
-    tags: list[str] | None = None,
+    variant_tags: list[str] | None = None,
     variant_id: str | None = None,
+    quantization_data: Quantization | None = None,
+    instance_tags: list[str] | None = None,
+    input_shape: list[int] | None = None,
+    is_deployable: bool | None = None,
     output_dir: str | None = None,
     tool_version: str | None = None,
     yolo_input_shape: str | None = None,
     yolo_version: YoloVersion | None = None,
     yolo_class_names: list[str] | None = None,
+    api_key: str | None = None,
 ) -> Path:
     """Starts the online conversion process.
 
     Parameters
     ----------
-    target: Target
+    target : Target
         The target platform.
-    path: str
+    path : str
         Path to the model file, NN Archive, or configuration file.
-    name: str, optional
+    name : str, optional
         Name of the model. If not specified, the name will be taken from the configuration file or the model file.
-    license_type: License, optional
+    license_type : License, optional
         The type of the license.
-    is_public: bool, optional
+    is_public : bool, optional
         Whether the model is public (True), private (False), or team (None).
     description_short : str, optional
         Short description of the model.
@@ -795,10 +800,14 @@ def convert(
         Quantization data.
     domain : str, optional
         Domain of the model.
-    tags : list[str], optional
-        List of tags for the model.
+    variant_tags : list[str], optional
+        List of tags for the model variant.
     variant_id : str, optional
         ID of an existing Model Version resource. If specified, this version will be used instead of creating a new one.
+    input_shape : list[int], optional
+        The input shape of the model instance.
+    is_deployable : bool, optional
+        Whether the model instance is deployable.
     output_dir : str, optional
         Output directory for the downloaded files.
     tool_version : str, optional
@@ -809,119 +818,137 @@ def convert(
         YOLO version.
     yolo_class_names : list[str], optional
         List of class names for YOLO models.
+    api_key : str, optional
+        API key for authentication. If not specified, the API key will be taken from the environment variable `HUBAI_API_KEY`.
     opts : list[str], optional
         Additional options for the conversion process.
     """
-    opts = opts or []
 
-    is_archive = is_nn_archive(path)
+    old_key = environ.HUBAI_API_KEY
 
-    def is_yaml(path: str) -> bool:
-        return Path(path).suffix in [".yaml", ".yml"]
+    if api_key:
+        environ.HUBAI_API_KEY = api_key
 
-    if path is not None and not is_archive and not is_yaml(path):
-        opts.extend(["input_model", path])
-        input_file_type = InputFileType.from_path(path)
-        if input_file_type == InputFileType.PYTORCH and yolo_version is None:
+    try:
+        opts = opts or []
+
+        is_archive = is_nn_archive(path)
+
+        def is_yaml(path: str) -> bool:
+            return Path(path).suffix in [".yaml", ".yml"]
+
+        if path is not None and not is_archive and not is_yaml(path):
+            opts.extend(["input_model", path])
+            input_file_type = InputFileType.from_path(path)
+            if (
+                input_file_type == InputFileType.PYTORCH
+                and yolo_version is None
+            ):
+                raise ValueError(
+                    "YOLO version is required for PyTorch YOLO models. Use --yolo-version to specify the version."
+                )
+
+        if target_precision in {"FP16", "FP32"}:
+            opts.extend(["disable_calibration", "True"])
+
+        if yolo_input_shape:
+            opts.extend(["yolo_input_shape", str(yolo_input_shape)])
+
+        config_path = None
+        if path and (is_archive or is_yaml(path)):
+            config_path = path
+
+        cfg, *_ = get_configs(config_path, opts)
+
+        if len(cfg.stages) > 1:
             raise ValueError(
-                "YOLO version is required for PyTorch YOLO models. Use --yolo-version to specify the version."
+                "Only single-stage models are supported with online conversion."
             )
 
-    if target_precision in {"FP16", "FP32"}:
-        opts.extend(["disable_calibration", "True"])
+        name = name or cfg.name
 
-    if yolo_input_shape:
-        opts.extend(["yolo_input_shape", str(yolo_input_shape)])
+        cfg = next(iter(cfg.stages.values()))
 
-    config_path = None
-    if path and (is_archive or is_yaml(path)):
-        config_path = path
+        model_type = ModelType.from_suffix(cfg.input_model.suffix)
+        variant_name = get_variant_name(cfg, model_type, name)
 
-    cfg, *_ = get_configs(config_path, opts)
+        if model_id is None and variant_id is None:
+            try:
+                model_id = model_create(
+                    name,
+                    license_type=license_type,
+                    is_public=is_public,
+                    description=description,
+                    description_short=description_short,
+                    architecture_id=architecture_id,
+                    tasks=tasks or [],
+                    links=links or [],
+                    is_yolo=is_yolo,
+                    silent=True,
+                )["id"]
+            except ValueError:
+                model_id = get_resource_id(
+                    name.lower().replace(" ", "-"), "models"
+                )
 
-    if len(cfg.stages) > 1:
-        raise ValueError(
-            "Only single-stage models are supported with online conversion."
-        )
+        if variant_id is None:
+            if model_id is None:
+                raise ValueError(
+                    "`--model-id` is required to create a new model"
+                )
 
-    name = name or cfg.name
+            version = version or get_version_number(model_id)
 
-    cfg = next(iter(cfg.stages.values()))
-
-    model_type = ModelType.from_suffix(cfg.input_model.suffix)
-    variant_name = get_variant_name(cfg, model_type, name)
-
-    if model_id is None and variant_id is None:
-        try:
-            model_id = model_create(
-                name,
-                license_type=license_type,
-                is_public=is_public,
-                description=description,
-                description_short=description_short,
-                architecture_id=architecture_id,
-                tasks=tasks or [],
-                links=links or [],
-                is_yolo=is_yolo,
+            variant_id = variant_create(
+                variant_name,
+                model_id=model_id,
+                version=version,
+                description=variant_description,
+                repository_url=repository_url,
+                commit_hash=commit_hash,
+                domain=domain,
+                tags=variant_tags or [],
                 silent=True,
             )["id"]
-        except ValueError:
-            model_id = get_resource_id(
-                name.lower().replace(" ", "-"), "models"
-            )
 
-    if variant_id is None:
-        if model_id is None:
-            raise ValueError("`--model-id` is required to create a new model")
-
-        version = version or get_version_number(model_id)
-
-        variant_id = variant_create(
-            variant_name,
-            model_id=model_id,
-            version=version,
-            description=description,
-            repository_url=repository_url,
-            commit_hash=commit_hash,
-            domain=domain,
-            tags=tags or [],
+        assert variant_id is not None
+        instance_name = f"{variant_name} base instance"
+        instance_id = instance_create(
+            instance_name,
+            variant_id=variant_id,
+            model_type=model_type,
+            input_shape=input_shape or cfg.inputs[0].shape,
+            is_deployable=is_deployable,
+            tags=instance_tags or [],
             silent=True,
         )["id"]
 
-    assert variant_id is not None
-    shape = cfg.inputs[0].shape
-    instance_name = f"{variant_name} base instance"
-    instance_id = instance_create(
-        instance_name,
-        variant_id=variant_id,
-        model_type=model_type,
-        input_shape=shape,
-        silent=True,
-    )["id"]
+        # TODO: IR support
+        if path is not None and is_nn_archive(path):
+            upload(path, instance_id)
+        else:
+            upload(str(cfg.input_model), instance_id)
 
-    # TODO: IR support
-    if path is not None and is_nn_archive(path):
-        upload(path, instance_id)
-    else:
-        upload(str(cfg.input_model), instance_id)
+        target_options = get_target_specific_options(target, cfg, tool_version)
+        instance = _export(
+            f"{variant_name} exported to {target}",
+            instance_id,
+            target=target,
+            target_precision=target_precision or "INT8",
+            quantization_data=quantization_data.upper()
+            if quantization_data
+            else "RANDOM",
+            yolo_version=yolo_version,
+            yolo_class_names=yolo_class_names,
+            **target_options,
+        )
 
-    target_options = get_target_specific_options(target, cfg, tool_version)
-    instance = _export(
-        f"{variant_name} exported to {target}",
-        instance_id,
-        target=target,
-        target_precision=target_precision or "INT8",
-        quantization_data=quantization_data.upper()
-        if quantization_data
-        else "RANDOM",
-        yolo_version=yolo_version,
-        yolo_class_names=yolo_class_names,
-        **target_options,
-    )
+        wait_for_export(instance["dag_run_id"])
 
-    wait_for_export(instance["dag_run_id"])
+        return instance_download(instance["id"], output_dir)
 
-    return instance_download(instance["id"], output_dir)
+    finally:
+        environ.HUBAI_API_KEY = old_key
 
 
 def _export(
