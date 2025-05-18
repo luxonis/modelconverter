@@ -891,6 +891,7 @@ def convert(
         silent=True,
     )["id"]
 
+    # TODO: IR support
     if path is not None and is_nn_archive(path):
         upload(path, instance_id)
     else:
