@@ -6,7 +6,13 @@ Besides offline conversion, `modelconverter` can be also used for online convers
 
 In order to use the online conversion, you first need to obtain an API key from [HubAI](https://hub.luxonis.com/ai). You can do this by signing up for a free account and generating an API key in the settings.
 
-Once you have the API key
+Once you have the API key, you can run the conversion using the following code:
+
+```python
+from modelconverter.hub import convert
+
+converted_model = convert.RVC2("path/to/model.onnx", api_key=api_key)
+```
 
 ## Overview
 
