@@ -209,6 +209,7 @@ def model_create(
     architecture_id: str | None = None,
     tasks: list[Task] | None = None,
     links: list[str] | None = None,
+    is_yolo: bool = False,
     silent: bool = False,
 ) -> dict[str, Any]:
     """Creates a new model resource.
@@ -231,6 +232,8 @@ def model_create(
         List of tasks this model supports.
     links : list[str] | None
         List of links to related resources.
+    is_yolo : bool
+        Whether the model is a YOLO model.
     silent : bool
         Whether to print the model information after creation.
     """
@@ -243,6 +246,7 @@ def model_create(
         "architecture_id": architecture_id,
         "tasks": tasks or [],
         "links": links or [],
+        "is_yolo": is_yolo,
     }
     try:
         res = Request.post("models", json=data)
@@ -734,6 +738,7 @@ def convert(
     architecture_id: str | None = None,
     tasks: list[Task] | None = None,
     links: list[str] | None = None,
+    is_yolo: bool = False,
     model_id: str | None = None,
     version: str | None = None,
     repository_url: str | None = None,
@@ -773,6 +778,8 @@ def convert(
         List of tasks this model supports.
     links : list[str], optional
         List of links to related resources.
+    is_yolo : bool, optional
+        Whether the model is a YOLO model.
     model_id : str, optional
         ID of an existing Model resource. If specified, this model will be used instead of creating a new one.
     version : str, optional
@@ -855,6 +862,7 @@ def convert(
                 architecture_id=architecture_id,
                 tasks=tasks or [],
                 links=links or [],
+                is_yolo=is_yolo,
                 silent=True,
             )["id"]
         except ValueError:
