@@ -40,76 +40,76 @@ General parameters applicable to all conversion functions.
 | argument           | type                              | description                                                       |
 | ------------------ | --------------------------------- | ----------------------------------------------------------------- |
 | `path`             | `str`                             | The path to the model file.                                       |
-| `tool_version`     | `str?`                            | The version of the conversion tool.                               |
+| `tool_version`     | `str \| None`                     | The version of the conversion tool.                               |
 | `target_precision` | `Literal["FP32", "FP16", "INT8"]` | The precision of the model. Defaults to `"INT8"`.                 |
-| `api_key`          | `str?`                            | The API key for HubAI. Will take precedence over the environment. |
+| `api_key`          | `str \| None`                     | The API key for HubAI. Will take precedence over the environment. |
 
 **YOLO Parameters**
 
 These parameters are only relevant if you're converting a YOLO model.
 
-| argument           | type         | description                        |
-| ------------------ | ------------ | ---------------------------------- |
-| `yolo_input_shape` | `list[int]?` | The input shape of the YOLO model. |
-| `yolo_version`     | `str?`       | YOLO version.                      |
-| `yolo_class_names` | `list[str]?` | The class names of the model.      |
+| argument           | type                | description                        |
+| ------------------ | ------------------- | ---------------------------------- |
+| `yolo_input_shape` | `list[int] \| None` | The input shape of the YOLO model. |
+| `yolo_version`     | `str \| None`       | YOLO version.                      |
+| `yolo_class_names` | `list[str] \| None` | The class names of the model.      |
 
 **Model Parameters**
 
 Parameters that specify creation of a new `Model` resource on HubAI.
 
-| argument            | type                                                                                                                                                                                                                                                                        | description                                                                                  |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `model_id`          | `str?`                                                                                                                                                                                                                                                                      | The ID of an already existing model in case you don't want to create a new `Model` resource. |
-| `name`              | `str?`                                                                                                                                                                                                                                                                      | The name of the model. If undefined, it will be the same as the stem of the model file.      |
-| `license_type`      | `Literal["undefined", "MIT", "GNU General Public License v3.0", "GNU Affero General Public License v3.0", "Apache 2.0", "NTU S-Lab 1.0", "Ultralytics Enterprise", "CreativeML Open RAIL-M", "BSD 3-Clause"]`                                                               | The license type of the model.                                                               |
-| `is_public`         | `bool?`                                                                                                                                                                                                                                                                     | Whether the model is public or private.                                                      |
-| `description`       | `str?`                                                                                                                                                                                                                                                                      | The full description of the model.                                                           |
-| `description_short` | `str?`                                                                                                                                                                                                                                                                      | The short description of the model. Defaults to `"<empty>"`                                  |
-| `architecture_id`   | `str?`                                                                                                                                                                                                                                                                      | The architecture ID of the model.                                                            |
-| `tasks`             | `list[Literal["classification", "object_detection", "segmentation", "keypoint_detection", "depth_estimation", "line_detection", "feature_detection", "denoising", "low_light_enhancement", "super_resolution", "regression", "instance_segmentation", "image_embedding"]]?` | The tasks of the model.                                                                      |
-| `links`             | `list[str]?`                                                                                                                                                                                                                                                                | Additional links for the model.                                                              |
-| `is_yolo`           | `bool?`                                                                                                                                                                                                                                                                     | Whether the model is a YOLO model.                                                           |
+| argument            | type                                                                                                                                                                                                                                                                               | description                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `model_id`          | `str \| None`                                                                                                                                                                                                                                                                      | The ID of an already existing model in case you don't want to create a new `Model` resource. |
+| `name`              | `str \| None`                                                                                                                                                                                                                                                                      | The name of the model. If undefined, it will be the same as the stem of the model file.      |
+| `license_type`      | `Literal["undefined", "MIT", "GNU General Public License v3.0", "GNU Affero General Public License v3.0", "Apache 2.0", "NTU S-Lab 1.0", "Ultralytics Enterprise", "CreativeML Open RAIL-M", "BSD 3-Clause"]`                                                                      | The license type of the model.                                                               |
+| `is_public`         | `bool \| None`                                                                                                                                                                                                                                                                     | Whether the model is public or private.                                                      |
+| `description`       | `str \| None`                                                                                                                                                                                                                                                                      | The full description of the model.                                                           |
+| `description_short` | `str \| None`                                                                                                                                                                                                                                                                      | The short description of the model. Defaults to `"<empty>"`                                  |
+| `architecture_id`   | `str \| None`                                                                                                                                                                                                                                                                      | The architecture ID of the model.                                                            |
+| `tasks`             | `list[Literal["classification", "object_detection", "segmentation", "keypoint_detection", "depth_estimation", "line_detection", "feature_detection", "denoising", "low_light_enhancement", "super_resolution", "regression", "instance_segmentation", "image_embedding"]] \| None` | The tasks of the model.                                                                      |
+| `links`             | `list[str] \| None`                                                                                                                                                                                                                                                                | Additional links for the model.                                                              |
+| `is_yolo`           | `bool \| None`                                                                                                                                                                                                                                                                     | Whether the model is a YOLO model.                                                           |
 
 **Model Variant Parameters**
 
 Parameters that specify creation of a new `ModelVersion` resource on HubAI.
 
-| argument              | type         | description                                                                                    |
-| --------------------- | ------------ | ---------------------------------------------------------------------------------------------- |
-| `model_id`            | `str?`       | The ID of the model. Use in case you want to add another variant to an already existing model. |
-| `version`             | `str?`       | The version number of the variant. If undefined, an auto-incremented version is used.          |
-| `variant_description` | `str?`       | The full description of the variant.                                                           |
-| `repository_url`      | `str?`       | A URL of a related repository.                                                                 |
-| `commit_hash`         | `str?`       | A commit hash of the related repository.                                                       |
-| `domain`              | `str?`       | The domain of the variant.                                                                     |
-| `tags`                | `list[str]?` | The tags of the variant.                                                                       |
+| argument              | type                | description                                                                                    |
+| --------------------- | ------------------- | ---------------------------------------------------------------------------------------------- |
+| `model_id`            | `str \| None`       | The ID of the model. Use in case you want to add another variant to an already existing model. |
+| `version`             | `str \| None`       | The version number of the variant. If undefined, an auto-incremented version is used.          |
+| `variant_description` | `str \| None`       | The full description of the variant.                                                           |
+| `repository_url`      | `str \| None`       | A URL of a related repository.                                                                 |
+| `commit_hash`         | `str \| None`       | A commit hash of the related repository.                                                       |
+| `domain`              | `str \| None`       | The domain of the variant.                                                                     |
+| `tags`                | `list[str] \| None` | The tags of the variant.                                                                       |
 
 **Model Instance Parameters**
 
 Parameters that specify creation of a new `ModelInstance` resource on HubAI.
 
-| argument               | type                                                                       | description                                                                                                              |
-| ---------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `variant_id`           | `str`                                                                      | The ID of the associated variant. Use in case you want to add a new model instance to an already existing model variant. |
-| `parent_id`            | `str?`                                                                     | Unique identifier of the parent `ModelInstance`.                                                                         |
-| `model_precision_type` | `str?`                                                                     | The precision type of the model.                                                                                         |
-| `quantization_data`    | `Literal["driving", "food", "general", "indoors", "random", "warehouse"]?` | The domain of data used to quantize this `ModelInstance`.                                                                |
-| `tags`                 | `list[str]?`                                                               | Tags associated with this instance.                                                                                      |
-| `input_shape`          | `list[int]?`                                                               | The input shape of the model.                                                                                            |
-| `is_deployable`        | `bool?`                                                                    | Whether the model is deployable.                                                                                         |
+| argument               | type                                                                              | description                                                                                                              |
+| ---------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `variant_id`           | `str`                                                                             | The ID of the associated variant. Use in case you want to add a new model instance to an already existing model variant. |
+| `parent_id`            | `str \| None`                                                                     | Unique identifier of the parent `ModelInstance`.                                                                         |
+| `model_precision_type` | `str \| None`                                                                     | The precision type of the model.                                                                                         |
+| `quantization_data`    | `Literal["driving", "food", "general", "indoors", "random", "warehouse"] \| None` | The domain of data used to quantize this `ModelInstance`.                                                                |
+| `tags`                 | `list[str] \| None`                                                               | Tags associated with this instance.                                                                                      |
+| `input_shape`          | `list[int] \| None`                                                               | The input shape of the model.                                                                                            |
+| `is_deployable`        | `bool \| None`                                                                    | Whether the model is deployable.                                                                                         |
 
 **RVC2 Parameters**
 
 Parameters specific to the `RVC2` conversion.
 
-| argument            | type         | description                                                                    |
-| ------------------- | ------------ | ------------------------------------------------------------------------------ |
-| `mo_args`           | `list[str]?` | The arguments to pass to the model optimizer.                                  |
-| `compile_tool_args` | `list[str]?` | The arguments to pass to the BLOB compiler.                                    |
-| `compress_to_fp16`  | `bool`       | Whether to compress the model's weights to FP16 precision. Defaults to `True`. |
-| `number_of_shaves`  | `int`        | The number of shaves to use. Defaults to `8`.                                  |
-| `superblob`         | `bool`       | Whether to create a superblob. Defaults to `True`.                             |
+| argument            | type                | description                                                                    |
+| ------------------- | ------------------- | ------------------------------------------------------------------------------ |
+| `mo_args`           | `list[str] \| None` | The arguments to pass to the model optimizer.                                  |
+| `compile_tool_args` | `list[str] \| None` | The arguments to pass to the BLOB compiler.                                    |
+| `compress_to_fp16`  | `bool`              | Whether to compress the model's weights to FP16 precision. Defaults to `True`. |
+| `number_of_shaves`  | `int`               | The number of shaves to use. Defaults to `8`.                                  |
+| `superblob`         | `bool`              | Whether to create a superblob. Defaults to `True`.                             |
 
 **RVC3 Parameters**
 
@@ -117,8 +117,8 @@ Parameters specific to the `RVC3` conversion.
 
 | argument            | type                    | description                                                                    |
 | ------------------- | ----------------------- | ------------------------------------------------------------------------------ |
-| `mo_args`           | `list[str]?`            | The arguments to pass to the model optimizer.                                  |
-| `compile_tool_args` | `list[str]?`            | The arguments to pass to the BLOB compiler.                                    |
+| `mo_args`           | `list[str] \| None`     | The arguments to pass to the model optimizer.                                  |
+| `compile_tool_args` | `list[str] \| None`     | The arguments to pass to the BLOB compiler.                                    |
 | `compress_to_fp16`  | `bool`                  | Whether to compress the model's weights to FP16 precision. Defaults to `True`. |
 | `pot_target_device` | `Literal["VPU", "ANY"]` | The target device for the post-training optimization. Defaults to `"VPU"`.     |
 
@@ -126,14 +126,14 @@ Parameters specific to the `RVC3` conversion.
 
 Parameters specific to the `RVC4` conversion.
 
-| argument                       | type         | description                                                  |
-| ------------------------------ | ------------ | ------------------------------------------------------------ |
-| `snpe_onnx_to_dlc_args`        | `list[str]?` | The arguments to pass to the `snpe-onnx-to-dlc` tool.        |
-| `snpe_dlc_quant_args`          | `list[str]?` | The arguments to pass to the `snpe-dlc-quant` tool.          |
-| `snpe_dlc_graph_prepare_args`  | `list[str]?` | The arguments to pass to the `snpe-dlc-graph-prepare` tool.  |
-| `use_per_channel_quantization` | `bool`       | Whether to use per-channel quantization. Defaults to `True`. |
-| `use_per_row_quantization`     | `bool`       | Whether to use per-row quantization. Defaults to `False`.    |
-| `htp_socs`                     | `list[str]?` | The list of HTP SoCs to use.                                 |
+| argument                       | type                | description                                                  |
+| ------------------------------ | ------------------- | ------------------------------------------------------------ |
+| `snpe_onnx_to_dlc_args`        | `list[str] \| None` | The arguments to pass to the `snpe-onnx-to-dlc` tool.        |
+| `snpe_dlc_quant_args`          | `list[str] \| None` | The arguments to pass to the `snpe-dlc-quant` tool.          |
+| `snpe_dlc_graph_prepare_args`  | `list[str] \| None` | The arguments to pass to the `snpe-dlc-graph-prepare` tool.  |
+| `use_per_channel_quantization` | `bool`              | Whether to use per-channel quantization. Defaults to `True`. |
+| `use_per_row_quantization`     | `bool`              | Whether to use per-row quantization. Defaults to `False`.    |
+| `htp_socs`                     | `list[str] \| None` | The list of HTP SoCs to use.                                 |
 
 **Hailo Parameters**
 
@@ -144,7 +144,7 @@ Parameters specific to the `Hailo` conversion.
 | `optimization_level` | `Literal[-100, 0, 1, 2, 3, 4]` | The optimization level to use.                   |
 | `compression_level`  | `Literal[0, 1, 2, 3, 4, 5]`    | The compression level to use.                    |
 | `batch_size`         | `int`                          | The batch size to use for quantization.          |
-| `alls`               | `list[str]?`                   | The list of additional `alls` parameters to use. |
+| `alls`               | `list[str] \| None`            | The list of additional `alls` parameters to use. |
 
 ## Migration from `blobconverter`
 
