@@ -24,11 +24,12 @@ The conversion function takes a number of parameters to specify the model and th
 
 General parameters applicable to all conversion functions.
 
-| argument       | type   | description                                                       |
-| -------------- | ------ | ----------------------------------------------------------------- |
-| `path`         | `str`  | The path to the model file.                                       |
-| `tool_version` | `str?` | The version of the conversion tool.                               |
-| `api_key`      | `str?` | The API key for HubAI. Will take precedence over the environment. |
+| argument           | type                              | description                                                       |
+| ------------------ | --------------------------------- | ----------------------------------------------------------------- |
+| `path`             | `str`                             | The path to the model file.                                       |
+| `tool_version`     | `str?`                            | The version of the conversion tool.                               |
+| `target_precision` | `Literal["FP32", "FP16", "INT8"]` | The precision of the model. Defaults to `"INT8"`.                 |
+| `api_key`          | `str?`                            | The API key for HubAI. Will take precedence over the environment. |
 
 **YOLO Parameters**
 
