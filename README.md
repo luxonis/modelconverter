@@ -119,6 +119,8 @@ In the NN Archive configuration, there are two flags related to color encoding c
 
 The preferred way of using ModelConverter is in the online mode, where the conversion is performed on a remote server.
 
+For more detailed documentation on the online conversion, please refer to the documentation available [here](modelconverter/hub/README.md).
+
 To start with the online conversion, you need to create an account on the [HubAI](https://hub.luxonis.com) platform and obtain the API key for your team.
 
 To log in to HubAI, use the following command:
@@ -152,7 +154,7 @@ from modelconverter.utils import environ
 
 environ.HUBAI_API_KEY = "your_api_key"
 
-converted_model = convert("rvc4", path="configs/resnet18.yaml")
+converted_model = convert.RVC4("configs/resnet18.yaml")
 ```
 
 We have prepared several examples for you to check and are actively working on providing more. You can find them [here](https://github.com/luxonis/depthai-ml-training/tree/main/conversion).
