@@ -1,73 +1,35 @@
-import argparse
+import tempfile
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
+import cv2
+import polars as pl
+from cyclopts import App
 from loguru import logger
+from luxonis_ml.data import LuxonisDataset, LuxonisLoader
 
 from modelconverter.hub.__main__ import (
     _export,
+    _instance_ls,
+    _model_ls,
+    _variant_ls,
     instance_delete,
-    instance_ls,
-    model_ls,
-    variant_ls,
 )
+from modelconverter.hub.__main__ import (
+    instance_download as _instance_download,
+)
+from modelconverter.utils import AdbHandler
+from modelconverter.utils.types import Target
 
+instance_download = lru_cache(maxsize=None)(_instance_download)
 
-def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Convert models from Luxonis Hub to RVC4 format using the specified SNPE version. The script requires HUBAI_API_KEY to be set in the environment variables."
-    )
-    parser.add_argument(
-        "--snpe_version",
-        type=str,
-        default="2.23.0",
-        help="SNPE version to use for conversion.",
-    )
-    parser.add_argument(
-        "--force-reexport",
-        action="store_true",
-        help="Force re-export of models.",
-    )
-    parser.add_argument(
-        "--disable_onnx_simplification",
-        action="store_true",
-        help="Disable ONNX simplification.",
-    )
-    parser.add_argument(
-        "--disable_onnx_optimization",
-        action="store_true",
-        help="Disable ONNX optimization.",
-    )
-    parser.add_argument(
-        "--snpe_onnx_to_dlc_args",
-        type=str,
-        nargs="+",
-        default=None,
-        help="SNPE ONNX to DLC arguments.",
-    )
-    parser.add_argument(
-        "--snpe_dlc_quant_args",
-        type=str,
-        nargs="+",
-        default=None,
-        help="SNPE DLC quantization arguments.",
-    )
-    parser.add_argument(
-        "--snpe_dlc_graph_prepare_args",
-        type=str,
-        nargs="+",
-        default=None,
-        help="SNPE DLC graph prepare arguments.",
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=3,
-        help="Limit the number of models to process.",
-    )
-    parser.add_argument(
-        "--is_public", action="store_true", help="Process public models."
-    )
-    return parser.parse_args()
+app = App(name="convert_hub_rvc4_models")
+
+adb = AdbHandler()
+
+ADB_DATA_DIR = "/data/local/zoo_conversion/"
+df = pl.read_csv("models.csv")
 
 
 def get_missing_model_precisions(
@@ -88,6 +50,7 @@ def get_missing_model_precisions(
 
 
 def get_precision_to_params(
+    model_id: str,
     instance_list: list[dict[str, Any]],
     precision_list: set[str],
     snpe_version: str,
@@ -97,8 +60,11 @@ def get_precision_to_params(
         inst["model_precision_type"]: {
             "id": inst["id"],
             "parent_id": inst["parent_id"],
-            "quantization_data": inst["quantization_data"],
+            "quantization_data": df.filter(pl.col("Model ID") == model_id)
+            .select("Quant. Dataset ID")
+            .item(),
             "snpe_version": inst["hardware_parameters"].get("snpe_version"),
+            "input_shape": inst["input_shape"],
         }
         for inst in instance_list
         if inst["model_type"] == "RVC4"
@@ -118,74 +84,171 @@ def get_precision_to_params(
 
 def export_models(
     variant_info: dict[str, Any],
-    precision_to_params: dict[str, Any],
-    args: argparse.Namespace,
+    target_precision: str,
+    params: dict[str, Any],
+    snpe_version: str,
+    force_reexport: bool = False,
+    **kwargs,
+) -> Path:
+    logger.info(
+        f"Exporting: {variant_info['name']} {target_precision} SNPE {snpe_version}"
+    )
+    if force_reexport and params["snpe_version"] == snpe_version:
+        logger.info(f"Force re-exporting: {params['id']}")
+        instance_delete(params["id"])
+    instance = _export(
+        f"{variant_info['name']} {target_precision} SNPE {snpe_version}",
+        params["parent_id"],
+        Target.RVC4,
+        target_precision=target_precision,
+        quantization_data=params["quantization_data"],
+        snpe_version=snpe_version,
+        **kwargs,
+    )
+    return instance_download(instance["id"], output_dir="converted_models")
+
+
+@lru_cache
+def prepare_inference(dataset_id: str, width: int, height: int) -> None:
+    dataset = LuxonisDataset(dataset_id, bucket_storage="gcs")
+    loader = LuxonisLoader(
+        dataset, width=width, height=height, keep_aspect_ratio=False
+    )
+    with tempfile.TemporaryDirectory() as d:
+        input_list = ""
+        for i, (img, _) in enumerate(loader):
+            cv2.imwrite(f"{d}/{i}.jpg", img)
+            input_list += f"{ADB_DATA_DIR}/{dataset_id}/{i}.jpg\n"
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=d) as f:
+            f.write(input_list)
+            adb.push(f.name, f"{ADB_DATA_DIR}/{dataset_id}/input_list.txt")
+        adb.push(d, f"{ADB_DATA_DIR}/{dataset_id}/")
+
+
+def infer(
+    model_path: Path,
+    model_id: str,
+    dataset_id: str,
+    width: int,
+    height: int,
+    snpe_version: str,
+) -> bool:
+    prepare_inference(dataset_id, width, height)
+    adb.shell(f"mkdir {ADB_DATA_DIR}/{model_id}")
+    adb.push(str(model_path), f"{ADB_DATA_DIR}/{model_id}/model.dlc")
+    ret, stdout, stderr = adb.shell(
+        f"source /data/local/tmp/source_me_snpe_v{snpe_version}.sh && "
+        "snpe-parallel-run "
+        f"--container {ADB_DATA_DIR}/{model_id}/model.dlc "
+        f"--input_list {ADB_DATA_DIR}/{dataset_id}/input_list.txt "
+        f"--output_dir {ADB_DATA_DIR}/{model_id}/outputs "
+        "--perf_profile default "
+        "--cpu_fallback false "
+        "--use_dsp"
+    )
+    if ret != 0:
+        logger.error(f"Inference for model '{model_id}' failed!")
+        logger.error(stdout)
+        logger.error(stderr)
+        return False
+    adb.pull(
+        f"{ADB_DATA_DIR}/{model_id}/outputs",
+        f"comparison/{model_id}/{snpe_version}/",
+    )
+    return True
+
+
+@app.default
+def main(
+    *,
+    snpe_version: str = "2.32.6",
+    force_reexport: bool = False,
+    disable_onnx_simplification: bool = False,
+    disable_onnx_optimization: bool = False,
+    snpe_onnx_to_dlc_args: list[str] | None = None,
+    snpe_dlc_quant_args: list[str] | None = None,
+    snpe_dlc_graph_prepare_args: list[str] | None = None,
+    limit: int = 3,
+    is_public: bool = False,
 ) -> None:
-    target_options = {
-        "snpe_version": args.snpe_version,
-        "disable_onnx_simplification": args.disable_onnx_simplification,
-        "disable_onnx_optimization": args.disable_onnx_optimization,
-        "snpe_onnx_to_dlc_args": args.snpe_onnx_to_dlc_args,
-        "snpe_dlc_quant_args": args.snpe_dlc_quant_args,
-        "snpe_dlc_graph_prepare_args": args.snpe_dlc_graph_prepare_args,
-    }
-    target_options = {k: v for k, v in target_options.items() if v is not None}
+    """Export all RVC4 models from the Luxonis Hub to SNPE format.
 
-    for target_precision, params in precision_to_params.items():
-        logger.info(
-            f"Exporting: {variant_info['name']} {target_precision} SNPE {args.snpe_version}"
-        )
-        if args.force_reexport and params["snpe_version"] == args.snpe_version:
-            logger.info(f"Force re-exporting: {params['id']}")
-            instance_delete(params["id"])
-        _export(
-            f"{variant_info['name']} {target_precision} SNPE {args.snpe_version}",
-            params["parent_id"],
-            "rvc4",
-            target_precision=target_precision,
-            quantization_data=params["quantization_data"],
-            **target_options,
-        )
-
-
-def main() -> None:
-    args = parse_arguments()
-    model_list = model_ls(
-        is_public=args.is_public, luxonis_only=True, limit=args.limit
+    Parameters
+    ----------
+    snpe_version : str
+        The SNPE version to use for the export.
+    force_reexport : bool
+        If True, force re-export the model even if it already exists.
+    disable_onnx_simplification : bool
+        If True, disable ONNX simplification.
+    disable_onnx_optimization : bool
+        If True, disable ONNX optimization.
+    snpe_onnx_to_dlc_args : list[str] | None
+        Additional arguments to pass to the SNPE ONNX to DLC converter.
+    snpe_dlc_quant_args : list[str] | None
+        Additional arguments to pass to the SNPE DLC quantization tool.
+    snpe_dlc_graph_prepare_args : list[str] | None
+        Additional arguments to pass to the SNPE DLC graph preparation tool.
+    """
+    model_list = _model_ls(
+        is_public=True,
+        luxonis_only=True,
+        limit=limit,
+        _silent=True,
     )
     logger.info(f"Models found: {len(model_list)}")
 
     for model_info in model_list:
-        version_list = variant_ls(
-            model_id=model_info["id"], is_public=args.is_public
+        model_id = model_info["id"]
+        version_list = _variant_ls(
+            model_id=model_id, is_public=is_public, _silent=True
         )
-        logger.info(f"Variants for {model_info['id']}: {version_list}")
 
         for variant_info in version_list:
             if "RVC4" not in variant_info["platforms"]:
                 continue
 
-            instance_list = instance_ls(
+            instance_list = _instance_ls(
                 model_id=model_info["id"],
                 variant_id=variant_info["id"],
                 model_type=None,
-                is_public=args.is_public,
+                is_public=True,
+                _silent=True,
             )
             precision_list = get_missing_model_precisions(
-                instance_list, args.snpe_version
+                instance_list, snpe_version
             )
             logger.info(
-                f"Missing model precisions for SNPE {args.snpe_version}: {precision_list}"
+                f"Missing model precisions for SNPE {snpe_version}: {precision_list}"
             )
 
             precision_to_params = get_precision_to_params(
+                model_id,
                 instance_list,
                 precision_list,
-                args.snpe_version,
-                args.force_reexport,
+                snpe_version,
+                force_reexport,
             )
-            export_models(variant_info, precision_to_params, args)
+            for target_precision, params in precision_to_params.items():
+                converted_dlc = export_models(
+                    variant_info,
+                    target_precision,
+                    params,
+                    snpe_version=snpe_version,
+                    force_reexport=force_reexport,
+                    disable_onnx_simplification=disable_onnx_simplification,
+                    disable_onnx_optimization=disable_onnx_optimization,
+                    snpe_onnx_to_dlc_args=snpe_onnx_to_dlc_args or [],
+                    snpe_dlc_quant_args=snpe_dlc_quant_args or [],
+                    snpe_dlc_graph_prepare_args=snpe_dlc_graph_prepare_args
+                    or [],
+                )
+                orig_model = instance_download(params["parent_id"])
+
+                adb.push(
+                    str(converted_dlc), f"{ADB_DATA_DIR}/{model_id}/model.dlc"
+                )
 
 
 if __name__ == "__main__":
-    main()
+    app()

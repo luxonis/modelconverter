@@ -616,7 +616,7 @@ def instance_create(
     model_type: ModelType | None = None,
     parent_id: str | None = None,
     model_precision_type: TargetPrecision | None = None,
-    quantization_data: Quantization | None = None,
+    quantization_data: Quantization | str | None = None,
     tags: list[str] | None = None,
     input_shape: list[int] | None = None,
     is_deployable: bool | None = None,
@@ -637,7 +637,8 @@ def instance_create(
     model_precision_type : TargetPrecision | None
         The precision type of the model.
     quantization_data : Quantization | None
-        The quantization data for the model.
+        The quantization data for the model. Can be one of
+        predefined datasets or a dataset id.
     tags : list[str] | None
         List of tags for the model instance.
     input_shape : list[int] | None
@@ -748,7 +749,7 @@ def convert(
     domain: str | None = None,
     variant_tags: list[str] | None = None,
     variant_id: str | None = None,
-    quantization_data: Quantization | None = None,
+    quantization_data: Quantization | str | None = None,
     instance_tags: list[str] | None = None,
     input_shape: list[int] | None = None,
     is_deployable: bool | None = None,
