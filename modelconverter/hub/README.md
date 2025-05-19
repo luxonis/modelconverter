@@ -14,6 +14,19 @@ from modelconverter.hub import convert
 converted_model = convert.RVC2("path/to/model.onnx", api_key=api_key)
 ```
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Overview](#overview)
+- [Migration from `blobconverter`](#migration-from-blobconverter)
+  - [Simple Conversion](#simple-conversion)
+  - [Conversion from OpenVINO IR](#conversion-from-openvino-ir)
+  - [Conversion from `tflite`](#conversion-from-tflite)
+  - [RVC3 Conversion](#rvc3-conversion)
+  - [Advanced Parameters](#advanced-parameters)
+  - [`Caffe` Conversion](#caffe-conversion)
+- [CLI Reference](#cli-reference)
+
 ## Overview
 
 The Python API for the conversion is available under the `modelconverter.hub.convert` namespace. Specific conversion functions for individual targets (`RVC2`, `RVC3`, etc.) are accessible from the `convert` namespace under the target name, for example `convert.RVC2`, `convert.Hailo`.
