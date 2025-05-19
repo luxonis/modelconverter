@@ -137,6 +137,10 @@ Parameters specific to the `Hailo` conversion.
 
 [BlobConverter](https://pypi.org/project/blobconverter/) is our previous library for converting models to the BLOB format usable with `RVC2` and `RVC3` devices. This library is being replaced by `modelconverter`, which eventually become the only supported way of converting models in the future.
 
+`blobconverter` is still available and can be used for conversion, but we recommend using `modelconverter` for new projects. The API of `modelconverter` is similar to that of `blobconverter`, but there are some differences in the parameters and the way the conversion is done.
+
+`blobconverter` offers several functions for converting models from different frameworks, such as `from_onnx`, `from_openvino`, and `from_tf`. These functions are now replaced by the `convert.RVC2` (or `convert.RVC3`) function in `modelconverter`, which takes a single argument `path` that specifies the path to the model file.
+
 The following table shows the mapping between the parameters of `blobconverter` and `modelconverter`. The parameters are grouped by their purpose. The first column shows the parameters of `blobconverter`, the second column shows the equivalent parameters in `modelconverter`, and the third column contains additional notes.
 
 | `blobconverter`    | `modelconverter`    | Notes                                                                                                     |
