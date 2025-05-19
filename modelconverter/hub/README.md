@@ -298,3 +298,8 @@ blob = convert.RVC2(
 ### `Caffe` Conversion
 
 Conversion from the `Caffe` framework is not supported.
+
+## CLI Reference
+
+The conversion can be also done using the command line interface.
+See `modelconverter hub --help` for the full list of options.
