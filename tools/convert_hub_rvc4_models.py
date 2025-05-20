@@ -22,6 +22,8 @@ from modelconverter.hub.__main__ import (
     _instance_ls,
     _model_ls,
     _variant_ls,
+    instance_create,
+    upload,
 )
 from modelconverter.hub.__main__ import (
     instance_download as _instance_download,
@@ -71,12 +73,22 @@ def get_missing_precision_instances(
     ]
 
 
+def create_new_instance(
+    instance_params: dict[str, Any], archive: Path
+) -> None:
+    return
+    instance = instance_create(**instance_params, silent=True)
+    logger.info(f"New instance created: {instance['id']}, {instance['name']}")
+    upload(str(archive), instance["id"])
+
+
 def get_instance_params(
     inst: dict[str, Any], parent: dict[str, Any], snpe_version: str
 ) -> dict[str, Any]:
     model_id = inst["model_id"]
     return {
-        "model_version_id": inst["model_version_id"],
+        "name": inst["name"],
+        "variant_id": inst["model_version_id"],
         "model_type": "RVC4",
         "parent_id": parent["id"],
         "hardware_parameters": {"snpe_version": snpe_version},
@@ -287,16 +299,12 @@ def get_buildinfo(archive: Path) -> list[str]:
     ]
 
 
-def create_new_instance(
-    instance_params: dict[str, Any], archive: Path
-) -> None: ...
-
-
 def migrate(
     old_instance: dict[str, Any],
     snpe_version: str,
     model_id: str,
-    device_id: str | None = None,
+    device_id: str | None,
+    dry: bool,
 ) -> None:
     parent = find_parent(deepcopy(old_instance))
     if parent is None:
@@ -326,7 +334,7 @@ def migrate(
         cache=True,
     )
 
-    dataset_name = (
+    dataset_name: str = (
         models_df.filter(pl.col("Model ID") == model_id)
         .select("Quant. Dataset ID")
         .item()
@@ -346,11 +354,14 @@ def migrate(
         *buildinfo_opts,
     ]
 
+    if dataset_name.endswith("Dataset from Hub"):
+        dataset_name = f"{dataset_name.split()[0].lower()}_quantization_data"
+
     if precision == "INT8":
         args.extend(
             [
                 "calibration.path",
-                CALIBRATION_DIR / "datasets" / dataset_name,
+                str(CALIBRATION_DIR / "datasets" / dataset_name),
             ]
         )
     else:
@@ -376,7 +387,8 @@ def migrate(
             f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
         )
         logger.info("Creating new instance")
-        create_new_instance(new_instance_params, new_archive)
+        if not dry:
+            create_new_instance(new_instance_params, new_archive)
 
 
 def migrate_models(
@@ -384,6 +396,7 @@ def migrate_models(
     snpe_version: str,
     device_id: str | None,
     df: dict[str, list[str | None]],
+    dry: bool,
 ) -> None:
     for model in models:
         model_id = cast(str, model["id"])
@@ -406,7 +419,9 @@ def migrate_models(
             logger.info(f"Instances found: {len(instances)}")
             for old_instance in instances:
                 try:
-                    migrate(old_instance, snpe_version, model_id, device_id)
+                    migrate(
+                        old_instance, snpe_version, model_id, device_id, dry
+                    )
                     status = "success"
                     error = None
                 except Exception as e:
@@ -414,6 +429,7 @@ def migrate_models(
                     status = "failed"
                     error = str(e)
                 df["model_id"].append(model_id)
+                df["instance_id"].append(old_instance["id"])
                 df["model_name"].append(model["name"])
                 df["status"].append(status)
                 df["error"].append(error)
@@ -442,7 +458,13 @@ def main(
         An ID of a specific model to be migrated.
     """
 
-    df = {"model_id": [], "model_name": [], "status": [], "error": []}
+    df = {
+        "model_id": [],
+        "instance_id": [],
+        "model_name": [],
+        "status": [],
+        "error": [],
+    }
     limit = 5 if dry else 10000
     if model_id is not None:
         models = [request_info(model_id, "models")]
@@ -456,7 +478,7 @@ def main(
     logger.info(f"Models found: {len(models)}")
 
     try:
-        migrate_models(models, snpe_version, device_id, df)
+        migrate_models(models, snpe_version, device_id, df, dry)
     finally:
         df = pl.DataFrame(df)
         date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M")
