@@ -2,6 +2,7 @@ import json
 import tarfile
 import tempfile
 from copy import deepcopy
+from datetime import datetime
 from functools import lru_cache
 from os import getenv
 from pathlib import Path
@@ -386,6 +387,48 @@ def migrate(
         )
 
 
+def migrate_models(
+    models: list[dict[str, Any]],
+    snpe_version: str,
+    device_id: str | None,
+    df: dict[str, list[str | None]],
+) -> None:
+    for model in models:
+        model_id = cast(str, model["id"])
+        variants = _variant_ls(model_id=model_id, is_public=True, _silent=True)
+        logger.info(f"Variants found: {len(variants)}")
+        for variant in variants:
+            if "RVC4" not in variant["platforms"]:
+                continue
+
+            instances = _instance_ls(
+                model_id=model["id"],
+                variant_id=variant["id"],
+                model_type=None,
+                is_public=True,
+                _silent=True,
+            )
+            instances = get_missing_precision_instances(
+                instances, snpe_version
+            )
+            logger.info(f"Instances found: {len(instances)}")
+            for old_instance in instances:
+                try:
+                    migrate(old_instance, snpe_version, model_id, device_id)
+                    status = "success"
+                    error = None
+                except Exception as e:
+                    logger.exception(
+                        f"Migration for model '{model_id}' failed!"
+                    )
+                    status = "failed"
+                    error = str(e)
+                df["model_id"].append(model_id)
+                df["model_name"].append(model["name"])
+                df["status"].append(status)
+                df["error"].append(error)
+
+
 @app.default
 def main(
     *,
@@ -422,43 +465,11 @@ def main(
         )
     logger.info(f"Models found: {len(models)}")
 
-    for model in models:
-        model_id = cast(str, model["id"])
-        variants = _variant_ls(model_id=model_id, is_public=True, _silent=True)
-        logger.info(f"Variants found: {len(variants)}")
-        for variant in variants:
-            if "RVC4" not in variant["platforms"]:
-                continue
-
-            instances = _instance_ls(
-                model_id=model["id"],
-                variant_id=variant["id"],
-                model_type=None,
-                is_public=True,
-                _silent=True,
-            )
-            instances = get_missing_precision_instances(
-                instances, snpe_version
-            )
-            logger.info(f"Instances found: {len(instances)}")
-            for old_instance in instances:
-                try:
-                    migrate(old_instance, snpe_version, model_id, device_id)
-                    status = "success"
-                    error = None
-                except Exception as e:
-                    logger.exception(
-                        f"Migration for model '{model_id}' failed!"
-                    )
-                    status = "failed"
-                    error = str(e)
-                df["model_id"].append(model_id)
-                df["model_name"].append(model["name"])
-                df["status"].append(status)
-                df["error"].append(error)
-
-    df = pl.DataFrame(df)
-    df.write_csv("migration_results.csv")
+    try:
+        migrate_models(models, snpe_version, device_id, df)
+    finally:
+        df = pl.DataFrame(df)
+        df.write_csv(f"migration_results_{datetime.now()}.csv")  # noqa: DTZ005
 
 
 if __name__ == "__main__":
