@@ -167,7 +167,7 @@ def prepare_inference(
             print(f"Processing {img_path}")
             img = cv2.imread(str(img_path))
             img = cv2.resize(img, (width, height))
-            img = img.astype(data_type.as_numpy_dtype())
+            img = img.astype(np.float32)
             img.tofile(f"{d}/{img_path.stem}.raw")
             input_list += f"{ADB_DATA_DIR}/{dataset_id}/{d.split('/')[-1]}/{img_path.stem}.raw\n"
         with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=d) as f:
