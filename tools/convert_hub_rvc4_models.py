@@ -146,9 +146,6 @@ def test_degradation(
 def compare_files(old_inference: Path, new_inference: Path) -> bool:
     for old_file in old_inference.rglob("*.raw"):
         new_file = new_inference / old_file.relative_to(old_inference)
-
-        print(old_file)
-        print(new_file)
         old_array = np.fromfile(old_file, dtype=np.float32)
         new_array = np.fromfile(new_file, dtype=np.float32)
         if not np.isclose(old_array, new_array).all():
@@ -426,6 +423,7 @@ def migrate_models(
                     error = None
                 except BaseException as e:
                     logger.error(f"Migration for model '{model_id}' failed!")
+                    logger.error(e)
                     status = "failed"
                     error = str(e)
                 df["model_id"].append(model_id)
