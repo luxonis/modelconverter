@@ -120,7 +120,7 @@ def test_degradation(
             old_dlc,
             model_id,
             dataset_id,
-            snpe_version,
+            "2.23.0",
             device_id,
             height=height,
             width=width,
