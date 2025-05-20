@@ -11,6 +11,7 @@ import numpy as np
 import polars as pl
 from cyclopts import App
 from loguru import logger
+from luxonis_ml.nn_archive import Config
 from luxonis_ml.utils import setup_logging
 from rich import print
 
@@ -107,11 +108,11 @@ def test_degradation(
     ):
         tf.extractall(d, members=safe_members(tf))  # noqa: S202
         old_dlc = next(iter(Path(d).glob("*.dlc")))
-        config = json.loads(Path(d, "config.json").read_text())
+        config = Config(**json.loads(Path(d, "config.json").read_text()))
 
-        inp = config["model"]["inputs"][0]
-        layout = inp["layout"]
-        shape = inp["shape"]
+        inp = config.model.inputs[0]
+        layout = inp.layout
+        shape = inp.shape
         height = shape[layout.index("H")]
         width = shape[layout.index("W")]
 
@@ -123,7 +124,7 @@ def test_degradation(
             device_id,
             height=height,
             width=width,
-            data_type=inp["dtype"],
+            data_type=DataType(inp.dtype.value),
         )
         print(old_inference)
     new_inference = infer(new_dlc, model_id, dataset_id, snpe_version)
