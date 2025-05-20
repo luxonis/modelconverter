@@ -283,12 +283,15 @@ def migrate(
     device_id: str | None = None,
 ) -> None:
     parent = find_parent(old_instance)
-    precision = old_instance["model_precision_type"]
     if parent is None:
         logger.warning(
             f"Parent not found for model '{model_id}' and instance '{old_instance['id']}'"
         )
         return
+    logger.info(
+        f"Parent found for model '{model_id}' and instance '{old_instance['id']}': {parent['id']}"
+    )
+    precision = old_instance["model_precision_type"]
 
     old_archive = instance_download(
         old_instance["id"],
