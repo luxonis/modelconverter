@@ -411,9 +411,7 @@ def migrate_models(
                     status = "success"
                     error = None
                 except Exception as e:
-                    logger.exception(
-                        f"Migration for model '{model_id}' failed!"
-                    )
+                    logger.error(f"Migration for model '{model_id}' failed!")
                     status = "failed"
                     error = str(e)
                 df["model_id"].append(model_id)
