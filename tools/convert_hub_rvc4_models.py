@@ -73,13 +73,14 @@ def get_missing_precision_instances(
 
 
 def get_instance_params(
-    inst: dict[str, Any], parent: dict[str, Any]
+    inst: dict[str, Any], parent: dict[str, Any], snpe_version: str
 ) -> dict[str, Any]:
     model_id = inst["model_id"]
     return {
         "model_version_id": inst["model_version_id"],
         "model_type": "RVC4",
         "parent_id": parent["id"],
+        "hardware_parameters": {"snpe_version": snpe_version},
         "model_precision_type": inst["model_precision_type"],
         "quantization_data": df.filter(pl.col("Model ID") == model_id)
         .select("Quant. Dataset ID")
@@ -161,12 +162,14 @@ def prepare_inference(
     with tempfile.TemporaryDirectory() as d:
         input_list = ""
         for img_path in Path("datasets", dataset_id).iterdir():
+            print(f"Processing {img_path}")
             img = cv2.imread(str(img_path))
             img = cv2.resize(img, (width, height))
             img = img.astype(data_type.as_numpy_dtype())
             img.tofile(f"{d}/{img_path.stem}.raw")
             input_list += f"{ADB_DATA_DIR}/{dataset_id}/{img_path.stem}.raw\n"
         with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=d) as f:
+            assert input_list
             f.write(input_list)
             adb.push(f.name, f"{ADB_DATA_DIR}/{dataset_id}/input_list.txt")
         adb.push(d, f"{ADB_DATA_DIR}/{dataset_id}/")
@@ -321,7 +324,9 @@ def migrate(
 
     buildinfo_opts = get_buildinfo(old_archive)
 
-    new_instance_params = get_instance_params(old_instance, parent)
+    new_instance_params = get_instance_params(
+        old_instance, parent, snpe_version
+    )
 
     parent_archive = instance_download(
         parent["id"],
