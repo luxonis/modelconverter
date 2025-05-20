@@ -1,3 +1,5 @@
+import json
+import tarfile
 import tempfile
 from functools import lru_cache
 from pathlib import Path
@@ -7,132 +9,128 @@ import cv2
 import polars as pl
 from cyclopts import App
 from loguru import logger
-from luxonis_ml.data import LuxonisDataset, LuxonisLoader
+from luxonis_ml.utils import setup_logging
+from rich import print
 
+from modelconverter.cli.utils import request_info
 from modelconverter.hub.__main__ import (
-    _export,
     _instance_ls,
     _model_ls,
     _variant_ls,
-    instance_delete,
 )
 from modelconverter.hub.__main__ import (
     instance_download as _instance_download,
 )
-from modelconverter.utils import AdbHandler
-from modelconverter.utils.types import Target
+from modelconverter.utils import AdbHandler, subprocess_run
+from modelconverter.utils.constants import (
+    CALIBRATION_DIR,
+    MISC_DIR,
+    OUTPUTS_DIR,
+)
+from modelconverter.utils.exceptions import SubprocessException
+from modelconverter.utils.metadata import _get_metadata_dlc
+from modelconverter.utils.nn_archive import safe_members
+from modelconverter.utils.types import DataType
 
 instance_download = lru_cache(maxsize=None)(_instance_download)
 
 app = App(name="convert_hub_rvc4_models")
 
 adb = AdbHandler()
+setup_logging(file="convert_hub_rvc4_models.log")
 
 ADB_DATA_DIR = "/data/local/zoo_conversion/"
 df = pl.read_csv("models.csv")
 
+models_df = {"original": [], "parent": []}
 
-def get_missing_model_precisions(
-    instance_list: list[dict[str, Any]], snpe_version: str
-) -> set:
-    model_precision_types = {
+
+def get_missing_precision_instances(
+    instances: list[dict[str, Any]], snpe_version: str
+) -> list[dict[str, Any]]:
+    all_precision_types = {
         inst["model_precision_type"]
-        for inst in instance_list
+        for inst in instances
         if inst["model_type"] == "RVC4"
+        and inst["model_precision_type"] is not None
     }
-    snpe_version_model_precision_types = {
+    snpe_version_precision_types = {
         inst["model_precision_type"]
-        for inst in instance_list
+        for inst in instances
         if inst["model_type"] == "RVC4"
-        and inst["hardware_parameters"].get("snpe_version") == snpe_version
+        and (inst["hardware_parameters"] or {}).get("snpe_version")
+        == snpe_version
     }
-    return model_precision_types - snpe_version_model_precision_types
+    missing = all_precision_types - snpe_version_precision_types
+    return [
+        inst
+        for inst in instances
+        if inst["model_type"] == "RVC4"
+        and inst["model_precision_type"] in missing
+    ]
 
 
-def get_precision_to_params(
-    model_id: str,
-    instance_list: list[dict[str, Any]],
-    precision_list: set[str],
-    snpe_version: str,
-    force_reexport: bool = False,
-) -> dict[str, dict[str, Any]]:
+def get_instance_params(
+    inst: dict[str, Any], parent: dict[str, Any]
+) -> dict[str, Any]:
+    model_id = inst["model_id"]
     return {
-        inst["model_precision_type"]: {
-            "id": inst["id"],
-            "parent_id": inst["parent_id"],
-            "quantization_data": df.filter(pl.col("Model ID") == model_id)
-            .select("Quant. Dataset ID")
-            .item(),
-            "snpe_version": inst["hardware_parameters"].get("snpe_version"),
-            "input_shape": inst["input_shape"],
-        }
-        for inst in instance_list
-        if inst["model_type"] == "RVC4"
-        and (
-            (
-                inst["hardware_parameters"].get("snpe_version") != snpe_version
-                and inst["model_precision_type"] in precision_list
-            )
-            or (
-                force_reexport
-                and inst["hardware_parameters"].get("snpe_version")
-                == snpe_version
-            )
-        )
+        "model_version_id": inst["model_version_id"],
+        "model_type": "RVC4",
+        "parent_id": parent["id"],
+        "model_precision_type": inst["model_precision_type"],
+        "quantization_data": df.filter(pl.col("Model ID") == model_id)
+        .select("Quant. Dataset ID")
+        .item(),
+        "tags": inst["tags"],
+        "input_shape": inst["input_shape"],
     }
-
-
-def export_models(
-    variant_info: dict[str, Any],
-    target_precision: str,
-    params: dict[str, Any],
-    snpe_version: str,
-    force_reexport: bool = False,
-    **kwargs,
-) -> Path:
-    logger.info(
-        f"Exporting: {variant_info['name']} {target_precision} SNPE {snpe_version}"
-    )
-    if force_reexport and params["snpe_version"] == snpe_version:
-        logger.info(f"Force re-exporting: {params['id']}")
-        instance_delete(params["id"])
-    instance = _export(
-        f"{variant_info['name']} {target_precision} SNPE {snpe_version}",
-        params["parent_id"],
-        Target.RVC4,
-        target_precision=target_precision,
-        quantization_data=params["quantization_data"],
-        snpe_version=snpe_version,
-        **kwargs,
-    )
-    return instance_download(instance["id"], output_dir="converted_models")
 
 
 @lru_cache
-def prepare_inference(dataset_id: str, width: int, height: int) -> None:
-    dataset = LuxonisDataset(dataset_id, bucket_storage="gcs")
-    loader = LuxonisLoader(
-        dataset, width=width, height=height, keep_aspect_ratio=False
-    )
+def prepare_inference(
+    dataset_id: str, width: int, height: int, data_type: DataType
+) -> None:
     with tempfile.TemporaryDirectory() as d:
         input_list = ""
-        for i, (img, _) in enumerate(loader):
-            cv2.imwrite(f"{d}/{i}.jpg", img)
-            input_list += f"{ADB_DATA_DIR}/{dataset_id}/{i}.jpg\n"
+        for img_path in Path("datasets", dataset_id).iterdir():
+            img = cv2.imread(str(img_path))
+            img = cv2.resize(img, (width, height))
+            img = img.astype(data_type.as_numpy_dtype())
+            img.tofile(f"{d}/{img_path.stem}.raw")
+            input_list += f"{ADB_DATA_DIR}/{dataset_id}/{img_path.stem}.raw\n"
         with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=d) as f:
             f.write(input_list)
             adb.push(f.name, f"{ADB_DATA_DIR}/{dataset_id}/input_list.txt")
         adb.push(d, f"{ADB_DATA_DIR}/{dataset_id}/")
 
 
+def test_degradation(
+    old_archive: Path, new_dlc: Path, model_id: str, snpe_version: str
+) -> bool:
+    # old_dlc = get_dlc(old_archive)
+    # old_inference = infer(
+    #     old_dlc,
+    # )
+    dataset_id = (
+        df.filter(pl.col("Model ID") == model_id)
+        .select("Test Dataset ID")
+        .item()
+    )
+    new_inference = infer(new_dlc, model_id, dataset_id, snpe_version)
+    print(new_inference)
+
+
 def infer(
     model_path: Path,
     model_id: str,
     dataset_id: str,
-    width: int,
-    height: int,
     snpe_version: str,
-) -> bool:
+) -> Path:
+    metadata = _get_metadata_dlc(model_path.parent / "info.csv")
+    _, height, width, _ = next(iter(metadata.input_shapes.values()))
+    print(height, width)
+    exit()
     prepare_inference(dataset_id, width, height)
     adb.shell(f"mkdir {ADB_DATA_DIR}/{model_id}")
     adb.push(str(model_path), f"{ADB_DATA_DIR}/{model_id}/model.dlc")
@@ -147,107 +145,203 @@ def infer(
         "--use_dsp"
     )
     if ret != 0:
-        logger.error(f"Inference for model '{model_id}' failed!")
-        logger.error(stdout)
-        logger.error(stderr)
-        return False
+        raise SubprocessException(
+            f"SNPE inference failed with code {ret}:\n"
+            f"stdout:\n{stdout}\n"
+            f"stderr:\n{stderr}\n"
+        )
+
     adb.pull(
         f"{ADB_DATA_DIR}/{model_id}/outputs",
         f"comparison/{model_id}/{snpe_version}/",
     )
-    return True
+    return Path("comparison", model_id, snpe_version)
+
+
+def find_parent(instance: dict[str, Any]) -> dict[str, Any] | None:
+    if instance["model_type"] == "ONNX":
+        return instance
+    parent_id = instance["parent_id"]
+    if parent_id is None:
+        return None
+
+    return find_parent(request_info(parent_id, "modelInstances"))
+
+
+def get_buildinfo(archive: Path) -> list[str]:
+    with (
+        tempfile.TemporaryDirectory() as d,
+        tarfile.open(archive, mode="r") as tf,
+    ):
+        tf.extractall(d, members=safe_members(tf))  # noqa: S202
+        buildinfo_path = Path(d, "buildinfo.json")
+        if not buildinfo_path.exists():
+            return []
+        buildinfo = json.loads(buildinfo_path.read_text())
+
+    if "modelconverter_version" not in buildinfo:
+        raise NotImplementedError("Multi stage archive")
+
+    buildinfo = buildinfo["cmd_info"]
+
+    def remove_args(command: list[str], to_remove: list[str]) -> list[str]:
+        result = []
+        i = 0
+        while i < len(command):
+            if command[i] in to_remove:
+                # Skip the flag and its associated value
+                i += 2
+            else:
+                result.append(command[i])
+                i += 1
+        return result
+
+    def jsonify(lst: list[str]) -> str:
+        string = json.dumps(lst, separators=(",", ":"))
+        # ' and " needs to be swapped for the CLI
+        return string.replace("'", "@@").replace('"', "'").replace("@@", '""')
+
+    convert_args = remove_args(buildinfo["dlc_convert"][1:], ["-i"])
+
+    if "quantization_cmd" in buildinfo:
+        quant_args = remove_args(
+            buildinfo["quantization_cmd"][1:],
+            ["--input_list", "--input_dlc", "--output_dlc"],
+        )
+    else:
+        quant_args = []
+
+    graph_args = remove_args(
+        buildinfo["graph_prepare"][1:], ["--input_dlc", "--output_dlc"]
+    )
+
+    return [
+        "rvc4.snpe_onnx_to_dlc_args",
+        jsonify(convert_args),
+        "rvc4.snpe_dlc_quant_args",
+        jsonify(quant_args),
+        "rvc4.snpe_dlc_graph_prepare_args",
+        jsonify(graph_args),
+    ]
+
+
+def create_new_instance(
+    instance_params: dict[str, Any], archive: Path
+) -> None: ...
+
+
+def migrate(
+    old_instance: dict[str, Any], snpe_version: str, model_id: str
+) -> None:
+    parent = find_parent(old_instance)
+    if parent is None:
+        logger.warning(
+            f"Parent not found for model '{model_id}' and instance '{old_instance['id']}'"
+        )
+        return
+
+    old_archive = instance_download(
+        old_instance["id"],
+        output_dir=(MISC_DIR / "zoo"),
+        cache=True,
+    )
+
+    buildinfo_opts = get_buildinfo(old_archive)
+
+    new_instance_params = get_instance_params(old_instance, parent)
+
+    parent_archive = instance_download(
+        parent["id"], output_dir=(MISC_DIR / "zoo"), cache=True
+    )
+    models_df["parent"].append(parent_archive.name)
+    models_df["original"].append(old_archive.name)
+
+    dataset_name = (
+        df.filter(pl.col("Model ID") == model_id)
+        .select("Quant. Dataset ID")
+        .item()
+    )
+    subprocess_run(
+        [
+            "modelconverter",
+            "convert",
+            "rvc4",
+            "--path",
+            str(parent_archive),
+            "--output-dir",
+            model_id,
+            "--to",
+            "nn_archive",
+            "--tool-version",
+            snpe_version,
+            *buildinfo_opts,
+            "calibration.path",
+            CALIBRATION_DIR / dataset_name,
+        ],
+    )
+    new_dlc = next(iter((OUTPUTS_DIR / model_id).glob("*.dlc")))
+    new_archive = next(iter((OUTPUTS_DIR / model_id).glob("*.tar.gz")))
+
+    if test_degradation(old_archive, new_dlc, model_id, snpe_version):
+        logger.info(
+            f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
+        )
+        logger.info("Creating new instance")
+        create_new_instance(new_instance_params, new_archive)
+    else:
+        logger.warning(
+            f"Degradation test failed for model '{model_id}' and instance '{old_instance['id']}'"
+        )
 
 
 @app.default
-def main(
-    *,
-    snpe_version: str = "2.32.6",
-    force_reexport: bool = False,
-    disable_onnx_simplification: bool = False,
-    disable_onnx_optimization: bool = False,
-    snpe_onnx_to_dlc_args: list[str] | None = None,
-    snpe_dlc_quant_args: list[str] | None = None,
-    snpe_dlc_graph_prepare_args: list[str] | None = None,
-    limit: int = 3,
-    is_public: bool = False,
-) -> None:
+def main(*, snpe_version: str = "2.32.6", dry: bool = True) -> None:
     """Export all RVC4 models from the Luxonis Hub to SNPE format.
 
     Parameters
     ----------
     snpe_version : str
         The SNPE version to use for the export.
-    force_reexport : bool
-        If True, force re-export the model even if it already exists.
-    disable_onnx_simplification : bool
-        If True, disable ONNX simplification.
-    disable_onnx_optimization : bool
-        If True, disable ONNX optimization.
-    snpe_onnx_to_dlc_args : list[str] | None
-        Additional arguments to pass to the SNPE ONNX to DLC converter.
-    snpe_dlc_quant_args : list[str] | None
-        Additional arguments to pass to the SNPE DLC quantization tool.
-    snpe_dlc_graph_prepare_args : list[str] | None
-        Additional arguments to pass to the SNPE DLC graph preparation tool.
+    dry : bool
+        If True (default for safety), no models are uploaded to HubAI.
     """
-    model_list = _model_ls(
+    limit = 5 if dry else None
+    models = _model_ls(
         is_public=True,
         luxonis_only=True,
         limit=limit,
         _silent=True,
     )
-    logger.info(f"Models found: {len(model_list)}")
+    logger.info(f"Models found: {len(models)}")
 
-    for model_info in model_list:
-        model_id = model_info["id"]
-        version_list = _variant_ls(
-            model_id=model_id, is_public=is_public, _silent=True
-        )
-
-        for variant_info in version_list:
-            if "RVC4" not in variant_info["platforms"]:
+    for model in models:
+        model_id = model["id"]
+        variants = _variant_ls(model_id=model_id, is_public=True, _silent=True)
+        logger.info(f"Variants found: {len(variants)}")
+        for variant in variants:
+            if "RVC4" not in variant["platforms"]:
                 continue
 
-            instance_list = _instance_ls(
-                model_id=model_info["id"],
-                variant_id=variant_info["id"],
+            instances = _instance_ls(
+                model_id=model["id"],
+                variant_id=variant["id"],
                 model_type=None,
                 is_public=True,
                 _silent=True,
             )
-            precision_list = get_missing_model_precisions(
-                instance_list, snpe_version
+            instances = get_missing_precision_instances(
+                instances, snpe_version
             )
-            logger.info(
-                f"Missing model precisions for SNPE {snpe_version}: {precision_list}"
-            )
+            logger.info(f"Instances found: {len(instances)}")
+            for old_instance in instances:
+                try:
+                    migrate(old_instance, snpe_version, model_id)
+                except Exception:
+                    logger.exception(
+                        f"Migration for model '{model_id}' failed!"
+                    )
 
-            precision_to_params = get_precision_to_params(
-                model_id,
-                instance_list,
-                precision_list,
-                snpe_version,
-                force_reexport,
-            )
-            for target_precision, params in precision_to_params.items():
-                converted_dlc = export_models(
-                    variant_info,
-                    target_precision,
-                    params,
-                    snpe_version=snpe_version,
-                    force_reexport=force_reexport,
-                    disable_onnx_simplification=disable_onnx_simplification,
-                    disable_onnx_optimization=disable_onnx_optimization,
-                    snpe_onnx_to_dlc_args=snpe_onnx_to_dlc_args or [],
-                    snpe_dlc_quant_args=snpe_dlc_quant_args or [],
-                    snpe_dlc_graph_prepare_args=snpe_dlc_graph_prepare_args
-                    or [],
-                )
-                orig_model = instance_download(params["parent_id"])
-
-                adb.push(
-                    str(converted_dlc), f"{ADB_DATA_DIR}/{model_id}/model.dlc"
-                )
+    pl.DataFrame(models_df).write_csv("downloaded_models.csv")
 
 
 if __name__ == "__main__":

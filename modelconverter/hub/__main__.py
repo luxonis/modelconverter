@@ -296,7 +296,7 @@ def variant_ls(
     limit: int = 50,
     sort: str = "updated",
     order: Order = "desc",
-) -> list[dict[str, Any]]:
+) -> None:
     """Lists model versions.
 
     Parameters
@@ -318,7 +318,7 @@ def variant_ls(
     order : Literal["asc", "desc"]
         By which order to sort the model versions.
     """
-    return _variant_ls(
+    _variant_ls(
         model_id=model_id,
         is_public=is_public,
         slug=slug,
@@ -469,7 +469,7 @@ def instance_ls(
     limit: int = 50,
     sort: str = "updated",
     order: Order = "desc",
-):
+) -> None:
     """Lists model instances.
 
     Parameters
@@ -509,7 +509,7 @@ def instance_ls(
     order : Literal["asc", "desc"]
         By which order to sort the model instances.
     """
-    return _instance_ls(
+    _instance_ls(
         platforms=[platform.name for platform in platforms]
         if platforms
         else [],
@@ -543,7 +543,7 @@ def instance_info(identifier: str, *, json: bool = False) -> None:
     json : bool
         Whether to print the information in JSON format.
     """
-    return print_hub_resource_info(
+    print_hub_resource_info(
         request_info(identifier, "modelInstances"),
         title="Model Instance Info",
         json=json,
@@ -566,7 +566,9 @@ def instance_info(identifier: str, *, json: bool = False) -> None:
 
 
 @instance.command(name="download")
-def instance_download(identifier: str, output_dir: str | None = None) -> Path:
+def instance_download(
+    identifier: str, output_dir: str | None = None, cache: bool = False
+) -> Path:
     """Downloads files from a model instance.
 
     Parameters
@@ -597,11 +599,15 @@ def instance_download(identifier: str, output_dir: str | None = None) -> Path:
                 )
             dest.mkdir(parents=True, exist_ok=True)
 
+            if (dest / filename).exists() and cache:
+                print(f"File '{filename}' already exists. Skipping download.")
+                downloaded_path = dest / filename
+                continue
             with open(dest / filename, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
 
-        print(f"Donwloaded '{f.name}'")
+        print(f"Downloaded '{f.name}'")
         downloaded_path = Path(f.name)
 
     assert downloaded_path is not None

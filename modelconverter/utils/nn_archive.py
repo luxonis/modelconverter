@@ -29,6 +29,18 @@ def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
     raise ValueError(f"Input {name} not found in the archive config")
 
 
+def safe_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
+    """Filter members to prevent path traversal attacks."""
+    safe_files = []
+    for member in tar.getmembers():
+        # Normalize path and ensure it's within the extraction folder
+        if not member.name.startswith("/") and ".." not in member.name:
+            safe_files.append(member)
+        else:
+            logger.warning(f"Skipping unsafe file: {member.name}")
+    return safe_files
+
+
 def process_nn_archive(
     path: Path, overrides: dict[str, Any] | None
 ) -> tuple[Config, NNArchiveConfig, str]:
@@ -49,17 +61,6 @@ def process_nn_archive(
     elif tarfile.is_tarfile(path):
         if untar_path.suffix == ".tar":
             untar_path = MISC_DIR / untar_path.stem
-
-        def safe_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
-            """Filter members to prevent path traversal attacks."""
-            safe_files = []
-            for member in tar.getmembers():
-                # Normalize path and ensure it's within the extraction folder
-                if not member.name.startswith("/") and ".." not in member.name:
-                    safe_files.append(member)
-                else:
-                    logger.warning(f"Skipping unsafe file: {member.name}")
-            return safe_files
 
         with tarfile.open(path, mode="r") as tf:
             for member in safe_members(tf):
@@ -180,14 +181,14 @@ def process_nn_archive(
     for head in archive_config.model.heads or []:
         postprocessor_path = getattr(head.metadata, "postprocessor_path", None)
         if postprocessor_path is not None:
-            input_model_path = untar_path / postprocessor_path
+            postprocessor_model = untar_path / postprocessor_path
             head_stage_config = {
-                "input_model": str(input_model_path),
+                "input_model": str(postprocessor_model),
                 "inputs": [],
                 "outputs": [],
                 "encoding": "NONE",
             }
-            config["stages"][input_model_path.stem] = head_stage_config
+            config["stages"][postprocessor_model.stem] = head_stage_config
 
     return Config.get_config(config, overrides), archive_config, main_stage_key
 

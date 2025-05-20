@@ -39,13 +39,16 @@ def get_metadata(model_path: Path) -> Metadata:
     raise ValueError(f"Unsupported model format: {suffix}")
 
 
-def _get_metadata_dlc(model_path: Path) -> Metadata:
+def _get_metadata_dlc(path: Path) -> Metadata:
     import polars as pl
 
-    csv_path = Path("info.csv")
-    subprocess_run(
-        ["snpe-dlc-info", "-i", model_path, "-s", csv_path], silent=True
-    )
+    if path.suffix == ".csv":
+        csv_path = path
+    else:
+        csv_path = Path("info.csv")
+        subprocess_run(
+            ["snpe-dlc-info", "-i", path, "-s", csv_path], silent=True
+        )
     content = csv_path.read_text()
 
     metadata = {}
