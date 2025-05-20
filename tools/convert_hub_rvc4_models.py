@@ -116,6 +116,7 @@ def prepare_inference(
     device_id: str | None = None,
 ) -> None:
     adb = AdbHandler(device_id)
+    adb.shell(f"mkdir -p {ADB_DATA_DIR}/{dataset_id}")
     with tempfile.TemporaryDirectory() as d:
         input_list = ""
         for img_path in Path("datasets", dataset_id).iterdir():
