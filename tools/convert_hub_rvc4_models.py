@@ -36,7 +36,6 @@ instance_download = lru_cache(maxsize=None)(_instance_download)
 
 app = App(name="convert_hub_rvc4_models")
 
-adb = AdbHandler()
 setup_logging(file="convert_hub_rvc4_models.log")
 
 ADB_DATA_DIR = "/data/local/zoo_conversion/"
@@ -87,10 +86,36 @@ def get_instance_params(
     }
 
 
+def test_degradation(
+    old_archive: Path,
+    new_dlc: Path,
+    model_id: str,
+    snpe_version: str,
+    device_id: str | None,
+) -> bool:
+    # old_dlc = get_dlc(old_archive)
+    # old_inference = infer(
+    #     old_dlc,
+    # )
+    dataset_id = (
+        df.filter(pl.col("Model ID") == model_id)
+        .select("Test Dataset ID")
+        .item()
+    )
+    new_inference = infer(new_dlc, model_id, dataset_id, snpe_version)
+    print(new_inference)
+    return True
+
+
 @lru_cache
 def prepare_inference(
-    dataset_id: str, width: int, height: int, data_type: DataType
+    dataset_id: str,
+    width: int,
+    height: int,
+    data_type: DataType,
+    device_id: str | None = None,
 ) -> None:
+    adb = AdbHandler(device_id)
     with tempfile.TemporaryDirectory() as d:
         input_list = ""
         for img_path in Path("datasets", dataset_id).iterdir():
@@ -105,28 +130,14 @@ def prepare_inference(
         adb.push(d, f"{ADB_DATA_DIR}/{dataset_id}/")
 
 
-def test_degradation(
-    old_archive: Path, new_dlc: Path, model_id: str, snpe_version: str
-) -> bool:
-    # old_dlc = get_dlc(old_archive)
-    # old_inference = infer(
-    #     old_dlc,
-    # )
-    dataset_id = (
-        df.filter(pl.col("Model ID") == model_id)
-        .select("Test Dataset ID")
-        .item()
-    )
-    new_inference = infer(new_dlc, model_id, dataset_id, snpe_version)
-    print(new_inference)
-
-
 def infer(
     model_path: Path,
     model_id: str,
     dataset_id: str,
     snpe_version: str,
+    device_id: str | None = None,
 ) -> Path:
+    adb = AdbHandler(device_id)
     metadata = _get_metadata_dlc(model_path.parent / "info.csv")
     _, height, width, _ = next(iter(metadata.input_shapes.values()))
     print(height, width)
@@ -231,7 +242,10 @@ def create_new_instance(
 
 
 def migrate(
-    old_instance: dict[str, Any], snpe_version: str, model_id: str
+    old_instance: dict[str, Any],
+    snpe_version: str,
+    model_id: str,
+    device_id: str | None = None,
 ) -> None:
     parent = find_parent(old_instance)
     precision = old_instance["model_precision_type"]
@@ -296,7 +310,9 @@ def migrate(
     new_dlc = next(iter((OUTPUTS_DIR / model_id).glob("*.dlc")))
     new_archive = next(iter((OUTPUTS_DIR / model_id).glob("*.tar.xz")))
 
-    if test_degradation(old_archive, new_dlc, model_id, snpe_version):
+    if test_degradation(
+        old_archive, new_dlc, model_id, snpe_version, device_id
+    ):
         logger.info(
             f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
         )
@@ -309,7 +325,12 @@ def migrate(
 
 
 @app.default
-def main(*, snpe_version: str = "2.32.6", dry: bool = True) -> None:
+def main(
+    *,
+    snpe_version: str = "2.32.6",
+    dry: bool = True,
+    device_id: str | None = None,
+) -> None:
     """Export all RVC4 models from the Luxonis Hub to SNPE format.
 
     Parameters
@@ -349,7 +370,7 @@ def main(*, snpe_version: str = "2.32.6", dry: bool = True) -> None:
             logger.info(f"Instances found: {len(instances)}")
             for old_instance in instances:
                 try:
-                    migrate(old_instance, snpe_version, model_id)
+                    migrate(old_instance, snpe_version, model_id, device_id)
                 except Exception:
                     logger.exception(
                         f"Migration for model '{model_id}' failed!"
