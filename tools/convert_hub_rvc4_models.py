@@ -2,7 +2,7 @@ import json
 import tarfile
 import tempfile
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from os import getenv
 from pathlib import Path
@@ -125,11 +125,9 @@ def test_degradation(
             height=height,
             width=width,
         )
-        print(old_inference)
     new_inference = infer(
         new_dlc, model_id, dataset_id, snpe_version, device_id
     )
-    print(new_inference)
     return compare_files(old_inference, new_inference)
 
 
@@ -142,10 +140,9 @@ def compare_files(old_inference: Path, new_inference: Path) -> bool:
         old_array = np.fromfile(old_file, dtype=np.float32)
         new_array = np.fromfile(new_file, dtype=np.float32)
         if not np.isclose(old_array, new_array).all():
-            logger.error(
-                f"Degradation test failed for {old_file} and {new_file}"
+            raise RuntimeError(
+                f"Comparison failed for {old_file} and {new_file}"
             )
-            return False
     return True
 
 
@@ -381,10 +378,6 @@ def migrate(
         )
         logger.info("Creating new instance")
         create_new_instance(new_instance_params, new_archive)
-    else:
-        logger.warning(
-            f"Degradation test failed for model '{model_id}' and instance '{old_instance['id']}'"
-        )
 
 
 def migrate_models(
@@ -469,7 +462,8 @@ def main(
         migrate_models(models, snpe_version, device_id, df)
     finally:
         df = pl.DataFrame(df)
-        df.write_csv(f"migration_results_{datetime.now()}.csv")  # noqa: DTZ005
+        date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M")
+        df.write_csv(f"migration_results_{date}.csv")
 
 
 if __name__ == "__main__":
