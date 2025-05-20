@@ -234,6 +234,7 @@ def migrate(
     old_instance: dict[str, Any], snpe_version: str, model_id: str
 ) -> None:
     parent = find_parent(old_instance)
+    precision = old_instance["model_precision_type"]
     if parent is None:
         logger.warning(
             f"Parent not found for model '{model_id}' and instance '{old_instance['id']}'"
@@ -261,26 +262,39 @@ def migrate(
         .select("Quant. Dataset ID")
         .item()
     )
-    subprocess_run(
-        [
-            "modelconverter",
-            "convert",
-            "rvc4",
-            "--path",
-            str(parent_archive),
-            "--output-dir",
-            model_id,
-            "--to",
-            "nn_archive",
-            "--tool-version",
-            snpe_version,
-            *buildinfo_opts,
-            "calibration.path",
-            CALIBRATION_DIR / dataset_name,
-        ],
-    )
+    args = [
+        "modelconverter",
+        "convert",
+        "rvc4",
+        "--path",
+        str(parent_archive),
+        "--output-dir",
+        model_id,
+        "--to",
+        "nn_archive",
+        "--tool-version",
+        snpe_version,
+        *buildinfo_opts,
+    ]
+
+    if precision == "INT8":
+        args.extend(
+            [
+                "calibration.path",
+                CALIBRATION_DIR / "datasets" / dataset_name,
+            ]
+        )
+    else:
+        args.extend(
+            [
+                "rvc4.disable_calibration",
+                "True",
+            ]
+        )
+
+    subprocess_run(args)
     new_dlc = next(iter((OUTPUTS_DIR / model_id).glob("*.dlc")))
-    new_archive = next(iter((OUTPUTS_DIR / model_id).glob("*.tar.gz")))
+    new_archive = next(iter((OUTPUTS_DIR / model_id).glob("*.tar.xz")))
 
     if test_degradation(old_archive, new_dlc, model_id, snpe_version):
         logger.info(
