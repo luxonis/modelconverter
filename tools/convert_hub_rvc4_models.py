@@ -300,10 +300,9 @@ def migrate(
 ) -> None:
     parent = find_parent(deepcopy(old_instance))
     if parent is None:
-        logger.warning(
+        raise RuntimeError(
             f"Parent not found for model '{model_id}' and instance '{old_instance['id']}'"
         )
-        return
     logger.info(
         f"Parent found for model '{model_id}' and instance '{old_instance['id']}': {parent['id']}"
     )
