@@ -128,7 +128,9 @@ def test_degradation(
             data_type=DataType(inp.dtype.value),
         )
         print(old_inference)
-    new_inference = infer(new_dlc, model_id, dataset_id, snpe_version)
+    new_inference = infer(
+        new_dlc, model_id, dataset_id, snpe_version, device_id
+    )
     print(new_inference)
     return compare_files(old_inference, new_inference)
 
@@ -180,7 +182,7 @@ def infer(
     model_id: str,
     dataset_id: str,
     snpe_version: str,
-    device_id: str | None = None,
+    device_id: str | None,
     width: int | None = None,
     height: int | None = None,
     data_type: DataType | None = None,
