@@ -1,9 +1,10 @@
 import json
 import tarfile
 import tempfile
+from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import cv2
 import numpy as np
@@ -104,16 +105,24 @@ def test_degradation(
         tempfile.TemporaryDirectory() as d,
         tarfile.open(old_archive, mode="r") as tf,
     ):
-        for member in tf.getmembers():
-            if not member.name.endswith(".dlc") and ".." not in member.name:
-                tf.extract(member, d)
-                old_dlc = Path(d, member.name)
-                break
-        else:
-            raise RuntimeError("Old archive doesn't contain DLC file")
+        tf.extractall(d, members=safe_members(tf))  # noqa: S202
+        old_dlc = next(iter(Path(d).glob("*.dlc")))
+        config = json.loads(Path(d, "config.json").read_text())
+
+        inp = config["model"]["inputs"][0]
+        layout = inp["layout"]
+        shape = inp["shape"]
+        height = shape[layout.index("H")]
+        width = shape[layout.index("W")]
 
         old_inference = infer(
-            old_dlc, model_id, dataset_id, snpe_version, device_id
+            old_dlc,
+            model_id,
+            dataset_id,
+            snpe_version,
+            device_id,
+            height=height,
+            width=width,
         )
         print(old_inference)
     new_inference = infer(new_dlc, model_id, dataset_id, snpe_version)
@@ -167,10 +176,13 @@ def infer(
     dataset_id: str,
     snpe_version: str,
     device_id: str | None = None,
+    width: int | None = None,
+    height: int | None = None,
 ) -> Path:
     adb = AdbHandler(device_id)
-    metadata = _get_metadata_dlc(model_path.parent / "info.csv")
-    _, height, width, _ = next(iter(metadata.input_shapes.values()))
+    if width is None or height is None:
+        metadata = _get_metadata_dlc(model_path.parent / "info.csv")
+        _, height, width, _ = next(iter(metadata.input_shapes.values()))
     prepare_inference(dataset_id, width, height)
     adb.shell(f"mkdir -p {ADB_DATA_DIR}/{model_id}")
     adb.push(str(model_path), f"{ADB_DATA_DIR}/{model_id}/model.dlc")
@@ -282,7 +294,7 @@ def migrate(
     model_id: str,
     device_id: str | None = None,
 ) -> None:
-    parent = find_parent(old_instance)
+    parent = find_parent(deepcopy(old_instance))
     if parent is None:
         logger.warning(
             f"Parent not found for model '{model_id}' and instance '{old_instance['id']}'"
@@ -295,7 +307,7 @@ def migrate(
 
     old_archive = instance_download(
         old_instance["id"],
-        output_dir=(MISC_DIR / "zoo"),
+        output_dir=(MISC_DIR / "zoo" / old_instance["id"]),
         cache=True,
     )
 
@@ -304,7 +316,9 @@ def migrate(
     new_instance_params = get_instance_params(old_instance, parent)
 
     parent_archive = instance_download(
-        parent["id"], output_dir=(MISC_DIR / "zoo"), cache=True
+        parent["id"],
+        output_dir=(MISC_DIR / "zoo" / parent["id"]),
+        cache=True,
     )
     models_df["parent"].append(parent_archive.name)
     models_df["original"].append(old_archive.name)
@@ -344,7 +358,8 @@ def migrate(
             ]
         )
 
-    subprocess_run(args)
+    logger.info(f"Running command: {' '.join(map(str, args))}")
+    subprocess_run(args, silent=True)
     new_dlc = next(iter((OUTPUTS_DIR / model_id).glob("*.dlc")))
     new_archive = next(iter((OUTPUTS_DIR / model_id).glob("*.tar.xz")))
 
@@ -368,6 +383,7 @@ def main(
     snpe_version: str = "2.32.6",
     dry: bool = True,
     device_id: str | None = None,
+    model_id: str | None = None,
 ) -> None:
     """Export all RVC4 models from the Luxonis Hub to SNPE format.
 
@@ -377,18 +393,27 @@ def main(
         The SNPE version to use for the export.
     dry : bool
         If True (default for safety), no models are uploaded to HubAI.
+    device_id : str | None
+        The device ID to use for the export. Must be set if
+        there are more than one device connected.
+    model_id : str | None
+        An ID of a specific model to be migrated.
     """
+
     limit = 5 if dry else None
-    models = _model_ls(
-        is_public=True,
-        luxonis_only=True,
-        limit=limit,
-        _silent=True,
-    )
+    if model_id is not None:
+        models = [request_info(model_id, "models")]
+    else:
+        models = _model_ls(
+            is_public=True,
+            luxonis_only=True,
+            limit=limit,
+            _silent=True,
+        )
     logger.info(f"Models found: {len(models)}")
 
     for model in models:
-        model_id = model["id"]
+        model_id = cast(str, model["id"])
         variants = _variant_ls(model_id=model_id, is_public=True, _silent=True)
         logger.info(f"Variants found: {len(variants)}")
         for variant in variants:
