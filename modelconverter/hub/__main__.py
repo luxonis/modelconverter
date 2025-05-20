@@ -755,7 +755,7 @@ def convert(
     domain: str | None = None,
     variant_tags: list[str] | None = None,
     variant_id: str | None = None,
-    quantization_data: Quantization | str | None = None,
+    quantization_data: Quantization | None = None,
     instance_tags: list[str] | None = None,
     input_shape: list[int] | None = None,
     is_deployable: bool | None = None,
