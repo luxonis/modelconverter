@@ -424,7 +424,7 @@ def migrate_models(
                     )
                     status = "success"
                     error = None
-                except Exception as e:
+                except BaseException as e:
                     logger.error(f"Migration for model '{model_id}' failed!")
                     status = "failed"
                     error = str(e)
