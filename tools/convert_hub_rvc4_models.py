@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import cv2
+import numpy as np
 import polars as pl
 from cyclopts import App
 from loguru import logger
@@ -93,17 +94,46 @@ def test_degradation(
     snpe_version: str,
     device_id: str | None,
 ) -> bool:
-    # old_dlc = get_dlc(old_archive)
-    # old_inference = infer(
-    #     old_dlc,
-    # )
     dataset_id = (
         df.filter(pl.col("Model ID") == model_id)
         .select("Test Dataset ID")
         .item()
     )
+
+    with (
+        tempfile.TemporaryDirectory() as d,
+        tarfile.open(old_archive, mode="r") as tf,
+    ):
+        for member in tf.getmembers():
+            if not member.name.endswith(".dlc") and ".." not in member.name:
+                tf.extract(member, d)
+                old_dlc = Path(d, member.name)
+                break
+        else:
+            raise RuntimeError("Old archive doesn't contain DLC file")
+
+        old_inference = infer(
+            old_dlc, model_id, dataset_id, snpe_version, device_id
+        )
+        print(old_inference)
     new_inference = infer(new_dlc, model_id, dataset_id, snpe_version)
     print(new_inference)
+    return compare_files(old_inference, new_inference)
+
+
+def compare_files(old_inference: Path, new_inference: Path) -> bool:
+    for old_file in old_inference.rglob("*.raw"):
+        new_file = new_inference / old_file.relative_to(old_inference)
+
+        print(old_file)
+        print(new_file)
+        old_array = np.fromfile(old_file, dtype=np.float32)
+        new_array = np.fromfile(new_file, dtype=np.float32)
+        if not np.isclose(old_array, new_array).all():
+            logger.error(
+                f"Degradation test failed for {old_file} and {new_file}"
+            )
+            return False
     return True
 
 
@@ -141,13 +171,15 @@ def infer(
     adb = AdbHandler(device_id)
     metadata = _get_metadata_dlc(model_path.parent / "info.csv")
     _, height, width, _ = next(iter(metadata.input_shapes.values()))
-    print(height, width)
-    exit()
     prepare_inference(dataset_id, width, height)
-    adb.shell(f"mkdir {ADB_DATA_DIR}/{model_id}")
+    adb.shell(f"mkdir -p {ADB_DATA_DIR}/{model_id}")
     adb.push(str(model_path), f"{ADB_DATA_DIR}/{model_id}/model.dlc")
-    ret, stdout, stderr = adb.shell(
-        f"source /data/local/tmp/source_me_snpe_v{snpe_version}.sh && "
+
+    command = ""
+    if snpe_version == "2.32.6":
+        command += "source /data/local/tmp/source_me.sh && "
+
+    command += (
         "snpe-parallel-run "
         f"--container {ADB_DATA_DIR}/{model_id}/model.dlc "
         f"--input_list {ADB_DATA_DIR}/{dataset_id}/input_list.txt "
@@ -156,6 +188,8 @@ def infer(
         "--cpu_fallback false "
         "--use_dsp"
     )
+    ret, stdout, stderr = adb.shell(command)
+
     if ret != 0:
         raise SubprocessException(
             f"SNPE inference failed with code {ret}:\n"
