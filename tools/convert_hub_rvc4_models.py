@@ -443,7 +443,7 @@ def main(
     """
 
     df = {"model_id": [], "model_name": [], "status": [], "error": []}
-    limit = 5 if dry else None
+    limit = 5 if dry else 10000
     if model_id is not None:
         models = [request_info(model_id, "models")]
     else:
