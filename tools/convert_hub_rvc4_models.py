@@ -157,7 +157,7 @@ def prepare_inference(
     data_type: DataType,
     device_id: str | None = None,
 ) -> None:
-    adb = AdbHandler(device_id)
+    adb = AdbHandler(device_id, silent=False)
     adb.shell(f"mkdir -p {ADB_DATA_DIR}/{dataset_id}")
     with tempfile.TemporaryDirectory() as d:
         input_list = ""
@@ -185,7 +185,7 @@ def infer(
     height: int | None = None,
     data_type: DataType | None = None,
 ) -> Path:
-    adb = AdbHandler(device_id)
+    adb = AdbHandler(device_id, silent=False)
     if width is None or height is None:
         metadata = _get_metadata_dlc(model_path.parent / "info.csv")
         _, height, width, _ = next(iter(metadata.input_shapes.values()))
@@ -220,9 +220,11 @@ def infer(
             f"stderr:\n{stderr}\n"
         )
 
+    out_dir = Path("comparison", model_id, snpe_version)
+    out_dir.mkdir(parents=True, exist_ok=True)
     adb.pull(
         f"{ADB_DATA_DIR}/{model_id}/outputs",
-        f"comparison/{model_id}/{snpe_version}/",
+        str(out_dir),
     )
     return Path("comparison", model_id, snpe_version)
 
