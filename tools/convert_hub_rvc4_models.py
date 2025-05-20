@@ -183,7 +183,8 @@ def infer(
     if width is None or height is None:
         metadata = _get_metadata_dlc(model_path.parent / "info.csv")
         _, height, width, _ = next(iter(metadata.input_shapes.values()))
-    prepare_inference(dataset_id, width, height)
+        data_type = next(iter(metadata.input_dtypes.values()))
+    prepare_inference(dataset_id, width, height, data_type, device_id)
     adb.shell(f"mkdir -p {ADB_DATA_DIR}/{model_id}")
     adb.push(str(model_path), f"{ADB_DATA_DIR}/{model_id}/model.dlc")
 
