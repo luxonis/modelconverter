@@ -3,6 +3,7 @@ import tarfile
 import tempfile
 from copy import deepcopy
 from functools import lru_cache
+from os import getenv
 from pathlib import Path
 from typing import Any, cast
 
@@ -33,7 +34,6 @@ from modelconverter.utils.constants import (
 from modelconverter.utils.exceptions import SubprocessException
 from modelconverter.utils.metadata import _get_metadata_dlc
 from modelconverter.utils.nn_archive import safe_members
-from modelconverter.utils.types import DataType
 
 instance_download = lru_cache(maxsize=None)(_instance_download)
 
@@ -125,7 +125,6 @@ def test_degradation(
             device_id,
             height=height,
             width=width,
-            data_type=DataType(inp.dtype.value),
         )
         print(old_inference)
     new_inference = infer(
@@ -156,7 +155,6 @@ def prepare_inference(
     dataset_id: str,
     width: int,
     height: int,
-    data_type: DataType,
     device_id: str | None = None,
 ) -> None:
     adb = AdbHandler(device_id, silent=False)
@@ -185,18 +183,13 @@ def infer(
     device_id: str | None,
     width: int | None = None,
     height: int | None = None,
-    data_type: DataType | None = None,
 ) -> Path:
     adb = AdbHandler(device_id, silent=False)
     if width is None or height is None:
         metadata = _get_metadata_dlc(model_path.parent / "info.csv")
         _, height, width, _ = next(iter(metadata.input_shapes.values()))
-        data_type = next(iter(metadata.input_dtypes.values()))
-    if data_type is None:
-        metadata = _get_metadata_dlc(model_path.parent / "info.csv")
-        data_type = next(iter(metadata.input_dtypes.values()))
 
-    prepare_inference(dataset_id, width, height, data_type, device_id)
+    prepare_inference(dataset_id, width, height, device_id)
     adb.shell(f"mkdir -p {ADB_DATA_DIR}/{model_id}")
     adb.push(str(model_path), f"{ADB_DATA_DIR}/{model_id}/model.dlc")
 
@@ -253,7 +246,7 @@ def get_buildinfo(archive: Path) -> list[str]:
         buildinfo = json.loads(buildinfo_path.read_text())
 
     if "modelconverter_version" not in buildinfo:
-        raise NotImplementedError("Multi stage archive")
+        raise NotImplementedError("Multi-stage archive")
 
     buildinfo = buildinfo["cmd_info"]
 
@@ -377,6 +370,9 @@ def migrate(
 
     logger.info(f"Running command: {' '.join(map(str, args))}")
     subprocess_run(args, silent=True)
+    subprocess_run(
+        f"sudo chown -R {getenv('USER')} {OUTPUTS_DIR}", silent=True
+    )
     new_dlc = next(iter((OUTPUTS_DIR / model_id).glob("*.dlc")))
     new_archive = next(iter((OUTPUTS_DIR / model_id).glob("*.tar.xz")))
 
