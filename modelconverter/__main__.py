@@ -3,7 +3,7 @@ import os
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TypeAlias
 
 from cyclopts import App, Group, Parameter
 from loguru import logger
@@ -55,6 +55,10 @@ docker_parameters = Group.create_ordered(
 docker_commands = Group.create_ordered("Docker Commands")
 device_commands = Group.create_ordered("Device Commands")
 
+OptsType: TypeAlias = Annotated[
+    list[str] | None, Parameter(json_list=False, json_dict=False)
+]
+
 
 @contextmanager
 def catch_exceptions():
@@ -71,7 +75,7 @@ def catch_exceptions():
 @app.command(group=docker_commands)
 def convert(
     target: Target,
-    opts: list[str] | None = None,
+    opts: OptsType = None,
     /,
     *,
     path: str | None = None,
@@ -181,7 +185,7 @@ def convert(
 @app.command(group=docker_commands)
 def infer(
     target: Target,
-    opts: list[str] | None = None,
+    opts: OptsType = None,
     /,
     *,
     model_path: str,
@@ -453,7 +457,15 @@ def archive(
 
 @app.meta.default
 def launcher(
-    *tokens: Annotated[str, Parameter(show=False, allow_leading_hyphen=True)],
+    *tokens: Annotated[
+        str,
+        Parameter(
+            show=False,
+            allow_leading_hyphen=True,
+            json_dict=False,
+            json_list=False,
+        ),
+    ],
     dev: Annotated[
         bool,
         Parameter(
