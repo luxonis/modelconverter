@@ -1,3 +1,3 @@
-from .__main__ import convert
+from .convert import convert
 
 __all__ = ["convert"]

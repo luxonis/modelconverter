@@ -84,7 +84,7 @@ def init_dirs() -> None:
 
 
 def get_configs(
-    path: str | None, opts: list[str] | None = None
+    path: str | None, opts: list[str] | dict[str, Any] | None = None
 ) -> tuple[Config, NNArchiveConfig | None, str | None]:
     """Sets up the configuration.
 
@@ -98,11 +98,16 @@ def get_configs(
     """
 
     opts = opts or []
-    if len(opts) % 2 != 0:
-        raise ValueError(
-            "Invalid number of overrides. See --help for more information."
-        )
-    overrides: Params = {opts[i]: opts[i + 1] for i in range(0, len(opts), 2)}
+    if isinstance(opts, list):
+        if len(opts) % 2 != 0:
+            raise ValueError(
+                "Invalid number of overrides. See --help for more information."
+            )
+        overrides: Params = {
+            opts[i]: opts[i + 1] for i in range(0, len(opts), 2)
+        }
+    else:
+        overrides = opts
     if path is not None:
         path_ = resolve_path(path, MISC_DIR)
         if path_.is_dir() or is_nn_archive(path_):
