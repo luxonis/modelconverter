@@ -42,9 +42,7 @@ app = App(name="convert_hub_rvc4_models")
 setup_logging(file="convert_hub_rvc4_models.log")
 
 ADB_DATA_DIR = "/data/local/zoo_conversion/"
-df = pl.read_csv("models.csv")
-
-models_df = {"original": [], "parent": []}
+models_df = pl.read_csv("models.csv")
 
 
 def get_missing_precision_instances(
@@ -82,7 +80,7 @@ def get_instance_params(
         "parent_id": parent["id"],
         "hardware_parameters": {"snpe_version": snpe_version},
         "model_precision_type": inst["model_precision_type"],
-        "quantization_data": df.filter(pl.col("Model ID") == model_id)
+        "quantization_data": models_df.filter(pl.col("Model ID") == model_id)
         .select("Quant. Dataset ID")
         .item(),
         "tags": inst["tags"],
@@ -98,7 +96,7 @@ def test_degradation(
     device_id: str | None,
 ) -> bool:
     dataset_id = (
-        df.filter(pl.col("Model ID") == model_id)
+        models_df.filter(pl.col("Model ID") == model_id)
         .select("Test Dataset ID")
         .item()
     )
@@ -330,11 +328,9 @@ def migrate(
         output_dir=(MISC_DIR / "zoo" / parent["id"]),
         cache=True,
     )
-    models_df["parent"].append(parent_archive.name)
-    models_df["original"].append(old_archive.name)
 
     dataset_name = (
-        df.filter(pl.col("Model ID") == model_id)
+        models_df.filter(pl.col("Model ID") == model_id)
         .select("Quant. Dataset ID")
         .item()
     )
@@ -413,6 +409,7 @@ def main(
         An ID of a specific model to be migrated.
     """
 
+    df = {"model_id": [], "model_name": [], "status": [], "error": []}
     limit = 5 if dry else None
     if model_id is not None:
         models = [request_info(model_id, "models")]
@@ -447,12 +444,21 @@ def main(
             for old_instance in instances:
                 try:
                     migrate(old_instance, snpe_version, model_id, device_id)
-                except Exception:
+                    status = "success"
+                    error = None
+                except Exception as e:
                     logger.exception(
                         f"Migration for model '{model_id}' failed!"
                     )
+                    status = "failed"
+                    error = str(e)
+                df["model_id"].append(model_id)
+                df["model_name"].append(model["name"])
+                df["status"].append(status)
+                df["error"].append(error)
 
-    pl.DataFrame(models_df).write_csv("downloaded_models.csv")
+    df = pl.DataFrame(df)
+    df.write_csv("migration_results.csv")
 
 
 if __name__ == "__main__":
