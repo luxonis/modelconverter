@@ -11,6 +11,7 @@ from cyclopts import App, Parameter
 from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
+from rich.progress import Progress
 from rich.prompt import Prompt
 
 from modelconverter.cli import (
@@ -590,6 +591,7 @@ def instance_download(
         with requests.get(url, stream=True, timeout=10) as response:
             response.raise_for_status()
 
+            total_size = int(response.headers.get("Content-Length", 0))
             filename = unquote(Path(urlparse(url).path).name)
             if dest is None:
                 dest = Path(
@@ -599,16 +601,23 @@ def instance_download(
                 )
             dest.mkdir(parents=True, exist_ok=True)
 
-            if (dest / filename).exists() and cache:
+            file_path = dest / filename
+            if file_path.exists() and cache:
                 print(f"File '{filename}' already exists. Skipping download.")
-                downloaded_path = dest / filename
+                downloaded_path = file_path
                 continue
-            with open(dest / filename, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
 
-        print(f"Downloaded '{f.name}'")
-        downloaded_path = Path(f.name)
+            with open(file_path, "wb") as f, Progress() as progress:
+                task = progress.add_task(
+                    f"Downloading '{filename}'", total=total_size
+                )
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        progress.update(task, advance=len(chunk))
+
+            print(f"Downloaded '{file_path.name}'")
+            downloaded_path = file_path
 
     assert downloaded_path is not None
     return downloaded_path
