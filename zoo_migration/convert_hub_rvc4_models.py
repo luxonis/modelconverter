@@ -35,6 +35,7 @@ from modelconverter.utils.constants import (
     OUTPUTS_DIR,
     SHARED_DIR,
 )
+from modelconverter.utils.exceptions import SubprocessException
 from modelconverter.utils.nn_archive import safe_members
 
 instance_download = lru_cache(maxsize=None)(_instance_download)
@@ -420,7 +421,7 @@ def migrate_models(
                     )
                     status = "success"
                     error = None
-                except BaseException as e:
+                except (Exception, SubprocessException) as e:
                     logger.error(f"Migration for model '{model_id}' failed!")
                     logger.error(e)
                     status = "failed"
