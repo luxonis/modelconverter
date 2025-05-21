@@ -101,6 +101,67 @@ def get_instance_params(
         "input_shape": inst["input_shape"],
     }
 
+def preprocess_image(
+    img_path: Path,
+    shape: list[int],
+    preprocessing: dict[str, Any]
+) -> np.ndarray:
+    import cv2
+
+    img = cv2.imread(str(img_path))
+
+    height, width = shape[2], shape[3]
+    img = cv2.resize(img, (width, height)).astype(np.float32)
+
+    if preprocessing.get("reverse_channels", False):
+        img = img[..., ::-1]
+
+    mean = np.array(preprocessing.get("mean", [0, 0, 0]), dtype=np.float32)
+    scale = np.array(preprocessing.get("scale", [1, 1, 1]), dtype=np.float32)
+    img = (img - mean) / scale
+
+    return img.transpose(2, 0, 1)[None, ...]
+
+def onnx_infer(
+    onnx_model_path: Path,
+    onnx_inputs: list[dict[str, Any]],
+    dataset_id: str,
+) -> None:
+    import onnxruntime as ort
+
+    input_names = [inp["name"] for inp in onnx_inputs]
+    # TODO: make the neccessary changes to support multiple inputs
+    if len(input_names) != 1:
+        raise RuntimeError(
+            f"Only single input models are supported for now, got a model with {len(input_names)} inputs"
+        )
+    input_shapes = [inp["shape"] for inp in onnx_inputs]
+    input_preprocessing = [inp["preprocessing"] for inp in onnx_inputs]
+
+    session = ort.InferenceSession(str(onnx_model_path))
+    logger.info(f"Loaded ONNX model from '{onnx_model_path}'")
+
+    dataset_path = CALIBRATION_DIR / "datasets" / dataset_id
+    if not dataset_path.is_dir():
+        raise FileNotFoundError(
+            f"Dataset {dataset_id} not found in {dataset_path}"
+        )
+
+    dataset_files = list(dataset_path.glob("*.[jp][pn]g")) + list(dataset_path.glob("*.jpeg"))
+    if not dataset_files:
+        raise RuntimeError(f"No images found in dataset {dataset_id}")
+    logger.info(f"Found {len(dataset_files)} images in dataset {dataset_id}")
+
+    onnx_outputs: dict[Path, list[np.ndarray]] = {}
+    for img_path in dataset_files:
+        input_tensors = {}
+        for name, shape, prep in zip(input_names, input_shapes, input_preprocessing):
+            input_tensors[name] = preprocess_image(img_path, shape, prep)
+
+        result = session.run(None, input_tensors)
+        onnx_outputs[f"{img_path.parent.name}/{img_path.name}"] = result
+
+    return onnx_outputs
 
 def infer(
     archive: Path,
@@ -155,6 +216,7 @@ def infer(
 def test_degradation(
     old_archive: Path,
     new_archive: Path,
+    parent_archive: Path,
     model: dict[str, Any],
     snpe_version: str,
     device_id: str | None,
@@ -167,6 +229,9 @@ def test_degradation(
     )
     logger.info(f"Testing degradation for {model_id} on {dataset_id}")
 
+    onnx_model_path, onnx_inputs = get_onnx_info(parent_archive)
+    onnx_inference = onnx_infer(onnx_model_path, onnx_inputs, dataset_id)
+    # TODO: update the `compare_files` to compare the onnx inference with the snpe old and new inference
     old_inference = infer(old_archive, model_id, dataset_id, "2.23.0")
     new_inference = infer(new_archive, model_id, dataset_id, snpe_version)
     print(model["tasks"])
@@ -220,6 +285,39 @@ def find_parent(instance: dict[str, Any]) -> dict[str, Any] | None:
 
     return find_parent(request_info(parent_id, "modelInstances"))
 
+def get_onnx_info(archive: Path) -> Path:
+    REMOVE_INP_KEYS = ("dtype", "input_type", "layout")
+    REMOVE_PREP_KEYS = ("interleaved_to_planar")
+
+    def clean_input(inp):
+        cleaned = {k: v for k, v in inp.items() if k not in REMOVE_INP_KEYS}
+        prep = cleaned.get("preprocessing", {})
+        cleaned["preprocessing"] = {
+            k: v for k, v in prep.items() if k not in REMOVE_PREP_KEYS
+        }
+        return cleaned
+
+    with (
+        tempfile.TemporaryDirectory() as d,
+        tarfile.open(archive, mode="r") as tf,
+    ):
+        tf.extractall(d, members=safe_members(tf))  # noqa: S202
+        config_path = Path(d, "config.json")
+        config = json.loads(config_path.read_text())
+        if not config_path.exists():
+            raise RuntimeError("Config file not found")
+        onnx_inputs = [clean_input(inp) for inp in config["model"]["inputs"]]
+        onnx_model = config["model"]["metadata"]["path"]
+        tmp_onnx_path = next(iter(Path(d).glob(onnx_model)))
+        if not tmp_onnx_path.exists():
+            raise RuntimeError("ONNX file not found")
+
+        subprocess_run(
+            f"sudo chown -R {getenv('USER')} {MODELS_DIR}", silent=True
+        )
+        onnx_path = shutil.copy(tmp_onnx_path, MODELS_DIR / tmp_onnx_path.name)
+
+    return onnx_path, onnx_inputs
 
 def get_buildinfo(archive: Path) -> list[str]:
     with (
@@ -282,6 +380,7 @@ def migrate(
     old_instance: dict[str, Any],
     snpe_version: str,
     model: dict[str, Any],
+    variant_id: str | None,
     device_id: str | None,
     dry: bool,
     verify: bool,
@@ -290,10 +389,10 @@ def migrate(
     model_id = model["id"]
     if parent is None:
         raise RuntimeError(
-            f"Parent not found for model '{model_id}' and instance '{old_instance['id']}'"
+            f"Parent not found for model '{model_id}', variant '{variant_id}', and instance '{old_instance['id']}'"
         )
     logger.info(
-        f"Parent found for model '{model_id}' and instance '{old_instance['id']}': {parent['id']}"
+        f"Parent found for model '{model_id}', variant '{variant_id}', and instance '{old_instance['id']}': {parent['id']}"
     )
     precision = old_instance["model_precision_type"]
 
@@ -368,7 +467,7 @@ def migrate(
             create_new_instance(new_instance_params, new_archive)
 
     elif test_degradation(
-        old_archive, new_archive, model, snpe_version, device_id
+        old_archive, new_archive, parent_archive, model, snpe_version, device_id
     ):
         logger.info(
             f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
@@ -395,10 +494,12 @@ def migrate_models(
         for variant in variants:
             if "RVC4" not in variant["platforms"]:
                 continue
+            variant_id = cast(str, variant["id"])
 
             instances = _instance_ls(
-                model_id=model["id"],
-                variant_id=variant["id"],
+                # model_id=model["id"],
+                # variant_id=variant_id,
+                model_version_id=variant_id,
                 model_type=None,
                 is_public=True,
                 _silent=True,
@@ -407,7 +508,7 @@ def migrate_models(
                 instances, snpe_version
             )
             logger.info(
-                f"Instances for variant {variant['id']} found: {len(instances)}"
+                f"Instances for variant {variant_id} found: {len(instances)}"
             )
             for old_instance in instances:
                 try:
@@ -415,6 +516,7 @@ def migrate_models(
                         old_instance,
                         snpe_version,
                         model,
+                        variant_id,
                         device_id,
                         dry,
                         verify,
@@ -427,6 +529,7 @@ def migrate_models(
                     status = "failed"
                     error = str(e)
                 df["model_id"].append(model_id)
+                df["variant_id"].append(variant["id"])
                 df["instance_id"].append(old_instance["id"])
                 df["model_name"].append(model["name"])
                 df["status"].append(status)
@@ -462,6 +565,7 @@ def main(
 
     df = {
         "model_id": [],
+        "variant_id": [],
         "instance_id": [],
         "model_name": [],
         "status": [],
