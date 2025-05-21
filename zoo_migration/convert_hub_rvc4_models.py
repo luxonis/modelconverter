@@ -390,7 +390,7 @@ def migrate_models(
         variants = _variant_ls(
             model_id=model_id, is_public=True, _silent=True
         )[:1]
-        logger.info(f"Variants found: {len(variants)}")
+        logger.info(f"Variants for model '{model_id}' found: {len(variants)}")
         for variant in variants:
             if "RVC4" not in variant["platforms"]:
                 continue
@@ -405,7 +405,9 @@ def migrate_models(
             instances = get_missing_precision_instances(
                 instances, snpe_version
             )
-            logger.info(f"Instances found: {len(instances)}")
+            logger.info(
+                f"Instances for variant {variant['id']} found: {len(instances)}"
+            )
             for old_instance in instances:
                 try:
                     migrate(
