@@ -44,7 +44,7 @@ app = App(name="convert_hub_rvc4_models")
 setup_logging(file="convert_hub_rvc4_models.log")
 
 ADB_DATA_DIR = "/data/local/zoo_conversion/"
-models_df = pl.read_csv("models.csv")
+models_df = pl.read_csv("mappings.csv")
 
 
 def get_missing_precision_instances(
@@ -122,7 +122,9 @@ def infer(
 
     src = SHARED_DIR / "zoo-inference" / model_id / inp_name
     src.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(f"datasets/{dataset_id}", src, dirs_exist_ok=True)
+    shutil.copytree(
+        CALIBRATION_DIR / "datasets" / dataset_id, src, dirs_exist_ok=True
+    )
 
     args = [
         "modelconverter",
