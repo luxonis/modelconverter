@@ -76,6 +76,7 @@ def create_new_instance(
     instance_params: dict[str, Any], archive: Path
 ) -> None:
     return
+    # logger.info("Creating new instance")
     # instance = instance_create(**instance_params, silent=True)
     # logger.info(f"New instance created: {instance['id']}, {instance['name']}")
     # upload(str(archive), instance["id"])
@@ -363,7 +364,6 @@ def migrate(
             f"Skipping verification for model '{model_id}' and instance '{old_instance['id']}'"
         )
         if not dry:
-            logger.info("Creating new instance")
             create_new_instance(new_instance_params, new_archive)
 
     elif test_degradation(
