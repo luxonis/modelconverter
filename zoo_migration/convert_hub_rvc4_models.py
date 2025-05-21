@@ -390,7 +390,7 @@ def migrate_models(
         model_id = cast(str, model["id"])
         variants = _variant_ls(
             model_id=model_id, is_public=True, _silent=True
-        )[:1]
+        )
         logger.info(f"Variants for model '{model_id}' found: {len(variants)}")
         for variant in variants:
             if "RVC4" not in variant["platforms"]:
