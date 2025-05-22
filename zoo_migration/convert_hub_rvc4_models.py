@@ -104,10 +104,9 @@ def get_instance_params(
         "input_shape": inst["input_shape"],
     }
 
+
 def preprocess_image(
-    img_path: Path,
-    shape: list[int],
-    preprocessing: dict[str, Any]
+    img_path: Path, shape: list[int], preprocessing: dict[str, Any]
 ) -> np.ndarray:
 
     img = cv2.imread(str(img_path))
@@ -123,6 +122,7 @@ def preprocess_image(
     img = (img - mean) / scale
 
     return img.transpose(2, 0, 1)[None, ...]
+
 
 def onnx_infer(
     onnx_model_path: Path,
@@ -150,7 +150,9 @@ def onnx_infer(
             f"Dataset {dataset_id} not found in {dataset_path}"
         )
 
-    dataset_files = list(dataset_path.glob("*.[jp][pn]g")) + list(dataset_path.glob("*.jpeg"))
+    dataset_files = list(dataset_path.glob("*.[jp][pn]g")) + list(
+        dataset_path.glob("*.jpeg")
+    )
     if not dataset_files:
         raise RuntimeError(f"No images found in dataset {dataset_id}")
     logger.info(f"Executing ONNX inference on {len(dataset_files)} images from {dataset_path}")
@@ -159,7 +161,9 @@ def onnx_infer(
     outputs_path.mkdir(parents=True, exist_ok=True)
     for img_path in dataset_files:
         input_tensors = {}
-        for name, shape, prep in zip(input_names, input_shapes, input_preprocessing):
+        for name, shape, prep in zip(
+            input_names, input_shapes, input_preprocessing
+        ):
             input_tensors[name] = preprocess_image(img_path, shape, prep)
 
         result = session.run(None, input_tensors)
@@ -315,6 +319,7 @@ def adb_infer(
         str(out_dir),
     )
     return Path("comparison", model_id, snpe_version)
+
 
 def infer(
     archive: Path,
@@ -515,7 +520,7 @@ def find_parent(instance: dict[str, Any]) -> dict[str, Any] | None:
 
 def get_onnx_info(archive: Path, model_id: str) -> Path:
     REMOVE_INP_KEYS = ("dtype", "input_type", "layout")
-    REMOVE_PREP_KEYS = ("interleaved_to_planar")
+    REMOVE_PREP_KEYS = "interleaved_to_planar"
 
     def clean_input(inp):
         cleaned = {k: v for k, v in inp.items() if k not in REMOVE_INP_KEYS}
@@ -548,6 +553,7 @@ def get_onnx_info(archive: Path, model_id: str) -> Path:
         onnx_path = shutil.copy(tmp_onnx_path, dst / tmp_onnx_path.name)
 
     return onnx_path, onnx_inputs
+
 
 def get_buildinfo(archive: Path) -> list[str]:
     with (
@@ -606,6 +612,23 @@ def get_buildinfo(archive: Path) -> list[str]:
     ]
 
 
+def guess_parent(
+    orphan: dict[str, Any], instances: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    born = datetime.fromisoformat(orphan["created"])
+    suspected_parents = [
+        inst
+        for inst in instances
+        if inst["id"] != orphan["id"]
+        and inst["model_type"] == "ONNX"
+        and datetime.fromisoformat(inst["created"]) < born
+    ]
+    suspected_parents.sort(
+        key=lambda x: datetime.fromisoformat(x["created"]), reverse=True
+    )
+    return suspected_parents[0] if suspected_parents else None
+
+
 def migrate(
     old_instance: dict[str, Any],
     snpe_version: str,
@@ -614,8 +637,15 @@ def migrate(
     device_id: str | None,
     dry: bool,
     verify: bool,
+    instances: list[dict[str, Any]],
 ) -> None:
     parent = find_parent(deepcopy(old_instance))
+    if parent is None:
+        logger.warning(
+            f"Parent not found for {old_instance['id']}. Attempting to guess it."
+        )
+        parent = guess_parent(old_instance, instances)
+
     model_id = model["id"]
     if parent is None:
         raise RuntimeError(
@@ -727,16 +757,14 @@ def migrate_models(
 ) -> None:
     for model in models:
         model_id = cast(str, model["id"])
-        variants = _variant_ls(
-            model_id=model_id, is_public=True, _silent=True
-        )
+        variants = _variant_ls(model_id=model_id, is_public=True, _silent=True)
         logger.info(f"Variants for model '{model_id}' found: {len(variants)}")
         for variant in variants:
             if "RVC4" not in variant["platforms"]:
                 continue
             variant_id = cast(str, variant["id"])
 
-            instances = _instance_ls(
+            all_instances = _instance_ls(
                 # model_id=model["id"],
                 # variant_id=variant_id,
                 model_version_id=variant_id,
@@ -744,11 +772,11 @@ def migrate_models(
                 is_public=True,
                 _silent=True,
             )
-            instances = get_missing_precision_instances(
-                instances, snpe_version
-            )
             logger.info(
-                f"Instances for variant {variant_id} found: {len(instances)}"
+                f"Instances for variant {variant_id} found: {len(all_instances)}"
+            )
+            instances = get_missing_precision_instances(
+                all_instances, snpe_version
             )
             for old_instance in instances:
                 try:
@@ -760,6 +788,7 @@ def migrate_models(
                         device_id,
                         dry,
                         verify,
+                        all_instances,
                     )
                     status = "success"
                     error = None
