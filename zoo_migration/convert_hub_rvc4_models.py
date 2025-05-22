@@ -1,3 +1,4 @@
+import io
 import json
 import shutil
 import tarfile
@@ -8,6 +9,7 @@ from functools import lru_cache
 from os import getenv
 from pathlib import Path
 from typing import Any, cast
+import cv2
 
 import numpy as np
 import polars as pl
@@ -27,7 +29,8 @@ from modelconverter.hub.__main__ import (
     instance_download as _instance_download,
 )
 from modelconverter.hub.typing import Task
-from modelconverter.utils import subprocess_run
+from modelconverter.utils import AdbHandler, subprocess_run
+from modelconverter.utils.metadata import _get_metadata_dlc
 from modelconverter.utils.constants import (
     CALIBRATION_DIR,
     MISC_DIR,
@@ -44,8 +47,8 @@ app = App(name="convert_hub_rvc4_models")
 
 setup_logging(file="convert_hub_rvc4_models.log")
 
-ADB_DATA_DIR = "/data/local/zoo_conversion/"
-models_df = pl.read_csv("mappings.csv")
+ADB_DATA_DIR = "/data/local/zoo_conversion"
+models_df = pl.read_csv("zoo_migration/mappings.csv")
 
 
 def get_missing_precision_instances(
@@ -106,7 +109,6 @@ def preprocess_image(
     shape: list[int],
     preprocessing: dict[str, Any]
 ) -> np.ndarray:
-    import cv2
 
     img = cv2.imread(str(img_path))
 
@@ -125,8 +127,9 @@ def preprocess_image(
 def onnx_infer(
     onnx_model_path: Path,
     onnx_inputs: list[dict[str, Any]],
+    model_id: str,
     dataset_id: str,
-) -> None:
+) -> Path:
     import onnxruntime as ort
 
     input_names = [inp["name"] for inp in onnx_inputs]
@@ -150,18 +153,168 @@ def onnx_infer(
     dataset_files = list(dataset_path.glob("*.[jp][pn]g")) + list(dataset_path.glob("*.jpeg"))
     if not dataset_files:
         raise RuntimeError(f"No images found in dataset {dataset_id}")
-    logger.info(f"Found {len(dataset_files)} images in dataset {dataset_id}")
+    logger.info(f"Executing ONNX inference on {len(dataset_files)} images from {dataset_path}")
 
-    onnx_outputs: dict[Path, list[np.ndarray]] = {}
+    outputs_path = Path("comparison", model_id, "onnx", "outputs")
+    outputs_path.mkdir(parents=True, exist_ok=True)
     for img_path in dataset_files:
         input_tensors = {}
         for name, shape, prep in zip(input_names, input_shapes, input_preprocessing):
             input_tensors[name] = preprocess_image(img_path, shape, prep)
 
         result = session.run(None, input_tensors)
-        onnx_outputs[f"{img_path.parent.name}/{img_path.name}"] = result
+        for i, res in enumerate(result):
+            np.save(outputs_path / f"{img_path.stem}_output_{i}.npy", res)
 
-    return onnx_outputs
+    return Path("comparison", model_id, "onnx", "outputs")
+
+def get_io_info(model_path: Path) -> dict[str, dict]:
+    with tempfile.TemporaryDirectory() as d:
+        csv_path = Path(d) / "info.csv"
+        subprocess_run(
+            [
+                "snpe-dlc-info",
+                "-i",
+                model_path,
+                "-s",
+                csv_path,
+            ],
+            silent=True,
+        )
+        content = csv_path.read_text()
+        csv_path.unlink()
+
+        in_start = content.find("Input Name,Dimensions,Type,Encoding Info")
+        out_start = content.find("Output Name,Dimensions,Type,Encoding Info", in_start)
+        end      = content.find("Total parameters:", out_start)
+
+        in_block  = content[in_start:out_start].strip()
+        out_block = content[out_start:   end ].strip()
+
+        df_in = pl.read_csv(io.StringIO(in_block))
+        df_in = df_in.with_columns([pl.lit(None).cast(pl.Utf8).alias("Output Name")])
+        df_out = pl.read_csv(io.StringIO(out_block))
+        df_out = df_out.with_columns([pl.lit(None).cast(pl.Utf8).alias("Input Name")])
+
+        cols = ["Input Name", "Output Name", "Dimensions", "Type", "Encoding Info"]
+        df_in  = df_in.select(cols)
+        df_out = df_out.select(cols)
+        df = pl.concat([df_in, df_out])
+
+        df = df.with_columns(
+            pl.col("Dimensions")
+            .str.split(",")
+            .alias("Dimensions")
+            .cast(pl.List(pl.Int64))
+        )
+
+        io_info = dict(inputs=[], outputs=[])
+        for row in df.rows(named=True):
+            is_input = row.get("Input Name") is not None
+            if is_input:
+                name = row["Input Name"]
+                io_info['inputs'].append({
+                    "name": name,
+                    "shape": row["Dimensions"],
+                    "dtype": row["Type"],
+                })
+            else:
+                name = row["Output Name"]
+                io_info['outputs'].append({
+                    "name": name,
+                    "shape": row["Dimensions"],
+                    "dtype": row["Type"],
+                })
+
+    return io_info
+
+@lru_cache(maxsize=None)
+def adb_prepare_inference(
+    model_path: Path,
+    dataset_id: str,
+    width: int,
+    height: int,
+    device_id: str | None = None,
+) -> None:
+    io_info = get_io_info(model_path)
+    # TODO: support multiple inputs
+    input_io = io_info["inputs"][0]
+    assert input_io["shape"][1] == height and input_io["shape"][2] == width, f"Input shape {input_io['shape']} does not match expected shape ({height}, {width})"
+
+    adb = AdbHandler(device_id, silent=False)
+    adb.shell(f"mkdir -p {ADB_DATA_DIR}/{dataset_id}")
+    with tempfile.TemporaryDirectory() as d:
+        input_list = ""
+        dataset_path = CALIBRATION_DIR / "datasets" / dataset_id
+        for img_path in dataset_path.iterdir():
+            img = cv2.imread(str(img_path))
+            img = cv2.resize(img, (width, height))
+            if input_io["dtype"] == "Float_32":
+                np_type = np.float32
+            elif input_io["dtype"] == "Float_16":
+                np_type = np.float16
+            elif input_io["dtype"] == "uFxp_8":
+                np_type = np.uint8
+            else:
+                raise ValueError(
+                    f"Unsupported data type {input_io['dtype']} for input {input_io['name']}."
+                )
+            img = img.astype(np_type)
+            img.tofile(f"{d}/{img_path.stem}.raw")
+            input_list += f"{ADB_DATA_DIR}/{dataset_id}/{d.split('/')[-1]}/{img_path.stem}.raw\n"
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=d) as f:
+            assert input_list
+            f.write(input_list)
+        adb.push(f.name, f"{ADB_DATA_DIR}/{dataset_id}/input_list.txt")
+        adb.push(d, f"{ADB_DATA_DIR}/{dataset_id}/")
+
+def adb_infer(
+    model_path: Path,
+    model_id: str,
+    dataset_id: str,
+    snpe_version: str,
+    device_id: str | None,
+    width: int | None = None,
+    height: int | None = None,
+) -> Path:
+    adb = AdbHandler(device_id, silent=False)
+    if width is None or height is None:
+        metadata = _get_metadata_dlc(model_path.parent / "info.csv")
+        _, height, width, _ = next(iter(metadata.input_shapes.values()))
+
+    adb_prepare_inference(model_path, dataset_id, width, height, device_id)
+    adb.shell(f"mkdir -p {ADB_DATA_DIR}/{model_id}")
+    adb.push(str(model_path), f"{ADB_DATA_DIR}/{model_id}/model.dlc")
+
+    command = ""
+    if snpe_version == "2.32.6":
+        command += "source /data/local/tmp/source_me.sh && "
+
+    command += (
+        "snpe-net-run "
+        f"--container {ADB_DATA_DIR}/{model_id}/model.dlc "
+        f"--input_list {ADB_DATA_DIR}/{dataset_id}/input_list.txt "
+        f"--output_dir {ADB_DATA_DIR}/{model_id}/outputs "
+        "--perf_profile default "
+        "--enable_cpu_fallback "
+        "--use_dsp"
+    )
+    ret, stdout, stderr = adb.shell(command)
+
+    if ret != 0:
+        raise SubprocessException(
+            f"SNPE inference failed with code {ret}:\n"
+            f"stdout:\n{stdout}\n"
+            f"stderr:\n{stderr}\n"
+        )
+
+    out_dir = Path("comparison", model_id, snpe_version)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    adb.pull(
+        f"{ADB_DATA_DIR}/{model_id}/outputs",
+        str(out_dir),
+    )
+    return Path("comparison", model_id, snpe_version)
 
 def infer(
     archive: Path,
@@ -213,6 +366,81 @@ def infer(
     return SHARED_DIR / "zoo-infer-output" / model_id / snpe_version
 
 
+def adb_test_degradation(
+    old_archive: Path,
+    new_archive: Path,
+    parent_archive: Path,
+    model_id: str,
+    snpe_version: str,
+    device_id: str | None,
+) -> bool:
+    dataset_id = (
+        models_df.filter(pl.col("Model ID") == model_id)
+        .select("Test Dataset ID")
+        .item()
+    )
+
+    old_dir = MODELS_DIR / "zoo" / model_id / "2.23.0"
+    old_dir.mkdir(parents=True, exist_ok=True)
+    with (
+        tempfile.TemporaryDirectory() as d,
+        tarfile.open(old_archive, mode="r") as tf,
+    ):
+        tf.extractall(d, members=safe_members(tf))
+        old_dlc = next(iter(Path(d).glob("*.dlc")))
+        config = Config(**json.loads(Path(d, "config.json").read_text()))
+
+        inp = config.model.inputs[0]
+        layout = inp.layout
+        shape = inp.shape
+        height = shape[layout.index("H")]
+        width = shape[layout.index("W")]
+
+        old_inference = adb_infer(
+            old_dlc,
+            model_id,
+            dataset_id,
+            "2.23.0",
+            device_id,
+            height=height,
+            width=width,
+        )
+
+        shutil.copy(old_dlc, old_dir)
+
+    new_dir = MODELS_DIR / "zoo" / model_id / snpe_version
+    new_dir.mkdir(parents=True, exist_ok=True)
+    with (
+        tempfile.TemporaryDirectory() as d,
+        tarfile.open(new_archive, mode="r") as tf,
+    ):
+        tf.extractall(d, members=safe_members(tf))
+        new_dlc = next(iter(Path(d).glob("*.dlc")))
+        config = Config(**json.loads(Path(d, "config.json").read_text()))
+
+        inp = config.model.inputs[0]
+        layout = inp.layout
+        shape = inp.shape
+        height = shape[layout.index("H")]
+        width = shape[layout.index("W")]
+
+        new_inference = adb_infer(
+            new_dlc,
+            model_id,
+            dataset_id,
+            snpe_version,
+            device_id,
+            height=height,
+            width=width,
+        )
+
+        shutil.copy(new_dlc, new_dir)
+
+    onnx_model_path, onnx_inputs = get_onnx_info(parent_archive, model_id)
+    onnx_inference = onnx_infer(onnx_model_path, onnx_inputs, model_id, dataset_id)
+
+    return compare_files(old_inference, new_inference, onnx_inference, "image_embedding") # random non classification or segmentation task
+
 def test_degradation(
     old_archive: Path,
     new_archive: Path,
@@ -229,20 +457,20 @@ def test_degradation(
     )
     logger.info(f"Testing degradation for {model_id} on {dataset_id}")
 
-    onnx_model_path, onnx_inputs = get_onnx_info(parent_archive)
-    onnx_inference = onnx_infer(onnx_model_path, onnx_inputs, dataset_id)
+    onnx_model_path, onnx_inputs = get_onnx_info(parent_archive, model_id)
+    onnx_inference = onnx_infer(onnx_model_path, onnx_inputs, model_id, dataset_id)
     # TODO: update the `compare_files` to compare the onnx inference with the snpe old and new inference
     old_inference = infer(old_archive, model_id, dataset_id, "2.23.0")
     new_inference = infer(new_archive, model_id, dataset_id, snpe_version)
     print(model["tasks"])
 
     return compare_files(
-        old_inference, new_inference, model["tasks"][0].lower()
+        old_inference, new_inference, onnx_inference, model["tasks"][0].lower()
     )
 
 
 def compare_files(
-    old_inference: Path, new_inference: Path, task: Task
+    old_inference: Path, new_inference: Path, onnx_inference: Path, task: Task
 ) -> bool:
     files = list(old_inference.rglob("*.npy"))
     assert len(files) > 0, "No files found in old inference"
@@ -285,7 +513,7 @@ def find_parent(instance: dict[str, Any]) -> dict[str, Any] | None:
 
     return find_parent(request_info(parent_id, "modelInstances"))
 
-def get_onnx_info(archive: Path) -> Path:
+def get_onnx_info(archive: Path, model_id: str) -> Path:
     REMOVE_INP_KEYS = ("dtype", "input_type", "layout")
     REMOVE_PREP_KEYS = ("interleaved_to_planar")
 
@@ -315,7 +543,9 @@ def get_onnx_info(archive: Path) -> Path:
         subprocess_run(
             f"sudo chown -R {getenv('USER')} {MODELS_DIR}", silent=True
         )
-        onnx_path = shutil.copy(tmp_onnx_path, MODELS_DIR / tmp_onnx_path.name)
+        dst = MODELS_DIR / "zoo" / model_id / "onnx"
+        dst.mkdir(parents=True, exist_ok=True)
+        onnx_path = shutil.copy(tmp_onnx_path, dst / tmp_onnx_path.name)
 
     return onnx_path, onnx_inputs
 
@@ -466,8 +696,18 @@ def migrate(
         if not dry:
             create_new_instance(new_instance_params, new_archive)
 
-    elif test_degradation(
-        old_archive, new_archive, parent_archive, model, snpe_version, device_id
+    # elif test_degradation(
+    #     old_archive, new_archive, parent_archive, model, snpe_version, device_id
+    # ):
+    #     logger.info(
+    #         f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
+    #     )
+    #     if not dry:
+    #         logger.info("Creating new instance")
+    #         create_new_instance(new_instance_params, new_archive)
+
+    elif adb_test_degradation(
+        old_archive, new_archive, parent_archive, model_id, snpe_version, device_id
     ):
         logger.info(
             f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
@@ -593,122 +833,3 @@ def main(
 
 if __name__ == "__main__":
     app()
-
-
-# On-device inference, not necessary now
-
-
-# @lru_cache
-# def adb_prepare_inference(
-#     dataset_id: str,
-#     width: int,
-#     height: int,
-#     device_id: str | None = None,
-# ) -> None:
-#     adb = AdbHandler(device_id, silent=False)
-#     adb.shell(f"mkdir -p {ADB_DATA_DIR}/{dataset_id}")
-#     with tempfile.TemporaryDirectory() as d:
-#         input_list = ""
-#         for img_path in Path("datasets", dataset_id).iterdir():
-#             print(f"Processing {img_path}")
-#             img = cv2.imread(str(img_path))
-#             img = cv2.resize(img, (width, height))
-#             img = img.astype(np.float32)
-#             img.tofile(f"{d}/{img_path.stem}.raw")
-#             input_list += f"{ADB_DATA_DIR}/{dataset_id}/{d.split('/')[-1]}/{img_path.stem}.raw\n"
-#         with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=d) as f:
-#             assert input_list
-#             f.write(input_list)
-#         adb.push(f.name, f"{ADB_DATA_DIR}/{dataset_id}/input_list.txt")
-#         adb.push(d, f"{ADB_DATA_DIR}/{dataset_id}/")
-#
-#
-# def adb_test_degradation(
-#     old_archive: Path,
-#     new_dlc: Path,
-#     model_id: str,
-#     snpe_version: str,
-#     device_id: str | None,
-# ) -> bool:
-#     dataset_id = (
-#         models_df.filter(pl.col("Model ID") == model_id)
-#         .select("Test Dataset ID")
-#         .item()
-#     )
-#
-#     with (
-#         tempfile.TemporaryDirectory() as d,
-#         tarfile.open(old_archive, mode="r") as tf,
-#     ):
-#         tf.extractall(d, members=safe_members(tf))
-#         old_dlc = next(iter(Path(d).glob("*.dlc")))
-#         config = Config(**json.loads(Path(d, "config.json").read_text()))
-#
-#         inp = config.model.inputs[0]
-#         layout = inp.layout
-#         shape = inp.shape
-#         height = shape[layout.index("H")]
-#         width = shape[layout.index("W")]
-#
-#         old_inference = adb_infer(
-#             old_dlc,
-#             model_id,
-#             dataset_id,
-#             "2.23.0",
-#             device_id,
-#             height=height,
-#             width=width,
-#         )
-#     new_inference = adb_infer(
-#         new_dlc, model_id, dataset_id, snpe_version, device_id
-#     )
-#     return compare_files(old_inference, new_inference)
-#
-#
-# def adb_infer(
-#     model_path: Path,
-#     model_id: str,
-#     dataset_id: str,
-#     snpe_version: str,
-#     device_id: str | None,
-#     width: int | None = None,
-#     height: int | None = None,
-# ) -> Path:
-#     adb = AdbHandler(device_id, silent=False)
-#     if width is None or height is None:
-#         metadata = _get_metadata_dlc(model_path.parent / "info.csv")
-#         _, height, width, _ = next(iter(metadata.input_shapes.values()))
-#
-#     adb_prepare_inference(dataset_id, width, height, device_id)
-#     adb.shell(f"mkdir -p {ADB_DATA_DIR}/{model_id}")
-#     adb.push(str(model_path), f"{ADB_DATA_DIR}/{model_id}/model.dlc")
-#
-#     command = ""
-#     if snpe_version == "2.32.6":
-#         command += "source /data/local/tmp/source_me.sh && "
-#
-#     command += (
-#         "snpe-parallel-run "
-#         f"--container {ADB_DATA_DIR}/{model_id}/model.dlc "
-#         f"--input_list {ADB_DATA_DIR}/{dataset_id}/input_list.txt "
-#         f"--output_dir {ADB_DATA_DIR}/{model_id}/outputs "
-#         "--perf_profile default "
-#         "--cpu_fallback false "
-#         "--use_dsp"
-#     )
-#     ret, stdout, stderr = adb.shell(command)
-#
-#     if ret != 0:
-#         raise SubprocessException(
-#             f"SNPE inference failed with code {ret}:\n"
-#             f"stdout:\n{stdout}\n"
-#             f"stderr:\n{stderr}\n"
-#         )
-#
-#     out_dir = Path("comparison", model_id, snpe_version)
-#     out_dir.mkdir(parents=True, exist_ok=True)
-#     adb.pull(
-#         f"{ADB_DATA_DIR}/{model_id}/outputs",
-#         str(out_dir),
-#     )
-#     return Path("comparison", model_id, snpe_version)
