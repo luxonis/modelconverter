@@ -285,6 +285,8 @@ def _infer_adb(
     adb.pull(f"{ADB_DATA_DIR}/{model_id}/outputs", raw_out_dir)
 
     npy_out_dir = out_dir / "npy"
+    npy_out_dir.mkdir(parents=True, exist_ok=True)
+
     for p in raw_out_dir.rglob("*.raw"):
         arr = np.fromfile(p, dtype=np.float32)
         out_shape = out_shapes[p.stem]
