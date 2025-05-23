@@ -267,6 +267,7 @@ def _infer_adb(
     _, stdout, _ = adb.shell(
         f"{source(snpe_version)} && snpe-net-run --version"
     )
+    logger.critical(stdout)
     adb.push(model_path, f"{ADB_DATA_DIR}/{model_id}/model.dlc")
 
     command = (
