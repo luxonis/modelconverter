@@ -1,4 +1,5 @@
 import json
+import math
 import re
 import shutil
 import sys
@@ -487,7 +488,7 @@ def compare_files(
     old_score = np.mean(scores_old_vs_onnx)
     new_score = np.mean(scores_new_vs_onnx)
 
-    if old_score == float("nan") or new_score == float("nan"):
+    if math.isnan(old_score) or math.isnan(new_score):
         raise RuntimeError(
             f"Degradation test failed: old model has NaN {metric} score ({old_score}) or new model has NaN {metric} score ({new_score})"
         )
