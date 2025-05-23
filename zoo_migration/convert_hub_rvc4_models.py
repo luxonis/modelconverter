@@ -628,24 +628,25 @@ def guess_parent(
 
 
 def _migrate_models(
+    *,
     old_instance: dict[str, Any],
     snpe_version: str,
     model: dict[str, Any],
     variant_id: str | None,
     device_id: str | None,
     verify: bool,
-    instances: list[dict[str, Any]],
+    all_instances: list[dict[str, Any]],
     metric: Literal["mae", "mse", "psnr", "cos"],
     infer_mode: Literal["adb", "modelconv"],
-    *,
     upload: bool = False,
+    skip_conversion: bool = False,
 ) -> tuple[float, float]:
     parent = find_parent(deepcopy(old_instance))
     if parent is None:
         logger.warning(
             f"Parent not found for {old_instance['id']}. Attempting to guess it."
         )
-        parent = guess_parent(old_instance, instances)
+        parent = guess_parent(old_instance, all_instances)
 
     model_id = model["id"]
     if parent is None:
@@ -728,8 +729,14 @@ def _migrate_models(
         args.extend(["rvc4.disable_calibration", "True"])
 
     logger.info(f"Running command: {' '.join(map(str, args))}")
-    subprocess_run(args, silent=True)
-    chown(SHARED_DIR)
+    if not skip_conversion:
+        subprocess_run(args, silent=True)
+        chown(SHARED_DIR)
+    else:
+        logger.info(
+            f"Skipping conversion for model '{model_id}' and instance '{old_instance['id']}'"
+        )
+
     new_archive = next(iter((OUTPUTS_DIR / model_id).glob("*.tar.xz")))
 
     if not verify:
@@ -760,6 +767,7 @@ def _migrate_models(
 
 
 def migrate_models(
+    *,
     models: list[dict[str, Any]],
     snpe_version: str,
     device_id: str | None,
@@ -767,8 +775,8 @@ def migrate_models(
     verify: bool,
     metric: Literal["mae", "mse", "psnr", "cos"],
     infer_mode: Literal["adb", "modelconv"],
-    *,
     upload: bool = False,
+    skip_conversion: bool = False,
 ) -> None:
     for model in models:
         model_id = cast(str, model["id"])
@@ -794,16 +802,17 @@ def migrate_models(
             for old_instance in instances:
                 try:
                     old_score, new_score = _migrate_models(
-                        old_instance,
-                        snpe_version,
-                        model,
-                        variant_id,
-                        device_id,
-                        verify,
-                        all_instances,
-                        metric,
-                        infer_mode,
+                        old_instance=old_instance,
+                        snpe_version=snpe_version,
+                        model=model,
+                        variant_id=variant_id,
+                        device_id=device_id,
+                        verify=verify,
+                        all_instances=all_instances,
+                        metric=metric,
+                        infer_mode=infer_mode,
                         upload=upload,
+                        skip_conversion=skip_conversion,
                     )
                     status = "success"
                     error = None
@@ -830,12 +839,13 @@ def main(
     snpe_version: str = "2.32.6",
     device_id: str | None = None,
     model_id: str | None = None,
-    verify: bool = True,
     infer_mode: Literal["adb", "modelconv"] = "modelconv",
     metric: Literal["mae", "mse", "psnr", "cos"] = "cos",
     limit: int = 5,
     upload: bool = False,
     confirm_upload: bool = False,
+    skip_conversion: bool = False,
+    verify: bool = True,
 ) -> None:
     """Export all RVC4 models from the Luxonis Hub to SNPE format.
 
@@ -917,20 +927,27 @@ def main(
 
     try:
         migrate_models(
-            models,
-            snpe_version,
-            device_id,
-            df,
-            verify,
-            metric,
-            infer_mode,
+            models=models,
+            snpe_version=snpe_version,
+            device_id=device_id,
+            df=df,
+            verify=verify,
+            metric=metric,
+            infer_mode=infer_mode,
             upload=upload,
+            skip_conversion=skip_conversion,
         )
     finally:
         df = pl.DataFrame(df)
         path = Path("results", f"migration_results_{date}.csv")
         path.parent.mkdir(parents=True, exist_ok=True)
         df.write_csv(path)
+        logger.info(f"Results saved to {path}")
+        n_success = df.filter(pl.col("status") == "success").shape[0]
+        logger.info(
+            f"Migration completed. {n_success} out of {len(df)} models "
+            f"were successfully migrated."
+        )
 
 
 if __name__ == "__main__":
