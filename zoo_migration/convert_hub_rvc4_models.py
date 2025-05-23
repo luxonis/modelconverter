@@ -170,6 +170,8 @@ def onnx_infer(
     )
 
     outputs_path = Path("comparison", model_id, "onnx", "outputs")
+    if outputs_path.exists():
+        shutil.rmtree(outputs_path)
     outputs_path.mkdir(parents=True, exist_ok=True)
     for img_path in dataset_files:
         input_tensors = {}
@@ -280,6 +282,8 @@ def _infer_adb(
         )
 
     out_dir = Path("comparison", model_id, snpe_version)
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
     raw_out_dir = out_dir / "raw"
     raw_out_dir.mkdir(parents=True, exist_ok=True)
     adb.pull(f"{ADB_DATA_DIR}/{model_id}/outputs", raw_out_dir)
