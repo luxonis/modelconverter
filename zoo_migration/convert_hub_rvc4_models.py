@@ -800,6 +800,7 @@ def migrate_models(
                 all_instances, snpe_version
             )
             for old_instance in instances:
+                old_score = new_score = None
                 try:
                     old_score, new_score = _migrate_models(
                         old_instance=old_instance,
@@ -822,7 +823,6 @@ def migrate_models(
                     )
                     status = "failed"
                     error = str(e)
-                    old_score = new_score = None
                 df["model_id"].append(model_id)
                 df["variant_id"].append(variant["id"])
                 df["instance_id"].append(old_instance["id"])
