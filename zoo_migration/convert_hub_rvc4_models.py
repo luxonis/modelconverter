@@ -309,7 +309,7 @@ def _infer_adb(
     npy_out_dir.mkdir(parents=True, exist_ok=True)
 
     for p in raw_out_dir.rglob("*.raw"):
-        logger.warning(f"Processing {p}")
+        logger.debug(f"Processing {p}")
         arr = np.fromfile(p, dtype=np.float32)
 
         out_shape = out_shapes[p.stem]
@@ -322,10 +322,9 @@ def _infer_adb(
             arr = arr.reshape(out_shape)
 
         img_index = int(p.parent.name.split("_")[-1]) + 1
-        logger.warning(f"Image index: {img_index}")
         dest = npy_out_dir / p.stem
         dest.mkdir(parents=True, exist_ok=True)
-        logger.warning(f"Saving to {dest}")
+        logger.debug(f"Saving to {dest}")
         np.save(dest / f"image_{img_index}.npy", arr)
     return npy_out_dir
 
@@ -735,7 +734,7 @@ def _migrate_models(
     precision = old_instance["model_precision_type"]
     if precision is None:
         logger.warning(
-            f"Precision is None for model '{model_id}' "
+            f"Precision is `None` for model '{model_id}' "
             f"and instance '{old_instance_id}'"
         )
         if "--input_list" in command_args["quantization_cmd"]:
@@ -1010,9 +1009,7 @@ def main(
         )
 
     def signal_handler(signum: int, frame: FrameType | None) -> NoReturn:
-        logger.warning(
-            f"Received signal {signum}, cleaning up before exiting."
-        )
+        logger.error(f"Received signal {signum}, cleaning up before exiting.")
         cleanup()
         sys.exit(1)
 
