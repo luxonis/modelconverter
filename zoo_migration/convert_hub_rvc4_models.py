@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import sys
 import tarfile
@@ -19,6 +20,7 @@ from loguru import logger
 from luxonis_ml.nn_archive import Config
 from luxonis_ml.utils import setup_logging
 from rich import print
+from rich.prompt import Prompt
 from scipy.spatial.distance import cosine
 
 from modelconverter.cli.utils import get_configs, request_info
@@ -26,6 +28,8 @@ from modelconverter.hub.__main__ import (
     _instance_ls,
     _model_ls,
     _variant_ls,
+    instance_create,
+    upload,
 )
 from modelconverter.hub.__main__ import (
     instance_download as _instance_download,
@@ -93,14 +97,13 @@ def get_missing_precision_instances(
     ]
 
 
-def create_new_instance(
+def upload_new_instance(
     instance_params: dict[str, Any], archive: Path
 ) -> None:
-    return
-    # logger.info("Creating new instance")  # noqa: ERA001
-    # instance = instance_create(**instance_params, silent=True)  # noqa: ERA001
-    # logger.info(f"New instance created: {instance['id']}, {instance['name']}")  # noqa: ERA001
-    # upload(str(archive), instance["id"])  # noqa: ERA001
+    logger.info("Creating new instance")
+    instance = instance_create(**instance_params, silent=True)
+    logger.info(f"New instance created: {instance['id']}, {instance['name']}")
+    upload(str(archive), instance["id"])
 
 
 def get_instance_params(
@@ -259,11 +262,10 @@ def _infer_adb(
         for inp in config.inputs
     }
 
-    in_shape = in_shapes[inp_name] is not None
-    assert in_shape is not None
+    in_shape = in_shapes[inp_name]
     adb_prepare_inference(
         dataset_id,
-        in_shape,
+        in_shape,  # type: ignore
         encoding[inp_name],
         resize_method[inp_name],
         device_id,
@@ -345,7 +347,6 @@ def _infer_modelconv(
         src.parent,
         "--tool-version",
         snpe_version,
-        "--dev",
     ]
     logger.info(f"Running command: {' '.join(map(str, args))}")
     subprocess_run(args, silent=True)
@@ -417,7 +418,6 @@ def test_degradation(
     onnx_inference = onnx_infer(
         onnx_model_path, onnx_inputs, onnx_outputs, model_id, dataset_id
     )
-    # TODO: update the `compare_files` to compare the onnx inference with the snpe old and new inference
     old_inference = infer(
         old_archive, model_id, dataset_id, "2.23.0", infer_mode, device_id
     )
@@ -622,11 +622,12 @@ def _migrate_models(
     model: dict[str, Any],
     variant_id: str | None,
     device_id: str | None,
-    dry: bool,
     verify: bool,
     instances: list[dict[str, Any]],
     metric: Literal["mae", "mse", "psnr", "cos"],
     infer_mode: Literal["adb", "modelconv"],
+    *,
+    upload: bool = False,
 ) -> tuple[float, float]:
     parent = find_parent(deepcopy(old_instance))
     if parent is None:
@@ -722,9 +723,8 @@ def _migrate_models(
         logger.info(
             f"New model {metric}: {new_score} > old model {metric}: {old_score}"
         )
-    if not dry:
-        logger.info("Creating new instance")
-        create_new_instance(new_instance_params, new_archive)
+    if upload:
+        upload_new_instance(new_instance_params, new_archive)
     return old_score, new_score
 
 
@@ -733,10 +733,11 @@ def migrate_models(
     snpe_version: str,
     device_id: str | None,
     df: dict[str, list[str | float | None]],
-    dry: bool,
     verify: bool,
     metric: Literal["mae", "mse", "psnr", "cos"],
     infer_mode: Literal["adb", "modelconv"],
+    *,
+    upload: bool = False,
 ) -> None:
     for model in models:
         model_id = cast(str, model["id"])
@@ -767,11 +768,11 @@ def migrate_models(
                         model,
                         variant_id,
                         device_id,
-                        dry,
                         verify,
                         all_instances,
                         metric,
                         infer_mode,
+                        upload=upload,
                     )
                     status = "success"
                     error = None
@@ -802,6 +803,8 @@ def main(
     infer_mode: Literal["adb", "modelconv"] = "modelconv",
     metric: Literal["mae", "mse", "psnr", "cos"] = "cos",
     limit: int = 5,
+    upload: bool = False,
+    confirm_upload: bool = False,
 ) -> None:
     """Export all RVC4 models from the Luxonis Hub to SNPE format.
 
@@ -828,6 +831,34 @@ def main(
         The maximum number of models to process. Default is 5 for safety.
         Ignored when `--no-dry` is set.
     """
+    if upload ^ confirm_upload:
+        raise ValueError(
+            "To upload the converted models to production zoo, you must "
+            "set both --upload and --confirm-upload flags to prevent "
+            "accidental modification of production data."
+        )
+    if upload and confirm_upload:
+        confirmation = Prompt.ask(
+            "Are you sure you want to upload the converted "
+            "models to production zoo?",
+            choices=["yes", "no"],
+        )
+        if confirmation != "yes":
+            logger.info("Upload cancelled")
+            sys.exit(0)
+
+    if device_id is not None:
+        result = subprocess_run("adb devices", silent=True)
+        if result.returncode == 0:
+            pattern = re.compile(r"^(\w+)\s+device$", re.MULTILINE)
+            devices = pattern.findall(result.stdout)
+            if device_id not in devices:
+                raise ValueError(
+                    f"Device ID '{device_id}' not found in adb devices. "
+                    f"Available devices: {', '.join(devices)}"
+                )
+        elif result.returncode != 0:
+            logger.warning("Unable to verify device ID")
 
     df = {
         "model_id": [],
@@ -857,10 +888,10 @@ def main(
             snpe_version,
             device_id,
             df,
-            dry,
             verify,
             metric,
             infer_mode,
+            upload=upload,
         )
     finally:
         df = pl.DataFrame(df)
