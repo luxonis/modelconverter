@@ -909,7 +909,9 @@ def main(
         )
     finally:
         df = pl.DataFrame(df)
-        df.write_csv(f"migration_results_{date}.csv")
+        path = Path("results", f"migration_results_{date}.csv")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        df.write_csv(path)
 
 
 if __name__ == "__main__":
