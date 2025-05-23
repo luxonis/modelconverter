@@ -368,28 +368,34 @@ def infer(
     ):
         tf.extractall(d, members=safe_members(tf))  # noqa: S202
         config = Config(**json.loads(Path(d, "config.json").read_text()))
-        dlc = next(iter(Path(d).glob("*.dlc")))
+        model_path = next(iter(Path(d).glob("*.dlc")))
 
         inp_name = config.model.inputs[0].name
 
-        shutil.copy(dlc, dir)
+        shutil.copy(model_path, dir)
 
-    if infer_mode == "adb":
-        return _infer_adb(
-            dlc,
-            archive,
-            model_id,
-            dataset_id,
-            snpe_version,
-            inp_name,
-            device_id,
-        )
-    if infer_mode == "modelconv":
-        return _infer_modelconv(
-            dlc, archive, model_id, dataset_id, snpe_version, inp_name, dir
-        )
-    logger.error(f"Unknown inference mode: {infer_mode}")
-    sys.exit(1)
+        if infer_mode == "adb":
+            return _infer_adb(
+                model_path,
+                archive,
+                model_id,
+                dataset_id,
+                snpe_version,
+                inp_name,
+                device_id,
+            )
+        if infer_mode == "modelconv":
+            return _infer_modelconv(
+                model_path,
+                archive,
+                model_id,
+                dataset_id,
+                snpe_version,
+                inp_name,
+                dir,
+            )
+        logger.error(f"Unknown inference mode: {infer_mode}")
+        sys.exit(1)
 
 
 def test_degradation(
@@ -780,6 +786,7 @@ def migrate_models(
                     )
                     status = "failed"
                     error = str(e)
+                    old_score = new_score = None
                 df["model_id"].append(model_id)
                 df["variant_id"].append(variant["id"])
                 df["instance_id"].append(old_instance["id"])
