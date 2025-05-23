@@ -303,7 +303,7 @@ def _infer_adb(
         img_index = int(p.parent.name.split("_")[-1]) + 1
         logger.warning(f"Image index: {img_index}")
         dest = npy_out_dir / p.stem
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.mkdir(parents=True, exist_ok=True)
         logger.warning(f"Saving to {dest}")
         np.save(dest / f"image_{img_index}.npy", arr)
     return npy_out_dir
