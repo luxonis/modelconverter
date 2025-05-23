@@ -22,7 +22,6 @@ from cyclopts import App
 from loguru import logger
 from luxonis_ml.nn_archive import Config
 from luxonis_ml.utils import setup_logging
-from rich import print
 from rich.prompt import Prompt
 from scipy.spatial.distance import cosine
 
@@ -53,7 +52,8 @@ app = App(name="convert_hub_rvc4_models")
 
 setup_logging(file="convert_hub_rvc4_models.log")
 
-ADB_DATA_DIR = "/data/local/zoo_conversion"
+ADB_DATA_DIR = "/data/local/zoo_conversion/datasets"
+ADB_MODELS_DIR = "/data/local/zoo_conversion/models"
 models_df = pl.read_csv("mappings.csv")
 
 
@@ -140,6 +140,8 @@ def onnx_infer(
     onnx_inputs: list[dict[str, Any]],
     onnx_outputs: list[str],
     model_id: str,
+    variant_id: str,
+    instance_id: str,
     dataset_id: str,
 ) -> Path:
     import onnxruntime as ort
@@ -171,7 +173,9 @@ def onnx_infer(
         f"Executing ONNX inference on {len(dataset_files)} images from {dataset_path}"
     )
 
-    outputs_path = Path("comparison", model_id, "onnx", "outputs")
+    outputs_path = Path(
+        "comparison", model_id, variant_id, instance_id, "onnx", "outputs"
+    )
     if outputs_path.exists():
         shutil.rmtree(outputs_path)
     outputs_path.mkdir(parents=True, exist_ok=True)
@@ -228,6 +232,8 @@ def _infer_adb(
     model_path: Path,
     archive: Path,
     model_id: str,
+    variant_id: str,
+    instance_id: str,
     dataset_id: str,
     snpe_version: str,
     inp_name: str,
@@ -261,7 +267,7 @@ def _infer_adb(
         device_id,
     )
 
-    adb_workdir = f"{ADB_DATA_DIR}/{model_id}/{snpe_version}/"
+    adb_workdir = f"{ADB_MODELS_DIR}/{model_id}/{variant_id}/{instance_id}/{snpe_version}/"
 
     adb.shell(f"mkdir -p {adb_workdir}")
 
@@ -290,7 +296,9 @@ def _infer_adb(
             f"stderr:\n{stderr}\n"
         )
 
-    out_dir = Path("comparison", model_id, snpe_version)
+    out_dir = Path(
+        "comparison", model_id, variant_id, instance_id, snpe_version
+    )
     if out_dir.exists():
         shutil.rmtree(out_dir)
     raw_out_dir = out_dir / "raw"
@@ -326,12 +334,21 @@ def _infer_modelconv(
     dlc: Path,
     archive: Path,
     model_id: str,
+    variant_id: str,
+    instance_id: str,
     dataset_id: str,
     snpe_version: str,
     inp_name: str,
     save_dir: Path,
 ) -> Path:
-    src = SHARED_DIR / "zoo-inference" / model_id / inp_name
+    src = (
+        SHARED_DIR
+        / "zoo-inference"
+        / model_id
+        / variant_id
+        / instance_id
+        / inp_name
+    )
     src.mkdir(parents=True, exist_ok=True)
     shutil.copytree(
         CALIBRATION_DIR / "datasets" / dataset_id, src, dirs_exist_ok=True
@@ -343,7 +360,12 @@ def _infer_modelconv(
         "--model-path",
         save_dir / dlc.name,
         "--output-dir",
-        SHARED_DIR / "zoo-infer-output" / model_id / snpe_version,
+        SHARED_DIR
+        / "zoo-infer-output"
+        / model_id
+        / variant_id
+        / instance_id
+        / snpe_version,
         "--path",
         archive,
         "--input-path",
@@ -353,19 +375,30 @@ def _infer_modelconv(
     ]
     logger.info(f"Running command: {' '.join(map(str, args))}")
     subprocess_run(args, silent=True)
-    return SHARED_DIR / "zoo-infer-output" / model_id / snpe_version
+    return (
+        SHARED_DIR
+        / "zoo-infer-output"
+        / model_id
+        / variant_id
+        / instance_id
+        / snpe_version
+    )
 
 
 def infer(
     archive: Path,
     model_id: str,
+    variant_id: str,
+    instance_id: str,
     dataset_id: str,
     snpe_version: str,
     infer_mode: Literal["adb", "modelconv"],
     device_id: str | None,
 ) -> Path:
     chown(SHARED_DIR)
-    dir = MODELS_DIR / "zoo" / model_id / snpe_version
+    dir = (
+        MODELS_DIR / "zoo" / model_id / variant_id / instance_id / snpe_version
+    )
     dir.mkdir(parents=True, exist_ok=True)
     with (
         tempfile.TemporaryDirectory() as d,
@@ -384,6 +417,8 @@ def infer(
                 model_path,
                 archive,
                 model_id,
+                variant_id,
+                instance_id,
                 dataset_id,
                 snpe_version,
                 inp_name,
@@ -394,6 +429,8 @@ def infer(
                 model_path,
                 archive,
                 model_id,
+                variant_id,
+                instance_id,
                 dataset_id,
                 snpe_version,
                 inp_name,
@@ -408,6 +445,8 @@ def test_degradation(
     new_archive: Path,
     parent_archive: Path,
     model: dict[str, Any],
+    variant_id: str,
+    instance_id: str,
     snpe_version: str,
     device_id: str | None,
     metric: Literal["mae", "mse", "psnr", "cos"],
@@ -425,13 +464,33 @@ def test_degradation(
         parent_archive, model_id
     )
     onnx_inference = onnx_infer(
-        onnx_model_path, onnx_inputs, onnx_outputs, model_id, dataset_id
+        onnx_model_path,
+        onnx_inputs,
+        onnx_outputs,
+        model_id,
+        variant_id,
+        instance_id,
+        dataset_id,
     )
     old_inference = infer(
-        old_archive, model_id, dataset_id, "2.23.0", infer_mode, device_id
+        old_archive,
+        model_id,
+        variant_id,
+        instance_id,
+        dataset_id,
+        "2.23.0",
+        infer_mode,
+        device_id,
     )
     new_inference = infer(
-        new_archive, model_id, dataset_id, snpe_version, infer_mode, device_id
+        new_archive,
+        model_id,
+        variant_id,
+        instance_id,
+        dataset_id,
+        snpe_version,
+        infer_mode,
+        device_id,
     )
 
     return compare_files(
@@ -453,7 +512,6 @@ def compare_files(
     onnx_inference: Path,
     metric: Literal["mae", "mse", "psnr", "cos"],
 ) -> tuple[float, float]:
-    print(old_inference, new_inference, onnx_inference)
     files = list(old_inference.rglob("*.npy"))
     assert len(files) > 0, "No files found in old inference"
 
@@ -648,24 +706,27 @@ def _migrate_models(
     upload: bool = False,
     skip_conversion: bool = False,
 ) -> tuple[float, float]:
+    old_instance_id = old_instance["id"]
     parent = find_parent(deepcopy(old_instance))
     if parent is None:
         logger.warning(
-            f"Parent not found for {old_instance['id']}. Attempting to guess it."
+            f"Parent not found for {old_instance_id}. Attempting to guess it."
         )
         parent = guess_parent(old_instance, all_instances)
 
     model_id = model["id"]
     if parent is None:
         raise RuntimeError(
-            f"Parent not found for model '{model_id}', variant '{variant_id}', and instance '{old_instance['id']}'"
+            f"Parent not found for model '{model_id}', variant '{variant_id}', and instance '{old_instance_id}'"
         )
     logger.info(
-        f"Parent found for model '{model_id}', variant '{variant_id}', and instance '{old_instance['id']}': {parent['id']}"
+        f"Parent found for model '{model_id}', variant '{variant_id}', and instance '{old_instance_id}': {parent['id']}"
     )
     old_archive = instance_download(
-        old_instance["id"],
-        output_dir=(MISC_DIR / "zoo" / old_instance["id"]),
+        old_instance_id,
+        output_dir=(
+            MISC_DIR / "zoo" / model_id / variant_id / old_instance_id
+        ),
         cache=True,
     )
 
@@ -675,7 +736,7 @@ def _migrate_models(
     if precision is None:
         logger.warning(
             f"Precision is None for model '{model_id}' "
-            f"and instance '{old_instance['id']}'"
+            f"and instance '{old_instance_id}'"
         )
         if "--input_list" in command_args["quantization_cmd"]:
             precision = "INT8"
@@ -689,7 +750,7 @@ def _migrate_models(
             precision = "FP32"
         logger.warning(
             f"Precision guessed as '{precision}' for model '{model_id}' "
-            f"and instance '{old_instance['id']}'"
+            f"and instance '{old_instance_id}'"
         )
 
     new_instance_params = get_instance_params(
@@ -698,7 +759,7 @@ def _migrate_models(
 
     parent_archive = instance_download(
         parent["id"],
-        output_dir=(MISC_DIR / "zoo" / parent["id"]),
+        output_dir=(MISC_DIR / "zoo" / model_id / variant_id / parent["id"]),
         cache=True,
     )
 
@@ -714,7 +775,7 @@ def _migrate_models(
         "--path",
         parent_archive,
         "--output-dir",
-        model_id,
+        f"{model_id}/{variant_id}/{old_instance_id}_new",
         "--to",
         "nn_archive",
         "--tool-version",
@@ -741,14 +802,20 @@ def _migrate_models(
         chown(SHARED_DIR)
     else:
         logger.info(
-            f"Skipping conversion for model '{model_id}' and instance '{old_instance['id']}'"
+            f"Skipping conversion for model '{model_id}' and instance '{old_instance_id}'"
         )
 
-    new_archive = next(iter((OUTPUTS_DIR / model_id).glob("*.tar.xz")))
+    new_archive = next(
+        iter(
+            (
+                OUTPUTS_DIR / model_id / variant_id / f"{old_instance_id}_new"
+            ).glob("*.tar.xz")
+        )
+    )
 
     if not verify:
         logger.info(
-            f"Skipping verification for model '{model_id}' and instance '{old_instance['id']}'"
+            f"Skipping verification for model '{model_id}' and instance '{old_instance_id}'"
         )
     else:
         old_score, new_score = test_degradation(
@@ -756,13 +823,15 @@ def _migrate_models(
             new_archive,
             parent_archive,
             model,
+            variant_id,
+            old_instance_id,
             snpe_version,
             device_id,
             metric,
             infer_mode,
         )
         logger.info(
-            f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
+            f"Degradation test passed for model '{model_id}' and instance '{old_instance_id}'"
         )
         sign = ">=" if metric == "cos" else "<="
         logger.info(
