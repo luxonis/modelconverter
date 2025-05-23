@@ -20,11 +20,11 @@ class Metadata:
 
 def get_metadata(model_path: Path) -> Metadata:
     suffix = model_path.suffix
-    if suffix == ".dlc":
+    if suffix in {".dlc", ".csv"}:
         return _get_metadata_dlc(model_path)
     if suffix == ".onnx":
         return _get_metadata_onnx(model_path)
-    if suffix in [".xml", ".bin"]:
+    if suffix in {".xml", ".bin"}:
         if suffix == ".xml":
             xml_path = model_path
             bin_path = model_path.with_suffix(".bin")
@@ -32,7 +32,7 @@ def get_metadata(model_path: Path) -> Metadata:
             bin_path = model_path
             xml_path = model_path.with_suffix(".xml")
         return _get_metadata_ir(bin_path, xml_path)
-    if suffix in [".hef", ".har"]:
+    if suffix in {".hef", ".har"}:
         return _get_metadata_hailo(model_path)
     if suffix == ".tflite":
         return _get_metadata_tflite(model_path)
