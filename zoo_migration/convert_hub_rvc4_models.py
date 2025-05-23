@@ -669,9 +669,9 @@ def _migrate_models(
             f"Precision is None for model '{model_id}' "
             f"and instance '{old_instance['id']}'"
         )
-        if "--input-list" in command_args["quantization_cmd"]:
+        if "--input_list" in command_args["quantization_cmd"]:
             precision = "INT8"
-        elif "--float-bitwidth" in command_args["quantization_cmd"]:
+        elif "--float_bitwidth" in command_args["quantization_cmd"]:
             i = command_args["quantization_cmd"].index("--float-bitwidth")
             if command_args["quantization_cmd"][i + 1] == "16":
                 precision = "FP16"
