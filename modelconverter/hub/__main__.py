@@ -104,10 +104,6 @@ def login(
     print("API key stored successfully.")
 
 
-def _model_ls(*args, **kwargs) -> list[dict[str, Any]]:
-    return hub_ls("models", *args, **kwargs)
-
-
 @model.command(name="ls")
 def model_ls(
     *,
@@ -149,7 +145,8 @@ def model_ls(
         By default, ["name", "id", "slug"] are shown.
     """
 
-    _model_ls(
+    hub_ls(
+        "models",
         tasks=list(tasks) if tasks else [],
         license_type=license_type,
         is_public=is_public,
@@ -280,10 +277,6 @@ def model_delete(identifier: str) -> None:
     print(f"Model '{identifier}' deleted")
 
 
-def _variant_ls(*args, **kwargs) -> list[dict[str, Any]]:
-    return hub_ls("modelVersions", *args, **kwargs)
-
-
 @variant.command(name="ls")
 def variant_ls(
     model_id: str | None = None,
@@ -320,7 +313,8 @@ def variant_ls(
         List of keys to show in the output.
         By default, ["name", "version", "slug", "platforms"] are shown.
     """
-    _variant_ls(
+    hub_ls(
+        "modelVersions",
         model_id=model_id,
         is_public=is_public,
         slug=slug,
@@ -438,10 +432,6 @@ def variant_delete(identifier: str) -> None:
     print(f"Model variant '{variant_id}' deleted")
 
 
-def _instance_ls(*args, **kwargs) -> list[dict[str, Any]]:
-    return hub_ls("modelInstances", *args, **kwargs)
-
-
 @instance.command(name="ls")
 def instance_ls(
     *,
@@ -505,7 +495,8 @@ def instance_ls(
         List of keys to show in the output.
         By default, ["slug", "id", "model_type", "is_nn_archive"] are shown.
     """
-    _instance_ls(
+    hub_ls(
+        "modelInstances",
         platforms=[platform.name for platform in platforms]
         if platforms
         else [],
