@@ -721,8 +721,9 @@ def _migrate_models(
         logger.info(
             f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
         )
+        sign = ">=" if metric == "cos" else "<="
         logger.info(
-            f"New model {metric}: {new_score} > old model {metric}: {old_score}"
+            f"New model {metric}: {new_score} {sign} old model {metric}: {old_score}"
         )
     if upload:
         upload_new_instance(new_instance_params, new_archive)
