@@ -57,7 +57,7 @@ app = App(name="convert_hub_rvc4_models")
 setup_logging(file="convert_hub_rvc4_models.log")
 
 ADB_DATA_DIR = "/data/local/zoo_conversion"
-models_df = pl.read_csv("zoo_migration/mappings.csv")
+models_df = pl.read_csv("mappings.csv")
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
