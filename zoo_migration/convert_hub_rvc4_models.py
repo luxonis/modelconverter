@@ -697,7 +697,7 @@ def _migrate_models(
     old_instance: dict[str, Any],
     snpe_version: str,
     model: dict[str, Any],
-    variant_id: str | None,
+    variant_id: str,
     device_id: str | None,
     verify: bool,
     all_instances: list[dict[str, Any]],
@@ -797,21 +797,16 @@ def _migrate_models(
         args.extend(["rvc4.disable_calibration", "True"])
 
     logger.info(f"Running command: {' '.join(map(str, args))}")
-    if not skip_conversion:
+    outdir = OUTPUTS_DIR / model_id / variant_id / f"{old_instance_id}_new"
+    if skip_conversion and outdir.exists() and any(outdir.glob("*.tar.xz")):
+        logger.info(
+            f"Skipping conversion for model '{model_id}', variant {variant_id}, and instance '{old_instance_id}'"
+        )
+    else:
         subprocess_run(args, silent=True)
         chown(SHARED_DIR)
-    else:
-        logger.info(
-            f"Skipping conversion for model '{model_id}' and instance '{old_instance_id}'"
-        )
 
-    new_archive = next(
-        iter(
-            (
-                OUTPUTS_DIR / model_id / variant_id / f"{old_instance_id}_new"
-            ).glob("*.tar.xz")
-        )
-    )
+    new_archive = next(iter((outdir).glob("*.tar.xz")))
 
     if not verify:
         logger.info(
