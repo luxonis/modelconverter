@@ -116,7 +116,9 @@ def model_ls(
     limit: int = 50,
     sort: str = "updated",
     order: Order = "desc",
-    key: list[str] | None = None,
+    field: Annotated[
+        list[str] | None, Parameter(name=["--field", "-f"])
+    ] = None,
 ) -> None:
     """Lists model resources.
 
@@ -140,8 +142,8 @@ def model_ls(
         Sort the models by this field.
     order : Literal["asc", "desc"] | None
         By which order to sort the models.
-    key : list[str] | None
-        List of keys to show in the output.
+    field : list[str] | None
+        List of fields to show in the output.
         By default, ["name", "id", "slug"] are shown.
     """
 
@@ -157,7 +159,7 @@ def model_ls(
         sort=sort,
         order=order,
         _silent=False,
-        keys=key or ["name", "id", "slug"],
+        keys=field or ["name", "id", "slug"],
     )
 
 
@@ -287,7 +289,9 @@ def variant_ls(
     limit: int = 50,
     sort: str = "updated",
     order: Order = "desc",
-    key: list[str] | None = None,
+    field: Annotated[
+        list[str] | None, Parameter(name=["--field", "-f"])
+    ] = None,
 ) -> None:
     """Lists model versions.
 
@@ -309,8 +313,8 @@ def variant_ls(
         Sort the model versions by this field.
     order : Literal["asc", "desc"]
         By which order to sort the model versions.
-    key : list[str] | None
-        List of keys to show in the output.
+    field : list[str] | None
+        List of fields to show in the output.
         By default, ["name", "version", "slug", "platforms"] are shown.
     """
     hub_ls(
@@ -324,7 +328,7 @@ def variant_ls(
         sort=sort,
         order=order,
         _silent=False,
-        keys=key or ["name", "version", "slug", "platforms"],
+        keys=field or ["name", "version", "slug", "platforms"],
     )
 
 
@@ -451,7 +455,9 @@ def instance_ls(
     limit: int = 50,
     sort: str = "updated",
     order: Order = "desc",
-    key: list[str] | None = None,
+    field: Annotated[
+        list[str] | None, Parameter(name=["--field", "-f"])
+    ] = None,
 ) -> None:
     """Lists model instances.
 
@@ -491,8 +497,8 @@ def instance_ls(
         Sort the model instances by this field.
     order : Literal["asc", "desc"]
         By which order to sort the model instances.
-    key : list[str] | None
-        List of keys to show in the output.
+    field : list[str] | None
+        List of fields to show in the output.
         By default, ["slug", "id", "model_type", "is_nn_archive"] are shown.
     """
     hub_ls(
@@ -516,7 +522,7 @@ def instance_ls(
         sort=sort,
         order=order,
         _silent=False,
-        keys=key
+        keys=field
         or [
             "slug",
             "id",
@@ -583,7 +589,7 @@ def instance_download(
     if not urls:
         raise ValueError("No files to download")
 
-    def cleanup(sigint: int, frame: FrameType | None) -> None:
+    def cleanup(sigint: int, _: FrameType | None) -> None:
         nonlocal file_path
         print(f"Received signal {sigint}. Download interrupted...")
         file_path.unlink(missing_ok=True)
