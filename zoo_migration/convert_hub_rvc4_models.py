@@ -289,6 +289,7 @@ def _infer_adb(
 
     for p in raw_out_dir.rglob("*.raw"):
         arr = np.fromfile(p, dtype=np.float32)
+
         out_shape = out_shapes[p.stem]
         assert out_shape is not None
 
@@ -297,7 +298,11 @@ def _infer_adb(
             arr = arr.reshape(N, H, W, C).transpose(0, 3, 1, 2)
         else:
             arr = arr.reshape(out_shape)
-        np.save(npy_out_dir / p.name.replace(".raw", ".npy"), arr)
+
+        img_index = int(p.parent.name.split("_")[-1]) + 1
+        dest = npy_out_dir / p.stem
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        np.save(dest / f"image_{img_index}.npy", arr)
     return npy_out_dir
 
 
