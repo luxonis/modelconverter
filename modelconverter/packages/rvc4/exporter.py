@@ -17,6 +17,7 @@ from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
 )
+from modelconverter.utils.subprocess import subprocess_run
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -113,6 +114,16 @@ class RVC4Exporter(Exporter):
         )
         logger.info("Offline graph preparation finished.")
         self._inference_model_path = out_dlc_path
+        subprocess_run(
+            [
+                "snpe-dlc-info",
+                "-i",
+                out_dlc_path,
+                "-s",
+                self.output_dir / "info.csv",
+            ],
+            silent=True,
+        )
         return out_dlc_path
 
     def calibrate(self, dlc_path: Path) -> Path:

@@ -20,11 +20,11 @@ class Metadata:
 
 def get_metadata(model_path: Path) -> Metadata:
     suffix = model_path.suffix
-    if suffix == ".dlc":
+    if suffix in {".dlc", ".csv"}:
         return _get_metadata_dlc(model_path)
     if suffix == ".onnx":
         return _get_metadata_onnx(model_path)
-    if suffix in [".xml", ".bin"]:
+    if suffix in {".xml", ".bin"}:
         if suffix == ".xml":
             xml_path = model_path
             bin_path = model_path.with_suffix(".bin")
@@ -32,20 +32,23 @@ def get_metadata(model_path: Path) -> Metadata:
             bin_path = model_path
             xml_path = model_path.with_suffix(".xml")
         return _get_metadata_ir(bin_path, xml_path)
-    if suffix in [".hef", ".har"]:
+    if suffix in {".hef", ".har"}:
         return _get_metadata_hailo(model_path)
     if suffix == ".tflite":
         return _get_metadata_tflite(model_path)
     raise ValueError(f"Unsupported model format: {suffix}")
 
 
-def _get_metadata_dlc(model_path: Path) -> Metadata:
+def _get_metadata_dlc(path: Path) -> Metadata:
     import polars as pl
 
-    csv_path = Path("info.csv")
-    subprocess_run(
-        ["snpe-dlc-info", "-i", model_path, "-s", csv_path], silent=True
-    )
+    if path.suffix == ".csv":
+        csv_path = path
+    else:
+        csv_path = Path("info.csv")
+        subprocess_run(
+            ["snpe-dlc-info", "-i", path, "-s", csv_path], silent=True
+        )
     content = csv_path.read_text()
 
     metadata = {}
