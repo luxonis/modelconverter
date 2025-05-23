@@ -201,13 +201,11 @@ def onnx_infer(
 @cache
 def adb_prepare_inference(
     dataset_id: str,
-    in_shape: list[int],
+    in_shape: tuple[int, int, int, int],
     encoding: Encoding,
     resize_method: ResizeMethod,
     device_id: str | None = None,
 ) -> None:
-    # TODO: support multiple inputs
-
     adb = AdbHandler(device_id, silent=False)
     adb.shell(f"mkdir -p {ADB_DATA_DIR}/{dataset_id}")
     with tempfile.TemporaryDirectory() as d:
@@ -265,7 +263,7 @@ def _infer_adb(
     in_shape = in_shapes[inp_name]
     adb_prepare_inference(
         dataset_id,
-        in_shape,  # type: ignore
+        tuple(in_shape),  # type: ignore
         encoding[inp_name],
         resize_method[inp_name],
         device_id,
@@ -830,6 +828,10 @@ def main(
     limit : int
         The maximum number of models to process. Default is 5 for safety.
         Ignored when `--no-dry` is set.
+    upload : bool
+        If True, the converted models are uploaded to HubAI.
+    confirm_upload : bool
+        Needs to be set together with `--upload` for extra safety.
     """
     if upload ^ confirm_upload:
         raise ValueError(
