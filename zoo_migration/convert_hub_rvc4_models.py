@@ -64,6 +64,10 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return 1 - cosine(a.flatten(), b.flatten())  # type: ignore
 
 
+def chown(path: Path) -> None:
+    subprocess_run(f"sudo chown -R {getenv('USER')} {path}", silent=True)
+
+
 def get_missing_precision_instances(
     instances: list[dict[str, Any]], snpe_version: str
 ) -> list[dict[str, Any]]:
@@ -356,6 +360,7 @@ def infer(
     infer_mode: Literal["adb", "modelconv"],
     device_id: str | None,
 ) -> Path:
+    chown(SHARED_DIR)
     dir = MODELS_DIR / "zoo" / model_id / snpe_version
     dir.mkdir(parents=True, exist_ok=True)
     with (
@@ -529,9 +534,7 @@ def get_onnx_info(
         if not tmp_onnx_path.exists():
             raise RuntimeError("ONNX file not found")
 
-        subprocess_run(
-            f"sudo chown -R {getenv('USER')} {MODELS_DIR}", silent=True
-        )
+        chown(SHARED_DIR)
         dst = MODELS_DIR / "zoo" / model_id / "onnx"
         dst.mkdir(parents=True, exist_ok=True)
         onnx_path = shutil.copy(tmp_onnx_path, dst / tmp_onnx_path.name)
@@ -695,34 +698,30 @@ def _migrate_models(
 
     logger.info(f"Running command: {' '.join(map(str, args))}")
     subprocess_run(args, silent=True)
-    subprocess_run(
-        f"sudo chown -R {getenv('USER')} {OUTPUTS_DIR}", silent=True
-    )
+    chown(SHARED_DIR)
     new_archive = next(iter((OUTPUTS_DIR / model_id).glob("*.tar.xz")))
 
     if not verify:
         logger.info(
             f"Skipping verification for model '{model_id}' and instance '{old_instance['id']}'"
         )
-        if not dry:
-            create_new_instance(new_instance_params, new_archive)
-
-    old_score, new_score = test_degradation(
-        old_archive,
-        new_archive,
-        parent_archive,
-        model,
-        snpe_version,
-        device_id,
-        metric,
-        infer_mode,
-    )
-    logger.info(
-        f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
-    )
-    logger.info(
-        f"New model {metric}: {new_score} > old model {metric}: {old_score}"
-    )
+    else:
+        old_score, new_score = test_degradation(
+            old_archive,
+            new_archive,
+            parent_archive,
+            model,
+            snpe_version,
+            device_id,
+            metric,
+            infer_mode,
+        )
+        logger.info(
+            f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
+        )
+        logger.info(
+            f"New model {metric}: {new_score} > old model {metric}: {old_score}"
+        )
     if not dry:
         logger.info("Creating new instance")
         create_new_instance(new_instance_params, new_archive)
