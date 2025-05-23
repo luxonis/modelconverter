@@ -1,6 +1,7 @@
 import json
 import re
 import shutil
+import signal
 import sys
 import tarfile
 import tempfile
@@ -10,7 +11,8 @@ from datetime import datetime
 from functools import cache
 from os import getenv
 from pathlib import Path
-from typing import Any, Literal, cast
+from types import FrameType
+from typing import Any, Literal, NoReturn, cast
 
 import cv2
 import numpy as np
@@ -925,6 +927,29 @@ def main(
         )
     logger.info(f"Models found: {len(models)}")
 
+    def cleanup() -> None:
+        nonlocal df
+        pl_df = pl.DataFrame(df)
+        path = Path("results", f"migration_results_{date}.csv")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pl_df.write_csv(path)
+        logger.info(f"Results saved to {path}")
+        n_success = pl_df.filter(pl.col("status") == "success").shape[0]
+        logger.info(
+            f"Migration completed. {n_success} out of {len(pl_df)} models "
+            f"were successfully migrated."
+        )
+
+    def signal_handler(signum: int, frame: FrameType | None) -> NoReturn:
+        logger.warning(
+            f"Received signal {signum}, cleaning up before exiting."
+        )
+        cleanup()
+        sys.exit(1)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
     try:
         migrate_models(
             models=models,
@@ -938,16 +963,7 @@ def main(
             skip_conversion=skip_conversion,
         )
     finally:
-        df = pl.DataFrame(df)
-        path = Path("results", f"migration_results_{date}.csv")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        df.write_csv(path)
-        logger.info(f"Results saved to {path}")
-        n_success = df.filter(pl.col("status") == "success").shape[0]
-        logger.info(
-            f"Migration completed. {n_success} out of {len(df)} models "
-            f"were successfully migrated."
-        )
+        cleanup()
 
 
 if __name__ == "__main__":
