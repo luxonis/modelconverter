@@ -1,4 +1,3 @@
-import io
 import json
 import shutil
 import sys
@@ -94,10 +93,10 @@ def create_new_instance(
     instance_params: dict[str, Any], archive: Path
 ) -> None:
     return
-    # logger.info("Creating new instance")
-    # instance = instance_create(**instance_params, silent=True)
-    # logger.info(f"New instance created: {instance['id']}, {instance['name']}")
-    # upload(str(archive), instance["id"])
+    # logger.info("Creating new instance")  # noqa: ERA001
+    # instance = instance_create(**instance_params, silent=True)  # noqa: ERA001
+    # logger.info(f"New instance created: {instance['id']}, {instance['name']}")  # noqa: ERA001
+    # upload(str(archive), instance["id"])  # noqa: ERA001
 
 
 def get_instance_params(
@@ -192,95 +191,15 @@ def onnx_infer(
     return outputs_path
 
 
-def get_io_info(model_path: Path) -> dict[str, list[dict[str, Any]]]:
-    with tempfile.TemporaryDirectory() as d:
-        csv_path = Path(d) / "info.csv"
-        subprocess_run(
-            [
-                "snpe-dlc-info",
-                "-i",
-                model_path,
-                "-s",
-                csv_path,
-            ],
-            silent=True,
-        )
-        content = csv_path.read_text()
-        csv_path.unlink()
-
-        in_start = content.find("Input Name,Dimensions,Type,Encoding Info")
-        out_start = content.find(
-            "Output Name,Dimensions,Type,Encoding Info", in_start
-        )
-        end = content.find("Total parameters:", out_start)
-
-        in_block = content[in_start:out_start].strip()
-        out_block = content[out_start:end].strip()
-
-        df_in = pl.read_csv(io.StringIO(in_block))
-        df_in = df_in.with_columns(
-            [pl.lit(None).cast(pl.Utf8).alias("Output Name")]
-        )
-        df_out = pl.read_csv(io.StringIO(out_block))
-        df_out = df_out.with_columns(
-            [pl.lit(None).cast(pl.Utf8).alias("Input Name")]
-        )
-
-        cols = [
-            "Input Name",
-            "Output Name",
-            "Dimensions",
-            "Type",
-            "Encoding Info",
-        ]
-        df_in = df_in.select(cols)
-        df_out = df_out.select(cols)
-        df = pl.concat([df_in, df_out])
-
-        df = df.with_columns(
-            pl.col("Dimensions")
-            .str.split(",")
-            .alias("Dimensions")
-            .cast(pl.List(pl.Int64))
-        )
-
-        io_info = {"inputs": [], "outputs": []}
-        for row in df.rows(named=True):
-            is_input = row.get("Input Name") is not None
-            if is_input:
-                name = row["Input Name"]
-                io_info["inputs"].append(
-                    {
-                        "name": name,
-                        "shape": row["Dimensions"],
-                        "dtype": row["Type"],
-                    }
-                )
-            else:
-                name = row["Output Name"]
-                io_info["outputs"].append(
-                    {
-                        "name": name,
-                        "shape": row["Dimensions"],
-                        "dtype": row["Type"],
-                    }
-                )
-
-    return io_info
-
-
 @cache
 def adb_prepare_inference(
-    model_path: Path,
     dataset_id: str,
     in_shape: list[int],
     encoding: Encoding,
     resize_method: ResizeMethod,
     device_id: str | None = None,
 ) -> None:
-    io_info = get_io_info(model_path)
     # TODO: support multiple inputs
-    input_io = io_info["inputs"][0]
 
     adb = AdbHandler(device_id, silent=False)
     adb.shell(f"mkdir -p {ADB_DATA_DIR}/{dataset_id}")
@@ -292,7 +211,7 @@ def adb_prepare_inference(
             arr = read_image(
                 img_path,
                 shape=[n, c, h, w],
-                # shape=self.in_shapes[input_name],
+                # shape=self.in_shapes[input_name],  # noqa: ERA001
                 encoding=encoding,
                 resize_method=resize_method,
                 data_type=DataType.FLOAT32,
@@ -322,9 +241,7 @@ def _infer_adb(
     config = mult_cfg.get_stage_config(None)
 
     in_shapes = {inp.name: inp.shape for inp in config.inputs}
-    in_dtypes = {inp.name: inp.data_type for inp in config.inputs}
     out_shapes = {out.name: out.shape for out in config.outputs}
-    out_dtypes = {out.name: out.data_type for out in config.outputs}
     resize_method = {
         inp.name: inp.calibration.resize_method
         if isinstance(inp.calibration, ImageCalibrationConfig)
@@ -341,7 +258,6 @@ def _infer_adb(
     in_shape = in_shapes[inp_name] is not None
     assert in_shape is not None
     adb_prepare_inference(
-        model_path,
         dataset_id,
         in_shape,
         encoding[inp_name],
@@ -864,7 +780,6 @@ def migrate_models(
                     logger.exception(
                         f"Migration for model '{model_id}' failed!"
                     )
-                    # logger.error(e)
                     status = "failed"
                     error = str(e)
                 df["model_id"].append(model_id)
