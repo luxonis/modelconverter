@@ -45,10 +45,14 @@ def visualize_npy_file(file_path: Path) -> None:
         )
 
     batch_size, n_classes, _, _ = data.shape
+
     palette = generate_palette(n_classes)
 
     for i in range(batch_size):
-        mask = np.argmax(data[i], axis=0).astype(np.uint8)
+        if n_classes == 1:
+            mask = (data[i] > 0.5).astype(np.uint8).squeeze()
+        else:
+            mask = np.argmax(data[i], axis=0).astype(np.uint8)
         colored_mask = apply_colormap(mask, palette)
         cv2.imshow(f"{file_path.name} - Sample {i}", colored_mask)
         key = cv2.waitKey(0)

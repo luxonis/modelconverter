@@ -69,7 +69,6 @@ def get_missing_precision_instances(
         inst["model_precision_type"]
         for inst in instances
         if inst["model_type"] == "RVC4"
-        and inst["model_precision_type"] is not None
     }
     snpe_version_precision_types = {
         inst["model_precision_type"]
@@ -553,7 +552,7 @@ def get_onnx_info(
     return Path(onnx_path), onnx_inputs, output_names
 
 
-def get_buildinfo(archive: Path) -> list[str]:
+def get_buildinfo(archive: Path) -> tuple[list[str], dict[str, Any]]:
     with (
         tempfile.TemporaryDirectory() as d,
         tarfile.open(archive, mode="r") as tf,
@@ -561,7 +560,8 @@ def get_buildinfo(archive: Path) -> list[str]:
         tf.extractall(d, members=safe_members(tf))  # noqa: S202
         buildinfo_path = Path(d, "buildinfo.json")
         if not buildinfo_path.exists():
-            return []
+            logger.warning(f"Buildinfo file not found in {archive}.")
+            return [], {}
         buildinfo = json.loads(buildinfo_path.read_text())
 
     if "modelconverter_version" not in buildinfo:
@@ -607,7 +607,7 @@ def get_buildinfo(archive: Path) -> list[str]:
         jsonify(quant_args),
         "rvc4.snpe_dlc_graph_prepare_args",
         jsonify(graph_args),
-    ]
+    ], buildinfo
 
 
 def guess_parent(
@@ -655,15 +655,34 @@ def _migrate_models(
     logger.info(
         f"Parent found for model '{model_id}', variant '{variant_id}', and instance '{old_instance['id']}': {parent['id']}"
     )
-    precision = old_instance["model_precision_type"]
-
     old_archive = instance_download(
         old_instance["id"],
         output_dir=(MISC_DIR / "zoo" / old_instance["id"]),
         cache=True,
     )
 
-    buildinfo_opts = get_buildinfo(old_archive)
+    buildinfo_opts, command_args = get_buildinfo(old_archive)
+
+    precision = old_instance["model_precision_type"]
+    if precision is None:
+        logger.warning(
+            f"Precision is None for model '{model_id}' "
+            f"and instance '{old_instance['id']}'"
+        )
+        if "--input-list" in command_args["quantization_cmd"]:
+            precision = "INT8"
+        elif "--float-bitwidth" in command_args["quantization_cmd"]:
+            i = command_args["quantization_cmd"].index("--float-bitwidth")
+            if command_args["quantization_cmd"][i + 1] == "16":
+                precision = "FP16"
+            else:
+                precision = "FP32"
+        else:
+            precision = "FP32"
+        logger.warning(
+            f"Precision guessed as '{precision}' for model '{model_id}' "
+            f"and instance '{old_instance['id']}'"
+        )
 
     new_instance_params = get_instance_params(
         old_instance, parent, snpe_version
