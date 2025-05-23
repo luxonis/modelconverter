@@ -273,7 +273,7 @@ def _infer_adb(
 
     command = (
         f"{source(snpe_version)} && "
-        "snpe-net-run "
+        "/data/local/tmp/snpe/aarch64-oe-linux-gcc11.2/bin/snpe-net-run "
         f"--container {ADB_DATA_DIR}/{model_id}/model.dlc "
         f"--input_list {ADB_DATA_DIR}/{dataset_id}/input_list.txt "
         f"--output_dir {ADB_DATA_DIR}/{model_id}/outputs "
