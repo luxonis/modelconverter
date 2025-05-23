@@ -1,7 +1,9 @@
+import signal
 import sys
 import webbrowser
 from pathlib import Path
 from time import sleep
+from types import FrameType
 from typing import Annotated, Any, Literal
 from urllib.parse import unquote, urlparse
 
@@ -11,6 +13,7 @@ from cyclopts import App, Parameter
 from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
 from rich import print
+from rich.progress import Progress
 from rich.prompt import Prompt
 
 from modelconverter.cli import (
@@ -101,15 +104,6 @@ def login(
     print("API key stored successfully.")
 
 
-def _model_ls(*args, **kwargs) -> list[dict[str, Any]]:
-    return hub_ls(
-        "models",
-        *args,
-        **kwargs,
-        keys=["name", "id", "slug"],
-    )
-
-
 @model.command(name="ls")
 def model_ls(
     *,
@@ -122,6 +116,9 @@ def model_ls(
     limit: int = 50,
     sort: str = "updated",
     order: Order = "desc",
+    field: Annotated[
+        list[str] | None, Parameter(name=["--field", "-f"])
+    ] = None,
 ) -> None:
     """Lists model resources.
 
@@ -145,9 +142,13 @@ def model_ls(
         Sort the models by this field.
     order : Literal["asc", "desc"] | None
         By which order to sort the models.
+    field : list[str] | None
+        List of fields to show in the output.
+        By default, ["name", "id", "slug"] are shown.
     """
 
-    _model_ls(
+    hub_ls(
+        "models",
         tasks=list(tasks) if tasks else [],
         license_type=license_type,
         is_public=is_public,
@@ -158,6 +159,7 @@ def model_ls(
         sort=sort,
         order=order,
         _silent=False,
+        keys=field or ["name", "id", "slug"],
     )
 
 
@@ -277,15 +279,6 @@ def model_delete(identifier: str) -> None:
     print(f"Model '{identifier}' deleted")
 
 
-def _variant_ls(*args, **kwargs) -> list[dict[str, Any]]:
-    return hub_ls(
-        "modelVersions",
-        *args,
-        **kwargs,
-        keys=["name", "version", "slug", "platforms"],
-    )
-
-
 @variant.command(name="ls")
 def variant_ls(
     model_id: str | None = None,
@@ -296,7 +289,10 @@ def variant_ls(
     limit: int = 50,
     sort: str = "updated",
     order: Order = "desc",
-) -> list[dict[str, Any]]:
+    field: Annotated[
+        list[str] | None, Parameter(name=["--field", "-f"])
+    ] = None,
+) -> None:
     """Lists model versions.
 
     Parameters
@@ -317,8 +313,12 @@ def variant_ls(
         Sort the model versions by this field.
     order : Literal["asc", "desc"]
         By which order to sort the model versions.
+    field : list[str] | None
+        List of fields to show in the output.
+        By default, ["name", "version", "slug", "platforms"] are shown.
     """
-    return _variant_ls(
+    hub_ls(
+        "modelVersions",
         model_id=model_id,
         is_public=is_public,
         slug=slug,
@@ -328,6 +328,7 @@ def variant_ls(
         sort=sort,
         order=order,
         _silent=False,
+        keys=field or ["name", "version", "slug", "platforms"],
     )
 
 
@@ -435,21 +436,6 @@ def variant_delete(identifier: str) -> None:
     print(f"Model variant '{variant_id}' deleted")
 
 
-def _instance_ls(*args, **kwargs) -> list[dict[str, Any]]:
-    return hub_ls(
-        "modelInstances",
-        *args,
-        **kwargs,
-        keys=[
-            "name",
-            "slug",
-            "platforms",
-            "is_nn_archive",
-            "hash",
-        ],
-    )
-
-
 @instance.command(name="ls")
 def instance_ls(
     *,
@@ -469,7 +455,10 @@ def instance_ls(
     limit: int = 50,
     sort: str = "updated",
     order: Order = "desc",
-):
+    field: Annotated[
+        list[str] | None, Parameter(name=["--field", "-f"])
+    ] = None,
+) -> None:
     """Lists model instances.
 
     Parameters
@@ -508,8 +497,12 @@ def instance_ls(
         Sort the model instances by this field.
     order : Literal["asc", "desc"]
         By which order to sort the model instances.
+    field : list[str] | None
+        List of fields to show in the output.
+        By default, ["slug", "id", "model_type", "is_nn_archive"] are shown.
     """
-    return _instance_ls(
+    hub_ls(
+        "modelInstances",
         platforms=[platform.name for platform in platforms]
         if platforms
         else [],
@@ -529,6 +522,14 @@ def instance_ls(
         sort=sort,
         order=order,
         _silent=False,
+        keys=field
+        or [
+            "slug",
+            "id",
+            "model_type",
+            "is_nn_archive",
+            "model_precision_type",
+        ],
     )
 
 
@@ -543,7 +544,7 @@ def instance_info(identifier: str, *, json: bool = False) -> None:
     json : bool
         Whether to print the information in JSON format.
     """
-    return print_hub_resource_info(
+    print_hub_resource_info(
         request_info(identifier, "modelInstances"),
         title="Model Instance Info",
         json=json,
@@ -566,7 +567,9 @@ def instance_info(identifier: str, *, json: bool = False) -> None:
 
 
 @instance.command(name="download")
-def instance_download(identifier: str, output_dir: str | None = None) -> Path:
+def instance_download(
+    identifier: str, output_dir: str | None = None, force: bool = False
+) -> Path:
     """Downloads files from a model instance.
 
     Parameters
@@ -576,6 +579,8 @@ def instance_download(identifier: str, output_dir: str | None = None) -> Path:
     output_dir : str | None
         The directory to save the downloaded files.
         If not specified, the files will be saved in the current directory.
+    force : bool
+        Whether to force download the files even if they already exist.
     """
     dest = Path(output_dir) if output_dir else None
     model_instance_id = get_resource_id(identifier, "modelInstances")
@@ -584,10 +589,19 @@ def instance_download(identifier: str, output_dir: str | None = None) -> Path:
     if not urls:
         raise ValueError("No files to download")
 
+    def cleanup(sigint: int, _: FrameType | None) -> None:
+        nonlocal file_path
+        print(f"Received signal {sigint}. Download interrupted...")
+        file_path.unlink(missing_ok=True)
+
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
+
     for url in urls:
         with requests.get(url, stream=True, timeout=10) as response:
             response.raise_for_status()
 
+            total_size = int(response.headers.get("Content-Length", 0))
             filename = unquote(Path(urlparse(url).path).name)
             if dest is None:
                 dest = Path(
@@ -597,12 +611,31 @@ def instance_download(identifier: str, output_dir: str | None = None) -> Path:
                 )
             dest.mkdir(parents=True, exist_ok=True)
 
-            with open(dest / filename, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            file_path = dest / filename
+            if file_path.exists() and not force:
+                print(
+                    f"File '{filename}' already exists. Skipping download. "
+                    "Use --force to overwrite."
+                )
+                downloaded_path = file_path
+                continue
 
-        print(f"Donwloaded '{f.name}'")
-        downloaded_path = Path(f.name)
+            try:
+                with open(file_path, "wb") as f, Progress() as progress:
+                    task = progress.add_task(
+                        f"Downloading '{filename}'", total=total_size
+                    )
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            progress.update(task, advance=len(chunk))
+            except:
+                print(f"Failed to download '{filename}'")
+                file_path.unlink(missing_ok=True)
+                raise
+
+            print(f"Downloaded '{file_path.name}'")
+            downloaded_path = file_path
 
     assert downloaded_path is not None
     return downloaded_path
@@ -616,7 +649,7 @@ def instance_create(
     model_type: ModelType | None = None,
     parent_id: str | None = None,
     model_precision_type: TargetPrecision | None = None,
-    quantization_data: Quantization | None = None,
+    quantization_data: Quantization | str | None = None,
     tags: list[str] | None = None,
     input_shape: list[int] | None = None,
     is_deployable: bool | None = None,
@@ -637,7 +670,8 @@ def instance_create(
     model_precision_type : TargetPrecision | None
         The precision type of the model.
     quantization_data : Quantization | None
-        The quantization data for the model.
+        The quantization data for the model. Can be one of
+        predefined datasets or a dataset id.
     tags : list[str] | None
         List of tags for the model instance.
     input_shape : list[int] | None
