@@ -795,7 +795,6 @@ def migrate_models(
 def main(
     *,
     snpe_version: str = "2.32.6",
-    dry: bool = True,
     device_id: str | None = None,
     model_id: str | None = None,
     verify: bool = True,
@@ -811,8 +810,6 @@ def main(
     ----------
     snpe_version : str
         The SNPE version to use for the export.
-    dry : bool
-        If True (default for safety), no models are uploaded to HubAI.
     device_id : str | None
         The device ID to use for the export. Must be set if
         there are more than one device connected.
@@ -828,7 +825,7 @@ def main(
         The metric to use for the degradation test.
     limit : int
         The maximum number of models to process. Default is 5 for safety.
-        Ignored when `--no-dry` is set.
+        Ignored when `--upload` is set, unless `--model-id` is also set.
     upload : bool
         If True, the converted models are uploaded to HubAI.
     confirm_upload : bool
@@ -849,6 +846,7 @@ def main(
         if confirmation != "yes":
             logger.info("Upload cancelled")
             sys.exit(0)
+    limit = 1000 if upload else limit
 
     if device_id is not None:
         result = subprocess_run("adb devices", silent=True)
@@ -873,7 +871,6 @@ def main(
         "old_to_onnx_score": [],
         "new_to_onnx_score": [],
     }
-    limit = limit if dry else 10000
     if model_id is not None:
         models = [request_info(model_id, "models")]
     else:
