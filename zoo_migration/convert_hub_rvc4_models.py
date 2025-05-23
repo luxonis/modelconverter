@@ -851,7 +851,7 @@ def main(
         result = subprocess_run("adb devices", silent=True)
         if result.returncode == 0:
             pattern = re.compile(r"^(\w+)\s+device$", re.MULTILINE)
-            devices = pattern.findall(result.stdout)
+            devices = pattern.findall(result.stdout.decode())
             if device_id not in devices:
                 raise ValueError(
                     f"Device ID '{device_id}' not found in adb devices. "
