@@ -446,7 +446,7 @@ def _instance_ls(*args, **kwargs) -> list[dict[str, Any]]:
             "slug",
             "platforms",
             "is_nn_archive",
-            "hash",
+            "id",
         ],
     )
 
@@ -607,14 +607,19 @@ def instance_download(
                 downloaded_path = file_path
                 continue
 
-            with open(file_path, "wb") as f, Progress() as progress:
-                task = progress.add_task(
-                    f"Downloading '{filename}'", total=total_size
-                )
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        progress.update(task, advance=len(chunk))
+            try:
+                with open(file_path, "wb") as f, Progress() as progress:
+                    task = progress.add_task(
+                        f"Downloading '{filename}'", total=total_size
+                    )
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            progress.update(task, advance=len(chunk))
+            except:
+                print(f"Failed to download '{filename}'")
+                file_path.unlink(missing_ok=True)
+                raise
 
             print(f"Downloaded '{file_path.name}'")
             downloaded_path = file_path

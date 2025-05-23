@@ -61,7 +61,8 @@ class RVC4Inferer(Inferer):
 
             # TODO: detect layout
             if len(out_shape) == 4:
-                N, C, H, W = out_shape
+                N, H, W, C = out_shape
+                # outputs[p.stem] = arr.reshape(N, H, W, C)
                 outputs[p.stem] = arr.reshape(N, H, W, C).transpose(0, 3, 1, 2)
             else:
                 outputs[p.stem] = arr.reshape(out_shape)

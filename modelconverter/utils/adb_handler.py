@@ -1,6 +1,7 @@
 import subprocess
 
 from loguru import logger
+from luxonis_ml.typing import PathType
 
 
 class AdbHandler:
@@ -12,7 +13,7 @@ class AdbHandler:
 
     def _adb_run(self, *args, **kwargs) -> tuple[int, str, str]:
         subprocess.run(
-            ["adb", *self.device_args, "root"],
+            ["adb", *map(str, self.device_args), "root"],
             capture_output=True,
             check=False,
         )
@@ -43,8 +44,8 @@ class AdbHandler:
     def shell(self, cmd: str) -> tuple[int, str, str]:
         return self._adb_run("shell", cmd)
 
-    def pull(self, src: str, dst: str) -> tuple[int, str, str]:
+    def pull(self, src: PathType, dst: PathType) -> tuple[int, str, str]:
         return self._adb_run("pull", src, dst)
 
-    def push(self, src: str, dst: str) -> tuple[int, str, str]:
+    def push(self, src: PathType, dst: PathType) -> tuple[int, str, str]:
         return self._adb_run("push", src, dst)

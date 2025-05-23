@@ -1,16 +1,18 @@
 import io
 import json
 import shutil
+import sys
 import tarfile
 import tempfile
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime
-from functools import lru_cache
+from functools import cache, lru_cache
 from os import getenv
 from pathlib import Path
-from typing import Any, cast
-import cv2
+from typing import Any, Literal, cast
 
+import cv2
 import numpy as np
 import polars as pl
 from cyclopts import App
@@ -18,8 +20,9 @@ from loguru import logger
 from luxonis_ml.nn_archive import Config
 from luxonis_ml.utils import setup_logging
 from rich import print
+from scipy.spatial.distance import cosine
 
-from modelconverter.cli.utils import request_info
+from modelconverter.cli.utils import get_configs, request_info
 from modelconverter.hub.__main__ import (
     _instance_ls,
     _model_ls,
@@ -28,9 +31,14 @@ from modelconverter.hub.__main__ import (
 from modelconverter.hub.__main__ import (
     instance_download as _instance_download,
 )
-from modelconverter.hub.typing import Task
-from modelconverter.utils import AdbHandler, subprocess_run
-from modelconverter.utils.metadata import _get_metadata_dlc
+from modelconverter.utils import (
+    AdbHandler,
+    read_image,
+    subprocess_run,
+)
+from modelconverter.utils.config import (
+    ImageCalibrationConfig,
+)
 from modelconverter.utils.constants import (
     CALIBRATION_DIR,
     MISC_DIR,
@@ -40,15 +48,21 @@ from modelconverter.utils.constants import (
 )
 from modelconverter.utils.exceptions import SubprocessException
 from modelconverter.utils.nn_archive import safe_members
+from modelconverter.utils.types import DataType, Encoding, ResizeMethod
 
 instance_download = lru_cache(maxsize=None)(_instance_download)
 
+date = datetime.now().strftime("%Y_%m_%d_%H_%M")  # noqa: DTZ005
 app = App(name="convert_hub_rvc4_models")
 
 setup_logging(file="convert_hub_rvc4_models.log")
 
 ADB_DATA_DIR = "/data/local/zoo_conversion"
 models_df = pl.read_csv("zoo_migration/mappings.csv")
+
+
+def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    return 1 - cosine(a.flatten(), b.flatten())  # type: ignore
 
 
 def get_missing_precision_instances(
@@ -108,7 +122,6 @@ def get_instance_params(
 def preprocess_image(
     img_path: Path, shape: list[int], preprocessing: dict[str, Any]
 ) -> np.ndarray:
-
     img = cv2.imread(str(img_path))
 
     height, width = shape[2], shape[3]
@@ -127,6 +140,7 @@ def preprocess_image(
 def onnx_infer(
     onnx_model_path: Path,
     onnx_inputs: list[dict[str, Any]],
+    onnx_outputs: list[str],
     model_id: str,
     dataset_id: str,
 ) -> Path:
@@ -155,24 +169,30 @@ def onnx_infer(
     )
     if not dataset_files:
         raise RuntimeError(f"No images found in dataset {dataset_id}")
-    logger.info(f"Executing ONNX inference on {len(dataset_files)} images from {dataset_path}")
+
+    logger.info(
+        f"Executing ONNX inference on {len(dataset_files)} images from {dataset_path}"
+    )
 
     outputs_path = Path("comparison", model_id, "onnx", "outputs")
     outputs_path.mkdir(parents=True, exist_ok=True)
     for img_path in dataset_files:
         input_tensors = {}
         for name, shape, prep in zip(
-            input_names, input_shapes, input_preprocessing
+            input_names, input_shapes, input_preprocessing, strict=True
         ):
             input_tensors[name] = preprocess_image(img_path, shape, prep)
 
-        result = session.run(None, input_tensors)
+        result = session.run(onnx_outputs, input_tensors)
         for i, res in enumerate(result):
-            np.save(outputs_path / f"{img_path.stem}_output_{i}.npy", res)
+            name = onnx_outputs[i]
+            (outputs_path / name).mkdir(parents=True, exist_ok=True)
+            np.save(outputs_path / name / f"{img_path.stem}.npy", res)
 
-    return Path("comparison", model_id, "onnx", "outputs")
+    return outputs_path
 
-def get_io_info(model_path: Path) -> dict[str, dict]:
+
+def get_io_info(model_path: Path) -> dict[str, list[dict[str, Any]]]:
     with tempfile.TemporaryDirectory() as d:
         csv_path = Path(d) / "info.csv"
         subprocess_run(
@@ -189,19 +209,31 @@ def get_io_info(model_path: Path) -> dict[str, dict]:
         csv_path.unlink()
 
         in_start = content.find("Input Name,Dimensions,Type,Encoding Info")
-        out_start = content.find("Output Name,Dimensions,Type,Encoding Info", in_start)
-        end      = content.find("Total parameters:", out_start)
+        out_start = content.find(
+            "Output Name,Dimensions,Type,Encoding Info", in_start
+        )
+        end = content.find("Total parameters:", out_start)
 
-        in_block  = content[in_start:out_start].strip()
-        out_block = content[out_start:   end ].strip()
+        in_block = content[in_start:out_start].strip()
+        out_block = content[out_start:end].strip()
 
         df_in = pl.read_csv(io.StringIO(in_block))
-        df_in = df_in.with_columns([pl.lit(None).cast(pl.Utf8).alias("Output Name")])
+        df_in = df_in.with_columns(
+            [pl.lit(None).cast(pl.Utf8).alias("Output Name")]
+        )
         df_out = pl.read_csv(io.StringIO(out_block))
-        df_out = df_out.with_columns([pl.lit(None).cast(pl.Utf8).alias("Input Name")])
+        df_out = df_out.with_columns(
+            [pl.lit(None).cast(pl.Utf8).alias("Input Name")]
+        )
 
-        cols = ["Input Name", "Output Name", "Dimensions", "Type", "Encoding Info"]
-        df_in  = df_in.select(cols)
+        cols = [
+            "Input Name",
+            "Output Name",
+            "Dimensions",
+            "Type",
+            "Encoding Info",
+        ]
+        df_in = df_in.select(cols)
         df_out = df_out.select(cols)
         df = pl.concat([df_in, df_out])
 
@@ -212,38 +244,43 @@ def get_io_info(model_path: Path) -> dict[str, dict]:
             .cast(pl.List(pl.Int64))
         )
 
-        io_info = dict(inputs=[], outputs=[])
+        io_info = {"inputs": [], "outputs": []}
         for row in df.rows(named=True):
             is_input = row.get("Input Name") is not None
             if is_input:
                 name = row["Input Name"]
-                io_info['inputs'].append({
-                    "name": name,
-                    "shape": row["Dimensions"],
-                    "dtype": row["Type"],
-                })
+                io_info["inputs"].append(
+                    {
+                        "name": name,
+                        "shape": row["Dimensions"],
+                        "dtype": row["Type"],
+                    }
+                )
             else:
                 name = row["Output Name"]
-                io_info['outputs'].append({
-                    "name": name,
-                    "shape": row["Dimensions"],
-                    "dtype": row["Type"],
-                })
+                io_info["outputs"].append(
+                    {
+                        "name": name,
+                        "shape": row["Dimensions"],
+                        "dtype": row["Type"],
+                    }
+                )
 
     return io_info
 
-@lru_cache(maxsize=None)
+
+@cache
 def adb_prepare_inference(
     model_path: Path,
     dataset_id: str,
-    width: int,
-    height: int,
+    in_shape: list[int],
+    encoding: Encoding,
+    resize_method: ResizeMethod,
     device_id: str | None = None,
 ) -> None:
     io_info = get_io_info(model_path)
     # TODO: support multiple inputs
     input_io = io_info["inputs"][0]
-    assert input_io["shape"][1] == height and input_io["shape"][2] == width, f"Input shape {input_io['shape']} does not match expected shape ({height}, {width})"
 
     adb = AdbHandler(device_id, silent=False)
     adb.shell(f"mkdir -p {ADB_DATA_DIR}/{dataset_id}")
@@ -251,50 +288,72 @@ def adb_prepare_inference(
         input_list = ""
         dataset_path = CALIBRATION_DIR / "datasets" / dataset_id
         for img_path in dataset_path.iterdir():
-            img = cv2.imread(str(img_path))
-            img = cv2.resize(img, (width, height))
-            if input_io["dtype"] == "Float_32":
-                np_type = np.float32
-            elif input_io["dtype"] == "Float_16":
-                np_type = np.float16
-            elif input_io["dtype"] == "uFxp_8":
-                np_type = np.uint8
-            else:
-                raise ValueError(
-                    f"Unsupported data type {input_io['dtype']} for input {input_io['name']}."
-                )
-            img = img.astype(np_type)
-            img.tofile(f"{d}/{img_path.stem}.raw")
+            n, h, w, c = in_shape
+            arr = read_image(
+                img_path,
+                shape=[n, c, h, w],
+                # shape=self.in_shapes[input_name],
+                encoding=encoding,
+                resize_method=resize_method,
+                data_type=DataType.FLOAT32,
+                transpose=False,
+            )
+            arr.tofile(f"{d}/{img_path.stem}.raw")
             input_list += f"{ADB_DATA_DIR}/{dataset_id}/{d.split('/')[-1]}/{img_path.stem}.raw\n"
+
         with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=d) as f:
             assert input_list
             f.write(input_list)
         adb.push(f.name, f"{ADB_DATA_DIR}/{dataset_id}/input_list.txt")
         adb.push(d, f"{ADB_DATA_DIR}/{dataset_id}/")
 
-def adb_infer(
+
+def _infer_adb(
     model_path: Path,
+    archive: Path,
     model_id: str,
     dataset_id: str,
     snpe_version: str,
+    inp_name: str,
     device_id: str | None,
-    width: int | None = None,
-    height: int | None = None,
 ) -> Path:
+    mult_cfg, _, _ = get_configs(str(archive))
     adb = AdbHandler(device_id, silent=False)
-    if width is None or height is None:
-        metadata = _get_metadata_dlc(model_path.parent / "info.csv")
-        _, height, width, _ = next(iter(metadata.input_shapes.values()))
+    config = mult_cfg.get_stage_config(None)
 
-    adb_prepare_inference(model_path, dataset_id, width, height, device_id)
+    in_shapes = {inp.name: inp.shape for inp in config.inputs}
+    in_dtypes = {inp.name: inp.data_type for inp in config.inputs}
+    out_shapes = {out.name: out.shape for out in config.outputs}
+    out_dtypes = {out.name: out.data_type for out in config.outputs}
+    resize_method = {
+        inp.name: inp.calibration.resize_method
+        if isinstance(inp.calibration, ImageCalibrationConfig)
+        else ResizeMethod.RESIZE
+        for inp in config.inputs
+    }
+    encoding = {
+        inp.name: inp.encoding.to
+        if isinstance(inp.calibration, ImageCalibrationConfig)
+        else Encoding.BGR
+        for inp in config.inputs
+    }
+
+    in_shape = in_shapes[inp_name] is not None
+    assert in_shape is not None
+    adb_prepare_inference(
+        model_path,
+        dataset_id,
+        in_shape,
+        encoding[inp_name],
+        resize_method[inp_name],
+        device_id,
+    )
+
     adb.shell(f"mkdir -p {ADB_DATA_DIR}/{model_id}")
-    adb.push(str(model_path), f"{ADB_DATA_DIR}/{model_id}/model.dlc")
+    adb.push(model_path, f"{ADB_DATA_DIR}/{model_id}/model.dlc")
 
-    command = ""
-    if snpe_version == "2.32.6":
-        command += "source /data/local/tmp/source_me.sh && "
-
-    command += (
+    command = (
+        f"source /data/local/tmp/source_me_{snpe_version}.sh && "
         "snpe-net-run "
         f"--container {ADB_DATA_DIR}/{model_id}/model.dlc "
         f"--input_list {ADB_DATA_DIR}/{dataset_id}/input_list.txt "
@@ -313,12 +372,64 @@ def adb_infer(
         )
 
     out_dir = Path("comparison", model_id, snpe_version)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    adb.pull(
-        f"{ADB_DATA_DIR}/{model_id}/outputs",
-        str(out_dir),
+    raw_out_dir = out_dir / "raw"
+    raw_out_dir.mkdir(parents=True, exist_ok=True)
+    adb.pull(f"{ADB_DATA_DIR}/{model_id}/outputs", raw_out_dir)
+
+    npy_out_dir = out_dir / "npy"
+    for p in raw_out_dir.rglob("*.raw"):
+        arr = np.fromfile(p, dtype=np.float32)
+        out_shape = out_shapes[p.stem]
+        assert out_shape is not None
+
+        # TODO: detect layout
+        if len(out_shape) == 4:
+            N, H, W, C = out_shape
+            arr = arr.reshape(N, H, W, C).transpose(0, 3, 1, 2)
+        else:
+            arr = arr.reshape(out_shape)
+        np.save(npy_out_dir / p.name.replace(".raw", ".npy"), arr)
+    return npy_out_dir
+
+
+def _infer_prepare(model_id: str, dataset_id: str, inp_name: str) -> Path:
+    src = SHARED_DIR / "zoo-inference" / model_id / inp_name
+    src.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(
+        CALIBRATION_DIR / "datasets" / dataset_id, src, dirs_exist_ok=True
     )
-    return Path("comparison", model_id, snpe_version)
+    return src
+
+
+def _infer_modelconv(
+    dlc: Path,
+    archive: Path,
+    model_id: str,
+    dataset_id: str,
+    snpe_version: str,
+    inp_name: str,
+    save_dir: Path,
+) -> Path:
+    src = _infer_prepare(model_id, dataset_id, inp_name)
+    args = [
+        "modelconverter",
+        "infer",
+        "rvc4",
+        "--model-path",
+        save_dir / dlc.name,
+        "--output-dir",
+        SHARED_DIR / "zoo-infer-output" / model_id / snpe_version,
+        "--path",
+        archive,
+        "--input-path",
+        src.parent,
+        "--tool-version",
+        snpe_version,
+        "--dev",
+    ]
+    logger.info(f"Running command: {' '.join(map(str, args))}")
+    subprocess_run(args, silent=True)
+    return SHARED_DIR / "zoo-infer-output" / model_id / snpe_version
 
 
 def infer(
@@ -326,6 +437,8 @@ def infer(
     model_id: str,
     dataset_id: str,
     snpe_version: str,
+    infer_mode: Literal["adb", "modelconv"],
+    device_id: str | None,
 ) -> Path:
     dir = MODELS_DIR / "zoo" / model_id / snpe_version
     dir.mkdir(parents=True, exist_ok=True)
@@ -341,110 +454,23 @@ def infer(
 
         shutil.copy(dlc, dir)
 
-    src = SHARED_DIR / "zoo-inference" / model_id / inp_name
-    src.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(
-        CALIBRATION_DIR / "datasets" / dataset_id, src, dirs_exist_ok=True
-    )
-
-    args = [
-        "modelconverter",
-        "infer",
-        "rvc4",
-        "--model-path",
-        dir / dlc.name,
-        "--output-dir",
-        SHARED_DIR / "zoo-infer-output" / model_id / snpe_version,
-        "--path",
-        archive,
-        "--input-path",
-        src.parent,
-        "--tool-version",
-        snpe_version,
-        "--dev",
-    ]
-    logger.info(f"Running command: {' '.join(map(str, args))}")
-    subprocess_run(
-        args,
-        silent=True,
-    )
-    return SHARED_DIR / "zoo-infer-output" / model_id / snpe_version
-
-
-def adb_test_degradation(
-    old_archive: Path,
-    new_archive: Path,
-    parent_archive: Path,
-    model_id: str,
-    snpe_version: str,
-    device_id: str | None,
-) -> bool:
-    dataset_id = (
-        models_df.filter(pl.col("Model ID") == model_id)
-        .select("Test Dataset ID")
-        .item()
-    )
-
-    old_dir = MODELS_DIR / "zoo" / model_id / "2.23.0"
-    old_dir.mkdir(parents=True, exist_ok=True)
-    with (
-        tempfile.TemporaryDirectory() as d,
-        tarfile.open(old_archive, mode="r") as tf,
-    ):
-        tf.extractall(d, members=safe_members(tf))
-        old_dlc = next(iter(Path(d).glob("*.dlc")))
-        config = Config(**json.loads(Path(d, "config.json").read_text()))
-
-        inp = config.model.inputs[0]
-        layout = inp.layout
-        shape = inp.shape
-        height = shape[layout.index("H")]
-        width = shape[layout.index("W")]
-
-        old_inference = adb_infer(
-            old_dlc,
-            model_id,
-            dataset_id,
-            "2.23.0",
-            device_id,
-            height=height,
-            width=width,
-        )
-
-        shutil.copy(old_dlc, old_dir)
-
-    new_dir = MODELS_DIR / "zoo" / model_id / snpe_version
-    new_dir.mkdir(parents=True, exist_ok=True)
-    with (
-        tempfile.TemporaryDirectory() as d,
-        tarfile.open(new_archive, mode="r") as tf,
-    ):
-        tf.extractall(d, members=safe_members(tf))
-        new_dlc = next(iter(Path(d).glob("*.dlc")))
-        config = Config(**json.loads(Path(d, "config.json").read_text()))
-
-        inp = config.model.inputs[0]
-        layout = inp.layout
-        shape = inp.shape
-        height = shape[layout.index("H")]
-        width = shape[layout.index("W")]
-
-        new_inference = adb_infer(
-            new_dlc,
+    if infer_mode == "adb":
+        return _infer_adb(
+            dlc,
+            archive,
             model_id,
             dataset_id,
             snpe_version,
+            inp_name,
             device_id,
-            height=height,
-            width=width,
         )
+    if infer_mode == "modelconv":
+        return _infer_modelconv(
+            dlc, archive, model_id, dataset_id, snpe_version, inp_name, dir
+        )
+    logger.error(f"Unknown inference mode: {infer_mode}")
+    sys.exit(1)
 
-        shutil.copy(new_dlc, new_dir)
-
-    onnx_model_path, onnx_inputs = get_onnx_info(parent_archive, model_id)
-    onnx_inference = onnx_infer(onnx_model_path, onnx_inputs, model_id, dataset_id)
-
-    return compare_files(old_inference, new_inference, onnx_inference, "image_embedding") # random non classification or segmentation task
 
 def test_degradation(
     old_archive: Path,
@@ -453,7 +479,9 @@ def test_degradation(
     model: dict[str, Any],
     snpe_version: str,
     device_id: str | None,
-) -> bool:
+    metric: Literal["mae", "mse", "psnr", "cos"],
+    infer_mode: Literal["adb", "modelconv"],
+) -> tuple[float, float]:
     model_id = model["id"]
     dataset_id = (
         models_df.filter(pl.col("Model ID") == model_id)
@@ -462,51 +490,87 @@ def test_degradation(
     )
     logger.info(f"Testing degradation for {model_id} on {dataset_id}")
 
-    onnx_model_path, onnx_inputs = get_onnx_info(parent_archive, model_id)
-    onnx_inference = onnx_infer(onnx_model_path, onnx_inputs, model_id, dataset_id)
+    onnx_model_path, onnx_inputs, onnx_outputs = get_onnx_info(
+        parent_archive, model_id
+    )
+    onnx_inference = onnx_infer(
+        onnx_model_path, onnx_inputs, onnx_outputs, model_id, dataset_id
+    )
     # TODO: update the `compare_files` to compare the onnx inference with the snpe old and new inference
-    old_inference = infer(old_archive, model_id, dataset_id, "2.23.0")
-    new_inference = infer(new_archive, model_id, dataset_id, snpe_version)
-    print(model["tasks"])
+    old_inference = infer(
+        old_archive, model_id, dataset_id, "2.23.0", infer_mode, device_id
+    )
+    new_inference = infer(
+        new_archive, model_id, dataset_id, snpe_version, infer_mode, device_id
+    )
 
     return compare_files(
-        old_inference, new_inference, onnx_inference, model["tasks"][0].lower()
+        old_inference, new_inference, onnx_inference, metric=metric
     )
 
 
+def psnr(a: np.ndarray, b: np.ndarray) -> float:
+    mse = np.mean((a - b) ** 2)
+    if mse == 0:
+        return float("inf")  # Perfect match
+    max_pixel = np.max([a.max(), b.max()])
+    return 20 * np.log10(max_pixel) - 10 * np.log10(mse)
+
+
 def compare_files(
-    old_inference: Path, new_inference: Path, onnx_inference: Path, task: Task
-) -> bool:
+    old_inference: Path,
+    new_inference: Path,
+    onnx_inference: Path,
+    metric: Literal["mae", "mse", "psnr", "cos"],
+) -> tuple[float, float]:
+    print(old_inference, new_inference, onnx_inference)
     files = list(old_inference.rglob("*.npy"))
     assert len(files) > 0, "No files found in old inference"
+
+    metric_func: Callable
+
+    if metric == "mae":
+        metric_func = lambda a, b: np.mean(np.abs(a - b))  # noqa: E731
+    elif metric == "mse":
+        metric_func = lambda a, b: np.mean((a - b) ** 2)  # noqa: E731
+    elif metric == "psnr":
+        metric_func = psnr
+    elif metric == "cos":
+        metric_func = cosine_similarity
+    else:
+        raise ValueError(f"Unsupported metric: {metric}")
+
+    scores_new_vs_onnx = []
+    scores_old_vs_onnx = []
+
     for old_file in files:
-        new_file = new_inference / old_file.relative_to(old_inference)
+        relative_path = old_file.relative_to(old_inference)
+        new_file = new_inference / relative_path
+        onnx_file = onnx_inference / relative_path
+
+        if not new_file.exists() or not onnx_file.exists():
+            continue
+
         old_array = np.load(old_file)
         new_array = np.load(new_file)
-        if task == "classification":
-            if old_array.argmax() != new_array.argmax():
-                raise RuntimeError(
-                    f"Classification failed for {old_file} and {new_file}"
-                )
-        elif task == "segmentation":
-            if np.issubdtype(old_array.dtype, np.floating):
-                old_array = old_array.argmax(-1)
-                new_array = new_array.argmax(-1)
+        onnx_array = np.load(onnx_file)
 
-            # too strict, no model would pass
-            # if not np.array_equal(old_array, new_array):
-            #     raise RuntimeError(
-            #         f"Segmentation failed for {old_file} and {new_file}"
-            #     )
-            if (old_array == new_array).sum() / old_array.size < 0.85:
-                raise RuntimeError(
-                    f"Segmentation failed for {old_file} and {new_file}"
-                )
-        elif not np.isclose(old_array, new_array, atol=1e-1).all():
+        scores_new_vs_onnx.append(metric_func(new_array, onnx_array))
+        scores_old_vs_onnx.append(metric_func(old_array, onnx_array))
+
+    old_score = np.mean(scores_old_vs_onnx)
+    new_score = np.mean(scores_new_vs_onnx)
+
+    if metric == "cos":
+        if old_score > new_score:
             raise RuntimeError(
-                f"Comparison failed for {old_file} and {new_file}"
+                f"Degradation test failed: old model has higher {metric}  ({old_score}) than new model ({new_score})"
             )
-    return True
+    elif old_score < new_score:
+        raise RuntimeError(
+            f"Degradation test failed: old model has lower {metric}  ({old_score}) than new model ({new_score})"
+        )
+    return old_score, new_score  # type: ignore
 
 
 def find_parent(instance: dict[str, Any]) -> dict[str, Any] | None:
@@ -518,11 +582,14 @@ def find_parent(instance: dict[str, Any]) -> dict[str, Any] | None:
 
     return find_parent(request_info(parent_id, "modelInstances"))
 
-def get_onnx_info(archive: Path, model_id: str) -> Path:
+
+def get_onnx_info(
+    archive: Path, model_id: str
+) -> tuple[Path, list[dict[str, Any]], list[str]]:
     REMOVE_INP_KEYS = ("dtype", "input_type", "layout")
     REMOVE_PREP_KEYS = "interleaved_to_planar"
 
-    def clean_input(inp):
+    def clean_input(inp: dict[str, Any]) -> dict[str, Any]:
         cleaned = {k: v for k, v in inp.items() if k not in REMOVE_INP_KEYS}
         prep = cleaned.get("preprocessing", {})
         cleaned["preprocessing"] = {
@@ -540,6 +607,7 @@ def get_onnx_info(archive: Path, model_id: str) -> Path:
         if not config_path.exists():
             raise RuntimeError("Config file not found")
         onnx_inputs = [clean_input(inp) for inp in config["model"]["inputs"]]
+        output_names = [outp["name"] for outp in config["model"]["outputs"]]
         onnx_model = config["model"]["metadata"]["path"]
         tmp_onnx_path = next(iter(Path(d).glob(onnx_model)))
         if not tmp_onnx_path.exists():
@@ -552,7 +620,7 @@ def get_onnx_info(archive: Path, model_id: str) -> Path:
         dst.mkdir(parents=True, exist_ok=True)
         onnx_path = shutil.copy(tmp_onnx_path, dst / tmp_onnx_path.name)
 
-    return onnx_path, onnx_inputs
+    return Path(onnx_path), onnx_inputs, output_names
 
 
 def get_buildinfo(archive: Path) -> list[str]:
@@ -629,7 +697,7 @@ def guess_parent(
     return suspected_parents[0] if suspected_parents else None
 
 
-def migrate(
+def _migrate_models(
     old_instance: dict[str, Any],
     snpe_version: str,
     model: dict[str, Any],
@@ -638,7 +706,9 @@ def migrate(
     dry: bool,
     verify: bool,
     instances: list[dict[str, Any]],
-) -> None:
+    metric: Literal["mae", "mse", "psnr", "cos"],
+    infer_mode: Literal["adb", "modelconv"],
+) -> tuple[float, float]:
     parent = find_parent(deepcopy(old_instance))
     if parent is None:
         logger.warning(
@@ -684,7 +754,7 @@ def migrate(
         "convert",
         "rvc4",
         "--path",
-        str(parent_archive),
+        parent_archive,
         "--output-dir",
         model_id,
         "--to",
@@ -701,16 +771,11 @@ def migrate(
         args.extend(
             [
                 "calibration.path",
-                str(CALIBRATION_DIR / "datasets" / dataset_name),
+                CALIBRATION_DIR / "datasets" / dataset_name,
             ]
         )
     else:
-        args.extend(
-            [
-                "rvc4.disable_calibration",
-                "True",
-            ]
-        )
+        args.extend(["rvc4.disable_calibration", "True"])
 
     logger.info(f"Running command: {' '.join(map(str, args))}")
     subprocess_run(args, silent=True)
@@ -726,34 +791,37 @@ def migrate(
         if not dry:
             create_new_instance(new_instance_params, new_archive)
 
-    # elif test_degradation(
-    #     old_archive, new_archive, parent_archive, model, snpe_version, device_id
-    # ):
-    #     logger.info(
-    #         f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
-    #     )
-    #     if not dry:
-    #         logger.info("Creating new instance")
-    #         create_new_instance(new_instance_params, new_archive)
-
-    elif adb_test_degradation(
-        old_archive, new_archive, parent_archive, model_id, snpe_version, device_id
-    ):
-        logger.info(
-            f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
-        )
-        if not dry:
-            logger.info("Creating new instance")
-            create_new_instance(new_instance_params, new_archive)
+    old_score, new_score = test_degradation(
+        old_archive,
+        new_archive,
+        parent_archive,
+        model,
+        snpe_version,
+        device_id,
+        metric,
+        infer_mode,
+    )
+    logger.info(
+        f"Degradation test passed for model '{model_id}' and instance '{old_instance['id']}'"
+    )
+    logger.info(
+        f"New model {metric}: {new_score} > old model {metric}: {old_score}"
+    )
+    if not dry:
+        logger.info("Creating new instance")
+        create_new_instance(new_instance_params, new_archive)
+    return old_score, new_score
 
 
 def migrate_models(
     models: list[dict[str, Any]],
     snpe_version: str,
     device_id: str | None,
-    df: dict[str, list[str | None]],
+    df: dict[str, list[str | float | None]],
     dry: bool,
     verify: bool,
+    metric: Literal["mae", "mse", "psnr", "cos"],
+    infer_mode: Literal["adb", "modelconv"],
 ) -> None:
     for model in models:
         model_id = cast(str, model["id"])
@@ -765,8 +833,6 @@ def migrate_models(
             variant_id = cast(str, variant["id"])
 
             all_instances = _instance_ls(
-                # model_id=model["id"],
-                # variant_id=variant_id,
                 model_version_id=variant_id,
                 model_type=None,
                 is_public=True,
@@ -780,7 +846,7 @@ def migrate_models(
             )
             for old_instance in instances:
                 try:
-                    migrate(
+                    old_score, new_score = _migrate_models(
                         old_instance,
                         snpe_version,
                         model,
@@ -789,12 +855,16 @@ def migrate_models(
                         dry,
                         verify,
                         all_instances,
+                        metric,
+                        infer_mode,
                     )
                     status = "success"
                     error = None
                 except (Exception, SubprocessException) as e:
-                    logger.error(f"Migration for model '{model_id}' failed!")
-                    logger.error(e)
+                    logger.exception(
+                        f"Migration for model '{model_id}' failed!"
+                    )
+                    # logger.error(e)
                     status = "failed"
                     error = str(e)
                 df["model_id"].append(model_id)
@@ -803,6 +873,8 @@ def migrate_models(
                 df["model_name"].append(model["name"])
                 df["status"].append(status)
                 df["error"].append(error)
+                df["old_to_onnx_score"].append(old_score)
+                df["new_to_onnx_score"].append(new_score)
 
 
 @app.default
@@ -813,6 +885,9 @@ def main(
     device_id: str | None = None,
     model_id: str | None = None,
     verify: bool = True,
+    infer_mode: Literal["adb", "modelconv"] = "modelconv",
+    metric: Literal["mae", "mse", "psnr", "cos"] = "cos",
+    limit: int = 5,
 ) -> None:
     """Export all RVC4 models from the Luxonis Hub to SNPE format.
 
@@ -830,6 +905,14 @@ def main(
     verify : bool
         Whether to verify the migration by running inference on the
         converted models.
+    infer_mode : Literal["adb", "modelconv"]
+        The inference mode to use. "modelconv" does not require a device,
+        but the results can be misleading due to de-quantized CPU inference.
+    metric : Literal["mae", "mse", "psnr", "cos"]
+        The metric to use for the degradation test.
+    limit : int
+        The maximum number of models to process. Default is 5 for safety.
+        Ignored when `--no-dry` is set.
     """
 
     df = {
@@ -839,8 +922,10 @@ def main(
         "model_name": [],
         "status": [],
         "error": [],
+        "old_to_onnx_score": [],
+        "new_to_onnx_score": [],
     }
-    limit = 5 if dry else 10000
+    limit = limit if dry else 10000
     if model_id is not None:
         models = [request_info(model_id, "models")]
     else:
@@ -853,10 +938,18 @@ def main(
     logger.info(f"Models found: {len(models)}")
 
     try:
-        migrate_models(models, snpe_version, device_id, df, dry, verify)
+        migrate_models(
+            models,
+            snpe_version,
+            device_id,
+            df,
+            dry,
+            verify,
+            metric,
+            infer_mode,
+        )
     finally:
         df = pl.DataFrame(df)
-        date = datetime.now().strftime("%Y_%m_%d_%H_%M")  # noqa: DTZ005
         df.write_csv(f"migration_results_{date}.csv")
 
 
