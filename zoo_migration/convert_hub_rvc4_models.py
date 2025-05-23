@@ -7,7 +7,7 @@ import tempfile
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime
-from functools import cache, lru_cache
+from functools import cache
 from os import getenv
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -29,19 +29,11 @@ from modelconverter.hub.__main__ import (
     _model_ls,
     _variant_ls,
     instance_create,
+    instance_download,
     upload,
 )
-from modelconverter.hub.__main__ import (
-    instance_download as _instance_download,
-)
-from modelconverter.utils import (
-    AdbHandler,
-    read_image,
-    subprocess_run,
-)
-from modelconverter.utils.config import (
-    ImageCalibrationConfig,
-)
+from modelconverter.utils import AdbHandler, read_image, subprocess_run
+from modelconverter.utils.config import ImageCalibrationConfig
 from modelconverter.utils.constants import (
     CALIBRATION_DIR,
     MISC_DIR,
@@ -52,8 +44,6 @@ from modelconverter.utils.constants import (
 from modelconverter.utils.exceptions import SubprocessException
 from modelconverter.utils.nn_archive import safe_members
 from modelconverter.utils.types import DataType, Encoding, ResizeMethod
-
-instance_download = lru_cache(maxsize=None)(_instance_download)
 
 date = datetime.now().strftime("%Y_%m_%d_%H_%M")  # noqa: DTZ005
 app = App(name="convert_hub_rvc4_models")
@@ -153,7 +143,6 @@ def onnx_infer(
     import onnxruntime as ort
 
     input_names = [inp["name"] for inp in onnx_inputs]
-    # TODO: make the neccessary changes to support multiple inputs
     if len(input_names) != 1:
         raise RuntimeError(
             f"Only single input models are supported for now, got a model with {len(input_names)} inputs"
@@ -216,7 +205,6 @@ def adb_prepare_inference(
             arr = read_image(
                 img_path,
                 shape=[n, c, h, w],
-                # shape=self.in_shapes[input_name],  # noqa: ERA001
                 encoding=encoding,
                 resize_method=resize_method,
                 data_type=DataType.FLOAT32,
@@ -302,7 +290,6 @@ def _infer_adb(
         out_shape = out_shapes[p.stem]
         assert out_shape is not None
 
-        # TODO: detect layout
         if len(out_shape) == 4:
             N, H, W, C = out_shape
             arr = arr.reshape(N, H, W, C).transpose(0, 3, 1, 2)
@@ -310,15 +297,6 @@ def _infer_adb(
             arr = arr.reshape(out_shape)
         np.save(npy_out_dir / p.name.replace(".raw", ".npy"), arr)
     return npy_out_dir
-
-
-def _infer_prepare(model_id: str, dataset_id: str, inp_name: str) -> Path:
-    src = SHARED_DIR / "zoo-inference" / model_id / inp_name
-    src.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(
-        CALIBRATION_DIR / "datasets" / dataset_id, src, dirs_exist_ok=True
-    )
-    return src
 
 
 def _infer_modelconv(
@@ -330,7 +308,11 @@ def _infer_modelconv(
     inp_name: str,
     save_dir: Path,
 ) -> Path:
-    src = _infer_prepare(model_id, dataset_id, inp_name)
+    src = SHARED_DIR / "zoo-inference" / model_id / inp_name
+    src.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(
+        CALIBRATION_DIR / "datasets" / dataset_id, src, dirs_exist_ok=True
+    )
     args = [
         "modelconverter",
         "infer",
