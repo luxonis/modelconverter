@@ -259,24 +259,21 @@ def _infer_adb(
         device_id,
     )
 
-    adb.shell(f"mkdir -p {ADB_DATA_DIR}/{model_id}")
+    adb_workdir = f"{ADB_DATA_DIR}/{model_id}/{snpe_version}/"
+
+    adb.shell(f"mkdir -p {adb_workdir}")
 
     def source(snpe_version: str) -> str:
         return f"source /data/local/tmp/source_me_{snpe_version}.sh"
 
-    _, stdout, stderr = adb.shell(
-        f"{source(snpe_version)} && snpe-net-run --version"
-    )
-    logger.critical(stdout)
-    logger.critical(stderr)
-    adb.push(model_path, f"{ADB_DATA_DIR}/{model_id}/model.dlc")
+    adb.push(model_path, f"{adb_workdir}/model.dlc")
 
     command = (
         f"{source(snpe_version)} && "
         "snpe-net-run "
-        f"--container {ADB_DATA_DIR}/{model_id}/model.dlc "
+        f"--container {adb_workdir}/model.dlc "
         f"--input_list {ADB_DATA_DIR}/{dataset_id}/input_list.txt "
-        f"--output_dir {ADB_DATA_DIR}/{model_id}/outputs "
+        f"--output_dir {adb_workdir}/outputs "
         "--perf_profile default "
         "--enable_cpu_fallback "
         "--use_dsp"
@@ -295,7 +292,7 @@ def _infer_adb(
         shutil.rmtree(out_dir)
     raw_out_dir = out_dir / "raw"
     raw_out_dir.mkdir(parents=True, exist_ok=True)
-    adb.pull(f"{ADB_DATA_DIR}/{model_id}/outputs", raw_out_dir)
+    adb.pull(f"{adb_workdir}/outputs", raw_out_dir)
 
     npy_out_dir = out_dir / "npy"
     npy_out_dir.mkdir(parents=True, exist_ok=True)
