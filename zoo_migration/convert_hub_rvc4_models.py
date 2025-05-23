@@ -50,7 +50,7 @@ from modelconverter.utils.types import DataType, Encoding, ResizeMethod
 date = datetime.now().strftime("%Y_%m_%d_%H_%M")  # noqa: DTZ005
 app = App(name="convert_hub_rvc4_models")
 
-setup_logging(file="convert_hub_rvc4_models.log")
+setup_logging(file=f"convert_hub_rvc4_models_{date}.log")
 
 ADB_DATA_DIR = "/data/local/zoo_conversion/datasets"
 ADB_MODELS_DIR = "/data/local/zoo_conversion/models"
