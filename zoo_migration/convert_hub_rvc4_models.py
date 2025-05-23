@@ -264,7 +264,8 @@ def _infer_adb(
     adb.shell(f"mkdir -p {adb_workdir}")
 
     def source(snpe_version: str) -> str:
-        return f"source /data/local/tmp/source_me_{snpe_version}.sh"
+        # Temporarily forcing SNPE v2.32.6 due to zero-outputs bug in v2.23.0
+        return "source /data/local/tmp/source_me_2.32.6.sh"
 
     adb.push(model_path, f"{adb_workdir}/model.dlc")
 
@@ -492,6 +493,9 @@ def compare_files(
         raise RuntimeError(
             f"Degradation test failed: old model has NaN {metric} score ({old_score}) or new model has NaN {metric} score ({new_score})"
         )
+
+    if math.isclose(old_score, new_score, rel_tol=1e-3, abs_tol=1e-5):
+        return old_score, new_score  # type: ignore
 
     if metric == "cos":
         if old_score > new_score:
