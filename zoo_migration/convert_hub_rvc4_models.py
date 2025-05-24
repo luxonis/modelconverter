@@ -737,7 +737,9 @@ def _migrate_models(
             f"Precision is `None` for model '{model_id}' "
             f"and instance '{old_instance_id}'"
         )
-        if "--input_list" in command_args["quantization_cmd"]:
+        if "quantization_cmd" not in command_args:
+            precision = "FP32"
+        elif "--input_list" in command_args["quantization_cmd"]:
             precision = "INT8"
         elif "--float_bitwidth" in command_args["quantization_cmd"]:
             i = command_args["quantization_cmd"].index("--float-bitwidth")
