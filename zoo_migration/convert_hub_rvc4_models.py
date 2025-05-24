@@ -803,6 +803,7 @@ def _migrate_models(
             f"Skipping conversion for model '{model_id}', variant {variant_id}, and instance '{old_instance_id}'"
         )
     else:
+        logger.info(f"Running command: {' '.join(map(str, args))}")
         subprocess_run(args, silent=True)
         chown(SHARED_DIR)
 
@@ -929,9 +930,6 @@ def main(
         there are more than one device connected.
     model_id : str | None
         An ID of a specific model to be migrated.
-    verify : bool
-        Whether to verify the migration by running inference on the
-        converted models.
     infer_mode : Literal["adb", "modelconv"]
         The inference mode to use. "modelconv" does not require a device,
         but the results can be misleading due to de-quantized CPU inference.
@@ -944,6 +942,12 @@ def main(
         If True, the converted models are uploaded to HubAI.
     confirm_upload : bool
         Needs to be set together with `--upload` for extra safety.
+    skip_conversion : bool
+        If True, the conversion step is skipped and the existing
+        converted models are used. This is useful for debugging.
+    verify : bool
+        Whether to verify the migration by running inference on the
+        converted models.
     """
     if upload ^ confirm_upload:
         raise ValueError(
@@ -962,18 +966,29 @@ def main(
             sys.exit(0)
     limit = 1000 if upload else limit
 
-    if device_id is not None:
+    if infer_mode == "adb":
         result = subprocess_run("adb devices", silent=True)
         if result.returncode == 0:
             pattern = re.compile(r"^(\w+)\s+device$", re.MULTILINE)
             devices = pattern.findall(result.stdout.decode())
-            if device_id not in devices:
-                raise ValueError(
-                    f"Device ID '{device_id}' not found in adb devices. "
-                    f"Available devices: {', '.join(devices)}"
-                )
-        elif result.returncode != 0:
-            logger.warning("Unable to verify device ID")
+        else:
+            raise RuntimeError("Unable to verify device ID")
+
+        if device_id is None:
+            if len(devices) == 0:
+                raise RuntimeError("No devices connected")
+            logger.warning(
+                "No device ID specified, using the first connected "
+                f"device: {devices[0]}"
+            )
+
+            device_id = devices[0]
+        elif device_id not in devices:
+            raise ValueError(
+                f"Device ID '{device_id}' not found in connected devices: {devices}"
+            )
+        else:
+            logger.info(f"Using device ID: {device_id}")
 
     df = {
         "model_id": [],
