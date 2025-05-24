@@ -797,7 +797,6 @@ def _migrate_models(
     else:
         args.extend(["rvc4.disable_calibration", "True"])
 
-    logger.info(f"Running command: {' '.join(map(str, args))}")
     outdir = OUTPUTS_DIR / model_id / variant_id / f"{old_instance_id}_new"
     if skip_conversion and outdir.exists() and any(outdir.glob("*.tar.xz")):
         logger.info(
