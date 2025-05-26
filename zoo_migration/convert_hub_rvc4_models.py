@@ -694,24 +694,18 @@ def guess_parent(
 def _migrate_models(
     *,
     old_instance: dict[str, Any],
+    parent: dict[str, Any] | None,
     snpe_version: str,
     model: dict[str, Any],
     variant_id: str,
     device_id: str | None,
     verify: bool,
-    all_instances: list[dict[str, Any]],
     metric: Literal["mae", "mse", "psnr", "cos"],
     infer_mode: Literal["adb", "modelconv"],
     upload: bool = False,
     skip_conversion: bool = False,
 ) -> tuple[float, float]:
     old_instance_id = old_instance["id"]
-    parent = find_parent(deepcopy(old_instance))
-    if parent is None:
-        logger.warning(
-            f"Parent not found for {old_instance_id}. Attempting to guess it."
-        )
-        parent = guess_parent(old_instance, all_instances)
 
     model_id = model["id"]
     if parent is None:
@@ -886,15 +880,23 @@ def migrate_models(
                 ):
                     continue
                 old_score = new_score = None
+
+                parent = find_parent(deepcopy(old_instance))
+                if parent is None:
+                    logger.warning(
+                        f"Parent not found for {old_instance['id']}. Attempting to guess it."
+                    )
+                    parent = guess_parent(old_instance, all_instances)
+
                 try:
                     old_score, new_score = _migrate_models(
                         old_instance=old_instance,
+                        parent=parent,
                         snpe_version=snpe_version,
                         model=model,
                         variant_id=version_id,
                         device_id=device_id,
                         verify=verify,
-                        all_instances=all_instances,
                         metric=metric,
                         infer_mode=infer_mode,
                         upload=upload,
@@ -911,7 +913,9 @@ def migrate_models(
                 df["model_id"].append(model_id)
                 df["variant_id"].append(variant["id"])
                 df["instance_id"].append(old_instance["id"])
+                df["parent_id"].append(parent["id"] if parent else None)
                 df["model_name"].append(model["name"])
+                df["precision"].append(old_instance["model_precision_type"])
                 df["status"].append(status)
                 df["error"].append(error)
                 df["old_to_onnx_score"].append(old_score)
@@ -1021,7 +1025,9 @@ def main(
         "model_id": [],
         "variant_id": [],
         "instance_id": [],
+        "parent_id": [],
         "model_name": [],
+        "precision": [],
         "status": [],
         "error": [],
         "old_to_onnx_score": [],
