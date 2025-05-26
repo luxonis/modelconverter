@@ -36,20 +36,12 @@ def generate_compose_config(image: str, gpu: bool = False) -> str:
                     "AWS_S3_ENDPOINT_URL": environ.AWS_S3_ENDPOINT_URL or "",
                     "LUXONISML_BUCKET": environ.LUXONISML_BUCKET or "",
                     "TF_CPP_MIN_LOG_LEVEL": "3",
-                    "GOOGLE_APPLICATION_CREDENTIALS": "/run/secrets/gcp-credentials",
                 },
                 "volumes": [
                     f"{Path.cwd().absolute() / 'shared_with_container'}:/app/shared_with_container"
                 ],
-                "secrets": ["gcp-credentials"],
                 "image": image,
                 "entrypoint": "/app/entrypoint.sh",
-            }
-        },
-        "secrets": {
-            "gcp-credentials": {
-                "file": environ.GOOGLE_APPLICATION_CREDENTIALS
-                or tempfile.NamedTemporaryFile(delete=False).name,  # noqa: SIM115
             }
         },
     }
