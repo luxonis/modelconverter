@@ -788,12 +788,16 @@ def _migrate_models(
         dataset_name = f"{dataset_name.split()[0].lower()}_quantization_data"
 
     if precision == "INT8":
-        args.extend(
-            [
-                "calibration.path",
-                CALIBRATION_DIR / "datasets" / dataset_name,
-            ]
-        )
+        calibration_path = CALIBRATION_DIR / "datasets" / dataset_name
+        args.extend(["calibration.path", calibration_path])
+        if calibration_path.exists() and dataset_name != "/":
+            logger.info(
+                f"Using calibration dataset at {calibration_path} for model '{model_id}' and instance '{old_instance_id}'"
+            )
+        else:
+            raise FileNotFoundError(
+                f"Calibration dataset at {calibration_path} not found for model '{model_id}' and instance '{old_instance_id}'"
+            )
     else:
         args.extend(["rvc4.disable_calibration", "True"])
 
