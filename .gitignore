@@ -147,3 +147,8 @@ shared_with_container/configs/_*
 tests/data/test_packages
 
 .DS_Store
+comparison
+mappings.csv
+zoo_migration/shared_with_container/*
+datasets
+results
