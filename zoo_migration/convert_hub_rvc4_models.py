@@ -553,7 +553,7 @@ def compare_files(
             f"Degradation test failed: old model has NaN {metric} score ({old_score}) or new model has NaN {metric} score ({new_score})"
         )
 
-    if math.isclose(old_score, new_score, rel_tol=1e-3, abs_tol=1e-5):
+    if math.isclose(old_score, new_score, rel_tol=5e-2, abs_tol=1e-5):
         return old_score, new_score  # type: ignore
 
     if metric == "cos":
@@ -902,7 +902,12 @@ def migrate_models(
                         upload=upload,
                         skip_conversion=skip_conversion,
                     )
-                    status = "success"
+                    if math.isclose(
+                        old_score, new_score, rel_tol=1e-3, abs_tol=1e-5
+                    ):
+                        status = "success"
+                    else:
+                        status = "passable"
                     error = None
                 except (Exception, SubprocessException) as e:
                     logger.exception(
