@@ -849,6 +849,8 @@ def migrate_models(
     infer_mode: Literal["adb", "modelconv"],
     upload: bool = False,
     skip_conversion: bool = False,
+    variant_id: str | None = None,
+    instance_id: str | None = None,
 ) -> None:
     for model in models:
         model_id = cast(str, model["id"])
@@ -857,28 +859,35 @@ def migrate_models(
         for variant in variants:
             if "RVC4" not in variant["platforms"]:
                 continue
-            variant_id = cast(str, variant["id"])
+            version_id = cast(str, variant["id"])
+            if variant_id is not None and version_id != variant_id:
+                continue
 
             all_instances = _instance_ls(
-                model_version_id=variant_id,
+                model_version_id=version_id,
                 model_type=None,
                 is_public=True,
                 _silent=True,
             )
             logger.info(
-                f"Instances for variant {variant_id} found: {len(all_instances)}"
+                f"Instances for variant {version_id} found: {len(all_instances)}"
             )
             instances = get_missing_precision_instances(
                 all_instances, snpe_version
             )
             for old_instance in instances:
+                if (
+                    instance_id is not None
+                    and old_instance["id"] != instance_id
+                ):
+                    continue
                 old_score = new_score = None
                 try:
                     old_score, new_score = _migrate_models(
                         old_instance=old_instance,
                         snpe_version=snpe_version,
                         model=model,
-                        variant_id=variant_id,
+                        variant_id=version_id,
                         device_id=device_id,
                         verify=verify,
                         all_instances=all_instances,
@@ -911,6 +920,8 @@ def main(
     snpe_version: str = "2.32.6",
     device_id: str | None = None,
     model_id: str | None = None,
+    variant_id: str | None = None,
+    instance_id: str | None = None,
     infer_mode: Literal["adb", "modelconv"] = "modelconv",
     metric: Literal["mae", "mse", "psnr", "cos"] = "cos",
     limit: int = 5,
@@ -930,6 +941,10 @@ def main(
         there are more than one device connected.
     model_id : str | None
         An ID of a specific model to be migrated.
+    variant_id : str | None
+        An ID of a specific variant to be migrated. If set, the `model_id` must also be set.
+    instance_id : str | None
+        An ID of a specific instance to be migrated. If set, the `variant_id` and `model_id` must also be set.
     infer_mode : Literal["adb", "modelconv"]
         The inference mode to use. "modelconv" does not require a device,
         but the results can be misleading due to de-quantized CPU inference.
@@ -964,6 +979,14 @@ def main(
         if confirmation != "yes":
             logger.info("Upload cancelled")
             sys.exit(0)
+    if variant_id is not None and model_id is None:
+        raise ValueError(
+            "If --variant-id is set, --model-id must also be set."
+        )
+    if instance_id is not None and variant_id is None:
+        raise ValueError(
+            "If --instance-id is set, --variant-id must also be set."
+        )
     limit = 1000 if upload else limit
 
     if infer_mode == "adb":
@@ -1043,6 +1066,8 @@ def main(
             infer_mode=infer_mode,
             upload=upload,
             skip_conversion=skip_conversion,
+            variant_id=variant_id,
+            instance_id=instance_id,
         )
     finally:
         cleanup()
