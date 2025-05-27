@@ -241,7 +241,7 @@ def modelconverter_config_to_nn(
                 "shape": new_shape,
                 "layout": layout,
                 "dtype": inp.data_type.value,
-                "input_type": "image" if layout in ["NHWC", "NCHW"] else "raw",
+                "input_type": "image" if len(new_shape) == 4 else "raw",
                 "preprocessing": {
                     "mean": [0 for _ in inp.mean_values]
                     if inp.mean_values
