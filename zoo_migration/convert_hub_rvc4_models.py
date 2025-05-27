@@ -8,8 +8,8 @@ import tarfile
 import tempfile
 from collections.abc import Callable
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
-from functools import cache
 from os import getenv
 from pathlib import Path
 from types import FrameType
@@ -55,6 +55,77 @@ setup_logging(file=f"results/convert_hub_rvc4_models_{date}.log")
 ADB_DATA_DIR = "/data/local/zoo_conversion/datasets"
 ADB_MODELS_DIR = "/data/local/zoo_conversion/models"
 models_df = pl.read_csv("mappings.csv")
+
+
+@dataclass
+class InputFileMapping:
+    files_by_input: dict[str, dict[str, Path]]
+    common_indices: set[str]
+
+
+def validate_and_map_input_files(
+    dataset_path: Path, input_names: list[str]
+) -> InputFileMapping:
+    if len(input_names) == 1:
+        return InputFileMapping({}, set())
+
+    files_by_input: dict[str, dict[str, Path]] = {}
+    index_sets: dict[str, set[str]] = {}
+
+    file_patterns = ("*.jpg", "*.jpeg", "*.png", "*.npy")
+
+    for name in input_names:
+        subdir = dataset_path / name
+        if not subdir.is_dir():
+            raise FileNotFoundError(
+                f"Expected folder for input '{name}' at {subdir}"
+            )
+
+        all_files = []
+        for pattern in file_patterns:
+            all_files.extend(subdir.glob(pattern))
+
+        if not all_files:
+            raise RuntimeError(
+                f"No files found in '{subdir}' for input '{name}'"
+            )
+
+        key_to_path: dict[str, Path] = {}
+        indices: set[str] = set()
+
+        for file_path in sorted(all_files):
+            match = re.search(r"_(\d+)$", file_path.stem)
+            if not match:
+                match = re.search(r"(\d+)$", file_path.stem)
+
+            if not match:
+                raise RuntimeError(
+                    f"Cannot extract index from filename '{file_path.name}'"
+                )
+
+            idx = match.group(1)
+            if idx in indices:
+                raise RuntimeError(
+                    f"Duplicate index '{idx}' in folder '{subdir}'"
+                )
+
+            indices.add(idx)
+            key_to_path[idx] = file_path
+
+        files_by_input[name] = key_to_path
+        index_sets[name] = indices
+
+    common_indices = set.intersection(*index_sets.values())
+    for name, indices in index_sets.items():
+        if indices != common_indices:
+            missing = common_indices - indices
+            extra = indices - common_indices
+            raise RuntimeError(
+                f"Index mismatch for input '{name}': "
+                f"missing {missing or 'none'}, extra {extra or 'none'}"
+            )
+
+    return InputFileMapping(files_by_input, common_indices)
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
@@ -147,10 +218,6 @@ def onnx_infer(
     import onnxruntime as ort
 
     input_names = [inp["name"] for inp in onnx_inputs]
-    if len(input_names) != 1:
-        raise RuntimeError(
-            f"Only single input models are supported for now, got a model with {len(input_names)} inputs"
-        )
     input_shapes = [inp["shape"] for inp in onnx_inputs]
     input_preprocessing = [inp["preprocessing"] for inp in onnx_inputs]
 
@@ -163,69 +230,156 @@ def onnx_infer(
             f"Dataset {dataset_id} not found in {dataset_path}"
         )
 
-    dataset_files = list(dataset_path.glob("*.[jp][pn]g")) + list(
-        dataset_path.glob("*.jpeg")
-    )
-    if not dataset_files:
-        raise RuntimeError(f"No images found in dataset {dataset_id}")
-
-    logger.info(
-        f"Executing ONNX inference on {len(dataset_files)} images from {dataset_path}"
-    )
-
     outputs_path = Path(
         "comparison", model_id, variant_id, instance_id, "onnx", "outputs"
     )
     if outputs_path.exists():
         shutil.rmtree(outputs_path)
     outputs_path.mkdir(parents=True, exist_ok=True)
-    for img_path in dataset_files:
-        input_tensors = {}
-        for name, shape, prep in zip(
-            input_names, input_shapes, input_preprocessing, strict=True
-        ):
-            input_tensors[name] = preprocess_image(img_path, shape, prep)
 
-        result = session.run(onnx_outputs, input_tensors)
-        for i, res in enumerate(result):
-            name = onnx_outputs[i]
-            (outputs_path / name).mkdir(parents=True, exist_ok=True)
-            np.save(outputs_path / name / f"{img_path.stem}.npy", res)
+    mapping = validate_and_map_input_files(dataset_path, input_names)
+
+    if len(mapping.common_indices) == 0:
+        file_patterns = ["*.[jp][pn]g", "*.jpeg", "*.npy"]
+        files = []
+
+        for pattern in file_patterns:
+            files.extend(dataset_path.glob(pattern))
+
+        if not files:
+            raise RuntimeError(f"No files found in dataset at {dataset_path}")
+
+        for file_path in sorted(files):
+            name = input_names[0]
+            shape = input_shapes[0]
+            prep = input_preprocessing[0]
+
+            tensor = preprocess_image(file_path, shape, prep)
+            results = session.run(onnx_outputs, {name: tensor})
+
+            for out_name, arr in zip(onnx_outputs, results, strict=True):
+                out_dir = outputs_path / out_name
+                out_dir.mkdir(parents=True, exist_ok=True)
+                np.save(out_dir / f"{file_path.stem}.npy", arr)
+    else:
+        for idx in sorted(mapping.common_indices, key=lambda x: int(x)):
+            input_files = {
+                name: mapping.files_by_input[name][idx] for name in input_names
+            }
+
+            input_tensors = {}
+
+            for name, shape, prep in zip(
+                input_names, input_shapes, input_preprocessing, strict=True
+            ):
+                file_path = input_files[name]
+                if file_path.suffix.lower() == ".npy":
+                    tensor = np.load(file_path)
+                else:
+                    tensor = preprocess_image(file_path, shape, prep)
+                input_tensors[name] = tensor
+            results = session.run(onnx_outputs, input_tensors)
+
+            for out_name, arr in zip(onnx_outputs, results, strict=True):
+                out_dir = outputs_path / out_name
+                out_dir.mkdir(parents=True, exist_ok=True)
+                np.save(out_dir / f"{idx}.npy", arr)
 
     return outputs_path
 
 
-@cache
 def adb_prepare_inference(
     dataset_id: str,
-    in_shape: tuple[int, int, int, int],
-    encoding: Encoding,
-    resize_method: ResizeMethod,
+    input_names: list[str],
+    in_shapes: dict[str, tuple[int, int, int, int]],
+    encodings: dict[str, Encoding],
+    resize_methods: dict[str, ResizeMethod],
     device_id: str | None = None,
 ) -> None:
     adb = AdbHandler(device_id, silent=False)
     adb.shell(f"mkdir -p {ADB_DATA_DIR}/{dataset_id}")
-    with tempfile.TemporaryDirectory() as d:
-        input_list = ""
-        dataset_path = CALIBRATION_DIR / "datasets" / dataset_id
-        for img_path in dataset_path.iterdir():
-            n, h, w, c = in_shape
-            arr = read_image(
-                img_path,
-                shape=[n, c, h, w],
-                encoding=encoding,
-                resize_method=resize_method,
-                data_type=DataType.FLOAT32,
-                transpose=False,
-            )
-            arr.tofile(f"{d}/{img_path.stem}.raw")
-            input_list += f"{ADB_DATA_DIR}/{dataset_id}/{d.split('/')[-1]}/{img_path.stem}.raw\n"
 
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=d) as f:
-            assert input_list
-            f.write(input_list)
-        adb.push(f.name, f"{ADB_DATA_DIR}/{dataset_id}/input_list.txt")
-        adb.push(d, f"{ADB_DATA_DIR}/{dataset_id}/")
+    dataset_path = CALIBRATION_DIR / "datasets" / dataset_id
+
+    mapping = validate_and_map_input_files(dataset_path, input_names)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        list_lines: list[str] = []
+
+        if len(mapping.common_indices) == 0:
+            file_patterns = ("*.jpg", "*.jpeg", "*.png", "*.npy")
+            files: list[Path] = []
+            for pattern in file_patterns:
+                files.extend(dataset_path.glob(pattern))
+
+            if not files:
+                raise RuntimeError(f"No files found in dataset {dataset_id}")
+
+            for file_path in sorted(files):
+                name = input_names[0]
+                shape = in_shapes[name]
+                enc = encodings[name]
+                rm = resize_methods[name]
+
+                if file_path.suffix.lower() == ".npy":
+                    arr = np.load(file_path)
+                else:
+                    n, h, w, c = shape
+                    arr = read_image(
+                        file_path,
+                        shape=[n, c, h, w],
+                        encoding=enc,
+                        resize_method=rm,
+                        data_type=DataType.FLOAT32,
+                        transpose=False,
+                    )
+
+                raw_name = f"{file_path.stem}.raw"
+                host_raw = Path(tmpdir) / raw_name
+                arr.tofile(host_raw)
+                list_lines.append(
+                    f"{ADB_DATA_DIR}/{dataset_id}/{tmpdir.split('/')[-1]}/{raw_name}"
+                )
+        else:
+            for idx in sorted(mapping.common_indices, key=lambda x: int(x)):
+                input_files = {
+                    name: mapping.files_by_input[name][idx]
+                    for name in input_names
+                }
+
+                parts: list[str] = []
+
+                for name in input_names:
+                    file_path = input_files[name]
+                    if file_path.suffix.lower() == ".npy":
+                        arr = np.load(file_path)
+                    else:
+                        n, h, w, c = in_shapes[name]
+                        arr = read_image(
+                            file_path,
+                            shape=[n, c, h, w],
+                            encoding=encodings[name],
+                            resize_method=resize_methods[name],
+                            data_type=DataType.FLOAT32,
+                            transpose=False,
+                        )
+
+                    raw_name = f"{name}_{idx}.raw"
+                    host_path = Path(tmpdir) / raw_name
+                    arr.tofile(host_path)
+
+                    dev_path = f"{ADB_DATA_DIR}/{dataset_id}/{tmpdir.split('/')[-1]}/{raw_name}"
+                    parts.append(f"{name}:={dev_path}")
+
+                list_lines.append(" ".join(parts))
+
+        input_list_path = Path(tmpdir) / "input_list.txt"
+        input_list_path.write_text("\n".join(list_lines) + "\n")
+        adb.push(
+            input_list_path, f"{ADB_DATA_DIR}/{dataset_id}/input_list.txt"
+        )
+        input_list_path.unlink()
+        adb.push(tmpdir, f"{ADB_DATA_DIR}/{dataset_id}/")
 
 
 def _infer_adb(
@@ -236,13 +390,13 @@ def _infer_adb(
     instance_id: str,
     dataset_id: str,
     snpe_version: str,
-    inp_name: str,
     device_id: str | None,
 ) -> Path:
     mult_cfg, _, _ = get_configs(str(archive))
     adb = AdbHandler(device_id, silent=False)
     config = mult_cfg.get_stage_config(None)
 
+    in_names = [inp.name for inp in config.inputs]
     in_shapes = {inp.name: inp.shape for inp in config.inputs}
     out_shapes = {out.name: out.shape for out in config.outputs}
     resize_method = {
@@ -258,16 +412,16 @@ def _infer_adb(
         for inp in config.inputs
     }
 
-    in_shape = in_shapes[inp_name]
     adb_prepare_inference(
         dataset_id,
-        tuple(in_shape),  # type: ignore
-        encoding[inp_name],
-        resize_method[inp_name],
+        in_names,
+        in_shapes,  # type: ignore
+        encoding,
+        resize_method,
         device_id,
     )
 
-    adb_workdir = f"{ADB_MODELS_DIR}/{model_id}/{variant_id}/{instance_id}/{snpe_version}/"
+    adb_workdir = f"{ADB_MODELS_DIR}/{model_id}/{variant_id}/{instance_id}/{snpe_version}"
 
     adb.shell(f"mkdir -p {adb_workdir}")
 
@@ -337,21 +491,39 @@ def _infer_modelconv(
     instance_id: str,
     dataset_id: str,
     snpe_version: str,
-    inp_name: str,
+    inp_names: list[str],
     save_dir: Path,
 ) -> Path:
-    src = (
-        SHARED_DIR
-        / "zoo-inference"
-        / model_id
-        / variant_id
-        / instance_id
-        / inp_name
-    )
-    src.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(
-        CALIBRATION_DIR / "datasets" / dataset_id, src, dirs_exist_ok=True
-    )
+    if len(inp_names) == 1:
+        src = (
+            SHARED_DIR
+            / "zoo-inference"
+            / model_id
+            / variant_id
+            / instance_id
+            / inp_names[0]
+        )
+        src.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(
+            CALIBRATION_DIR / "datasets" / dataset_id, src, dirs_exist_ok=True
+        )
+    else:
+        for inp_name in inp_names:
+            src = (
+                SHARED_DIR
+                / "zoo-inference"
+                / model_id
+                / variant_id
+                / instance_id
+                / inp_name
+            )
+            src.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(
+                CALIBRATION_DIR / "datasets" / dataset_id / inp_name,
+                src,
+                dirs_exist_ok=True,
+            )
+
     args = [
         "modelconverter",
         "infer",
@@ -407,7 +579,7 @@ def infer(
         config = Config(**json.loads(Path(d, "config.json").read_text()))
         model_path = next(iter(Path(d).glob("*.dlc")))
 
-        inp_name = config.model.inputs[0].name
+        inp_names = [inp.name for inp in config.model.inputs]
 
         shutil.copy(model_path, dir)
 
@@ -420,7 +592,6 @@ def infer(
                 instance_id,
                 dataset_id,
                 snpe_version,
-                inp_name,
                 device_id,
             )
         if infer_mode == "modelconv":
@@ -432,7 +603,7 @@ def infer(
                 instance_id,
                 dataset_id,
                 snpe_version,
-                inp_name,
+                inp_names,
                 dir,
             )
         logger.error(f"Unknown inference mode: {infer_mode}")
@@ -1056,7 +1227,9 @@ def main(
         path.parent.mkdir(parents=True, exist_ok=True)
         pl_df.write_csv(path)
         logger.info(f"Results saved to {path}")
-        n_success = pl_df.filter(pl.col("status") == "success").shape[0]
+        n_success = pl_df.filter(
+            pl.col("status").is_in(["success", "passable"])
+        ).shape[0]
         logger.info(
             f"Migration completed. {n_success} out of {len(pl_df)} models "
             f"were successfully migrated."
