@@ -137,6 +137,17 @@ def process_nn_archive(
                         layout = "NHWC"
                     else:
                         layout = "NCHW"
+
+            if layout is not None:
+                guessed_layout = make_default_layout(inp.shape)
+                if layout != guessed_layout:
+                    logger.warning(
+                        f"Layout `{layout}` is incompatible with the shape `{inp.shape}`. "
+                        "This is likely due to misconfigured NN Archive. "
+                        f"Using default layout `{guessed_layout}` instead."
+                    )
+                    layout = guessed_layout
+
             channels = (
                 inp.shape[layout.index("C")]
                 if layout and "C" in layout
