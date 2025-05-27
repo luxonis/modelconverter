@@ -53,8 +53,20 @@ def print_info(df: pl.DataFrame, reason: Reason) -> None:
 
 @app.default
 def main(
-    csv_path: Path, reason: Reason | None = None, info: bool = False
+    csv_path: Path, *, reason: Reason | None = None, info: bool = False
 ) -> None:
+    """Analyze the results from a CSV file.
+
+    Parameters
+    ----------
+    csv_path : Path
+        Path to the CSV file containing the results.
+    reason : Reason, optional
+        Specific reason to filter the failed conversions, by default None
+    info : bool, optional
+        Whether to print detailed information about the failed conversions,
+        by default False
+    """
     df = pl.read_csv(csv_path)
     failed = df.filter(pl.col("status") == "failed")
     print(f"Successful conversions: {len(df) - len(failed)}/{len(df)}")
