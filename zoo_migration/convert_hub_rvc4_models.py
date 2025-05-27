@@ -438,7 +438,6 @@ def _infer_adb(
         f"--input_list {ADB_DATA_DIR}/{dataset_id}/input_list.txt "
         f"--output_dir {adb_workdir}/outputs "
         "--perf_profile default "
-        "--enable_cpu_fallback "
         "--use_dsp"
     )
     ret, stdout, stderr = adb.shell(command)
