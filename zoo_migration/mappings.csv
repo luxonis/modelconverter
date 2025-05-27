@@ -44,10 +44,10 @@ Depth Anything V2,c5bf9763-d29d-4b10-8642-fbd032236383,/,881c017c-ad39-435a-a690
 Lite-HRNet,c7c9e353-9f6d-43e1-9b45-8edeae82db70,/,17a2018b-e95c-42ad-9a7e-3e686786e3ee
 Paddle Text Detection,131d855c-60b1-4634-a14d-1269bb35dcd2,86360744-9f27-4105-bbda-66a90695b8d8,86f79b05-d183-43ab-a2cc-d4dc3069c55b
 Paddle Text Recognition,9ae12b58-3551-49b1-af22-721ba4bcf269,/,86f79b05-d183-43ab-a2cc-d4dc3069c55b
-Gaze estimation ADAS,b174ff1b-740b-4016-b8d5-b9488dbdd657,/,79ab4c81-c554-4acc-b260-4872ad542259
+Gaze estimation ADAS,b174ff1b-740b-4016-b8d5-b9488dbdd657,/,gaze_estimation_adas_test_data
 XFeat,6c2790a1-bf68-4e89-a4b3-5c9ae68183b5,General Dataset from Hub,d3ccbb54-aec3-4494-a416-cc7b86f9f2b7
 MobileNet-SSD,2da6e0a5-4785-488d-8cf5-c35f7ec1a1ed,/,881c017c-ad39-435a-a690-b583db6e9244
-CREStereo,4729a8bd-54df-467a-92ca-a8a5e70b52ab,/,/
+CREStereo,4729a8bd-54df-467a-92ca-a8a5e70b52ab,/,crestereo_test_data
 PP-LiteSeg,5963005b-eab3-4b68-a24c-45f3b95c6b9d,Driving Dataset from Hub,dfc95b71-f004-4b8f-8a4a-2b88b4c0543f
 YOLO-World-L,6684e96f-11fc-4d92-8657-12a5fd8e532a,/ todo?,/
 OSNet,6d853621-818b-4fa4-bd9a-d9bdcb5616e6,/,17a2018b-e95c-42ad-9a7e-3e686786e3ee
