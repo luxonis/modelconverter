@@ -88,7 +88,7 @@ def process_nn_archive(
 
         layout = inp.layout
         encoding = "NONE"
-        if inp.input_type == InputType.IMAGE:
+        if inp.input_type == InputType.IMAGE and len(inp.shape) == 4:
             if dai_type is not None:
                 if (reverse and dai_type.startswith("BGR")) or (
                     reverse is False and dai_type.startswith("RGB")
@@ -227,12 +227,13 @@ def modelconverter_config_to_nn(
         else:
             layout = make_default_layout(new_shape)
         dai_type = inp.encoding.to.value
-        if inp.data_type == DataType.FLOAT16:
-            type = "F16F16F16"
-        else:
-            type = "888"
-        dai_type += type
-        dai_type += "i" if layout == "NHWC" else "p"
+        if dai_type != "NONE":
+            if inp.data_type == DataType.FLOAT16:
+                type = "F16F16F16"
+            else:
+                type = "888"
+            dai_type += type
+            dai_type += "i" if layout == "NHWC" else "p"
 
         archive_cfg["model"]["inputs"].append(
             {
@@ -240,7 +241,7 @@ def modelconverter_config_to_nn(
                 "shape": new_shape,
                 "layout": layout,
                 "dtype": inp.data_type.value,
-                "input_type": "image",
+                "input_type": "image" if layout in ["NHWC", "NCHW"] else "raw",
                 "preprocessing": {
                     "mean": [0 for _ in inp.mean_values]
                     if inp.mean_values
