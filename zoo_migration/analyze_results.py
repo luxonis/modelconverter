@@ -39,6 +39,13 @@ def print_info(df: pl.DataFrame, reason: Reason) -> None:
             yield f"Variant ID: {row['variant_id']}"
             yield f"Instance ID: {row['instance_id']}"
             yield Rule()
+            yield (
+                f"CLI args: "
+                f"--model-id {row['model_id']} "
+                f"--variant-id {row['variant_id']} "
+                f"--instance-id {row['instance_id']}"
+            )
+            yield Rule()
             yield Text(row["error"], style="bold red")
 
         print(Panel(render(row), title=f"Failed Conversion ({reason.value})"))
