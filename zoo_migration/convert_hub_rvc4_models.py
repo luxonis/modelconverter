@@ -260,7 +260,7 @@ def onnx_infer(
             for out_name, arr in zip(onnx_outputs, results, strict=True):
                 out_dir = outputs_path / out_name
                 out_dir.mkdir(parents=True, exist_ok=True)
-                np.save(out_dir / f"{file_path.stem}.npy", arr)
+                np.save(out_dir / f"{idx}.npy", arr)
     else:
         for idx in sorted(mapping.common_indices, key=lambda x: int(x)):
             input_files = {
@@ -321,18 +321,15 @@ def adb_prepare_inference(
                 enc = encodings[name]
                 rm = resize_methods[name]
 
-                if file_path.suffix.lower() == ".npy":
-                    arr = np.load(file_path)
-                else:
-                    n, h, w, c = shape
-                    arr = read_image(
-                        file_path,
-                        shape=[n, c, h, w],
-                        encoding=enc,
-                        resize_method=rm,
-                        data_type=DataType.FLOAT32,
-                        transpose=False,
-                    )
+                n, *s, c = shape
+                arr = read_image(
+                    file_path,
+                    shape=[n, c, *s],
+                    encoding=enc,
+                    resize_method=rm,
+                    data_type=DataType.FLOAT32,
+                    transpose=False,
+                ).astype(np.float32)
 
                 raw_name = f"{file_path.stem}.raw"
                 host_raw = Path(tmpdir) / raw_name
@@ -351,18 +348,15 @@ def adb_prepare_inference(
 
                 for name in input_names:
                     file_path = input_files[name]
-                    if file_path.suffix.lower() == ".npy":
-                        arr = np.load(file_path)
-                    else:
-                        n, h, w, c = in_shapes[name]
-                        arr = read_image(
-                            file_path,
-                            shape=[n, c, h, w],
-                            encoding=encodings[name],
-                            resize_method=resize_methods[name],
-                            data_type=DataType.FLOAT32,
-                            transpose=False,
-                        )
+                    n, *s, c = in_shapes[name]
+                    arr = read_image(
+                        file_path,
+                        shape=[n, c, *s],
+                        encoding=encodings[name],
+                        resize_method=resize_methods[name],
+                        data_type=DataType.FLOAT32,
+                        transpose=False,
+                    ).astype(np.float32)
 
                     raw_name = f"{name}_{idx}.raw"
                     host_path = Path(tmpdir) / raw_name
@@ -392,6 +386,7 @@ def _infer_adb(
     snpe_version: str,
     device_id: str | None,
 ) -> Path:
+    logger.info(f"Running inference on ADB. Parsing archive {str(archive)}...")
     mult_cfg, _, _ = get_configs(str(archive))
     adb = AdbHandler(device_id, silent=False)
     config = mult_cfg.get_stage_config(None)
@@ -703,11 +698,12 @@ def compare_files(
 
     for old_file in files:
         relative_path = old_file.relative_to(old_inference)
+        idx = int(old_file.stem.split("_")[-1])
         new_file = new_inference / relative_path
-        onnx_file = onnx_inference / relative_path
+        onnx_file = (onnx_inference / relative_path).parent / f"{idx}.npy"
 
         if not new_file.exists() or not onnx_file.exists():
-            continue
+            raise ValueError(f"Some of the inferred files do not exists: {new_file}: {new_file.exists()}, {onnx_file}: {onnx_file.exists()}")
 
         old_array = np.load(old_file)
         new_array = np.load(new_file)
