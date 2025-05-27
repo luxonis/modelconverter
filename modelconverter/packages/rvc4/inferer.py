@@ -25,11 +25,11 @@ class RVC4Inferer(Inferer):
                 raw_path = Path(f"raw_images/{input_name}.raw")
                 # NOTE: This shouldn't be needed, there's
                 # something weird happening with the layout.
-                n, h, w, c = self.in_shapes[input_name]
+                n, *s, c = self.in_shapes[input_name]
                 arr = read_image(
                     path,
-                    shape=[n, c, h, w],
-                    # shape=self.in_shapes[input_name],
+                    shape=[n, c, *s],
+                    # shape=self.in_shapes[input_name],  # noqa: ERA001
                     encoding=self.encoding[input_name],
                     resize_method=self.resize_method[input_name],
                     data_type=DataType.FLOAT32,
@@ -62,7 +62,7 @@ class RVC4Inferer(Inferer):
             # TODO: detect layout
             if len(out_shape) == 4:
                 N, H, W, C = out_shape
-                # outputs[p.stem] = arr.reshape(N, H, W, C)
+                # outputs[p.stem] = arr.reshape(N, H, W, C)  # noqa: ERA001
                 outputs[p.stem] = arr.reshape(N, H, W, C).transpose(0, 3, 1, 2)
             else:
                 outputs[p.stem] = arr.reshape(out_shape)
