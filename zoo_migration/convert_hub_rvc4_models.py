@@ -253,6 +253,7 @@ def onnx_infer(
             name = input_names[0]
             shape = input_shapes[0]
             prep = input_preprocessing[0]
+            idx = file_path.stem.split("_")[-1]
 
             tensor = preprocess_image(file_path, shape, prep)
             results = session.run(onnx_outputs, {name: tensor})
@@ -386,7 +387,7 @@ def _infer_adb(
     snpe_version: str,
     device_id: str | None,
 ) -> Path:
-    logger.info(f"Running inference on ADB. Parsing archive {str(archive)}...")
+    logger.info(f"Running inference on ADB. Parsing archive {archive}...")
     mult_cfg, _, _ = get_configs(str(archive))
     adb = AdbHandler(device_id, silent=False)
     config = mult_cfg.get_stage_config(None)
@@ -433,6 +434,7 @@ def _infer_adb(
         f"--input_list {ADB_DATA_DIR}/{dataset_id}/input_list.txt "
         f"--output_dir {adb_workdir}/outputs "
         "--perf_profile default "
+        "--enable_cpu_fallback "
         "--use_dsp"
     )
     ret, stdout, stderr = adb.shell(command)
@@ -702,7 +704,9 @@ def compare_files(
         onnx_file = (onnx_inference / relative_path).parent / f"{idx}.npy"
 
         if not new_file.exists() or not onnx_file.exists():
-            raise ValueError(f"Some of the inferred files do not exists: {new_file}: {new_file.exists()}, {onnx_file}: {onnx_file.exists()}")
+            raise ValueError(
+                f"Some of the inferred files do not exists: {new_file}: {new_file.exists()}, {onnx_file}: {onnx_file.exists()}"
+            )
 
         old_array = np.load(old_file)
         new_array = np.load(new_file)
