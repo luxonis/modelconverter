@@ -71,7 +71,10 @@ def _get_metadata_dlc(path: Path) -> Metadata:
         shapes = df.select(
             [
                 pl.col(f"{typ.capitalize()} Name"),
-                pl.col("Dimensions").str.split(",").cast(pl.List(pl.Int64)),
+                pl.col("Dimensions")
+                .cast(pl.Utf8)
+                .str.split(",")
+                .cast(pl.List(pl.Int64)),
             ]
         ).to_dict(as_series=False)
         metadata[f"{typ}_shapes"] = dict(
