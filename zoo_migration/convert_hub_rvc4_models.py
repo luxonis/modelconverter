@@ -189,18 +189,21 @@ def get_instance_params(
 
 
 def preprocess_image(
-    img_path: Path, shape: list[int], preprocessing: dict[str, Any]
+    img_path: Path,
+    shape: list[int],
+    dtype: np.dtype,
+    preprocessing: dict[str, Any],
 ) -> np.ndarray:
     img = cv2.imread(str(img_path))
 
     height, width = shape[2], shape[3]
-    img = cv2.resize(img, (width, height)).astype(np.float32)
+    img = cv2.resize(img, (width, height)).astype(dtype)
 
     if preprocessing.get("reverse_channels", False):
         img = img[..., ::-1]
 
-    mean = np.array(preprocessing.get("mean", [0, 0, 0]), dtype=np.float32)
-    scale = np.array(preprocessing.get("scale", [1, 1, 1]), dtype=np.float32)
+    mean = np.array(preprocessing.get("mean", [0, 0, 0]), dtype=dtype)
+    scale = np.array(preprocessing.get("scale", [1, 1, 1]), dtype=dtype)
     img = (img - mean) / scale
 
     return img.transpose(2, 0, 1)[None, ...]
@@ -217,8 +220,18 @@ def onnx_infer(
 ) -> Path:
     import onnxruntime as ort
 
+    dtypes_map = {
+        "float32": np.float32,
+        "float16": np.float16,
+        "int32": np.int32,
+        "int64": np.int64,
+        "uint8": np.uint8,
+        "int8": np.int8,
+    }
+
     input_names = [inp["name"] for inp in onnx_inputs]
     input_shapes = [inp["shape"] for inp in onnx_inputs]
+    input_dtypes = [inp["dtype"] for inp in onnx_inputs]
     input_preprocessing = [inp["preprocessing"] for inp in onnx_inputs]
 
     session = ort.InferenceSession(str(onnx_model_path))
@@ -252,10 +265,11 @@ def onnx_infer(
         for file_path in sorted(files):
             name = input_names[0]
             shape = input_shapes[0]
+            dtype = dtypes_map[input_dtypes[0]]
             prep = input_preprocessing[0]
             idx = file_path.stem.split("_")[-1]
 
-            tensor = preprocess_image(file_path, shape, prep)
+            tensor = preprocess_image(file_path, shape, dtype, prep)
             results = session.run(onnx_outputs, {name: tensor})
 
             for out_name, arr in zip(onnx_outputs, results, strict=True):
@@ -270,14 +284,20 @@ def onnx_infer(
 
             input_tensors = {}
 
-            for name, shape, prep in zip(
-                input_names, input_shapes, input_preprocessing, strict=True
+            for name, shape, dtype, prep in zip(
+                input_names,
+                input_shapes,
+                input_dtypes,
+                input_preprocessing,
+                strict=True,
             ):
                 file_path = input_files[name]
                 if file_path.suffix.lower() == ".npy":
-                    tensor = np.load(file_path)
+                    tensor = np.load(file_path).astype(dtypes_map[dtype])
                 else:
-                    tensor = preprocess_image(file_path, shape, prep)
+                    tensor = preprocess_image(
+                        file_path, shape, dtypes_map[dtype], prep
+                    )
                 input_tensors[name] = tensor
             results = session.run(onnx_outputs, input_tensors)
 
@@ -762,6 +782,40 @@ def get_onnx_info(
         }
         return cleaned
 
+    def get_input_dtype(
+        onnx_path: Path, inputs: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        import onnxruntime as ort
+
+        session = ort.InferenceSession(str(onnx_path))
+
+        input_name_to_meta = {inp.name: inp for inp in session.get_inputs()}
+
+        updated_inputs = []
+        for inp_dict in inputs:
+            name = inp_dict.get("name")
+            if name in input_name_to_meta:
+                onnx_input_meta = input_name_to_meta[name]
+                dtype_str = onnx_input_meta.type
+                if dtype_str.startswith("tensor(") and dtype_str.endswith(")"):
+                    dtype = dtype_str[len("tensor(") : -1]
+                else:
+                    logger.warning(
+                        f"Unexpected ONNX input type format: {dtype_str} for input {name}"
+                    )
+                    dtype = (
+                        "float32"  # Default to float32 if format is unexpected
+                    )
+
+                inp_dict_copy = inp_dict.copy()
+                inp_dict_copy["dtype"] = dtype
+                updated_inputs.append(inp_dict_copy)
+            else:
+                raise RuntimeError(
+                    f"Input '{name}' from config not found in ONNX model inputs."
+                )
+        return updated_inputs
+
     with (
         tempfile.TemporaryDirectory() as d,
         tarfile.open(archive, mode="r") as tf,
@@ -777,6 +831,7 @@ def get_onnx_info(
         tmp_onnx_path = next(iter(Path(d).glob(onnx_model)))
         if not tmp_onnx_path.exists():
             raise RuntimeError("ONNX file not found")
+        onnx_inputs = get_input_dtype(tmp_onnx_path, onnx_inputs)
 
         chown(SHARED_DIR)
         dst = MODELS_DIR / "zoo" / model_id / "onnx"
