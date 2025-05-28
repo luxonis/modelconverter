@@ -170,7 +170,10 @@ def upload_new_instance(
 
 
 def get_instance_params(
-    inst: dict[str, Any], parent: dict[str, Any], snpe_version: str
+    inst: dict[str, Any],
+    variant_id: str,
+    parent: dict[str, Any],
+    snpe_version: str,
 ) -> dict[str, Any]:
     model_id = inst["model_id"]
     return {
@@ -180,7 +183,13 @@ def get_instance_params(
         "parent_id": parent["id"],
         "hardware_parameters": {"snpe_version": snpe_version},
         "model_precision_type": inst["model_precision_type"],
-        "quantization_data": models_df.filter(pl.col("Model ID") == model_id)
+        "quantization_data": models_df.filter(
+            (pl.col("Model ID") == model_id)
+            & (
+                pl.lit(variant_id is None)
+                | (pl.col("Variant ID") == variant_id)
+            )
+        )
         .select("Quant. Dataset ID")
         .item(),
         "tags": inst["tags"],
@@ -221,8 +230,10 @@ def onnx_infer(
     import onnxruntime as ort
 
     dtypes_map = {
-        "float32": np.float32,
         "float16": np.float16,
+        "float32": np.float32,
+        "float": np.float32,
+        "float64": np.float64,
         "int32": np.int32,
         "int64": np.int64,
         "uint8": np.uint8,
@@ -640,7 +651,13 @@ def test_degradation(
 ) -> tuple[float, float]:
     model_id = model["id"]
     dataset_id = (
-        models_df.filter(pl.col("Model ID") == model_id)
+        models_df.filter(
+            (pl.col("Model ID") == model_id)
+            & (
+                pl.lit(variant_id is None)
+                | (pl.col("Variant ID") == variant_id)
+            )
+        )
         .select("Test Dataset ID")
         .item()
     )
@@ -974,7 +991,7 @@ def _migrate_models(
         )
 
     new_instance_params = get_instance_params(
-        old_instance, parent, snpe_version
+        old_instance, variant_id, parent, snpe_version
     )
 
     parent_archive = instance_download(
@@ -984,7 +1001,13 @@ def _migrate_models(
     )
 
     dataset_name: str = (
-        models_df.filter(pl.col("Model ID") == model_id)
+        models_df.filter(
+            (pl.col("Model ID") == model_id)
+            & (
+                pl.lit(variant_id is None)
+                | (pl.col("Variant ID") == variant_id)
+            )
+        )
         .select("Quant. Dataset ID")
         .item()
     )
