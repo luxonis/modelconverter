@@ -169,6 +169,13 @@ def upload_new_instance(
     upload(str(archive), instance["id"])
 
 
+def filter_models_df(model_id: str, variant_id: str | None) -> pl.DataFrame:
+    df = models_df.filter(pl.col("Model ID") == model_id)
+    if df["Variant ID"].drop_nulls().len() > 0 and variant_id is not None:
+        df = df.filter(pl.col("Variant ID") == variant_id)
+    return df
+
+
 def get_instance_params(
     inst: dict[str, Any],
     variant_id: str,
@@ -176,6 +183,7 @@ def get_instance_params(
     snpe_version: str,
 ) -> dict[str, Any]:
     model_id = inst["model_id"]
+    filtered_df = filter_models_df(model_id, variant_id)
     return {
         "name": inst["name"],
         "variant_id": inst["model_version_id"],
@@ -183,15 +191,7 @@ def get_instance_params(
         "parent_id": parent["id"],
         "hardware_parameters": {"snpe_version": snpe_version},
         "model_precision_type": inst["model_precision_type"],
-        "quantization_data": models_df.filter(
-            (pl.col("Model ID") == model_id)
-            & (
-                pl.lit(variant_id is None)
-                | (pl.col("Variant ID") == variant_id)
-            )
-        )
-        .select("Quant. Dataset ID")
-        .item(),
+        "quantization_data": filtered_df.select("Quant. Dataset ID").item(),
         "tags": inst["tags"],
         "input_shape": inst["input_shape"],
     }
@@ -650,17 +650,8 @@ def test_degradation(
     infer_mode: Literal["adb", "modelconv"],
 ) -> tuple[float, float]:
     model_id = model["id"]
-    dataset_id = (
-        models_df.filter(
-            (pl.col("Model ID") == model_id)
-            & (
-                pl.lit(variant_id is None)
-                | (pl.col("Variant ID") == variant_id)
-            )
-        )
-        .select("Test Dataset ID")
-        .item()
-    )
+    filtered_df = filter_models_df(model_id, variant_id)
+    dataset_id = filtered_df.select("Test Dataset ID").item()
     logger.info(f"Testing degradation for {model_id} on {dataset_id}")
 
     onnx_model_path, onnx_inputs, onnx_outputs = get_onnx_info(
@@ -1000,17 +991,8 @@ def _migrate_models(
         cache=True,
     )
 
-    dataset_name: str = (
-        models_df.filter(
-            (pl.col("Model ID") == model_id)
-            & (
-                pl.lit(variant_id is None)
-                | (pl.col("Variant ID") == variant_id)
-            )
-        )
-        .select("Quant. Dataset ID")
-        .item()
-    )
+    filtered_df = filter_models_df(model_id, variant_id)
+    dataset_name: str = filtered_df.select("Quant. Dataset ID").item()
     args = [
         "modelconverter",
         "convert",
