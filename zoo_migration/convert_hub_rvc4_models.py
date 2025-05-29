@@ -203,16 +203,24 @@ def preprocess_image(
     dtype: np.dtype,
     preprocessing: dict[str, Any],
 ) -> np.ndarray:
-    img = cv2.imread(str(img_path))
+    channels, height, width = shape[1], shape[2], shape[3]
 
-    height, width = shape[2], shape[3]
-    img = cv2.resize(img, (width, height)).astype(dtype)
+    if channels == 1:
+        img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+        img = cv2.resize(img, (width, height)).astype(dtype)
+        img = img[..., np.newaxis]
+        mean_default = [0.0]
+        scale_default = [1.0]
+    else:
+        img = cv2.imread(str(img_path))
+        img = cv2.resize(img, (width, height)).astype(dtype)
+        if preprocessing.get("reverse_channels", False):
+            img = img[..., ::-1]
+        mean_default = [0.0, 0.0, 0.0]
+        scale_default = [1.0, 1.0, 1.0]
 
-    if preprocessing.get("reverse_channels", False):
-        img = img[..., ::-1]
-
-    mean = np.array(preprocessing.get("mean", [0, 0, 0]), dtype=dtype)
-    scale = np.array(preprocessing.get("scale", [1, 1, 1]), dtype=dtype)
+    mean = np.array(preprocessing.get("mean", mean_default), dtype=dtype)
+    scale = np.array(preprocessing.get("scale", scale_default), dtype=dtype)
     img = (img - mean) / scale
 
     return img.transpose(2, 0, 1)[None, ...]
@@ -433,9 +441,15 @@ def _infer_adb(
         for inp in config.inputs
     }
     encoding = {
-        inp.name: inp.encoding.to
-        if isinstance(inp.calibration, ImageCalibrationConfig)
-        else Encoding.BGR
+        inp.name: (
+            Encoding.GRAY
+            if inp.encoding.to == Encoding.GRAY
+            else (
+                inp.encoding.to
+                if isinstance(inp.calibration, ImageCalibrationConfig)
+                else Encoding.BGR
+            )
+        )
         for inp in config.inputs
     }
 
