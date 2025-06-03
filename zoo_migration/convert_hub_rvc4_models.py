@@ -774,7 +774,7 @@ def compare_files(
     if math.isclose(old_score, new_score, rel_tol=5e-2, abs_tol=1e-5):
         return old_score, new_score  # type: ignore
 
-    if metric == "cos":
+    if metric in {"cos", "psnr"}:
         if old_score > new_score:
             raise RuntimeError(
                 f"Degradation test failed: old model has higher {metric}  ({old_score}) than new model ({new_score})"
