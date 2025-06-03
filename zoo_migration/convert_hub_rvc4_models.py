@@ -169,10 +169,21 @@ def upload_new_instance(
     upload(str(archive), instance["id"])
 
 
+def filter_models_df(model_id: str, variant_id: str | None) -> pl.DataFrame:
+    df = models_df.filter(pl.col("Model ID") == model_id)
+    if df["Variant ID"].drop_nulls().len() > 0 and variant_id is not None:
+        df = df.filter(pl.col("Variant ID") == variant_id)
+    return df
+
+
 def get_instance_params(
-    inst: dict[str, Any], parent: dict[str, Any], snpe_version: str
+    inst: dict[str, Any],
+    variant_id: str,
+    parent: dict[str, Any],
+    snpe_version: str,
 ) -> dict[str, Any]:
     model_id = inst["model_id"]
+    filtered_df = filter_models_df(model_id, variant_id)
     return {
         "name": inst["name"],
         "variant_id": inst["model_version_id"],
@@ -180,27 +191,36 @@ def get_instance_params(
         "parent_id": parent["id"],
         "hardware_parameters": {"snpe_version": snpe_version},
         "model_precision_type": inst["model_precision_type"],
-        "quantization_data": models_df.filter(pl.col("Model ID") == model_id)
-        .select("Quant. Dataset ID")
-        .item(),
+        "quantization_data": filtered_df.select("Quant. Dataset ID").item(),
         "tags": inst["tags"],
         "input_shape": inst["input_shape"],
     }
 
 
 def preprocess_image(
-    img_path: Path, shape: list[int], preprocessing: dict[str, Any]
+    img_path: Path,
+    shape: list[int],
+    dtype: np.dtype,
+    preprocessing: dict[str, Any],
 ) -> np.ndarray:
-    img = cv2.imread(str(img_path))
+    channels, height, width = shape[1], shape[2], shape[3]
 
-    height, width = shape[2], shape[3]
-    img = cv2.resize(img, (width, height)).astype(np.float32)
+    if channels == 1:
+        img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+        img = cv2.resize(img, (width, height)).astype(dtype)
+        img = img[..., np.newaxis]
+        mean_default = [0.0]
+        scale_default = [1.0]
+    else:
+        img = cv2.imread(str(img_path))
+        img = cv2.resize(img, (width, height)).astype(dtype)
+        if preprocessing.get("reverse_channels", False):
+            img = img[..., ::-1]
+        mean_default = [0.0, 0.0, 0.0]
+        scale_default = [1.0, 1.0, 1.0]
 
-    if preprocessing.get("reverse_channels", False):
-        img = img[..., ::-1]
-
-    mean = np.array(preprocessing.get("mean", [0, 0, 0]), dtype=np.float32)
-    scale = np.array(preprocessing.get("scale", [1, 1, 1]), dtype=np.float32)
+    mean = np.array(preprocessing.get("mean", mean_default), dtype=dtype)
+    scale = np.array(preprocessing.get("scale", scale_default), dtype=dtype)
     img = (img - mean) / scale
 
     return img.transpose(2, 0, 1)[None, ...]
@@ -217,8 +237,20 @@ def onnx_infer(
 ) -> Path:
     import onnxruntime as ort
 
+    dtypes_map = {
+        "float16": np.float16,
+        "float32": np.float32,
+        "float": np.float32,
+        "float64": np.float64,
+        "int32": np.int32,
+        "int64": np.int64,
+        "uint8": np.uint8,
+        "int8": np.int8,
+    }
+
     input_names = [inp["name"] for inp in onnx_inputs]
     input_shapes = [inp["shape"] for inp in onnx_inputs]
+    input_dtypes = [inp["dtype"] for inp in onnx_inputs]
     input_preprocessing = [inp["preprocessing"] for inp in onnx_inputs]
 
     session = ort.InferenceSession(str(onnx_model_path))
@@ -252,10 +284,11 @@ def onnx_infer(
         for file_path in sorted(files):
             name = input_names[0]
             shape = input_shapes[0]
+            dtype = dtypes_map[input_dtypes[0]]
             prep = input_preprocessing[0]
             idx = file_path.stem.split("_")[-1]
 
-            tensor = preprocess_image(file_path, shape, prep)
+            tensor = preprocess_image(file_path, shape, dtype, prep)
             results = session.run(onnx_outputs, {name: tensor})
 
             for out_name, arr in zip(onnx_outputs, results, strict=True):
@@ -270,14 +303,20 @@ def onnx_infer(
 
             input_tensors = {}
 
-            for name, shape, prep in zip(
-                input_names, input_shapes, input_preprocessing, strict=True
+            for name, shape, dtype, prep in zip(
+                input_names,
+                input_shapes,
+                input_dtypes,
+                input_preprocessing,
+                strict=True,
             ):
                 file_path = input_files[name]
                 if file_path.suffix.lower() == ".npy":
-                    tensor = np.load(file_path)
+                    tensor = np.load(file_path).astype(dtypes_map[dtype])
                 else:
-                    tensor = preprocess_image(file_path, shape, prep)
+                    tensor = preprocess_image(
+                        file_path, shape, dtypes_map[dtype], prep
+                    )
                 input_tensors[name] = tensor
             results = session.run(onnx_outputs, input_tensors)
 
@@ -402,9 +441,15 @@ def _infer_adb(
         for inp in config.inputs
     }
     encoding = {
-        inp.name: inp.encoding.to
-        if isinstance(inp.calibration, ImageCalibrationConfig)
-        else Encoding.BGR
+        inp.name: (
+            Encoding.GRAY
+            if inp.encoding.to == Encoding.GRAY
+            else (
+                inp.encoding.to
+                if isinstance(inp.calibration, ImageCalibrationConfig)
+                else Encoding.BGR
+            )
+        )
         for inp in config.inputs
     }
 
@@ -619,11 +664,8 @@ def test_degradation(
     infer_mode: Literal["adb", "modelconv"],
 ) -> tuple[float, float]:
     model_id = model["id"]
-    dataset_id = (
-        models_df.filter(pl.col("Model ID") == model_id)
-        .select("Test Dataset ID")
-        .item()
-    )
+    filtered_df = filter_models_df(model_id, variant_id)
+    dataset_id = filtered_df.select("Test Dataset ID").item()
     logger.info(f"Testing degradation for {model_id} on {dataset_id}")
 
     onnx_model_path, onnx_inputs, onnx_outputs = get_onnx_info(
@@ -762,6 +804,40 @@ def get_onnx_info(
         }
         return cleaned
 
+    def get_input_dtype(
+        onnx_path: Path, inputs: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        import onnxruntime as ort
+
+        session = ort.InferenceSession(str(onnx_path))
+
+        input_name_to_meta = {inp.name: inp for inp in session.get_inputs()}
+
+        updated_inputs = []
+        for inp_dict in inputs:
+            name = inp_dict.get("name")
+            if name in input_name_to_meta:
+                onnx_input_meta = input_name_to_meta[name]
+                dtype_str = onnx_input_meta.type
+                if dtype_str.startswith("tensor(") and dtype_str.endswith(")"):
+                    dtype = dtype_str[len("tensor(") : -1]
+                else:
+                    logger.warning(
+                        f"Unexpected ONNX input type format: {dtype_str} for input {name}"
+                    )
+                    dtype = (
+                        "float32"  # Default to float32 if format is unexpected
+                    )
+
+                inp_dict_copy = inp_dict.copy()
+                inp_dict_copy["dtype"] = dtype
+                updated_inputs.append(inp_dict_copy)
+            else:
+                raise RuntimeError(
+                    f"Input '{name}' from config not found in ONNX model inputs."
+                )
+        return updated_inputs
+
     with (
         tempfile.TemporaryDirectory() as d,
         tarfile.open(archive, mode="r") as tf,
@@ -777,6 +853,7 @@ def get_onnx_info(
         tmp_onnx_path = next(iter(Path(d).glob(onnx_model)))
         if not tmp_onnx_path.exists():
             raise RuntimeError("ONNX file not found")
+        onnx_inputs = get_input_dtype(tmp_onnx_path, onnx_inputs)
 
         chown(SHARED_DIR)
         dst = MODELS_DIR / "zoo" / model_id / "onnx"
@@ -919,7 +996,7 @@ def _migrate_models(
         )
 
     new_instance_params = get_instance_params(
-        old_instance, parent, snpe_version
+        old_instance, variant_id, parent, snpe_version
     )
 
     parent_archive = instance_download(
@@ -928,11 +1005,8 @@ def _migrate_models(
         cache=True,
     )
 
-    dataset_name: str = (
-        models_df.filter(pl.col("Model ID") == model_id)
-        .select("Quant. Dataset ID")
-        .item()
-    )
+    filtered_df = filter_models_df(model_id, variant_id)
+    dataset_name: str = filtered_df.select("Quant. Dataset ID").item()
     args = [
         "modelconverter",
         "convert",
