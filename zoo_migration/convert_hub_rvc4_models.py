@@ -470,11 +470,16 @@ def _infer_adb(
         # Temporarily forcing SNPE v2.32.6 due to zero-outputs bug in v2.23.0
         return f"source /data/local/tmp/source_me_{snpe_version}.sh"
 
+    def snpe_run(snpe_version: str) -> str:
+        if snpe_version == "2.23.0":
+            return "/usr/bin/snpe-net-run"
+        return "/data/local/tmp/snpe/snpe_2_32_6_backup/aarch64-oe-linux-gcc11.2/bin/snpe-net-run"
+
     adb.push(model_path, f"{adb_workdir}/model.dlc")
 
     command = (
         f"{source(snpe_version)} && "
-        "snpe-net-run "
+        f"{snpe_run(snpe_version)} "
         f"--container {adb_workdir}/model.dlc "
         f"--input_list {ADB_DATA_DIR}/{dataset_id}/input_list.txt "
         f"--output_dir {adb_workdir}/outputs "
