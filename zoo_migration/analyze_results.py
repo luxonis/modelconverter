@@ -122,6 +122,8 @@ def main(
             )
         )
         print(f"Failed conversions (other): {len(_df)}/{len(failed)}")
+        if info:
+            print_info(_df, Reason("other"))
 
 
 if __name__ == "__main__":
