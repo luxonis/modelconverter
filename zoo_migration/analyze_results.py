@@ -28,6 +28,7 @@ class Reason(Enum):
     no_images = "No images"
     only_single_input = "Only single input"
     parent_not_found = "Parent not found"
+    other = "other"
 
 
 def print_info(df: pl.DataFrame, reason: Reason) -> None:
