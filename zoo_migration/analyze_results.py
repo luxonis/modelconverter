@@ -53,7 +53,7 @@ def print_info(df: pl.DataFrame, reason: Reason) -> None:
 
 @app.default
 def main(
-    csv_path: Path, *, reason: Reason | None = None, info: bool = False
+    csv_path: Path, *, reason: Reason | str | None = None, info: bool = False
 ) -> None:
     """Analyze the results from a CSV file.
 
@@ -73,8 +73,10 @@ def main(
     print(f"Failed conversions: {len(failed)}/{len(df)}")
     subfails_len = 0
     instance_ids = set()
-    if reason is not None:
+    if isinstance(reason, Reason):
         errors = [reason.value]
+    elif isinstance(reason, str):
+        errors = [reason]
     else:
         errors = [
             "modelconverter",
