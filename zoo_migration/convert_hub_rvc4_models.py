@@ -468,7 +468,7 @@ def _infer_adb(
 
     def source(snpe_version: str) -> str:
         # Temporarily forcing SNPE v2.32.6 due to zero-outputs bug in v2.23.0
-        return "source /data/local/tmp/source_me_2.32.6.sh"
+        return f"source /data/local/tmp/source_me_{snpe_version}.sh"
 
     adb.push(model_path, f"{adb_workdir}/model.dlc")
 
