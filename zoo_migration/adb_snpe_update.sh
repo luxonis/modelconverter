@@ -1,3 +1,5 @@
+set -e
+
 export SNPE_ROOT=$1
 export ARCH=aarch64-oe-linux-gcc11.2
 export DSPARCH=hexagon-v73
