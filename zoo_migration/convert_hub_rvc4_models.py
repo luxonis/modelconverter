@@ -756,6 +756,9 @@ def compare_files(
         scores_new_vs_onnx.append(metric_func(new_array, onnx_array))
         scores_old_vs_onnx.append(metric_func(old_array, onnx_array))
 
+    if not scores_new_vs_onnx or not scores_old_vs_onnx:
+        raise RuntimeError(f"No scores computed for metric {metric}. ")
+
     old_score = np.mean(scores_old_vs_onnx)
     new_score = np.mean(scores_new_vs_onnx)
 
