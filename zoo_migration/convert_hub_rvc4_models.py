@@ -22,6 +22,7 @@ from cyclopts import App
 from loguru import logger
 from luxonis_ml.nn_archive import Config
 from luxonis_ml.utils import setup_logging
+from onnxruntime import InferenceSession
 from rich.prompt import Prompt
 from scipy.spatial.distance import cosine
 
@@ -261,6 +262,7 @@ def onnx_infer(
         raise FileNotFoundError(
             f"Dataset {dataset_id} not found in {dataset_path}"
         )
+    logger.info(f"Using dataset at '{dataset_path}'")
 
     outputs_path = Path(
         "comparison", model_id, variant_id, instance_id, "onnx", "outputs"
@@ -270,6 +272,17 @@ def onnx_infer(
     outputs_path.mkdir(parents=True, exist_ok=True)
 
     mapping = validate_and_map_input_files(dataset_path, input_names)
+
+    def run_onnx(
+        session: InferenceSession,
+        out_names: list[str],
+        inputs: dict[str, np.ndarray],
+    ) -> None:
+        results = session.run(onnx_outputs, inputs)
+        for out_name, arr in zip(out_names, results, strict=True):
+            out_dir = outputs_path / out_name
+            out_dir.mkdir(parents=True, exist_ok=True)
+            np.save(out_dir / f"{idx}.npy", arr)
 
     if len(mapping.common_indices) == 0:
         file_patterns = ["*.[jp][pn]g", "*.jpeg", "*.npy"]
@@ -289,12 +302,8 @@ def onnx_infer(
             idx = file_path.stem.split("_")[-1]
 
             tensor = preprocess_image(file_path, shape, dtype, prep)
-            results = session.run(onnx_outputs, {name: tensor})
+            run_onnx(session, onnx_outputs, {name: tensor})
 
-            for out_name, arr in zip(onnx_outputs, results, strict=True):
-                out_dir = outputs_path / out_name
-                out_dir.mkdir(parents=True, exist_ok=True)
-                np.save(out_dir / f"{idx}.npy", arr)
     else:
         for idx in sorted(mapping.common_indices, key=lambda x: int(x)):
             input_files = {
@@ -318,12 +327,7 @@ def onnx_infer(
                         file_path, shape, dtypes_map[dtype], prep
                     )
                 input_tensors[name] = tensor
-            results = session.run(onnx_outputs, input_tensors)
-
-            for out_name, arr in zip(onnx_outputs, results, strict=True):
-                out_dir = outputs_path / out_name
-                out_dir.mkdir(parents=True, exist_ok=True)
-                np.save(out_dir / f"{idx}.npy", arr)
+            run_onnx(session, onnx_outputs, input_tensors)
 
     return outputs_path
 
