@@ -21,6 +21,7 @@ from cyclopts import App
 from loguru import logger
 from luxonis_ml.nn_archive import Config
 from luxonis_ml.utils import setup_logging
+from metric import Metric
 from onnxruntime import InferenceSession
 from rich.prompt import Prompt
 
@@ -45,8 +46,6 @@ from modelconverter.utils.constants import (
 from modelconverter.utils.exceptions import SubprocessException
 from modelconverter.utils.nn_archive import safe_members
 from modelconverter.utils.types import DataType, Encoding, ResizeMethod
-
-from .metric import Metric
 
 date = datetime.now().strftime("%Y_%m_%d_%H_%M")  # noqa: DTZ005
 app = App(name="convert_hub_rvc4_models")
