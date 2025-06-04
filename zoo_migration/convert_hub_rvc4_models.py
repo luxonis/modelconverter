@@ -88,7 +88,9 @@ class Metric(Enum):
             max_pixel = np.max([a.max(), b.max()])
             return 20 * np.log10(max_pixel) - 10 * np.log10(mse)
         if self is self.COS:
-            return float(1 - cosine(a.flatten(), b.flatten()))
+            cos = float(1 - cosine(a.flatten(), b.flatten()))
+            if math.isnan(cos):
+                return 0.0  # Treat NaN as zero similarity
         raise ValueError(
             f"Unsupported metric: {self}. Supported metrics are: {', '.join(m.value for m in Metric)}"
         )
