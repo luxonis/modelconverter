@@ -9,7 +9,6 @@ import tempfile
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
 from os import getenv
 from pathlib import Path
 from types import FrameType
@@ -24,7 +23,6 @@ from luxonis_ml.nn_archive import Config
 from luxonis_ml.utils import setup_logging
 from onnxruntime import InferenceSession
 from rich.prompt import Prompt
-from scipy.spatial.distance import cosine
 
 from modelconverter.cli.utils import get_configs, request_info
 from modelconverter.hub.__main__ import (
@@ -48,6 +46,8 @@ from modelconverter.utils.exceptions import SubprocessException
 from modelconverter.utils.nn_archive import safe_members
 from modelconverter.utils.types import DataType, Encoding, ResizeMethod
 
+from .metric import Metric
+
 date = datetime.now().strftime("%Y_%m_%d_%H_%M")  # noqa: DTZ005
 app = App(name="convert_hub_rvc4_models")
 
@@ -62,47 +62,6 @@ models_df = pl.read_csv("mappings.csv")
 class InputFileMapping:
     files_by_input: dict[str, dict[str, Path]]
     common_indices: set[str]
-
-
-class Metric(Enum):
-    MAE = "mae"
-    MSE = "mse"
-    PSNR = "psnr"
-    COS = "cos"
-
-    @property
-    def sign(self) -> str:
-        if self in {self.PSNR, self.COS}:
-            return ">="
-        return "<="
-
-    def compute(self, a: np.ndarray, b: np.ndarray) -> float:
-        if self is self.MAE:
-            return float(np.mean(np.abs(a - b)))
-        if self is self.MSE:
-            return float(np.mean((a - b) ** 2))
-        if self is self.PSNR:
-            mse = np.mean((a - b) ** 2)
-            if mse == 0:
-                return 1000  # Perfect match
-            max_pixel = np.max([a.max(), b.max()])
-            return 20 * np.log10(max_pixel) - 10 * np.log10(mse)
-        if self is self.COS:
-            return float(1 - cosine(a.flatten(), b.flatten()))
-        raise ValueError(
-            f"Unsupported metric: {self}. Supported metrics are: {', '.join(m.value for m in Metric)}"
-        )
-
-    def verify(self, old_score: float, new_score: float) -> None:
-        if self in {self.COS, self.PSNR}:
-            if old_score > new_score:
-                raise RuntimeError(
-                    f"Degradation test failed: old model has higher {self.value}  ({old_score}) than new model ({new_score})"
-                )
-        elif old_score < new_score:
-            raise RuntimeError(
-                f"Degradation test failed: old model has lower {self.value}  ({old_score}) than new model ({new_score})"
-            )
 
 
 def validate_and_map_input_files(
@@ -550,14 +509,11 @@ def adb_infer(
         out_shape = out_shapes[p.stem]
         assert out_shape is not None
 
-        if (len(out_shape) == 4 and out_shape[1] in {1, 3}) or len(
-            out_shape
-        ) != 4:
-            arr = arr.reshape(out_shape)
-
-        else:
+        if len(out_shape) == 4:
             N, H, W, C = out_shape
             arr = arr.reshape(N, H, W, C).transpose(0, 3, 1, 2)
+        else:
+            arr = arr.reshape(out_shape)
 
         img_index = int(p.parent.name.split("_")[-1]) + 1
         dest = npy_out_dir / p.stem
