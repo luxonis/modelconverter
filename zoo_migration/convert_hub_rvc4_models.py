@@ -1186,7 +1186,7 @@ def main(
     variant_id: str | None = None,
     instance_id: str | None = None,
     infer_mode: Literal["adb", "modelconv"] = "modelconv",
-    metric: Literal["mae", "mse", "psnr", "cos"] = "cos",
+    metric: Literal["mae", "mse", "psnr", "cos"] = "psnr",
     limit: int = 5,
     upload: bool = False,
     confirm_upload: bool = False,
