@@ -770,6 +770,10 @@ def compare_files(
         raise RuntimeError(
             f"Degradation test failed: old model has NaN {metric} score ({old_score}) or new model has NaN {metric} score ({new_score})"
         )
+    if math.isinf(old_score) or math.isinf(new_score):
+        raise RuntimeError(
+            f"Degradation test failed: old model has infinite {metric} score ({old_score}) or new model has infinite {metric} score ({new_score})"
+        )
 
     if math.isclose(old_score, new_score, rel_tol=5e-2, abs_tol=1e-5):
         return old_score, new_score  # type: ignore
