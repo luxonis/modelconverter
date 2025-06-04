@@ -785,14 +785,14 @@ def compare_files(
         scores_old_vs_onnx.append(metric.compute(old_array, onnx_array))
 
     if not scores_new_vs_onnx or not scores_old_vs_onnx:
-        raise RuntimeError(f"No scores computed for metric {metric}. ")
+        raise RuntimeError(f"No scores computed for metric {metric.value}. ")
 
     old_score = float(np.mean(scores_old_vs_onnx))
     new_score = float(np.mean(scores_new_vs_onnx))
 
     if math.isnan(old_score) or math.isnan(new_score):
         raise RuntimeError(
-            f"Degradation test failed: old model has NaN {metric} score ({old_score}) or new model has NaN {metric} score ({new_score})"
+            f"Degradation test failed: old model has NaN {metric.value} score ({old_score}) or new model has NaN {metric.value} score ({new_score})"
         )
 
     if math.isclose(old_score, new_score, rel_tol=5e-2, abs_tol=1e-5):
@@ -1201,7 +1201,7 @@ def main(
     variant_id: str | None = None,
     instance_id: str | None = None,
     infer_mode: Literal["adb", "modelconv"] = "modelconv",
-    metric: Metric = Metric.PSNR,
+    metric: Metric = Metric.MSE,
     limit: int = 5,
     upload: bool = False,
     confirm_upload: bool = False,
