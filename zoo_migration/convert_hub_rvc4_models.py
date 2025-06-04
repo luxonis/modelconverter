@@ -70,6 +70,7 @@ class Metric(Enum):
     PSNR = "psnr"
     COS = "cos"
 
+    @property
     def sign(self) -> str:
         if self in {self.PSNR, self.COS}:
             return ">="
@@ -1092,9 +1093,8 @@ def _migrate_models(
         logger.info(
             f"Degradation test passed for model '{model_id}' and instance '{old_instance_id}'"
         )
-        sign = ">=" if metric in {"cos", "psnr"} else "<="
         logger.info(
-            f"New model {metric}: {new_score} {sign} old model {metric}: {old_score}"
+            f"New model {metric.value}: {new_score} {metric.sign} old model {metric.value}: {old_score}"
         )
     if upload:
         upload_new_instance(new_instance_params, new_archive)
