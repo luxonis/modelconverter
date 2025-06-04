@@ -1077,7 +1077,7 @@ def _migrate_models(
         logger.info(
             f"Degradation test passed for model '{model_id}' and instance '{old_instance_id}'"
         )
-        sign = ">=" if metric == "cos" else "<="
+        sign = ">=" if metric in {"cos", "psnr"} else "<="
         logger.info(
             f"New model {metric}: {new_score} {sign} old model {metric}: {old_score}"
         )
