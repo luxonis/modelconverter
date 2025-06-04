@@ -6,10 +6,10 @@ import signal
 import sys
 import tarfile
 import tempfile
-from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from os import getenv
 from pathlib import Path
 from types import FrameType
@@ -62,6 +62,46 @@ models_df = pl.read_csv("mappings.csv")
 class InputFileMapping:
     files_by_input: dict[str, dict[str, Path]]
     common_indices: set[str]
+
+
+class Metric(Enum):
+    MAE = "mae"
+    MSE = "mse"
+    PSNR = "psnr"
+    COS = "cos"
+
+    def sign(self) -> str:
+        if self in {self.PSNR, self.COS}:
+            return ">="
+        return "<="
+
+    def compute(self, a: np.ndarray, b: np.ndarray) -> float:
+        if self is self.MAE:
+            return float(np.mean(np.abs(a - b)))
+        if self is self.MSE:
+            return float(np.mean((a - b) ** 2))
+        if self is self.PSNR:
+            mse = np.mean((a - b) ** 2)
+            if mse == 0:
+                return 1000  # Perfect match
+            max_pixel = np.max([a.max(), b.max()])
+            return 20 * np.log10(max_pixel) - 10 * np.log10(mse)
+        if self is self.COS:
+            return float(1 - cosine(a.flatten(), b.flatten()))
+        raise ValueError(
+            f"Unsupported metric: {self}. Supported metrics are: {', '.join(m.value for m in Metric)}"
+        )
+
+    def verify(self, old_score: float, new_score: float) -> None:
+        if self in {self.COS, self.PSNR}:
+            if old_score > new_score:
+                raise RuntimeError(
+                    f"Degradation test failed: old model has higher {self.value}  ({old_score}) than new model ({new_score})"
+                )
+        elif old_score < new_score:
+            raise RuntimeError(
+                f"Degradation test failed: old model has lower {self.value}  ({old_score}) than new model ({new_score})"
+            )
 
 
 def validate_and_map_input_files(
@@ -127,10 +167,6 @@ def validate_and_map_input_files(
             )
 
     return InputFileMapping(files_by_input, common_indices)
-
-
-def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    return 1 - cosine(a.flatten(), b.flatten())  # type: ignore
 
 
 def chown(path: Path) -> None:
@@ -663,7 +699,7 @@ def test_degradation(
     instance_id: str,
     snpe_version: str,
     device_id: str | None,
-    metric: Literal["mae", "mse", "psnr", "cos"],
+    metric: Metric,
     infer_mode: Literal["adb", "modelconv"],
 ) -> tuple[float, float]:
     model_id = model["id"]
@@ -721,23 +757,10 @@ def compare_files(
     old_inference: Path,
     new_inference: Path,
     onnx_inference: Path,
-    metric: Literal["mae", "mse", "psnr", "cos"],
+    metric: Metric,
 ) -> tuple[float, float]:
     files = list(old_inference.rglob("*.npy"))
     assert len(files) > 0, "No files found in old inference"
-
-    metric_func: Callable
-
-    if metric == "mae":
-        metric_func = lambda a, b: np.mean(np.abs(a - b))  # noqa: E731
-    elif metric == "mse":
-        metric_func = lambda a, b: np.mean((a - b) ** 2)  # noqa: E731
-    elif metric == "psnr":
-        metric_func = psnr
-    elif metric == "cos":
-        metric_func = cosine_similarity
-    else:
-        raise ValueError(f"Unsupported metric: {metric}")
 
     scores_new_vs_onnx = []
     scores_old_vs_onnx = []
@@ -757,36 +780,24 @@ def compare_files(
         new_array = np.load(new_file)
         onnx_array = np.load(onnx_file)
 
-        scores_new_vs_onnx.append(metric_func(new_array, onnx_array))
-        scores_old_vs_onnx.append(metric_func(old_array, onnx_array))
+        scores_new_vs_onnx.append(metric.compute(new_array, onnx_array))
+        scores_old_vs_onnx.append(metric.compute(old_array, onnx_array))
 
     if not scores_new_vs_onnx or not scores_old_vs_onnx:
         raise RuntimeError(f"No scores computed for metric {metric}. ")
 
-    old_score = np.mean(scores_old_vs_onnx)
-    new_score = np.mean(scores_new_vs_onnx)
+    old_score = float(np.mean(scores_old_vs_onnx))
+    new_score = float(np.mean(scores_new_vs_onnx))
 
     if math.isnan(old_score) or math.isnan(new_score):
         raise RuntimeError(
             f"Degradation test failed: old model has NaN {metric} score ({old_score}) or new model has NaN {metric} score ({new_score})"
         )
-    if math.isinf(old_score) or math.isinf(new_score):
-        raise RuntimeError(
-            f"Degradation test failed: old model has infinite {metric} score ({old_score}) or new model has infinite {metric} score ({new_score})"
-        )
 
     if math.isclose(old_score, new_score, rel_tol=5e-2, abs_tol=1e-5):
         return old_score, new_score  # type: ignore
 
-    if metric in {"cos", "psnr"}:
-        if old_score > new_score:
-            raise RuntimeError(
-                f"Degradation test failed: old model has higher {metric}  ({old_score}) than new model ({new_score})"
-            )
-    elif old_score < new_score:
-        raise RuntimeError(
-            f"Degradation test failed: old model has lower {metric}  ({old_score}) than new model ({new_score})"
-        )
+    metric.verify(old_score, new_score)
     return old_score, new_score  # type: ignore
 
 
@@ -957,7 +968,7 @@ def _migrate_models(
     variant_id: str,
     device_id: str | None,
     verify: bool,
-    metric: Literal["mae", "mse", "psnr", "cos"],
+    metric: Metric,
     infer_mode: Literal["adb", "modelconv"],
     upload: bool = False,
     skip_conversion: bool = False,
@@ -1097,7 +1108,7 @@ def migrate_models(
     device_id: str | None,
     df: dict[str, list[str | float | None]],
     verify: bool,
-    metric: Literal["mae", "mse", "psnr", "cos"],
+    metric: Metric,
     infer_mode: Literal["adb", "modelconv"],
     upload: bool = False,
     skip_conversion: bool = False,
@@ -1190,7 +1201,7 @@ def main(
     variant_id: str | None = None,
     instance_id: str | None = None,
     infer_mode: Literal["adb", "modelconv"] = "modelconv",
-    metric: Literal["mae", "mse", "psnr", "cos"] = "psnr",
+    metric: Metric = Metric.PSNR,
     limit: int = 5,
     upload: bool = False,
     confirm_upload: bool = False,
