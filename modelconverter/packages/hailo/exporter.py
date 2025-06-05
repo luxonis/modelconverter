@@ -1,4 +1,5 @@
 import importlib
+import re
 import shutil
 import sys
 from contextlib import contextmanager
@@ -92,10 +93,11 @@ class HailoExporter(Exporter):
         start_nodes, net_input_shapes = self._get_start_nodes()
 
         logger.info("Translating model to Hailo IR.")
+
         if self.is_tflite:
             runner.translate_tf_model(
                 str(self.input_model),
-                self.input_model.stem,
+                net_name=self._sanitize_net_name(self.input_model.stem),
                 start_node_names=start_nodes,
                 tensor_shapes=net_input_shapes,
                 end_node_names=self._get_end_nodes(),
@@ -103,11 +105,12 @@ class HailoExporter(Exporter):
         else:
             runner.translate_onnx_model(
                 str(self.input_model),
-                self.input_model.stem,
+                net_name=self._sanitize_net_name(self.input_model.stem),
                 start_node_names=start_nodes,
                 net_input_shapes=net_input_shapes,
                 end_node_names=self._get_end_nodes(),
             )
+
         logger.info("Model translated to Hailo IR.")
         har_path = self.input_model.with_suffix(".har")
         runner.save_har(har_path)
@@ -137,6 +140,16 @@ class HailoExporter(Exporter):
         with open(hef_path, "wb") as hef_file:
             hef_file.write(hef)
         return hef_path
+
+    def _sanitize_net_name(self, net_name: str) -> str:
+        """Sanitize net name since only alphanumeric chars, hyphens and underscores are allowed"""
+        if re.search(r"[^a-zA-Z0-9_-]", net_name):
+            sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", net_name)
+            logger.warning(
+                f"Illegal characters detected in net_name: {net_name}. Replacing with '_'. New name: {sanitized}"
+            )
+            return sanitized
+        return net_name
 
     def _get_calibration_data(
         self, runner: ClientRunner
