@@ -1,16 +1,24 @@
 import subprocess
 
+from loguru import logger
+from luxonis_ml.typing import PathType
+
 
 class AdbHandler:
-    def __init__(self, device_id: str | None = None) -> None:
+    def __init__(
+        self, device_id: str | None = None, silent: bool = True
+    ) -> None:
         self.device_args = ["-s", device_id] if device_id else []
+        self.silent = silent
 
     def _adb_run(self, *args, **kwargs) -> tuple[int, str, str]:
         subprocess.run(
-            ["adb", "root"],
+            ["adb", *map(str, self.device_args), "root"],
             capture_output=True,
             check=False,
         )
+        if not self.silent:
+            logger.info(f"Executing adb command: {' '.join(map(str, args))}")
         result = subprocess.run(
             ["adb", *self.device_args, *args],
             **kwargs,
@@ -36,8 +44,8 @@ class AdbHandler:
     def shell(self, cmd: str) -> tuple[int, str, str]:
         return self._adb_run("shell", cmd)
 
-    def pull(self, src: str, dst: str) -> tuple[int, str, str]:
+    def pull(self, src: PathType, dst: PathType) -> tuple[int, str, str]:
         return self._adb_run("pull", src, dst)
 
-    def push(self, src: str, dst: str) -> tuple[int, str, str]:
+    def push(self, src: PathType, dst: PathType) -> tuple[int, str, str]:
         return self._adb_run("push", src, dst)
