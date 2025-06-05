@@ -508,11 +508,10 @@ def adb_infer(
         out_shape = out_shapes[p.stem]
         assert out_shape is not None
 
+        arr = arr.reshape(out_shape)
+
         if len(out_shape) == 4:
-            N, H, W, C = out_shape
-            arr = arr.reshape(N, H, W, C).transpose(0, 3, 1, 2)
-        else:
-            arr = arr.reshape(out_shape)
+            arr = arr.transpose(0, 3, 1, 2)
 
         img_index = int(p.parent.name.split("_")[-1]) + 1
         dest = npy_out_dir / p.stem
