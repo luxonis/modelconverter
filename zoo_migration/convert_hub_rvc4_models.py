@@ -479,8 +479,8 @@ def adb_infer(
     subprocess_run(
         [
             "modelconverter",
-            "rvc4",
             "shell",
+            "rvc4",
             "--tool-version",
             snpe_version,
             "--command",
