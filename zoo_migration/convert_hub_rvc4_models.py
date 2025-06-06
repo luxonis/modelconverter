@@ -53,8 +53,8 @@ app = App(name="convert_hub_rvc4_models")
 
 setup_logging(file=f"results/convert_hub_rvc4_models_{date}.log")
 
-ADB_DATA_DIR = "/data/local/zoo_conversion/datasets"
-ADB_MODELS_DIR = "/data/local/zoo_conversion/models"
+ADB_DATA_DIR = Path("/data/local/zoo_conversion/datasets")
+ADB_MODELS_DIR = Path("/data/local/zoo_conversion/models")
 models_df = pl.read_csv("mappings.csv")
 
 
@@ -409,11 +409,9 @@ def adb_prepare_inference(
 
         input_list_path = Path(tmpdir) / "input_list.txt"
         input_list_path.write_text("\n".join(list_lines) + "\n")
-        adb.push(
-            input_list_path, f"{ADB_DATA_DIR}/{dataset_id}/input_list.txt"
-        )
+        adb.push(input_list_path, ADB_DATA_DIR / dataset_id / "input_list.txt")
         input_list_path.unlink()
-        adb.push(tmpdir, f"{ADB_DATA_DIR}/{dataset_id}/")
+        adb.push(tmpdir, ADB_DATA_DIR / dataset_id)
 
 
 def adb_infer(
@@ -434,7 +432,6 @@ def adb_infer(
     in_names = [inp.name for inp in config.inputs]
     in_shapes = {inp.name: inp.shape for inp in config.inputs}
     out_shapes = {out.name: out.shape for out in config.outputs}
-    metadata = get_metadata(model_path)
     resize_method = {
         inp.name: inp.calibration.resize_method
         if isinstance(inp.calibration, ImageCalibrationConfig)
@@ -462,15 +459,31 @@ def adb_infer(
         resize_method,
         device_id,
     )
+    out_dir = Path(
+        "comparison", model_id, variant_id, instance_id, snpe_version
+    )
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
 
-    adb_workdir = f"{ADB_MODELS_DIR}/{model_id}/{variant_id}/{instance_id}/{snpe_version}"
+    adb_workdir = (
+        ADB_MODELS_DIR / model_id / variant_id / instance_id / snpe_version
+    )
 
     adb.shell(f"mkdir -p {adb_workdir}")
 
     def source(snpe_version: str) -> str:
         return f"source /data/local/tmp/source_me_{snpe_version}.sh"
 
-    adb.push(model_path, f"{adb_workdir}/model.dlc")
+    adb.push(model_path, adb_workdir / "model.dlc")
+
+    adb.shell(
+        f"{source(snpe_version)} && "
+        f"snpe-dlc-info "
+        f"-i {adb_workdir}/model.dlc "
+        f"-s {adb_workdir}/model_info.csv"
+    )
+    adb.pull(adb_workdir / "model_info.csv", out_dir / "model_info.csv")
+    metadata = get_metadata(out_dir / "model_info.csv")
 
     command = (
         f"{source(snpe_version)} && "
@@ -491,14 +504,9 @@ def adb_infer(
             f"stderr:\n{stderr}\n"
         )
 
-    out_dir = Path(
-        "comparison", model_id, variant_id, instance_id, snpe_version
-    )
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
     raw_out_dir = out_dir / "raw"
     raw_out_dir.mkdir(parents=True, exist_ok=True)
-    adb.pull(f"{adb_workdir}/outputs", raw_out_dir)
+    adb.pull(adb_workdir / "outputs", raw_out_dir)
 
     npy_out_dir = out_dir / "npy"
     npy_out_dir.mkdir(parents=True, exist_ok=True)
@@ -517,6 +525,7 @@ def adb_infer(
         dest.mkdir(parents=True, exist_ok=True)
         logger.debug(f"Saving to {dest}")
         np.save(dest / f"image_{img_index}.npy", arr)
+
     return npy_out_dir
 
 
