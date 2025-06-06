@@ -1,4 +1,5 @@
 import io
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,7 +21,7 @@ class Metadata:
 
 def get_metadata(model_path: Path) -> Metadata:
     suffix = model_path.suffix
-    if suffix == ".dlc":
+    if suffix in {".dlc", ".csv"}:
         return _get_metadata_dlc(model_path)
     if suffix == ".onnx":
         return _get_metadata_onnx(model_path)
@@ -44,12 +45,15 @@ def _get_metadata_dlc(path: Path) -> Metadata:
 
     if path.suffix == ".csv":
         csv_path = path
+        content = csv_path.read_text()
     else:
-        csv_path = Path("info.csv")
-        subprocess_run(
-            ["snpe-dlc-info", "-i", path, "-s", csv_path], silent=True
-        )
-    content = csv_path.read_text()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir) / "info.csv"
+            subprocess_run(
+                ["snpe-dlc-info", "-i", path, "-s", tmp_path], silent=True
+            )
+            csv_path = tmp_path
+            content = csv_path.read_text()
 
     metadata = {}
 

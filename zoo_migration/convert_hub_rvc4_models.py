@@ -44,6 +44,7 @@ from modelconverter.utils.constants import (
     SHARED_DIR,
 )
 from modelconverter.utils.exceptions import SubprocessException
+from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.nn_archive import safe_members
 from modelconverter.utils.types import DataType, Encoding, ResizeMethod
 
@@ -433,6 +434,7 @@ def adb_infer(
     in_names = [inp.name for inp in config.inputs]
     in_shapes = {inp.name: inp.shape for inp in config.inputs}
     out_shapes = {out.name: out.shape for out in config.outputs}
+    metadata = get_metadata(model_path)
     resize_method = {
         inp.name: inp.calibration.resize_method
         if isinstance(inp.calibration, ImageCalibrationConfig)
@@ -508,10 +510,7 @@ def adb_infer(
         out_shape = out_shapes[p.stem]
         assert out_shape is not None
 
-        arr = arr.reshape(out_shape)
-
-        if len(out_shape) == 4:
-            arr = arr.transpose(0, 3, 1, 2)
+        arr = arr.reshape(metadata.output_shapes[p.stem])
 
         img_index = int(p.parent.name.split("_")[-1]) + 1
         dest = npy_out_dir / p.stem
