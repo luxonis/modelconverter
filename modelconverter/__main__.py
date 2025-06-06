@@ -231,7 +231,12 @@ def infer(
 
 
 @app.command(group=docker_commands)
-def shell(target: Target, /) -> None:
+def shell(
+    target: Target,
+    /,
+    *,
+    command: Annotated[str | None, Parameter(name=["-c", "--command"])] = None,
+) -> None:
     """Boots up a shell inside a docker container for the specified
     target platform.
 
@@ -239,8 +244,14 @@ def shell(target: Target, /) -> None:
     ----------
     target : Target
         The target platform.
+    command : str
+        The command to run in the shell. If not provided, a bash shell is started.
+        If you want to run a command with arguments, use quotes around the command.
     """
-    os.execle("/bin/bash", "bash", os.environ)
+    args = ["bash"]
+    if command is not None:
+        args.extend(["-c", command])
+    os.execle("/bin/bash", *args, os.environ)
 
 
 @app.meta.command(group=device_commands)
