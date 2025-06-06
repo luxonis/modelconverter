@@ -476,14 +476,19 @@ def adb_infer(
 
     adb.push(model_path, adb_workdir / "model.dlc")
 
-    adb.shell(
-        f"{source(snpe_version)} && "
-        f"snpe-dlc-info "
-        f"-i {adb_workdir}/model.dlc "
-        f"-s {adb_workdir}/model_info.csv"
+    subprocess_run(
+        [
+            "modelconverter",
+            "rvc4",
+            "shell",
+            "--tool-version",
+            snpe_version,
+            "--command",
+            f"snpe-dlc-info -i {model_path} -s {SHARED_DIR}/model_info.csv",
+        ]
     )
-    adb.pull(adb_workdir / "model_info.csv", out_dir / "model_info.csv")
-    metadata = get_metadata(out_dir / "model_info.csv")
+
+    metadata = get_metadata(SHARED_DIR / "model_info.csv")
 
     command = (
         f"{source(snpe_version)} && "
@@ -631,7 +636,7 @@ def infer(
 
         if infer_mode == "adb":
             return adb_infer(
-                model_path,
+                dir / model_path.name,
                 archive,
                 model_id,
                 variant_id,
