@@ -485,7 +485,8 @@ def adb_infer(
             snpe_version,
             "--command",
             f"snpe-dlc-info -i {model_path} -s {SHARED_DIR}/model_info.csv",
-        ]
+        ],
+        silent=True,
     )
 
     metadata = get_metadata(SHARED_DIR / "model_info.csv")
