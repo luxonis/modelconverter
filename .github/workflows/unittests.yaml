@@ -20,7 +20,7 @@ on:
         description: 'modelconverter version (branch/tag/SHA)'
         required: true
         type: string
-  
+
     secrets:
       AWS_ACCESS_KEY_ID:
         required: true
@@ -73,7 +73,6 @@ jobs:
         ML_REF: ${{ inputs.ml_ref }}
       if: ${{ inputs.ml_ref != '' }}
       run: |
-        pip uninstall luxonis-ml -y
         pip install \
           "luxonis-ml[data,nn_archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
           --upgrade --force-reinstall
