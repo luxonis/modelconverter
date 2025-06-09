@@ -6,6 +6,7 @@ on:
       - dev
       - main
     paths:
+      - requirements.txt
       - 'tests/test_utils/**'
       - 'modelconverter/**'
       - '.github/workflows/unittests.yaml'
@@ -20,7 +21,7 @@ on:
         description: 'modelconverter version (branch/tag/SHA)'
         required: true
         type: string
-  
+
     secrets:
       AWS_ACCESS_KEY_ID:
         required: true
