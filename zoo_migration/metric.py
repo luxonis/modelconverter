@@ -11,6 +11,7 @@ class Metric(Enum):
     MSE = "mse"
     PSNR = "psnr"
     COS = "cos"
+    SOFT_COS = "soft_cos"
 
     @property
     def sign(self) -> str:
@@ -32,6 +33,10 @@ class Metric(Enum):
             return 20 * np.log10(max_pixel) - 10 * np.log10(mse)
         if self is self.COS:
             return float(1 - cosine(dlc.flatten(), onnx.flatten()))
+        if self is self.SOFT_COS:
+            return float(
+                1 - cosine(dlc.flatten() + 1e-5, onnx.flatten() + 1e-5)
+            )
         raise ValueError(
             f"Unsupported metric: {self}. Supported metrics are: {', '.join(m.value for m in Metric)}"
         )
