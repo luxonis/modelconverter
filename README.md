@@ -206,6 +206,14 @@ docker build -f docker/$TARGET/Dockerfile \
              -t luxonis/modelconverter-$TARGET:latest .
 ```
 
+If you want to build the image with a different version of the underlying conversion tools than is the default one, you also need to pass the `--build-arg` flag with the desired version. For example, to build the `RVC2` image with ` 2021.4.0`, use:
+
+```bash
+docker build -f docker/rvc2/Dockerfile \
+             -t luxonis/modelconverter-rvc2:latest \
+             --build-arg VERSION=2021.4.0 .
+```
+
 #### GPU Support
 
 To enable GPU acceleration for `hailo` conversion, install the [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker).
