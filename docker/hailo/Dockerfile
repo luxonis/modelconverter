@@ -20,14 +20,9 @@ RUN <<EOF
 
     pip install --upgrade pip --no-cache-dir
     pip install -r requirements.txt --no-cache-dir
-    pip install --extra-index-url \
+    pip install -U --extra-index-url \
         https://developer.download.nvidia.com/compute/redist \
-        nvidia-dali-cuda120 --no-cache-dir
-    pip install --extra-index-url \
-        https://developer.download.nvidia.com/compute/redist \
-        nvidia-dali-tf-plugin-cuda120 --no-cache-dir
-    pip uninstall protobuf -y
-    pip install protobuf==3.20.3 --no-cache-dir
+        -r requirements-hailo.txt --no-cache-dir
 
 EOF
 
