@@ -546,4 +546,7 @@ The command prints a table with the benchmark results to the console and
 optionally saves the results to a `.csv` file.
 
 > \[!NOTE\]
-> For **RVC2** and **RVC4**: The `--model-path` can be a path to a local .blob file, a NN Archive file (.tar.xz), or a name of a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai). To access models from different teams in Luxonis HubAI, remember to update the HUBAI_API_KEY environment variable respectively.
+> For **RVC2** and **RVC4**: The `--model-path` can be a path to a local .blob file, an NN Archive file (.tar.xz), or a name of a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai). To access models from different teams in Luxonis HubAI, remember to update the HUBAI_API_KEY environment variable respectively.
+
+> \[!IMPORTANT\]
+> Benchmarking on *RVC4* requires the device to be connected and accessible using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb). Ensure that the device is connected and ADB is properly configured and the command `snpe-parallel-run` can be executed in it.
