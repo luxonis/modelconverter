@@ -1123,6 +1123,17 @@ def migrate_models(
                         f"Parent not found for {old_instance['id']}. Attempting to guess it."
                     )
                     parent = guess_parent(old_instance, all_instances)
+                    if (
+                        parent is None
+                        and old_instance["id"]
+                        == "58b00076-f182-4c28-8c03-86727d8eb2df"
+                    ):
+                        parent = next(
+                            instance
+                            for instance in all_instances
+                            if instance["id"]
+                            == "e9970278-f1c0-4ef2-870b-71d51a977573"
+                        )
 
                 try:
                     old_score, new_score = _migrate_models(
