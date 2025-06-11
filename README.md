@@ -512,6 +512,9 @@ For other usage instructions run `modelconverter analyze --help`
 >
 > Recommended number of input images is less than 50.
 
+> \[!IMPORTANT\]
+> The analysis requires the RVC4 device to be connected and accessible using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb). Ensure that the device is connected and ADB is properly configured and the commands `snpe-net-run` and `snpe-diagview` can be executed in it.
+
 The tool creates two CSV files located in `shared_with_container/outputs/analysis/model_name/`. One file contains output statistics for each layer, while the other contains statistics on cycle usage.
 
 There is also a visualization option that displays all CSV files in `shared_with_container/outputs/analysis/`. This offers a fast and easy way to inspect different model conversion parameters. For more usage instructions, run `modelconverter visualize --help`. To create the visualizations, simply run:
