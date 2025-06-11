@@ -520,6 +520,9 @@ For other usage instructions run `modelconverter analyze --help`
 >
 > Recommended number of input images is less than 50.
 
+> \[!IMPORTANT\]
+> The analysis requires the RVC4 device to be connected and accessible using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb). Ensure that the device is connected and ADB is properly configured and the commands `snpe-net-run` and `snpe-diagview` can be executed in it.
+
 The tool creates two CSV files located in `shared_with_container/outputs/analysis/model_name/`. One file contains output statistics for each layer, while the other contains statistics on cycle usage.
 
 There is also a visualization option that displays all CSV files in `shared_with_container/outputs/analysis/`. This offers a fast and easy way to inspect different model conversion parameters. For more usage instructions, run `modelconverter visualize --help`. To create the visualizations, simply run:
@@ -554,4 +557,7 @@ The command prints a table with the benchmark results to the console and
 optionally saves the results to a `.csv` file.
 
 > \[!NOTE\]
-> For **RVC2** and **RVC4**: The `--model-path` can be a path to a local .blob file, a NN Archive file (.tar.xz), or a name of a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai). To access models from different teams in Luxonis HubAI, remember to update the HUBAI_API_KEY environment variable respectively.
+> For **RVC2** and **RVC4**: The `--model-path` can be a path to a local .blob file, an NN Archive file (.tar.xz), or a name of a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai). To access models from different teams in Luxonis HubAI, remember to update the HUBAI_API_KEY environment variable respectively.
+
+> \[!IMPORTANT\]
+> Benchmarking on *RVC4* requires the device to be connected and accessible using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb). Ensure that the device is connected and ADB is properly configured and the command `snpe-parallel-run` can be executed in it.
