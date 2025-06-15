@@ -47,7 +47,7 @@ class Benchmark(ABC):
                 model_instance,
             ) = hub_match.groups()
             if is_hubai_available(model_name, model_variant):
-                self.model_path = Path(model_path)
+                self.model_path = model_path
                 self.model_name = model_name
                 self.model_instance = model_instance
             else:
