@@ -85,7 +85,7 @@ class Exporter(ABC):
             logger.warning("Calibration has been disabled.")
             logger.warning("The quantization step will be skipped.")
 
-        if self.target != Target.RVC2:
+        if self.target != Target.RVC2 and not self._disable_calibration:
             self._prepare_random_calibration_data()
 
     @property
