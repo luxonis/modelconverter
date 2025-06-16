@@ -34,7 +34,7 @@ class RVC2Benchmark(Benchmark):
 
     @staticmethod
     def _benchmark(
-        model_path: Path,
+        model_path: str | Path,
         repetitions: int,
         num_messages: int,
         num_threads: int,

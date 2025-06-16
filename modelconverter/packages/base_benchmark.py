@@ -143,7 +143,7 @@ class Benchmark(ABC):
     def run(self, full: bool = True, save: bool = False, **kwargs) -> None:
         logger.info(f"Running benchmarking for {self.model_name}")
         for key, value in self.default_configuration.items():
-            if key in kwargs:
+            if key in kwargs and value is not None:
                 kwargs[key] = type(value)(kwargs[key])
 
         configurations = (
