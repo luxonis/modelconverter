@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import onnx
 import onnx_graphsurgeon as gs
-import onnxoptimizer
+import onnxruntime as ort
 from loguru import logger
 from onnx import checker, helper
 from onnxsim import simplify
@@ -234,10 +234,17 @@ class ONNXModifier:
 
         logger.info(f"Loading model: {self.model_path.stem}")
 
-        self.onnx_model, _ = simplify(
-            self.model_path.as_posix(),
-            perform_optimization=True and not self.skip_optimization,
-        )
+        try:
+            self.onnx_model, _ = simplify(
+                self.model_path.as_posix(),
+                perform_optimization=True and not self.skip_optimization,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to load and simplify ONNX model: {self.model_path.stem} with error: {e}\nLoading without simplification."
+            )
+            self.onnx_model = onnx.load(self.model_path.as_posix())
+        onnx.checker.check_model(self.onnx_model)
 
         self.dtype = onnx.mapping.TENSOR_TYPE_TO_NP_TYPE[
             self.onnx_model.graph.input[0].type.tensor_type.elem_type
@@ -254,19 +261,38 @@ class ONNXModifier:
 
         self.onnx_gs = gs.import_onnx(self.onnx_model)
 
-    def optimize_onnx(self, passes: list[str] | None = None) -> None:
+    def optimize_onnx(self) -> None:
         """Optimize and simplify the ONNX model's graph.
 
         @param passes: List of optimization passes to apply to the ONNX
             model
         @type passes: Optional[List[str]]
         """
+        self.onnx_model.ir_version = min(self.onnx_model.ir_version, 10)
 
-        optimized_onnx_model = (
-            self.onnx_model
-            if self.skip_optimization
-            else onnxoptimizer.optimize(self.onnx_model, passes=passes)
-        )
+        if self.skip_optimization:
+            optimized_onnx_model = self.onnx_model
+        else:
+            with tempfile.NamedTemporaryFile(
+                suffix=".onnx", delete=True
+            ) as tmp_file:
+                onnx.save(self.onnx_model, tmp_file.name)
+
+                sess_options = ort.SessionOptions()
+                sess_options.graph_optimization_level = (
+                    ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+                )
+                sess_options.optimized_model_filepath = (
+                    tmp_file.name + "_optimized.onnx"
+                )
+
+                _ = ort.InferenceSession(tmp_file.name, sess_options)
+
+                optimized_onnx_model = onnx.load(
+                    sess_options.optimized_model_filepath
+                )
+
+                Path(sess_options.optimized_model_filepath).unlink()
 
         optimized_onnx_model, _ = simplify(
             optimized_onnx_model, perform_optimization=False
@@ -291,7 +317,7 @@ class ONNXModifier:
             gs.import_onnx(optimized_onnx_model),
         )
 
-    def export_onnx(self, passes: list[str] | None = None) -> None:
+    def export_onnx(self) -> None:
         """Export the modified ONNX model to the output path.
 
         @param passes: List of optimization passes to apply to the ONNX
@@ -299,7 +325,9 @@ class ONNXModifier:
         @type passes: Optional[List[str]]
         """
 
-        self.optimize_onnx(passes)
+        self.optimize_onnx()
+
+        self.onnx_model.ir_version = min(self.onnx_model.ir_version, 10)
 
         if self.has_external_data:
             onnx.save(
@@ -458,7 +486,7 @@ class ONNXModifier:
                     inputs=[
                         first_input,
                         gs.Constant(
-                            name=f"{second_input.name}/Subtitute",
+                            name=f"{node.name}_{second_input.name}/Subtitute",
                             values=np.array(
                                 new_cost_val, dtype=second_input.dtype
                             ),
@@ -480,7 +508,7 @@ class ONNXModifier:
                     inputs=[
                         first_input,
                         gs.Constant(
-                            name=f"{second_input.name}/Subtitute",
+                            name=f"{node.name}_{second_input.name}/Subtitute",
                             values=np.array(
                                 new_cost_val, dtype=second_input.dtype
                             ),
@@ -493,6 +521,8 @@ class ONNXModifier:
         nodes_to_add = []
         nodes_to_remove = []
         connections_to_fix = []
+
+        graph_output_names = {output.name for output in self.onnx_gs.outputs}
 
         for node in self.onnx_gs.nodes:
             if node.op == source_node:
@@ -508,12 +538,27 @@ class ONNXModifier:
                                 new_node.outputs[0],
                             )
                         )
+
+                        if node.outputs[0].name in graph_output_names:
+                            for i, graph_output in enumerate(
+                                self.onnx_gs.outputs
+                            ):
+                                if graph_output.name == node.outputs[0].name:
+                                    new_output_var = gs.Variable(
+                                        name=node.outputs[0].name,
+                                        dtype=node.outputs[0].dtype,
+                                        shape=node.outputs[0].shape,
+                                    )
+                                    new_node.outputs[0] = new_output_var
+                                    self.onnx_gs.outputs[i] = new_output_var
+                                    break
+
                         nodes_to_remove.append(node)
 
         self.graph_cleanup(nodes_to_add, nodes_to_remove, connections_to_fix)
         self.onnx_model = gs.export_onnx(self.onnx_gs)
 
-        self.optimize_onnx(passes=["fuse_add_bias_into_conv"])
+        self.optimize_onnx()
 
     def fuse_add_mul_to_bn(self) -> None:
         """Fuse Add/Sub and Mul nodes that come immediately after a Conv
@@ -668,7 +713,7 @@ class ONNXModifier:
         self.graph_cleanup(nodes_to_add, nodes_to_remove, connections_to_fix)
         self.onnx_model = gs.export_onnx(self.onnx_gs)
 
-        self.optimize_onnx(passes=["fuse_bn_into_conv"])
+        self.optimize_onnx()
 
     def fuse_single_add_mul_to_conv(self) -> None:
         """Fuse Add and Mul nodes that precede a Conv node directly into
