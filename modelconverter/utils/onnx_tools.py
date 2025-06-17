@@ -292,7 +292,7 @@ class ONNXModifier:
                     sess_options.optimized_model_filepath
                 )
 
-                Path.unlink(Path(sess_options.optimized_model_filepath))
+                Path(sess_options.optimized_model_filepath).unlink()
 
         optimized_onnx_model, _ = simplify(
             optimized_onnx_model, perform_optimization=False
