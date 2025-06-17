@@ -276,9 +276,6 @@ class RVC4Config(TargetConfig):
     def _validate_fp16(self) -> Self:
         if not self.compress_to_fp16:
             return self
-        logger.warning(
-            "FP16 compression is enabled. Calibration will be skipped."
-        )
         self.disable_calibration = True
         if "qcs8550" not in self.htp_socs:
             self.htp_socs.append("qcs8550")
