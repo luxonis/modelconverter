@@ -81,11 +81,11 @@ class Exporter(ABC):
             self.config, self.target.name.lower()
         ).disable_calibration
 
-        if self._disable_calibration:
+        if self.target != Target.RVC2 and self._disable_calibration:
             logger.warning("Calibration has been disabled.")
             logger.warning("The quantization step will be skipped.")
 
-        if self.target != Target.RVC2:
+        if self.target != Target.RVC2 and not self._disable_calibration:
             self._prepare_random_calibration_data()
 
     @property
@@ -176,8 +176,6 @@ class Exporter(ABC):
     def _prepare_random_calibration_data(self) -> None:
         for name, inp in self.inputs.items():
             calib = inp.calibration
-            if calib is None:
-                continue
             if not isinstance(calib, RandomCalibrationConfig):
                 continue
             logger.warning(
