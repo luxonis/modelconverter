@@ -198,3 +198,13 @@ stages:
 
       # Enables row wise quantization of Matmul and FullyConnected ops.
       use_per_row_quantization: False
+
+      # List of platforms to pre-compute the DLC graph for.
+      htp_socs: ["sm8550"]
+
+      # Configures conversion to float16 precision. This will
+      # disable the calibration, add the `--float_bitwidth 16`
+      # flag to `snpe-onnx-to-dlc`,  the `--use_float_io` flag
+      # to `snpe-dlc-graph-prepare`, and the `qcs8550` platform
+      # to the `htp_socs` list.
+      compress_to_fp16: False
