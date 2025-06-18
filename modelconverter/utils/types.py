@@ -203,6 +203,13 @@ class DataType(Enum):
     def as_snpe_dtype(self) -> str:
         return self.value
 
+    def as_nn_archive_dtype(self) -> str:
+        if self.value.startswith("ufxp"):
+            return self.value.replace("ufxp", "uint")
+        if self.value.startswith("fxp"):
+            return self.value.replace("fxp", "int")
+        return self.value
+
 
 class ResizeMethod(Enum):
     CROP = "CROP"

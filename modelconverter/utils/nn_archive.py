@@ -1,7 +1,7 @@
 import json
 import tarfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator
@@ -15,10 +15,10 @@ from luxonis_ml.nn_archive.config_building_blocks import (
     PreprocessingBlock,
 )
 
-from modelconverter.utils.config import Config
+from modelconverter.utils.config import BlobBaseConfig, Config, TargetConfig
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
-from modelconverter.utils.metadata import get_metadata
+from modelconverter.utils.metadata import Metadata, get_metadata
 from modelconverter.utils.types import DataType, Encoding, Target
 
 
@@ -207,11 +207,37 @@ def modelconverter_config_to_nn(
     preprocessing: dict[str, PreprocessingBlock],
     main_stage_key: str,
     model_path: Path,
+    target: Target,
 ) -> NNArchiveConfig:
     is_multistage = len(config.stages) > 1
     model_metadata = get_metadata(model_path)
 
     cfg = config.stages[main_stage_key]
+    target_cfg = cfg.get_target_config(target)
+
+    # TODO: This might be more complicated for Hailo
+
+    compress_to_fp16 = getattr(target_cfg, "compress_to_fp16", False)
+    disable_calibration = target_cfg.disable_calibration
+
+    match target, compress_to_fp16, disable_calibration:
+        case Target.RVC2, True, _:
+            precision = DataType.FLOAT16
+
+        case Target.RVC2, False, _:
+            precision = DataType.FLOAT32
+
+        case Target.RVC3 | Target.RVC4, True, True:
+            precision = DataType.FLOAT16
+
+        case Target.RVC3 | Target.RVC4, False, True:
+            precision = DataType.FLOAT32
+
+        case Target.RVC3 | Target.RVC4, _, False:
+            precision = DataType.INT8
+
+        case Target.HAILO, _, _:
+            precision = DataType.INT8
 
     archive_cfg = {
         "config_version": CONFIG_VERSION,
@@ -219,6 +245,7 @@ def modelconverter_config_to_nn(
             "metadata": {
                 "name": model_name.stem,
                 "path": str(model_name),
+                "precision": precision.value,
             },
             "inputs": [],
             "outputs": [],
@@ -241,12 +268,20 @@ def modelconverter_config_to_nn(
         dai_type += type
         dai_type += "i" if layout == "NHWC" else "p"
 
+        dtype = _get_io_dtype(
+            target,
+            inp.name,
+            model_metadata,
+            target_cfg,
+            mode="input",
+        )
+
         archive_cfg["model"]["inputs"].append(
             {
                 "name": inp.name,
                 "shape": new_shape,
                 "layout": layout,
-                "dtype": inp.data_type.value,
+                "dtype": dtype,
                 "input_type": "image",
                 "preprocessing": {
                     "mean": [0 for _ in inp.mean_values]
@@ -280,12 +315,19 @@ def modelconverter_config_to_nn(
         else:
             layout = make_default_layout(new_shape)
 
+        dtype = _get_io_dtype(
+            target,
+            out.name,
+            model_metadata,
+            target_cfg,
+            mode="output",
+        )
         archive_cfg["model"]["outputs"].append(
             {
                 "name": out.name,
                 "shape": new_shape,
                 "layout": layout,
-                "dtype": out.data_type.value,
+                "dtype": dtype,
             }
         )
 
@@ -383,6 +425,7 @@ def generate_archive(
         preprocessing,
         main_stage,
         inference_model_path,
+        target,
     )
     generator = ArchiveGenerator(
         archive_name=f"{cfg.name}.{target.value.lower()}",
@@ -396,3 +439,43 @@ def generate_archive(
     archive = generator.make_archive()
     logger.info(f"Model exported to {archive}")
     return archive
+
+
+def _get_io_dtype(
+    target: Target,
+    name: str,
+    metadata: Metadata,
+    cfg: TargetConfig,
+    *,
+    mode: Literal["input", "output"],
+) -> str:
+    if mode == "input":
+        dtypes = metadata.input_dtypes
+    else:
+        dtypes = metadata.output_dtypes
+    if target in {Target.RVC2, Target.RVC3}:
+        compile_tool_args: list[str] = getattr(cfg, "compile_tool_args", [])
+        assert isinstance(cfg, BlobBaseConfig)
+        # -iop is in a form of '-iop "<name1>:<dtype>,<name2>:<dtype2>"'
+        if "-iop" in compile_tool_args:
+            idx = compile_tool_args.index("-iop")
+            for value in compile_tool_args[idx + 1].split(","):
+                value = value.strip()
+                n, d = value.split(":")
+                if n == name:
+                    blob_dtype = d.upper()
+                    return DataType.from_ir_ie_dtype(
+                        blob_dtype
+                    ).as_nn_archive_dtype()
+
+        elif mode == "input" and "-ip" in compile_tool_args:
+            idx = compile_tool_args.index("-ip")
+        elif mode == "output" and "-op" in compile_tool_args:
+            idx = compile_tool_args.index("-op")
+        else:
+            return dtypes[name].as_nn_archive_dtype()
+
+        blob_dtype = compile_tool_args[idx + 1].upper()
+        return DataType.from_ir_ie_dtype(blob_dtype).as_nn_archive_dtype()
+
+    return dtypes[name].as_nn_archive_dtype()

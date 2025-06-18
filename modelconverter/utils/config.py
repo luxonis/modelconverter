@@ -27,6 +27,7 @@ from modelconverter.utils.types import (
     InputFileType,
     PotDevice,
     ResizeMethod,
+    Target,
 )
 
 NAMED_VALUES = {
@@ -300,6 +301,17 @@ class SingleStageConfig(CustomBaseModel):
     rvc2: RVC2Config = RVC2Config()
     rvc3: RVC3Config = RVC3Config()
     rvc4: RVC4Config = RVC4Config()
+
+    def get_target_config(self, target: Target) -> TargetConfig:
+        """Returns the target configuration for the given target."""
+        if target == Target.HAILO:
+            return self.hailo
+        if target == Target.RVC2:
+            return self.rvc2
+        if target == Target.RVC3:
+            return self.rvc3
+        if target == Target.RVC4:
+            return self.rvc4
 
     @model_validator(mode="before")
     @classmethod
