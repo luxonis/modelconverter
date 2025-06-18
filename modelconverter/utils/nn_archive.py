@@ -244,7 +244,7 @@ def modelconverter_config_to_nn(
         dai_type += type
         dai_type += "i" if layout == "NHWC" else "p"
         if target in {Target.RVC2, Target.RVC3}:
-            dtype = "int8"
+            dtype = "uint8"
         else:
             dtype = model_metadata.input_dtypes[inp.name].as_nn_archive_dtype()
 
@@ -288,7 +288,7 @@ def modelconverter_config_to_nn(
             layout = make_default_layout(new_shape)
 
         if target in {Target.RVC2, Target.RVC3}:
-            dtype = "int8"
+            dtype = "uint8"
         else:
             dtype = model_metadata.output_dtypes[
                 out.name
