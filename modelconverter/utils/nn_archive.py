@@ -247,7 +247,9 @@ def modelconverter_config_to_nn(
                 "name": inp.name,
                 "shape": new_shape,
                 "layout": layout,
-                "dtype": model_metadata.input_dtypes[inp.name].value,
+                "dtype": model_metadata.input_dtypes[
+                    inp.name
+                ].as_nn_archive_dtype(),
                 "input_type": "image",
                 "preprocessing": {
                     "mean": [0 for _ in inp.mean_values]
@@ -286,7 +288,9 @@ def modelconverter_config_to_nn(
                 "name": out.name,
                 "shape": new_shape,
                 "layout": layout,
-                "dtype": model_metadata.output_dtypes[out.name].value,
+                "dtype": model_metadata.output_dtypes[
+                    out.name
+                ].as_nn_archive_dtype(),
             }
         )
 
