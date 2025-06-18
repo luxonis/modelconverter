@@ -1,7 +1,7 @@
 import json
 import tarfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator
@@ -15,10 +15,10 @@ from luxonis_ml.nn_archive.config_building_blocks import (
     PreprocessingBlock,
 )
 
-from modelconverter.utils.config import Config
+from modelconverter.utils.config import BlobBaseConfig, Config, TargetConfig
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
-from modelconverter.utils.metadata import get_metadata
+from modelconverter.utils.metadata import Metadata, get_metadata
 from modelconverter.utils.types import DataType, Encoding, Target
 
 
@@ -259,10 +259,14 @@ def modelconverter_config_to_nn(
             type = "888"
         dai_type += type
         dai_type += "i" if layout == "NHWC" else "p"
-        if target in {Target.RVC2, Target.RVC3}:
-            dtype = "uint8"
-        else:
-            dtype = model_metadata.input_dtypes[inp.name].as_nn_archive_dtype()
+
+        dtype = _get_io_dtype(
+            target,
+            inp.name,
+            model_metadata,
+            target_cfg,
+            mode="input",
+        )
 
         archive_cfg["model"]["inputs"].append(
             {
@@ -303,12 +307,13 @@ def modelconverter_config_to_nn(
         else:
             layout = make_default_layout(new_shape)
 
-        if target in {Target.RVC2, Target.RVC3}:
-            dtype = "uint8"
-        else:
-            dtype = model_metadata.output_dtypes[
-                out.name
-            ].as_nn_archive_dtype()
+        dtype = _get_io_dtype(
+            target,
+            out.name,
+            model_metadata,
+            target_cfg,
+            mode="output",
+        )
         archive_cfg["model"]["outputs"].append(
             {
                 "name": out.name,
@@ -426,3 +431,29 @@ def generate_archive(
     archive = generator.make_archive()
     logger.info(f"Model exported to {archive}")
     return archive
+
+
+def _get_io_dtype(
+    target: Target,
+    name: str,
+    metadata: Metadata,
+    cfg: TargetConfig,
+    *,
+    mode: Literal["input", "output"],
+) -> str:
+    if target in {Target.RVC2, Target.RVC3}:
+        compile_tool_args: list[str] = getattr(cfg, "compile_tool_args", [])
+        assert isinstance(cfg, BlobBaseConfig)
+        if "-iop" in compile_tool_args:
+            idx = compile_tool_args.index("-iop")
+        elif mode == "input" and "-ip" in compile_tool_args:
+            idx = compile_tool_args.index("-ip")
+        elif mode == "output" and "-op" in compile_tool_args:
+            idx = compile_tool_args.index("-op")
+        else:
+            return metadata.input_dtypes[name].as_nn_archive_dtype()
+
+        blob_dtype = compile_tool_args[idx + 1].upper()
+        return DataType.from_ir_ie_dtype(blob_dtype).as_nn_archive_dtype()
+
+    return metadata.input_dtypes[name].as_nn_archive_dtype()
