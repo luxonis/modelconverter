@@ -150,9 +150,12 @@ def docker_exec(
             ).encode()
         )
 
+    def sanitize(arg: str) -> str:
+        return arg.replace("'", "\\'").replace('"', '\\"').replace(" ", "\\ ")
+
     os.execlpe(
         "docker",
         *f"docker compose -f {f.name} run --remove-orphans modelconverter".split(),
-        *args,
+        *map(sanitize, args),
         os.environ,
     )
