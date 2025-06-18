@@ -208,12 +208,28 @@ def modelconverter_config_to_nn(
     target_cfg = cfg.get_target_config(target)
 
     # TODO: This might be more complicated for Hailo
-    if target is Target.RVC2 or target_cfg.disable_calibration:
-        precision = DataType.FLOAT32
-    elif getattr(target_cfg, "compress_to_fp16", False):
-        precision = DataType.FLOAT16
-    else:
-        precision = DataType.INT8
+
+    compress_to_fp16 = getattr(target_cfg, "compress_to_fp16", False)
+    disable_calibration = target_cfg.disable_calibration
+
+    match target, compress_to_fp16, disable_calibration:
+        case Target.RVC2, True, _:
+            precision = DataType.FLOAT16
+
+        case Target.RVC2, False, _:
+            precision = DataType.FLOAT32
+
+        case Target.RVC3 | Target.RVC4, True, True:
+            precision = DataType.FLOAT16
+
+        case Target.RVC3 | Target.RVC4, False, True:
+            precision = DataType.FLOAT32
+
+        case Target.RVC3 | Target.RVC4, _, False:
+            precision = DataType.INT8
+
+        case Target.HAILO, _, _:
+            precision = DataType.INT8
 
     archive_cfg = {
         "config_version": CONFIG_VERSION,
