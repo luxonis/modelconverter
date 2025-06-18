@@ -26,6 +26,7 @@ from modelconverter.utils.types import (
     InputFileType,
     PotDevice,
     ResizeMethod,
+    Target,
 )
 
 DATA_DIR = Path("tests/data/test_utils/test_config")
@@ -943,6 +944,7 @@ def test_output_nn_config_from_yaml(
         preprocessing,
         "dummy_model",
         DATA_DIR / "dummy_model.onnx",
+        Target.RVC4,
     )
 
     input_0_preprocessing = nn_config.model.inputs[0].preprocessing
@@ -1149,6 +1151,7 @@ def test_output_nn_config_from_nn_archive(
         preprocessing,
         main_stage,
         DATA_DIR / "dummy_model.onnx",
+        Target.RVC4,
     )
 
     input_0_preprocessing = nn_config.model.inputs[0].preprocessing
