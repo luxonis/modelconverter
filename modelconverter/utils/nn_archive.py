@@ -75,6 +75,7 @@ def process_nn_archive(
         archive_config = NNArchiveConfig(**json.load(f))
 
     main_stage_config = {
+        "name": archive_config.model.metadata.name,
         "input_model": str(untar_path / archive_config.model.metadata.path),
         "inputs": [],
         "outputs": [],
@@ -169,13 +170,7 @@ def process_nn_archive(
             }
         )
 
-    main_stage_key = archive_config.model.metadata.name
-    config = {
-        "name": main_stage_key,
-        "stages": {
-            main_stage_key: main_stage_config,
-        },
-    }
+    stages = {}
 
     for head in archive_config.model.heads or []:
         postprocessor_path = getattr(head.metadata, "postprocessor_path", None)
@@ -187,7 +182,20 @@ def process_nn_archive(
                 "outputs": [],
                 "encoding": "NONE",
             }
-            config["stages"][input_model_path.stem] = head_stage_config
+            stages[input_model_path.stem] = head_stage_config
+
+    if stages:
+        main_stage_key = main_stage_config.pop("name")
+        config = {
+            "name": main_stage_key,
+            "stages": {
+                main_stage_key: main_stage_config,
+                **stages,
+            },
+        }
+    else:
+        config = main_stage_config
+        main_stage_key = config["name"]
 
     return Config.get_config(config, overrides), archive_config, main_stage_key
 

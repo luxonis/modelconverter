@@ -36,8 +36,8 @@ class MultiStageExporter:
         logger.info(f"Output directory: {self.output_dir}")
 
         self.exporters = {
-            stage_name: get_exporter(target)(
-                stage_config, self.output_dir / stage_name
+            stage_name: get_exporter(
+                target, stage_config, self.output_dir / stage_name
             )
             for stage_name, stage_config in config.stages.items()
         }
