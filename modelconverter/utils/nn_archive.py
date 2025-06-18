@@ -208,7 +208,7 @@ def modelconverter_config_to_nn(
     target_cfg = cfg.get_target_config(target)
 
     # TODO: This might be more complicated for Hailo
-    if target_cfg.disable_calibration:
+    if target is Target.RVC2 or target_cfg.disable_calibration:
         precision = DataType.FLOAT32
     elif getattr(target_cfg, "compress_to_fp16", False):
         precision = DataType.FLOAT16
@@ -243,15 +243,17 @@ def modelconverter_config_to_nn(
             type = "888"
         dai_type += type
         dai_type += "i" if layout == "NHWC" else "p"
+        if target in {Target.RVC2, Target.RVC3}:
+            dtype = "int8"
+        else:
+            dtype = model_metadata.input_dtypes[inp.name].as_nn_archive_dtype()
 
         archive_cfg["model"]["inputs"].append(
             {
                 "name": inp.name,
                 "shape": new_shape,
                 "layout": layout,
-                "dtype": model_metadata.input_dtypes[
-                    inp.name
-                ].as_nn_archive_dtype(),
+                "dtype": dtype,
                 "input_type": "image",
                 "preprocessing": {
                     "mean": [0 for _ in inp.mean_values]
@@ -285,14 +287,18 @@ def modelconverter_config_to_nn(
         else:
             layout = make_default_layout(new_shape)
 
+        if target in {Target.RVC2, Target.RVC3}:
+            dtype = "int8"
+        else:
+            dtype = model_metadata.output_dtypes[
+                out.name
+            ].as_nn_archive_dtype()
         archive_cfg["model"]["outputs"].append(
             {
                 "name": out.name,
                 "shape": new_shape,
                 "layout": layout,
-                "dtype": model_metadata.output_dtypes[
-                    out.name
-                ].as_nn_archive_dtype(),
+                "dtype": dtype,
             }
         )
 
