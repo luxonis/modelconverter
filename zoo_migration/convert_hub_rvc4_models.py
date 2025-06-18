@@ -1126,13 +1126,13 @@ def migrate_models(
                     if (
                         parent is None
                         and old_instance["id"]
-                        == "58b00076-f182-4c28-8c03-86727d8eb2df"
+                        == "163f9a1a-04d0-4fd4-80f7-ca5d22f0167a"
                     ):
                         parent = next(
                             instance
                             for instance in all_instances
                             if instance["id"]
-                            == "e9970278-f1c0-4ef2-870b-71d51a977573"
+                            == "5d0bdf4e-ab00-4a31-97ee-49fba6f8df2e"
                         )
 
                 try:
