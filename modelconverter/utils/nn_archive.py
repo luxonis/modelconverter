@@ -199,11 +199,19 @@ def modelconverter_config_to_nn(
     preprocessing: dict[str, PreprocessingBlock],
     main_stage_key: str,
     model_path: Path,
+    target: Target,
 ) -> NNArchiveConfig:
     is_multistage = len(config.stages) > 1
     model_metadata = get_metadata(model_path)
 
     cfg = config.stages[main_stage_key]
+    target_cfg = cfg.get_target_config(target)
+    if target_cfg.disable_calibration:
+        precision = DataType.FLOAT32
+    elif getattr(target_cfg, "compress_to_fp16", False):
+        precision = DataType.FLOAT16
+    else:
+        precision = DataType.INT8
 
     archive_cfg = {
         "config_version": CONFIG_VERSION,
@@ -211,6 +219,7 @@ def modelconverter_config_to_nn(
             "metadata": {
                 "name": model_name.stem,
                 "path": str(model_name),
+                "precision": precision.value,
             },
             "inputs": [],
             "outputs": [],
@@ -238,7 +247,7 @@ def modelconverter_config_to_nn(
                 "name": inp.name,
                 "shape": new_shape,
                 "layout": layout,
-                "dtype": inp.data_type.value,
+                "dtype": model_metadata.input_dtypes[inp.name].value,
                 "input_type": "image",
                 "preprocessing": {
                     "mean": [0 for _ in inp.mean_values]
@@ -277,7 +286,7 @@ def modelconverter_config_to_nn(
                 "name": out.name,
                 "shape": new_shape,
                 "layout": layout,
-                "dtype": out.data_type.value,
+                "dtype": model_metadata.output_dtypes[out.name].value,
             }
         )
 
@@ -375,6 +384,7 @@ def generate_archive(
         preprocessing,
         main_stage,
         inference_model_path,
+        target,
     )
     generator = ArchiveGenerator(
         archive_name=f"{cfg.name}.{target.value.lower()}",
