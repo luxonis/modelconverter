@@ -206,6 +206,8 @@ def modelconverter_config_to_nn(
 
     cfg = config.stages[main_stage_key]
     target_cfg = cfg.get_target_config(target)
+
+    # TODO: This might be more complicated for Hailo
     if target_cfg.disable_calibration:
         precision = DataType.FLOAT32
     elif getattr(target_cfg, "compress_to_fp16", False):
