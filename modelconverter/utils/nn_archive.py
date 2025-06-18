@@ -441,6 +441,10 @@ def _get_io_dtype(
     *,
     mode: Literal["input", "output"],
 ) -> str:
+    if mode == "input":
+        dtypes = metadata.input_dtypes
+    else:
+        dtypes = metadata.output_dtypes
     if target in {Target.RVC2, Target.RVC3}:
         compile_tool_args: list[str] = getattr(cfg, "compile_tool_args", [])
         assert isinstance(cfg, BlobBaseConfig)
@@ -461,9 +465,9 @@ def _get_io_dtype(
         elif mode == "output" and "-op" in compile_tool_args:
             idx = compile_tool_args.index("-op")
         else:
-            return metadata.input_dtypes[name].as_nn_archive_dtype()
+            return dtypes[name].as_nn_archive_dtype()
 
         blob_dtype = compile_tool_args[idx + 1].upper()
         return DataType.from_ir_ie_dtype(blob_dtype).as_nn_archive_dtype()
 
-    return metadata.input_dtypes[name].as_nn_archive_dtype()
+    return dtypes[name].as_nn_archive_dtype()
