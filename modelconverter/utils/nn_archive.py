@@ -444,17 +444,17 @@ def _get_io_dtype(
     if target in {Target.RVC2, Target.RVC3}:
         compile_tool_args: list[str] = getattr(cfg, "compile_tool_args", [])
         assert isinstance(cfg, BlobBaseConfig)
-        # -iop is in a form of "-iop <name>:<dtype>"
+        # -iop is in a form of '-iop "<name1>:<dtype>,<name2>:<dtype2>"'
         if "-iop" in compile_tool_args:
-            for i in range(len(compile_tool_args) - 1):
-                if compile_tool_args[i] == "-iop":
-                    value = compile_tool_args[i + 1]
-                    n, d = value.split(":")
-                    if n == name:
-                        blob_dtype = d.upper()
-                        return DataType.from_ir_ie_dtype(
-                            blob_dtype
-                        ).as_nn_archive_dtype()
+            idx = compile_tool_args.index("-iop")
+            for value in compile_tool_args[idx + 1].split(","):
+                value = value.strip()
+                n, d = value.split(":")
+                if n == name:
+                    blob_dtype = d.upper()
+                    return DataType.from_ir_ie_dtype(
+                        blob_dtype
+                    ).as_nn_archive_dtype()
 
         elif mode == "input" and "-ip" in compile_tool_args:
             idx = compile_tool_args.index("-ip")

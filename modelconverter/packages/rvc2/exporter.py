@@ -234,7 +234,8 @@ class RVC2Exporter(Exporter):
         self._inference_model_path = xml_path
         args = self.compile_tool_args
         self._add_args(args, ["-d", self.device])
-        self._add_args(args, ["-ip", "U8"])
+        if "-iop" not in args:
+            self._add_args(args, ["-ip", "U8"])
 
         args += ["-m", xml_path]
 

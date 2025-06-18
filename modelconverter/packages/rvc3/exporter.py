@@ -47,7 +47,8 @@ class RVC3Exporter(RVC2Exporter):
         self._inference_model_path = xml_path
         args = self.compile_tool_args
         self._add_args(args, ["-d", self.device])
-        self._add_args(args, ["-ip", "U8"])
+        if "-iop" not in args:
+            self._add_args(args, ["-ip", "U8"])
 
         if not self._disable_calibration:
             if len(self.inputs) > 1:
