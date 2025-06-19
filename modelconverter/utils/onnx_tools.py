@@ -84,6 +84,7 @@ def onnx_attach_normalization_to_inputs(
                 inputs=[last_output],
                 outputs=split_names,
                 axis=1 if layout == "NCHW" else 3,
+                num_outputs=3,
                 name=f"split_{input_name}",
             )
             new_nodes.append(split_node)
