@@ -9,7 +9,7 @@ def sanitize_net_name(name: str) -> str:
     if re.search(r"[^a-zA-Z0-9_-]", name):
         sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", name)
         logger.warning(
-            f"Illegal characters detected in: {name}. Replacing with '_'. New name: {sanitized}"
+            f"Illegal characters detected in: '{name}'. Replacing with '_'. New name: '{sanitized}'"
         )
         return sanitized
     return name
