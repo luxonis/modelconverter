@@ -147,7 +147,7 @@ def convert(
 
             archive_name = None
             if path is not None and is_nn_archive(path):
-                archive_name = path.split(".")[0]
+                archive_name = Path(path).name.split(".")[0]
 
             assert main_stage is not None
             out_models = [

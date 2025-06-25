@@ -429,7 +429,7 @@ def generate_archive(
         target,
     )
     generator = ArchiveGenerator(
-        archive_name=archive_name or f"{cfg.name}.{target.value.lower()}",
+        archive_name=f"{archive_name or cfg.name}.{target.value.lower()}",
         save_path=str(output_path),
         cfg_dict=nn_archive.model_dump(),
         executables_paths=[
