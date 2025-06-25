@@ -45,6 +45,7 @@ class Exporter(ABC):
         self.disable_onnx_optimization = config.disable_onnx_optimization
 
         self.model_name = sanitize_net_name(input_model.stem)
+        self.original_model_name = input_model.name
 
         self.intermediate_outputs_dir = (
             self.output_dir / "intermediate_outputs"
@@ -57,7 +58,9 @@ class Exporter(ABC):
         with open(self.output_dir / "config.yaml", "w") as f:
             f.write(config.model_dump_json(indent=4))
 
-        sanitized_model_name = sanitize_net_name(input_model.name)
+        sanitized_model_name = (
+            sanitize_net_name(input_model.stem) + input_model.suffix
+        )
         shutil.copy(
             input_model,
             self.intermediate_outputs_dir / sanitized_model_name,
@@ -76,13 +79,15 @@ class Exporter(ABC):
             assert self.config.input_bin is not None
             shutil.copy(
                 self.config.input_bin,
-                self.intermediate_outputs_dir
-                / sanitize_net_name(self.config.input_bin.name),
+                (
+                    self.intermediate_outputs_dir
+                    / sanitize_net_name(self.config.input_bin.stem)
+                ).with_suffix(".bin"),
             )
             self.config.input_bin = (
                 self.config.input_bin.parent
-                / sanitize_net_name(self.config.input_bin.name)
-            )
+                / sanitize_net_name(self.config.input_bin.stem)
+            ).with_suffix(".bin")
         self.input_model = self.intermediate_outputs_dir / sanitized_model_name
 
         if (
@@ -154,14 +159,16 @@ class Exporter(ABC):
 
     def run(self) -> Path:
         output_path = self.export()
-        new_output_path = (
-            self.output_dir
-            / Path(self.model_name).with_suffix(output_path.suffix).name
-        )
+        new_output_path = self.output_dir / Path(
+            self.original_model_name
+        ).with_suffix(output_path.suffix)
         shutil.move(
             str(output_path),
             new_output_path,
         )
+        if self._inference_model_path == output_path:
+            self._inference_model_path = new_output_path
+
         if not self.keep_intermediate_outputs:
             shutil.rmtree(self.intermediate_outputs_dir)
 

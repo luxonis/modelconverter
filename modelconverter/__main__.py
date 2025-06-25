@@ -7,7 +7,7 @@ from typing import Annotated, Literal, TypeAlias
 
 from cyclopts import App, Group, Parameter
 from loguru import logger
-from luxonis_ml.nn_archive import ArchiveGenerator
+from luxonis_ml.nn_archive import ArchiveGenerator, is_nn_archive
 from luxonis_ml.utils import LuxonisFileSystem, setup_logging
 
 from modelconverter.cli import (
@@ -145,6 +145,10 @@ def convert(
         if to == "nn_archive":
             from modelconverter.packages.base_exporter import Exporter
 
+            archive_name = None
+            if path is not None and is_nn_archive(path):
+                archive_name = path.split(".")[0]
+
             assert main_stage is not None
             out_models = [
                 generate_archive(
@@ -162,6 +166,7 @@ def convert(
                             main_stage
                         ].inference_model_path
                     ),
+                    archive_name=archive_name,
                 )
             ]
 

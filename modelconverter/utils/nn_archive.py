@@ -412,6 +412,7 @@ def generate_archive(
     archive_cfg: NNArchiveConfig | None,
     preprocessing: dict[str, PreprocessingBlock],
     inference_model_path: Path,
+    archive_name: str | None,
 ) -> Path:
     logger.info("Converting to NN archive")
     if len(out_models) > 1:
@@ -428,7 +429,7 @@ def generate_archive(
         target,
     )
     generator = ArchiveGenerator(
-        archive_name=f"{cfg.name}.{target.value.lower()}",
+        archive_name=archive_name or f"{cfg.name}.{target.value.lower()}",
         save_path=str(output_path),
         cfg_dict=nn_archive.model_dump(),
         executables_paths=[
