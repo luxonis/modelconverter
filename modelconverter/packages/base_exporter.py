@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 from abc import ABC, abstractmethod
 from importlib.metadata import version
@@ -27,9 +28,10 @@ class Exporter(ABC):
         config: SingleStageConfig,
         output_dir: Path,
     ):
+        input_model = config.input_model
+
         self.config = config
         self.output_dir = output_dir
-        self.input_model = config.input_model
         self.input_file_type = config.input_file_type
         self.inputs = {inp.name: inp for inp in config.inputs}
         self._inference_model_path: Path | None = None
@@ -39,7 +41,7 @@ class Exporter(ABC):
         self.disable_onnx_simplification = config.disable_onnx_simplification
         self.disable_onnx_optimization = config.disable_onnx_optimization
 
-        self.model_name = self.input_model.stem
+        self.model_name = self._sanitize_net_name(input_model.stem)
 
         self.intermediate_outputs_dir = (
             self.output_dir / "intermediate_outputs"
@@ -52,24 +54,33 @@ class Exporter(ABC):
         with open(self.output_dir / "config.yaml", "w") as f:
             f.write(config.model_dump_json(indent=4))
 
-        shutil.copy(self.input_model, self.intermediate_outputs_dir)
-        if self.input_model.with_suffix(".onnx_data").exists():
+        sanitized_model_name = self._sanitize_net_name(input_model.name)
+        shutil.copy(
+            input_model,
+            self.intermediate_outputs_dir / sanitized_model_name,
+        )
+        shutil.copy(input_model, self.output_dir / sanitized_model_name)
+        if input_model.with_suffix(".onnx_data").exists():
             shutil.copy(
-                str(self.input_model).replace(".onnx", ".onnx_data"),
+                input_model.with_suffix(".onnx_data"),
                 self.intermediate_outputs_dir,
+            )
+            shutil.copy(
+                input_model.with_suffix(".onnx_data"),
+                self.output_dir,
             )
         if self.input_file_type == InputFileType.IR:
             assert self.config.input_bin is not None
-            shutil.copy(self.config.input_bin, self.intermediate_outputs_dir)
-        shutil.copy(self.input_model, self.output_dir)
-        if self.input_model.with_suffix(".onnx_data").exists():
             shutil.copy(
-                str(self.input_model).replace(".onnx", ".onnx_data"),
-                self.output_dir,
+                self.config.input_bin,
+                self.intermediate_outputs_dir
+                / self._sanitize_net_name(self.config.input_bin.name),
             )
-        self.input_model = (
-            self.intermediate_outputs_dir / self.input_model.name
-        )
+            self.config.input_bin = (
+                self.config.input_bin.parent
+                / self._sanitize_net_name(self.config.input_bin.name)
+            )
+        self.input_model = self.intermediate_outputs_dir / sanitized_model_name
 
         if (
             not self.disable_onnx_simplification
@@ -213,3 +224,14 @@ class Exporter(ABC):
     ) -> None:
         subprocess_run(args, **kwargs)
         self._cmd_info[meta_name] = [str(arg) for arg in args]
+
+    def _sanitize_net_name(self, net_name: str) -> str:
+        """Sanitize net name since only alphanumeric chars, hyphens and
+        underscores are allowed."""
+        if re.search(r"[^a-zA-Z0-9_-]", net_name):
+            sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", net_name)
+            logger.warning(
+                f"Illegal characters detected in net_name: {net_name}. Replacing with '_'. New name: {sanitized}"
+            )
+            return sanitized
+        return net_name
