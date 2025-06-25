@@ -1,5 +1,4 @@
 import json
-import re
 import shutil
 from abc import ABC, abstractmethod
 from importlib.metadata import version
@@ -10,13 +9,17 @@ import numpy as np
 import onnx
 from loguru import logger
 
-from modelconverter.utils import read_calib_dir, subprocess_run
+from modelconverter.utils import (
+    exit_with,
+    read_calib_dir,
+    sanitize_net_name,
+    subprocess_run,
+)
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     RandomCalibrationConfig,
     SingleStageConfig,
 )
-from modelconverter.utils.exceptions import exit_with
 from modelconverter.utils.types import InputFileType, Target
 
 
@@ -41,7 +44,7 @@ class Exporter(ABC):
         self.disable_onnx_simplification = config.disable_onnx_simplification
         self.disable_onnx_optimization = config.disable_onnx_optimization
 
-        self.model_name = self._sanitize_net_name(input_model.stem)
+        self.model_name = sanitize_net_name(input_model.stem)
 
         self.intermediate_outputs_dir = (
             self.output_dir / "intermediate_outputs"
@@ -54,7 +57,7 @@ class Exporter(ABC):
         with open(self.output_dir / "config.yaml", "w") as f:
             f.write(config.model_dump_json(indent=4))
 
-        sanitized_model_name = self._sanitize_net_name(input_model.name)
+        sanitized_model_name = sanitize_net_name(input_model.name)
         shutil.copy(
             input_model,
             self.intermediate_outputs_dir / sanitized_model_name,
@@ -74,11 +77,11 @@ class Exporter(ABC):
             shutil.copy(
                 self.config.input_bin,
                 self.intermediate_outputs_dir
-                / self._sanitize_net_name(self.config.input_bin.name),
+                / sanitize_net_name(self.config.input_bin.name),
             )
             self.config.input_bin = (
                 self.config.input_bin.parent
-                / self._sanitize_net_name(self.config.input_bin.name)
+                / sanitize_net_name(self.config.input_bin.name)
             )
         self.input_model = self.intermediate_outputs_dir / sanitized_model_name
 
@@ -224,14 +227,3 @@ class Exporter(ABC):
     ) -> None:
         subprocess_run(args, **kwargs)
         self._cmd_info[meta_name] = [str(arg) for arg in args]
-
-    def _sanitize_net_name(self, net_name: str) -> str:
-        """Sanitize net name since only alphanumeric chars, hyphens and
-        underscores are allowed."""
-        if re.search(r"[^a-zA-Z0-9_-]", net_name):
-            sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", net_name)
-            logger.warning(
-                f"Illegal characters detected in net_name: {net_name}. Replacing with '_'. New name: {sanitized}"
-            )
-            return sanitized
-        return net_name

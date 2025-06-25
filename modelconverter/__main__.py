@@ -36,6 +36,7 @@ from modelconverter.utils import (
 )
 from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.constants import MODELS_DIR
+from modelconverter.utils.general import sanitize_net_name
 from modelconverter.utils.nn_archive import generate_archive
 from modelconverter.utils.types import Target
 
@@ -108,6 +109,8 @@ def convert(
         In case of conversion from archive to archive, it moves the
         preprocessing to the new archive.
     """
+    if output_dir is not None:
+        output_dir = sanitize_net_name(output_dir)
 
     with catch_exceptions():
         init_dirs()
