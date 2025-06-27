@@ -45,7 +45,9 @@ class Exporter(ABC):
         self.disable_onnx_optimization = config.disable_onnx_optimization
 
         self.model_name = sanitize_net_name(input_model.stem)
-        self.original_model_name = input_model.name
+        self.original_model_name = sanitize_net_name(
+            input_model.name, with_suffix=True
+        )
 
         self.intermediate_outputs_dir = (
             self.output_dir / "intermediate_outputs"
