@@ -55,7 +55,7 @@ setup_logging(file=f"results/convert_hub_rvc4_models_{date}.log")
 
 ADB_DATA_DIR = Path("/data/local/zoo_conversion/datasets")
 ADB_MODELS_DIR = Path("/data/local/zoo_conversion/models")
-models_df = pl.read_csv("mappings.csv")
+models_df = pl.read_csv("zoo_migration/new_mappings.csv")
 
 
 @dataclass
@@ -472,7 +472,7 @@ def adb_infer(
     adb.shell(f"mkdir -p {adb_workdir}")
 
     def source(snpe_version: str) -> str:
-        return f"source /data/local/tmp/source_me_{snpe_version}.sh"
+        return f"source /data/local/tmp/{snpe_version}/source_me_{snpe_version}.sh"
 
     adb.push(model_path, adb_workdir / "model.dlc")
 

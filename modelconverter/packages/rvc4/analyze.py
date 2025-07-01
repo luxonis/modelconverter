@@ -26,7 +26,7 @@ class RVC4Analyzer(Analyzer):
 
         output_dir = Path(
             self._run_dlc(
-                f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float"
+                f"/data/local/snpe/snpe_32/aarch64-oe-linux-gcc11.2/bin/snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float"
             )
         )
         dlc_matcher = {k: output_dir / v for k, v in dlc_matcher.items()}
@@ -192,7 +192,15 @@ class RVC4Analyzer(Analyzer):
         output_dir = f"{constants.OUTPUTS_DIR!s}/analysis/{self.model_name}"
         stats_df = pl.DataFrame(
             statistics,
-            schema=["layer_name", "max_abs_diff", "MSE", "cos_sim"],
+            schema=[
+                "layer_name",
+                "max_abs_diff",
+                "cos_sim",
+                "mae",
+                "mape",
+                "max_percentage_error",
+                "min_percentage_error",
+            ],
             orient="row",
         )
         grouped_df = stats_df.group_by("layer_name").agg(
@@ -200,6 +208,7 @@ class RVC4Analyzer(Analyzer):
                 pl.col("max_abs_diff").mean().alias("max_abs_diff"),
                 pl.col("MSE").mean().alias("MSE"),
                 pl.col("cos_sim").mean().alias("cos_sim"),
+                pl.col("mae").mean().alias("mae"),
             ]
         )
 
@@ -220,13 +229,19 @@ class RVC4Analyzer(Analyzer):
         self, onnx_output: np.ndarray, dlc_output: np.ndarray
     ) -> list:
         max_abs_diff = np.max(np.abs(onnx_output - dlc_output))
-        mse = np.mean((onnx_output - dlc_output) ** 2)
         cosine_sim = np.dot(onnx_output.flatten(), dlc_output.flatten()) / (
             np.linalg.norm(onnx_output.flatten())
             * np.linalg.norm(dlc_output.flatten())
         )
+        mae = np.mean(np.abs(onnx_output - dlc_output))
 
-        return [max_abs_diff, mse, cosine_sim]
+        pe = ((onnx_output - dlc_output) / onnx_output) * 100
+
+        mape = np.mean(np.abs(pe))
+        max_pe = np.max(pe)
+        min_pe = np.min(pe)
+
+        return [max_abs_diff, cosine_sim, mae, mape, max_pe, min_pe]
 
     def _run_dlc(self, command: str) -> str:
         self.adb.push(
@@ -278,7 +293,7 @@ class RVC4Analyzer(Analyzer):
         _ = self._prepare_raw_inputs(input_matcher)
 
         output_dir = self._run_dlc(
-            f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_tf8"
+            f"/data/local/snpe/snpe_32/aarch64-oe-linux-gcc11.2/bin/snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_auto"
         )
 
         csv_path = Path(output_dir + "/layer_stats.csv")
@@ -302,7 +317,6 @@ class RVC4Analyzer(Analyzer):
 
     def _process_diagview_csv(self, csv_path: str) -> None:
         df = pl.read_csv(csv_path)
-        df = df.drop_nans()
         df = df.drop_nulls()
         layer_stats = df.group_by("Layer Id").agg(
             pl.col("Time").mean().round(0).cast(int).alias("time_mean"),

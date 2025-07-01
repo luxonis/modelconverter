@@ -12,6 +12,9 @@ class Metric(Enum):
     PSNR = "psnr"
     COS = "cos"
     SOFT_COS = "soft_cos"
+    MAPE = "mape"
+    MAX_PE = "max_abs_pe"  # maximum percentage error
+    MIN_PE = "min_abs_pe"  # minimum percentage error
 
     @property
     def sign(self) -> str:
