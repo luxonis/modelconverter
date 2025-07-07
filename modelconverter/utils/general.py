@@ -5,16 +5,19 @@ from loguru import logger
 
 
 def _normalize_underscores(s: str) -> str:
-    return re.sub(r"_+", "_", s).strip("_")
+    return re.sub(r"_+", "_", s)
 
 
 def sanitize_net_name(name: str, with_suffix: bool = False) -> str:
-    """Sanitize net name or path. If input is a path, only sanitize the basename. If input is a name, sanitize the whole string. Collapse multiple underscores.
+    """Sanitize net name or path. If input is a path, only sanitize the
+    basename. If input is a name, sanitize the whole string. Collapse
+    multiple underscores.
 
     @type name: str
     @param name: The name or path to sanitize.
     @type with_suffix: bool
-    @param with_suffix: If True, the suffix (file extension) is preserved and not sanitized.
+    @param with_suffix: If True, the suffix (file extension) is
+        preserved and not sanitized.
     """
     p = Path(name)
     base, stem, suffix = p.name, p.stem, p.suffix
@@ -49,4 +52,3 @@ def sanitize_net_name(name: str, with_suffix: bool = False) -> str:
             f"Illegal characters detected in: '{name}'. Replacing with '_'. New name: '{sanitized}'"
         )
     return sanitized
-
