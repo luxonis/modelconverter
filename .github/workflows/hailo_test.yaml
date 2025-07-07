@@ -8,6 +8,8 @@ on:
       - main
     paths:
       - 'modelconverter/packages/hailo/**'
+      - 'modelconverter/packages/base_exporter.py'
+      - 'modelconverter/packages/base_inferer.py'
       - 'tests/test_packages/test_hailo.py'
       - 'dockerfiles/Dockerfile.hailo'
       - 'entrypoints/entrypoint_hailo.sh'

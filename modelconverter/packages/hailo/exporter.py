@@ -1,4 +1,3 @@
-import re
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -54,7 +53,7 @@ class HailoExporter(Exporter):
         if self.is_tflite:
             cast(Callable[..., None], runner.translate_tf_model)(
                 str(self.input_model),
-                net_name=self._sanitize_net_name(self.input_model.stem),
+                net_name=self.model_name,
                 start_node_names=start_nodes,
                 tensor_shapes=net_input_shapes,
                 end_node_names=list(self.outputs.keys()),
@@ -62,7 +61,7 @@ class HailoExporter(Exporter):
         else:
             cast(Callable[..., None], runner.translate_onnx_model)(
                 str(self.input_model),
-                net_name=self._sanitize_net_name(self.input_model.stem),
+                net_name=self.model_name,
                 start_node_names=start_nodes,
                 net_input_shapes=net_input_shapes,
                 end_node_names=list(self.outputs.keys()),
@@ -71,8 +70,8 @@ class HailoExporter(Exporter):
         har_path = self.input_model.with_suffix(".har")
         runner.save_har(har_path)
         if self._disable_calibration:
-            self._inference_model_path = (
-                self.output_dir / self.model_name
+            self._inference_model_path = self.output_dir / Path(
+                self.original_model_name
             ).with_suffix(".har")
             return har_path
 
@@ -96,16 +95,6 @@ class HailoExporter(Exporter):
         with open(hef_path, "wb") as hef_file:
             hef_file.write(hef)
         return hef_path
-
-    def _sanitize_net_name(self, net_name: str) -> str:
-        """Sanitize net name since only alphanumeric chars, hyphens and underscores are allowed"""
-        if re.search(r"[^a-zA-Z0-9_-]", net_name):
-            sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", net_name)
-            logger.warning(
-                f"Illegal characters detected in net_name: {net_name}. Replacing with '_'. New name: {sanitized}"
-            )
-            return sanitized
-        return net_name
 
     def _get_calibration_data(
         self, runner: ClientRunner

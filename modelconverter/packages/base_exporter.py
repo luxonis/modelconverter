@@ -9,13 +9,17 @@ import numpy as np
 import onnx
 from loguru import logger
 
-from modelconverter.utils import read_calib_dir, subprocess_run
+from modelconverter.utils import (
+    exit_with,
+    read_calib_dir,
+    sanitize_net_name,
+    subprocess_run,
+)
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     RandomCalibrationConfig,
     SingleStageConfig,
 )
-from modelconverter.utils.exceptions import exit_with
 from modelconverter.utils.types import InputFileType, Target
 
 
@@ -27,9 +31,10 @@ class Exporter(ABC):
         config: SingleStageConfig,
         output_dir: Path,
     ):
+        input_model = config.input_model
+
         self.config = config
         self.output_dir = output_dir
-        self.input_model = config.input_model
         self.input_file_type = config.input_file_type
         self.inputs = {inp.name: inp for inp in config.inputs}
         self._inference_model_path: Path | None = None
@@ -39,7 +44,10 @@ class Exporter(ABC):
         self.disable_onnx_simplification = config.disable_onnx_simplification
         self.disable_onnx_optimization = config.disable_onnx_optimization
 
-        self.model_name = self.input_model.stem
+        self.model_name = sanitize_net_name(input_model.stem)
+        self.original_model_name = sanitize_net_name(
+            input_model.name, with_suffix=True
+        )
 
         self.intermediate_outputs_dir = (
             self.output_dir / "intermediate_outputs"
@@ -52,24 +60,37 @@ class Exporter(ABC):
         with open(self.output_dir / "config.yaml", "w") as f:
             f.write(config.model_dump_json(indent=4))
 
-        shutil.copy(self.input_model, self.intermediate_outputs_dir)
-        if self.input_model.with_suffix(".onnx_data").exists():
+        sanitized_model_name = (
+            sanitize_net_name(input_model.stem) + input_model.suffix
+        )
+        shutil.copy(
+            input_model,
+            self.intermediate_outputs_dir / sanitized_model_name,
+        )
+        shutil.copy(input_model, self.output_dir / sanitized_model_name)
+        if input_model.with_suffix(".onnx_data").exists():
             shutil.copy(
-                str(self.input_model).replace(".onnx", ".onnx_data"),
+                input_model.with_suffix(".onnx_data"),
                 self.intermediate_outputs_dir,
+            )
+            shutil.copy(
+                input_model.with_suffix(".onnx_data"),
+                self.output_dir,
             )
         if self.input_file_type == InputFileType.IR:
             assert self.config.input_bin is not None
-            shutil.copy(self.config.input_bin, self.intermediate_outputs_dir)
-        shutil.copy(self.input_model, self.output_dir)
-        if self.input_model.with_suffix(".onnx_data").exists():
             shutil.copy(
-                str(self.input_model).replace(".onnx", ".onnx_data"),
-                self.output_dir,
+                self.config.input_bin,
+                (
+                    self.intermediate_outputs_dir
+                    / sanitize_net_name(self.config.input_bin.stem)
+                ).with_suffix(".bin"),
             )
-        self.input_model = (
-            self.intermediate_outputs_dir / self.input_model.name
-        )
+            self.config.input_bin = (
+                self.config.input_bin.parent
+                / sanitize_net_name(self.config.input_bin.stem)
+            ).with_suffix(".bin")
+        self.input_model = self.intermediate_outputs_dir / sanitized_model_name
 
         if (
             not self.disable_onnx_simplification
@@ -140,14 +161,16 @@ class Exporter(ABC):
 
     def run(self) -> Path:
         output_path = self.export()
-        new_output_path = (
-            self.output_dir
-            / Path(self.model_name).with_suffix(output_path.suffix).name
-        )
+        new_output_path = self.output_dir / Path(
+            self.original_model_name
+        ).with_suffix(output_path.suffix)
         shutil.move(
             str(output_path),
             new_output_path,
         )
+        if self._inference_model_path == output_path:
+            self._inference_model_path = new_output_path
+
         if not self.keep_intermediate_outputs:
             shutil.rmtree(self.intermediate_outputs_dir)
 

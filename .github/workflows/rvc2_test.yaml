@@ -8,6 +8,8 @@ on:
       - main
     paths:
       - 'modelconverter/packages/rvc2/**'
+      - 'modelconverter/packages/base_exporter.py'
+      - 'modelconverter/packages/base_inferer.py'
       - 'tests/test_packages/test_rvc2.py'
       - 'dockerfiles/Dockerfile.rvc2'
       - 'entrypoints/entrypoint_rvc2.sh'

@@ -7,7 +7,7 @@ from typing import Annotated, Literal, TypeAlias
 
 from cyclopts import App, Group, Parameter
 from loguru import logger
-from luxonis_ml.nn_archive import ArchiveGenerator
+from luxonis_ml.nn_archive import ArchiveGenerator, is_nn_archive
 from luxonis_ml.utils import LuxonisFileSystem, setup_logging
 
 from modelconverter.cli import (
@@ -36,6 +36,7 @@ from modelconverter.utils import (
 )
 from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.constants import MODELS_DIR
+from modelconverter.utils.general import sanitize_net_name
 from modelconverter.utils.nn_archive import generate_archive
 from modelconverter.utils.types import Target
 
@@ -108,6 +109,8 @@ def convert(
         In case of conversion from archive to archive, it moves the
         preprocessing to the new archive.
     """
+    if output_dir is not None:
+        output_dir = sanitize_net_name(output_dir)
 
     with catch_exceptions():
         init_dirs()
@@ -142,6 +145,10 @@ def convert(
         if to == "nn_archive":
             from modelconverter.packages.base_exporter import Exporter
 
+            archive_name = None
+            if path is not None and is_nn_archive(path):
+                archive_name = Path(path).name.split(".")[0]
+
             assert main_stage is not None
             out_models = [
                 generate_archive(
@@ -159,6 +166,7 @@ def convert(
                             main_stage
                         ].inference_model_path
                     ),
+                    archive_name=archive_name,
                 )
             ]
 

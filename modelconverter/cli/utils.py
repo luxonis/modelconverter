@@ -30,6 +30,7 @@ from modelconverter.hub.hub_requests import Request
 from modelconverter.utils import (
     process_nn_archive,
     resolve_path,
+    sanitize_net_name,
 )
 from modelconverter.utils.config import Config, SingleStageConfig
 from modelconverter.utils.constants import (
@@ -68,6 +69,7 @@ class ModelType(str, Enum):
 def get_output_dir_name(
     target: Target, name: str, output_dir: str | None
 ) -> Path:
+    name = sanitize_net_name(name)
     date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
     if output_dir is not None:
         if (OUTPUTS_DIR / output_dir).exists():
