@@ -127,7 +127,10 @@ def convert(
 
         output_path = get_output_dir_name(target, cfg.name, output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        setup_logging(file=str(output_path / "modelconverter.log"))
+        setup_logging(
+            file=str(output_path / "modelconverter.log"),
+            use_rich=cfg.rich_logging,
+        )
         if is_multistage:
             exporter = MultiStageExporter(
                 target=target, config=cfg, output_dir=output_path
@@ -228,11 +231,13 @@ def infer(
 
     if path is not None:
         config = path
-    setup_logging(file="modelconverter.log")
-    logger.info("Starting inference")
     with catch_exceptions():
         mult_cfg, _, _ = get_configs(str(config), opts)
         cfg = mult_cfg.get_stage_config(stage)
+        setup_logging(
+            file="modelconverter.log", use_rich=mult_cfg.rich_logging
+        )
+        logger.info("Starting inference")
         get_inferer(
             target, model_path, input_path, Path(output_dir), cfg
         ).run()

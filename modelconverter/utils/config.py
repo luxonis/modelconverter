@@ -472,6 +472,7 @@ class SingleStageConfig(CustomBaseModel):
 class Config(LuxonisConfig):
     stages: Annotated[dict[str, SingleStageConfig], Field(min_length=1)]
     name: str
+    rich_logging: bool = True
 
     def get_stage_config(self, stage: str | None) -> SingleStageConfig:
         if stage is None:
@@ -492,9 +493,11 @@ class Config(LuxonisConfig):
     def _validate_stages(cls, data: dict[str, Any]) -> dict[str, Any]:
         if "stages" not in data:
             name = data.pop("name", "default_stage")
+            rich_logging = data.pop("rich_logging", True)
             data = {
-                "stages": {name: data},
                 "name": name,
+                "rich_logging": rich_logging,
+                "stages": {name: data},
             }
         else:
             extra = {}
