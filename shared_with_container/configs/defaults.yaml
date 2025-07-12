@@ -2,6 +2,9 @@
 # Name of the model. Will be the stem of the input model if undefined.
 name: ~
 
+# Whether to enable rich formatting for the log messages.
+rich_logging: true
+
 # List of stages for multistage models. Doesn't have to be provided
 # for single-stage models.
 stages:

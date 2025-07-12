@@ -280,6 +280,7 @@ def load_and_compare(
         name = expected["input_model"].stem
         expected = {
             "name": name,
+            "rich_logging": True,
             "stages": {name: expected},
         }
     assert config == expected
