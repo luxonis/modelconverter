@@ -42,12 +42,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      if: ${{ inputs.package != 'hailo' }}
-      uses: docker/setup-buildx-action@v3
-
     - name: Set up Docker
-      if: ${{ inputs.package == 'hailo' }}
       uses: crazy-max/ghaction-setup-docker@v3
 
     - name: Set up Python
@@ -84,18 +79,6 @@ jobs:
               "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
             docker load -i "hailo-${VERSION}.tar.gz"
         fi
-
-    - name: Build and push Docker image
-      if: ${{ inputs.package != 'hailo' }}
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: docker/${{ inputs.package }}/Dockerfile
-        load: true
-        build-args: VERSION=${{ inputs.version }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        push: false
 
     - name: Run Tests
       run: |
