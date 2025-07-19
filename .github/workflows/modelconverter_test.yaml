@@ -42,7 +42,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Set up Docker Buildx
+      if: ${{ inputs.package != 'hailo' }}
+      uses: docker/setup-buildx-action@v3
+
     - name: Set up Docker
+      if: ${{ inputs.package == 'hailo' }}
       uses: crazy-max/ghaction-setup-docker@v3
 
     - name: Set up Python
@@ -81,6 +86,7 @@ jobs:
         fi
 
     - name: Build and push Docker image
+      if: ${{ inputs.package != 'hailo' }}
       uses: docker/build-push-action@v5
       with:
         context: .
