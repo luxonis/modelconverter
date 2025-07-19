@@ -41,7 +41,7 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 - [Calibration Data](#calibration-data)
 - [Inference](#inference)
   - [Inference Example](#inference-example)
-- [\[RVC4\] DLC model analysis](#rvc4-dlc-model-analysis)
+- [[RVC4] DLC model analysis](#rvc4-dlc-model-analysis)
 - [Benchmarking](#benchmarking)
 
 ## Installation
@@ -55,7 +55,7 @@ pip install modelconv
 
 Run `modelconverter --help` to see the available commands and options.
 
-> \[!NOTE\]
+> [!NOTE]
 > To use the [benchmarking feature](#benchmarking), the `depthai v3` package must be installed. While the `depthai v3` is not yet released on PyPI, you can install it with the following command:
 >
 > ```bash
@@ -91,10 +91,10 @@ The `encoding` flag in the YAML configuration file allows you to specify color e
   ```
   This configuration specifies that the input data is in RGB format and will be converted to BGR format during processing.
 
-> \[!NOTE\]
+> [!NOTE]
 > If the encoding is not specified in the YAML configuration, the default values are set to `encoding.from=RGB` and `encoding.to=BGR`.
 
-> \[!NOTE\]
+> [!NOTE]
 > Certain options can be set **globally**, applying to all inputs of the model, or **per input**. If specified per input, these settings will override the global configuration for that input alone. The options that support this flexibility include `scale_values`, `mean_values`, `encoding`, `data_type`, `shape`, and `layout`.
 
 ### NN Archive Configuration File
@@ -106,13 +106,13 @@ In the NN Archive configuration, there are two flags related to color encoding c
 - **`reverse_channels` (Deprecated)**:
   Determines the input color format of the model: when set to *True*, the input is considered to be *"RGB"*, and when set to *False*, it is treated as *"BGR"*. This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
 
-> \[!NOTE\]
+> [!NOTE]
 > If neither `dai_type` nor `reverse_channels` the input to the model is considered to be *"RGB"*.
 
-> \[!NOTE\]
+> [!NOTE]
 > If both `dai_type` and `reverse_channels` are provided, the converter will give priority to `dai_type`.
 
-> \[!IMPORTANT\]
+> [!IMPORTANT]
 > Provide mean/scale values in the original color format used during model training (e.g., RGB or BGR). Any necessary channel permutation is handled internally—do not reorder values manually.
 
 ## Online Usage
@@ -129,7 +129,7 @@ To log in to HubAI, use the following command:
 modelconverter hub login
 ```
 
-> \[!NOTE\]
+> [!NOTE]
 > The key can also be stored in an environment variable `HUBAI_API_KEY`. In such a case, it takes precedence over the saved key.
 
 **CLI Example:**
@@ -159,7 +159,7 @@ converted_model = convert.RVC4("configs/resnet18.yaml")
 
 We have prepared several examples for you to check and are actively working on providing more. You can find them [here](https://github.com/luxonis/depthai-ml-training/tree/main/conversion).
 
-> \[!NOTE\]
+> [!NOTE]
 > To learn more about the available options, use `modelconverter hub convert --help`.
 
 ## Local Usage
@@ -308,7 +308,7 @@ Below is a table of common command-line options available when using the `modelc
 | `--tool-version`                                   |       | TEXT   | Version of the underlying conversion tools to use. Available options differ based on the target platform (RVC2, RVC3, RVC4, HAILO) |
 | `--archive-preprocess` / `--no-archive-preprocess` |       | FLAG   | Add pre-processing to the NN archive instead of the model                                                                          |
 
-> \[!NOTE\]
+> [!NOTE]
 > This table is not exhaustive. For more detailed information about available options, run `modelconverter convert --help` in your command line interface. You can also check all the `[ config overrides ]` available at [defaults.yaml](shared_with_container/configs/defaults.yaml).
 
 #### Handling Large ONNX Files (Exceeding 2GB)
@@ -324,7 +324,7 @@ For example:
 - Model file: `model.onnx`
 - External data file: `model.onnx_data`
 
-> \[!IMPORTANT\]
+> [!IMPORTANT]
 > This naming convention is a **hard requirement** for the conversion process to work correctly.
 
 **NN Archive Requirements:**
@@ -364,7 +364,7 @@ modelconverter convert rvc2 input_model models/yolov6n.onnx \
                         outputs.2.name out_2
 ```
 
-> \[!WARNING\]
+> [!WARNING]
 > If you modify the default stages names (`stages.stage_name`) in the configuration file (`config.yaml`), you need to provide the full path to each stage in the command-line arguments. For instance, if a stage name is changed to `stage1`, use `stages.stage1.inputs.0.name` instead of `inputs.0.name`.
 
 ## Multi-Stage Conversion
@@ -408,10 +408,10 @@ The `modelconverter` CLI is available inside the container as well.
 Calibration data can be a mix of images (`.jpg`, `.png`, `.jpeg`) and `.npy`, `.raw` files.
 Image files will be loaded and converted to the format specified in the config.
 
-> \[!IMPORTANT\]
+> [!IMPORTANT]
 > No conversion is performed for `.npy` or `.raw` files, the files are used as provided.
 
-> \[!WARNING\]
+> [!WARNING]
 > `RVC4` and `Hailo` expects images to be provided in `NHWC` layout. If you provide the calibration data in a form of `.npy` or `.raw` format, you need to make sure they have the correct layout.
 
 ## Inference
@@ -478,7 +478,7 @@ output_path/
     └── <outputs>
 ```
 
-## \[RVC4\] DLC model analysis
+## [RVC4] DLC model analysis
 
 ModelConverter offers additional analysis tools for the RVC4 platform. The tools provide an in-depth look at the following:
 
@@ -513,14 +513,14 @@ modelconverter analyze <dlc_model> <onnx_model> <path_to_input_images>
 
 For other usage instructions run `modelconverter analyze --help`
 
-> \[!NOTE\]
+> [!NOTE]
 > It is important to ensure that you are using the correct ONNX model for comparison. Before converting to DLC, ModelConverter can modify the ONNX files by adding normalization layers or simplifying the graph. The ONNX model that is actually converted to DLC is typically located at `shared_with_container/outputs/model_name/intermediate_outputs/model_name-modified.onnx`
 >
 > If the model has multiple inputs, make sure that each input directory has the same number of images. The tool alphabetically sorts images in each directory and assumes that images with the same index are used as one input.
 >
 > Recommended number of input images is less than 50.
 
-> \[!IMPORTANT\]
+> [!IMPORTANT]
 > The analysis requires the RVC4 device to be connected and accessible using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb). Ensure that the device is connected and ADB is properly configured and the commands `snpe-net-run` and `snpe-diagview` can be executed in it.
 
 The tool creates two CSV files located in `shared_with_container/outputs/analysis/model_name/`. One file contains output statistics for each layer, while the other contains statistics on cycle usage.
@@ -556,8 +556,8 @@ modelconverter benchmark rvc3 --model-path <path_to_model.xml>
 The command prints a table with the benchmark results to the console and
 optionally saves the results to a `.csv` file.
 
-> \[!NOTE\]
+> [!NOTE]
 > For **RVC2** and **RVC4**: The `--model-path` can be a path to a local .blob file, an NN Archive file (.tar.xz), or a name of a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai). To access models from different teams in Luxonis HubAI, remember to update the HUBAI_API_KEY environment variable respectively.
 
-> \[!IMPORTANT\]
+> [!IMPORTANT]
 > Benchmarking on *RVC4* requires the device to be connected and accessible using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb). Ensure that the device is connected and ADB is properly configured and the command `snpe-parallel-run` can be executed in it.

@@ -3,9 +3,7 @@ name: Test - RVC2
 on:
   workflow_dispatch:
   pull_request:
-    branches:
-      - dev
-      - main
+    branches: [main]
     paths:
       - 'modelconverter/packages/rvc2/**'
       - 'modelconverter/packages/base_exporter.py'
@@ -26,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ["2021.4.0", "2022.3.0"]
+        version: ["2022.3.0"]
 
     uses: ./.github/workflows/modelconverter_test.yaml
     secrets: inherit

@@ -224,7 +224,7 @@ blob = convert.RVC2(
 
 ### Conversion from `tflite`
 
-> \[!WARNING\]
+> [!WARNING]
 > `modelconverter` does not support conversion from frozen PB files, only TFLITE files are supported.
 
 `blobconverter`

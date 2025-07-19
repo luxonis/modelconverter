@@ -37,7 +37,7 @@ RUN <<EOF
         STRIP_COMPONENTS=2
     fi
 
-    tar xvf "openvino-${VERSION}.tar.gz" \
+    tar zxf "openvino-${VERSION}.tar.gz" \
         -C /opt/intel --strip-components=${STRIP_COMPONENTS}
 
     if [ "${VERSION}" = "2022.3.0" ]; then
