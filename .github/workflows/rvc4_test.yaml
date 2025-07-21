@@ -11,8 +11,8 @@ on:
       - 'modelconverter/packages/base_exporter.py'
       - 'modelconverter/packages/base_inferer.py'
       - 'tests/test_packages/test_rvc4.py'
-      - 'dockerfiles/Dockerfile.rvc4'
-      - 'entrypoints/entrypoint_rvc4.sh'
+      - 'docker/rvc4/Dockerfile'
+      - 'docker/rvc4/entrypoint.sh'
       - '.github/workflows/modelconverter_test.yaml'
       - '.github/workflows/rvc4_test.yaml'
 

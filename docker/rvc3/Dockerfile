@@ -30,7 +30,11 @@ RUN <<EOF
     mkdir /opt/intel
     tar xvf openvino-2022.3.0.tar.gz -C /opt/intel/ --strip-components 1
 
-    pip install openvino==2022.3.0 openvino-dev==2022.3.0 --no-cache-dir
+    pip install openvino==2022.3.0 \
+        openvino-dev==2022.3.0 \
+        openvino-telemetry==2022.3.0 \
+        --no-cache-dir
+
     pip install /opt/intel/tools/*.whl
 
 EOF
