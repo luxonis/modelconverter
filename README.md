@@ -157,7 +157,7 @@ environ.HUBAI_API_KEY = "your_api_key"
 converted_model = convert.RVC4("configs/resnet18.yaml")
 ```
 
-We have prepared several examples for you to check and are actively working on providing more. You can find them [here](https://github.com/luxonis/depthai-ml-training/tree/main/conversion).
+We have prepared several examples for you to check and are actively working on providing more. You can find them [here](https://github.com/luxonis/ai-tutorials/tree/main/conversion).
 
 > \[!NOTE\]
 > To learn more about the available options, use `modelconverter hub convert --help`.
