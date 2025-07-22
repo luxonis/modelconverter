@@ -166,7 +166,14 @@ We have prepared several examples for you to check and are actively working on p
 
 If you prefer not to share your models with the cloud, you can run the conversion locally.
 
-### Prerequisites
+### Official Docker Images
+
+We provide official Docker images only for RVC2 and RVC3 platforms.
+Images for Hailo and RVC4 need to be built manually, as described in the [Build Instructions](#build-instructions) section.
+
+### Build Instructions
+
+#### Prerequisites
 
 In local mode, `ModelConverter` requires `docker` to be installed on your system.
 It is recommended to use Ubuntu OS for the best compatibility.
@@ -199,7 +206,11 @@ Requires `hailo_ai_sw_suite_<version>:1` docker image to be present on the syste
 
 After you obtain the image, you need to rename it to `hailo_ai_sw_suite_<version>:1` using `docker tag <old_name> hailo_ai_sw_suite_<version>:1`.
 
-The `modelconverter` CLI will build the images automatically, but if you want to build them manually, use the following command:
+#### Building the Images
+
+This section is optional if you are using the `modelconverter` CLI, as it will automatically build the images for you.
+
+In other cases, use the following command:
 
 ```bash
 docker build -f docker/$TARGET/Dockerfile \
