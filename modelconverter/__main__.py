@@ -1,9 +1,10 @@
 import importlib.metadata
 import os
+import signal
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, Literal, TypeAlias
+from typing import Annotated, Any, Literal, TypeAlias
 
 from cyclopts import App, Group, Parameter
 from loguru import logger
@@ -109,6 +110,14 @@ def convert(
         In case of conversion from archive to archive, it moves the
         preprocessing to the new archive.
     """
+
+    def handle_signal(signum: int, frame: Any) -> None:
+        signame = signal.Signals(signum).name
+        logger.error(f"{signame} received, exiting...")
+        sys.exit(1)
+
+    signal.signal(signal.SIGTERM, handle_signal)
+
     if output_dir is not None:
         output_dir = sanitize_net_name(output_dir)
 
