@@ -156,7 +156,9 @@ def process_nn_archive(
                 "data_type": inp.dtype.value,
                 "mean_values": mean,
                 "scale_values": scale,
-                "encoding": encoding,
+                "encoding": encoding
+                if isinstance(encoding, dict)
+                else {"from": encoding, "to": encoding},
             }
         )
 
@@ -180,7 +182,7 @@ def process_nn_archive(
                 "input_model": str(input_model_path),
                 "inputs": [],
                 "outputs": [],
-                "encoding": "NONE",
+                "encoding": {"from": "NONE", "to": "NONE"},
             }
             stages[input_model_path.stem] = head_stage_config
 
