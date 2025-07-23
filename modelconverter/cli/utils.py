@@ -387,13 +387,13 @@ def wait_for_export(run_id: str) -> None:
     with Progress() as progress:
         progress.add_task("Waiting for the conversion to finish", total=None)
         run = _get_run(run_id)
-        while run["status"] in ["PENDING", "RUNNING"]:
+        while run["status"] in {"PENDING", "RUNNING"}:
+            print(run)
             sleep(10)
             run = _get_run(run_id)
 
     if run["status"] == "FAILURE":
         if run["logs"] is None:
-            print(run["id"])
             raise RuntimeError("Export failed with no logs.")
 
         if run["logs"] is None:
