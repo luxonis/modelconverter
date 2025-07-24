@@ -23,11 +23,7 @@ class RVC2Benchmark(Benchmark):
 
     @property
     def all_configurations(self) -> list[Configuration]:
-        return [
-            {"repetitions": 10, "num_messages": 50, "num_threads": 1},
-            {"repetitions": 10, "num_messages": 50, "num_threads": 2},
-            {"repetitions": 10, "num_messages": 50, "num_threads": 3},
-        ]
+        return [{"num_threads": i} for i in [1, 2, 3]]
 
     def benchmark(self, configuration: Configuration) -> BenchmarkResult:
         return self._benchmark(self.model_path, **configuration)

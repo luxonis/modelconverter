@@ -146,11 +146,17 @@ class Benchmark(ABC):
             if key in kwargs and value is not None:
                 kwargs[key] = type(value)(kwargs[key])
 
-        configurations = (
-            [{**self.default_configuration, **kwargs}]
-            if not full
-            else self.all_configurations
-        )
+        if not full:
+            configurations = [{**self.default_configuration, **kwargs}]
+        else:
+            configurations = [
+                {
+                    **config,
+                    **{k: v for k, v in kwargs.items() if k not in config},
+                }
+                for config in self.all_configurations  # add only kwarg keys that are not already there to not overwrite
+            ]
+
         results: list[tuple[Configuration, BenchmarkResult]] = [
             (configuration, self.benchmark(configuration))
             for configuration in configurations
