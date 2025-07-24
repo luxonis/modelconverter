@@ -58,7 +58,7 @@ class SNPEMigrationTester:
         self,
         snpe_target_version: str = "2.32.6",
         snpe_source_version: str = "2.23.0",
-        mapping_csv: str = "zoo_migration/new_mappings.csv",
+        mapping_csv: str = "zoo_migration/mapping.csv",
         device_id: str | None = None,
         model_id: str | None = None,
         variant_id: str | None = None,
@@ -138,19 +138,18 @@ class SNPEMigrationTester:
         )
 
         for row in self.models.iter_rows(named=True):
+            logger.info("=" * 100)
             model_id = row["model_id"]
             error = ""
             status = "passable"
-            try:
-                old_score, new_score, new_archive = self._migrate_single_model(
-                    row
-                )
+            old_score, new_score, new_archive = self._migrate_single_model(
+                row
+            )
+            try :
+                self.metric.verify(old_score, new_score)
             except (Exception, SubprocessException) as e:
                 status = "failed"
                 error = str(e)
-                logger.exception(
-                    f"Migration for model '{model_id}' failed with error: {e!s}"
-                )
 
             if math.isclose(old_score, new_score, rel_tol=1e-3, abs_tol=1e-5):
                 status = "success"
@@ -164,7 +163,10 @@ class SNPEMigrationTester:
             self.results_df["error"].append(error)
             self.results_df["old_to_onnx_score"].append(old_score)
             self.results_df["new_to_onnx_score"].append(new_score)
-
+            pl_df = pl.DataFrame(self.results_df)
+            path = Path("results", f"migration_results_2.csv")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            pl_df.write_csv(path)
             if self.upload:
                 old_instance = self._load_instance(
                     row["variant_id"], row["instance_id"]
@@ -480,6 +482,7 @@ class SNPEMigrationTester:
             )
 
             ret, stdout, stderr = self.adb_handler.shell(command)
+            
 
             if ret != 0:
                 raise SubprocessException(
@@ -491,14 +494,15 @@ class SNPEMigrationTester:
             raw_out_dir = save_path / "raw"
             raw_out_dir.mkdir(parents=True, exist_ok=True)
             self.adb_handler.pull(f"{ADB_MODELS_DIR}/outputs", raw_out_dir)
+            self.adb_handler.shell(f"rm -rf {ADB_MODELS_DIR}/outputs")
 
             npy_out_dir = save_path / "npy"
             npy_out_dir.mkdir(parents=True, exist_ok=True)
-
+            
             for p in raw_out_dir.rglob("*.raw"):
                 logger.debug(f"Processing {p}")
                 arr = np.fromfile(p, dtype=np.float32)
-
+                
                 out_shape = out_shapes[p.stem]
                 assert out_shape is not None
 
@@ -658,7 +662,6 @@ class SNPEMigrationTester:
         if math.isclose(old_score, new_score, rel_tol=5e-2, abs_tol=1e-5):
             return old_score, new_score
 
-        self.metric.verify(old_score, new_score)
         return old_score, new_score
 
     def prepare_raw_files(
