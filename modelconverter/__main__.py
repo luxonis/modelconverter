@@ -371,7 +371,7 @@ def analyze(
     *,
     dlc_model_path: str,
     onnx_model_path: str,
-    image_dirs: Annotated[list[str], Parameter(negative_iterable=[])],
+    image_dirs: Annotated[list[str], Parameter(negative_iterable=[], consume_multiple=True)],
     analyze_outputs: bool = True,
     analyze_cycles: bool = True,
 ) -> None:
