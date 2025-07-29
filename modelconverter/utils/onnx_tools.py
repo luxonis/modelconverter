@@ -559,6 +559,7 @@ class ONNXModifier:
                     for n in self.onnx_gs.nodes
                     if node.outputs[0] in n.inputs
                 ]
+                # Skip optimization for nodes followed by Erf operations due to conversion compatibility issues with SNPE 2.32.6.
                 if any(n.op == "Erf" for n in next_nodes):
                     logger.warning(
                         f"Skipping `substitute_node_by_type ({source_node} -> {target_node})` optimization for node {node.name} with op {node.op} because it is followed by an Erf node."
