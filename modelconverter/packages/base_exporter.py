@@ -189,6 +189,7 @@ class Exporter(ABC):
         imgs = read_calib_dir(path)
         if not imgs:
             exit_with(FileNotFoundError(f"No images found in {path}"))
+        imgs = sorted(imgs, key=lambda x: x.name)
         if max_images >= 0:
             logger.info(
                 f"Using [{max_images}/{len(imgs)}] images for calibration."
