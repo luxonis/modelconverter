@@ -162,7 +162,7 @@ class RVC4Exporter(Exporter):
             f"Quantization finished in {time.time() - start_time:.2f} seconds"
         )
 
-        if not self.keep_raw_images:
+        if not self.keep_raw_images and self.raw_img_dir.exists():
             shutil.rmtree(self.raw_img_dir)
             self.input_list_path.unlink()
 
