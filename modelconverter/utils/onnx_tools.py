@@ -554,6 +554,16 @@ class ONNXModifier:
 
         for node in self.onnx_gs.nodes:
             if node.op == source_node:
+                next_nodes = [
+                    n
+                    for n in self.onnx_gs.nodes
+                    if node.outputs[0] in n.inputs
+                ]
+                if any(n.op == "Erf" for n in next_nodes):
+                    logger.warning(
+                        f"Skipping `substitute_node_by_type ({source_node} -> {target_node})` optimization for node {node.name} with op {node.op} because it is followed by an Erf node."
+                    )
+                    continue
                 constant = self.get_constant_value(node, constant_map)
                 if constant is not None:
                     _, const_idx = constant
