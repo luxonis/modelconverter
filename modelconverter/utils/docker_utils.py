@@ -147,7 +147,7 @@ def get_docker_image(
     client = docker.from_env()
     tag = f"{version}-{bare_tag}"
 
-    image = f"ghcr.io/luxonis/modelconverter-{target}:{tag}"
+    image = f"luxonis/modelconverter-{target}:{tag}"
 
     for docker_image in client.images.list():
         if {image, f"docker.io/{image}", f"ghcr.io/{image}"} & set(
