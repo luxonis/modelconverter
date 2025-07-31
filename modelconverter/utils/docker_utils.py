@@ -153,7 +153,7 @@ def get_docker_image(
         if {image, f"docker.io/{image}", f"ghcr.io/{image}"} & set(
             docker_image.tags
         ):
-            return image
+            return f"ghcr.io/{image}"
 
     logger.warning(
         f"Image '{image}' not found, pulling "
