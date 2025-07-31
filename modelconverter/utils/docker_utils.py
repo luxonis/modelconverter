@@ -112,6 +112,8 @@ def docker_build(
     return image
 
 
+# We cannot simply call `docker pull` in a subprocess because
+# it interactively asks for login credentials if the image is private.
 def pull_image(client: docker.DockerClient, image: str) -> str:
     repository, tag = parse_repository_tag(image)
 
