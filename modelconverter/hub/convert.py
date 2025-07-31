@@ -169,7 +169,7 @@ class convert:
                     "snpe_dlc_quant_args": snpe_dlc_quant_args or [],
                     "snpe_dlc_graph_prepare_args": snpe_dlc_graph_prepare_args
                     or [],
-                    "usu_per_channel_quantization": use_per_channel_quantization
+                    "use_per_channel_quantization": use_per_channel_quantization
                     or [],
                     "use_per_row_quantization": use_per_row_quantization,
                     "htp_socs": htp_socs,

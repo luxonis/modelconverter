@@ -63,22 +63,26 @@ class RVC4Benchmark(Benchmark):
             "repetitions": 10,
             "num_threads": 2,
             "num_messages": 50,
+            "device_ip": None,
         }
 
     @property
     def all_configurations(self) -> list[Configuration]:
         return [{"profile": profile} for profile in PROFILES]
 
-    def _get_input_sizes(self) -> tuple[dict[str, list[int]], dict[str, str]]:
+    def _get_input_sizes(
+        self, model_path: str | Path | None = None
+    ) -> tuple[dict[str, list[int]], dict[str, str]]:
         csv_path = Path("info.csv")
         subprocess_run(
             [
                 "snpe-dlc-info",
                 "-i",
-                self.model_path,
+                self.model_path if model_path is None else model_path,
                 "-s",
                 csv_path,
-            ]
+            ],
+            silent=True,
         )
         content = csv_path.read_text()
         csv_path.unlink()
@@ -137,6 +141,39 @@ class RVC4Benchmark(Benchmark):
                 f.name, f"/data/local/tmp/{self.model_name}/input_list.txt"
             )
 
+    def _get_data_type_from_dlc(self) -> dai.TensorInfo.DataType:
+        """Retrieve the data type of the dlc model info.
+
+        If the model is in NNArchive format, decompress it and then
+        retrieve the data type.
+        """
+
+        if str(self.model_path).endswith(".dlc"):
+            _, data_types = self._get_input_sizes()
+        elif str(self.model_path).endswith(".tar.xz"):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                shutil.unpack_archive(self.model_path, tmp_dir)
+
+                dlc_files = list(Path(tmp_dir).rglob("*.dlc"))
+                if not dlc_files:
+                    raise ValueError("No .dlc file found in the archive.")
+                dlc_path = dlc_files[0]
+
+                _, data_types = self._get_input_sizes(dlc_path)
+        else:
+            raise ValueError("Expected .dlc, or .tar.xz model format.")
+
+        model_input = next(iter(data_types.values()))
+        if model_input == "Float_32":
+            return dai.TensorInfo.DataType.FP32
+        if model_input == "Float_16":
+            return dai.TensorInfo.DataType.FP16
+        if model_input == "uFxp_8":
+            return dai.TensorInfo.DataType.U8F
+        raise ValueError(
+            f"Unsupported data type {model_input}. Expected Float_32, Float_16, or uFxp_8."
+        )
+
     def _get_data_type(self) -> dai.TensorInfo.DataType:
         """Retrieve the data type of the model inputs. If the model is
         not a HubAI model, it defaults to dai.TensorInfo.DataType.U8F
@@ -150,7 +187,7 @@ class RVC4Benchmark(Benchmark):
         if not isinstance(
             self.model_path, str
         ) or not self.HUB_MODEL_PATTERN.match(self.model_path):
-            return dai.TensorInfo.DataType.U8F
+            return self._get_data_type_from_dlc()
 
         model_id = slug_to_id(self.model_name, "models")
         model_variant = self.model_path.split(":")[1]
@@ -298,13 +335,21 @@ class RVC4Benchmark(Benchmark):
         repetitions: int,
         num_threads: int,
         num_messages: int,
+        device_ip: str | None = None,
     ) -> BenchmarkResult:
-        device = dai.Device()
+        if device_ip:
+            device = dai.Device(dai.DeviceInfo(device_ip))
+        else:
+            device = dai.Device()
 
         if device.getPlatform() != dai.Platform.RVC4:
             raise ValueError(
                 f"Found {device.getPlatformAsString()}, expected RVC4 platform."
             )
+
+        logger.info(
+            f"Using {device.getPlatformAsString()} device on IP {device.getDeviceInfo().name}."
+        )
 
         if isinstance(model_path, str):
             modelPath = dai.getModelFromZoo(

@@ -3,14 +3,14 @@ name: Test - RVC4
 on:
   workflow_dispatch:
   pull_request:
-    branches:
-      - dev
-      - main
+    branches: [main]
     paths:
       - 'modelconverter/packages/rvc4/**'
+      - 'modelconverter/packages/base_exporter.py'
+      - 'modelconverter/packages/base_inferer.py'
       - 'tests/test_packages/test_rvc4.py'
-      - 'dockerfiles/Dockerfile.rvc4'
-      - 'entrypoints/entrypoint_rvc4.sh'
+      - 'docker/rvc4/Dockerfile'
+      - 'docker/rvc4/entrypoint.sh'
       - '.github/workflows/modelconverter_test.yaml'
       - '.github/workflows/rvc4_test.yaml'
 
@@ -29,6 +29,7 @@ jobs:
           - "2.25.0"
           - "2.26.2"
           - "2.27.0"
+          - "2.32.6"
 
     uses: ./.github/workflows/modelconverter_test.yaml
     secrets: inherit

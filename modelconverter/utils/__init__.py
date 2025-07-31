@@ -20,6 +20,7 @@ from .filesystem_utils import (
     resolve_path,
     upload_file_to_remote,
 )
+from .general import sanitize_net_name
 from .hubai_utils import is_hubai_available
 from .image import read_calib_dir, read_image
 from .layout import guess_new_layout, make_default_layout
@@ -62,6 +63,7 @@ __all__ = [
     "read_calib_dir",
     "read_image",
     "resolve_path",
+    "sanitize_net_name",
     "subprocess_run",
     "upload_file_to_remote",
 ]

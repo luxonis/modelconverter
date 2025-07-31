@@ -145,6 +145,7 @@ shared_with_container/*
 !shared_with_container/configs
 shared_with_container/configs/_*
 tests/data/test_packages
+tests/data/test_utils/hubai_models
 
 .DS_Store
 comparison

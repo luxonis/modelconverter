@@ -1,13 +1,14 @@
 import importlib.metadata
 import os
+import signal
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, Literal, TypeAlias
+from typing import Annotated, Any, Literal, TypeAlias
 
 from cyclopts import App, Group, Parameter
 from loguru import logger
-from luxonis_ml.nn_archive import ArchiveGenerator
+from luxonis_ml.nn_archive import ArchiveGenerator, is_nn_archive
 from luxonis_ml.utils import LuxonisFileSystem, setup_logging
 
 from modelconverter.cli import (
@@ -36,6 +37,7 @@ from modelconverter.utils import (
 )
 from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.constants import MODELS_DIR
+from modelconverter.utils.general import sanitize_net_name
 from modelconverter.utils.nn_archive import generate_archive
 from modelconverter.utils.types import Target
 
@@ -109,6 +111,16 @@ def convert(
         preprocessing to the new archive.
     """
 
+    def handle_signal(signum: int, frame: Any) -> None:
+        signame = signal.Signals(signum).name
+        logger.error(f"{signame} received, exiting...")
+        sys.exit(1)
+
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    if output_dir is not None:
+        output_dir = sanitize_net_name(output_dir)
+
     with catch_exceptions():
         init_dirs()
         cfg, archive_cfg, _main_stage = get_configs(path, opts)
@@ -124,7 +136,10 @@ def convert(
 
         output_path = get_output_dir_name(target, cfg.name, output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        setup_logging(file=str(output_path / "modelconverter.log"))
+        setup_logging(
+            file=str(output_path / "modelconverter.log"),
+            use_rich=cfg.rich_logging,
+        )
         if is_multistage:
             exporter = MultiStageExporter(
                 target=target, config=cfg, output_dir=output_path
@@ -141,6 +156,10 @@ def convert(
             out_models = [out_models]
         if to == "nn_archive":
             from modelconverter.packages.base_exporter import Exporter
+
+            archive_name = None
+            if path is not None and is_nn_archive(path):
+                archive_name = Path(path).name.split(".")[0]
 
             assert main_stage is not None
             out_models = [
@@ -159,6 +178,7 @@ def convert(
                             main_stage
                         ].inference_model_path
                     ),
+                    archive_name=archive_name,
                 )
             ]
 
@@ -220,11 +240,13 @@ def infer(
 
     if path is not None:
         config = path
-    setup_logging(file="modelconverter.log")
-    logger.info("Starting inference")
     with catch_exceptions():
         mult_cfg, _, _ = get_configs(str(config), opts)
         cfg = mult_cfg.get_stage_config(stage)
+        setup_logging(
+            file="modelconverter.log", use_rich=mult_cfg.rich_logging
+        )
+        logger.info("Starting inference")
         get_inferer(
             target, model_path, input_path, Path(output_dir), cfg
         ).run()
@@ -285,6 +307,7 @@ def benchmark(
     runtime: Annotated[Literal["dsp", "cpu"], Parameter(group="RVC4")] = "dsp",
     num_images: Annotated[int, Parameter(group="RVC4")] = 1000,
     dai_benchmark: Annotated[bool, Parameter(group="RVC4")] = True,
+    device_ip: Annotated[str | None, Parameter(group="RVC4")] = None,
 ) -> None:
     """Runs benchmark on the specified target platform.
 
@@ -317,6 +340,8 @@ def benchmark(
         The number of images to use for inference.
     dai_benchmark : bool
         Whether to run the benchmark using the DAI V3. If False the SNPE tools are used.
+    device_ip : str | None
+        The IP address of the device to run the benchmark on. If not provided, the default device found by DAI will be used.
     """
 
     if target in {Target.RVC2, Target.RVC4}:
@@ -331,6 +356,7 @@ def benchmark(
                 "runtime": runtime,
                 "num_images": num_images,
                 "dai_benchmark": dai_benchmark,
+                "device_ip": device_ip,
             }
     elif target is Target.RVC3:
         kwargs = {
@@ -345,7 +371,7 @@ def analyze(
     *,
     dlc_model_path: str,
     onnx_model_path: str,
-    image_dirs: Annotated[list[str], Parameter(negative_iterable=[])],
+    image_dirs: Annotated[list[str], Parameter(negative_iterable=[], consume_multiple=True)],
     analyze_outputs: bool = True,
     analyze_cycles: bool = True,
 ) -> None:

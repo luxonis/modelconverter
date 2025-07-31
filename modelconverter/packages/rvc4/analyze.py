@@ -77,7 +77,7 @@ class RVC4Analyzer(Analyzer):
             for input_name, img_path in input_dict.items():
                 if not img_path.endswith((".png", ".jpg")):
                     continue
-                img_name = Path(img_path).name
+                img_name = Path(img_path).stem
                 width_height = self.input_sizes[input_name][1:3][::-1]
                 image = self._resize_image(img_path, width_height)
                 image = image.astype(type)
@@ -91,7 +91,7 @@ class RVC4Analyzer(Analyzer):
                     )
                     f.close()
 
-                input_row += f"{input_name}:=/data/local/tmp/{self.model_name}/inputs/{img_name}.raw"
+                input_row += f"{input_name}:=/data/local/tmp/{self.model_name}/inputs/{img_name}.raw "
             input_list += input_row
             input_list += "\n"
 

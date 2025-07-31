@@ -27,6 +27,7 @@ from modelconverter.utils.types import (
     InputFileType,
     PotDevice,
     ResizeMethod,
+    Target,
 )
 
 NAMED_VALUES = {
@@ -261,6 +262,7 @@ class RVC3Config(BlobBaseConfig):
 
 
 class RVC4Config(TargetConfig):
+    compress_to_fp16: bool = False
     snpe_onnx_to_dlc_args: list[str] = []
     snpe_dlc_quant_args: list[str] = []
     snpe_dlc_graph_prepare_args: list[str] = []
@@ -270,6 +272,15 @@ class RVC4Config(TargetConfig):
     htp_socs: list[
         Literal["sm8350", "sm8450", "sm8550", "sm8650", "qcs6490", "qcs8550"]
     ] = ["sm8550"]
+
+    @model_validator(mode="after")
+    def _validate_fp16(self) -> Self:
+        if not self.compress_to_fp16:
+            return self
+        self.disable_calibration = True
+        if "qcs8550" not in self.htp_socs:
+            self.htp_socs.append("qcs8550")
+        return self
 
 
 class SingleStageConfig(CustomBaseModel):
@@ -290,6 +301,17 @@ class SingleStageConfig(CustomBaseModel):
     rvc2: RVC2Config = RVC2Config()
     rvc3: RVC3Config = RVC3Config()
     rvc4: RVC4Config = RVC4Config()
+
+    def get_target_config(self, target: Target) -> TargetConfig:
+        """Returns the target configuration for the given target."""
+        if target == Target.HAILO:
+            return self.hailo
+        if target == Target.RVC2:
+            return self.rvc2
+        if target == Target.RVC3:
+            return self.rvc3
+        if target == Target.RVC4:
+            return self.rvc4
 
     @model_validator(mode="before")
     @classmethod
@@ -450,6 +472,7 @@ class SingleStageConfig(CustomBaseModel):
 class Config(LuxonisConfig):
     stages: Annotated[dict[str, SingleStageConfig], Field(min_length=1)]
     name: str
+    rich_logging: bool = True
 
     def get_stage_config(self, stage: str | None) -> SingleStageConfig:
         if stage is None:
@@ -470,9 +493,11 @@ class Config(LuxonisConfig):
     def _validate_stages(cls, data: dict[str, Any]) -> dict[str, Any]:
         if "stages" not in data:
             name = data.pop("name", "default_stage")
+            rich_logging = data.pop("rich_logging", True)
             data = {
-                "stages": {name: data},
                 "name": name,
+                "rich_logging": rich_logging,
+                "stages": {name: data},
             }
         else:
             extra = {}

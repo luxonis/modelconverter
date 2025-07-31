@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
 from contextlib import suppress
 
 import keyring
@@ -10,15 +10,24 @@ from typing_extensions import Self
 def get_password_with_timeout(
     service_name: str, username: str, timeout: float = 5
 ) -> str | None:
-    def _get_password() -> str | None:
-        return keyring.get_password(service_name, username)
-
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_get_password)
+    def _get_password(q: multiprocessing.Queue) -> None:
         try:
-            return future.result(timeout=timeout)
-        except TimeoutError:
-            return None
+            result = keyring.get_password(service_name, username)
+            q.put(result)
+        except Exception:
+            q.put(None)
+
+    q = multiprocessing.Queue()
+    p = multiprocessing.Process(target=_get_password, args=(q,))
+    p.start()
+    p.join(timeout)
+    if p.is_alive():
+        p.terminate()
+        p.join()
+        return None
+    if not q.empty():
+        return q.get()
+    return None
 
 
 class Environ(BaseEnviron):

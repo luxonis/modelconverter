@@ -37,6 +37,7 @@ class RVC4Exporter(Exporter):
         super().__init__(config=config, output_dir=output_dir)
 
         rvc4_cfg = config.rvc4
+        self.compress_to_fp16 = rvc4_cfg.compress_to_fp16
         self.snpe_onnx_to_dlc = rvc4_cfg.snpe_onnx_to_dlc_args
         self.snpe_dlc_quant = rvc4_cfg.snpe_dlc_quant_args
         self.snpe_dlc_graph_prepare = rvc4_cfg.snpe_dlc_graph_prepare_args
@@ -109,6 +110,8 @@ class RVC4Exporter(Exporter):
             ["--set_output_tensors", ",".join(name for name in self.outputs)],
         )
         self._add_args(args, ["--htp_socs", ",".join(self.htp_socs)])
+        if self.compress_to_fp16:
+            self._add_args(args, ["--use_float_io"])
         self._subprocess_run(
             ["snpe-dlc-graph-prepare", *args], meta_name="graph_prepare"
         )
@@ -159,7 +162,7 @@ class RVC4Exporter(Exporter):
             f"Quantization finished in {time.time() - start_time:.2f} seconds"
         )
 
-        if not self.keep_raw_images:
+        if not self.keep_raw_images and self.raw_img_dir.exists():
             shutil.rmtree(self.raw_img_dir)
             self.input_list_path.unlink()
 
@@ -285,6 +288,9 @@ class RVC4Exporter(Exporter):
                         f"Layout '{layout}' not supported by snpe for input '{name}'. "
                         "Proceeding wihtout specifying layout."
                     )
+
+        if self.compress_to_fp16:
+            self._add_args(args, ["--float_bitwidth", "16"])
 
         if self.is_tflite:
             command = "snpe-tflite-to-dlc"

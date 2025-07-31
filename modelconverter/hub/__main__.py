@@ -1,7 +1,9 @@
+import signal
 import sys
 import webbrowser
 from pathlib import Path
 from time import sleep
+from types import FrameType
 from typing import Annotated, Any, Literal
 from urllib.parse import unquote, urlparse
 
@@ -102,15 +104,6 @@ def login(
     print("API key stored successfully.")
 
 
-def _model_ls(*args, **kwargs) -> list[dict[str, Any]]:
-    return hub_ls(
-        "models",
-        *args,
-        **kwargs,
-        keys=["name", "id", "slug"],
-    )
-
-
 @model.command(name="ls")
 def model_ls(
     *,
@@ -123,6 +116,9 @@ def model_ls(
     limit: int = 50,
     sort: str = "updated",
     order: Order = "desc",
+    field: Annotated[
+        list[str] | None, Parameter(name=["--field", "-f"])
+    ] = None,
 ) -> None:
     """Lists model resources.
 
@@ -146,9 +142,13 @@ def model_ls(
         Sort the models by this field.
     order : Literal["asc", "desc"] | None
         By which order to sort the models.
+    field : list[str] | None
+        List of fields to show in the output.
+        By default, ["name", "id", "slug"] are shown.
     """
 
-    _model_ls(
+    hub_ls(
+        "models",
         tasks=list(tasks) if tasks else [],
         license_type=license_type,
         is_public=is_public,
@@ -159,6 +159,7 @@ def model_ls(
         sort=sort,
         order=order,
         _silent=False,
+        keys=field or ["name", "id", "slug"],
     )
 
 
@@ -278,15 +279,6 @@ def model_delete(identifier: str) -> None:
     print(f"Model '{identifier}' deleted")
 
 
-def _variant_ls(*args, **kwargs) -> list[dict[str, Any]]:
-    return hub_ls(
-        "modelVersions",
-        *args,
-        **kwargs,
-        keys=["name", "version", "slug", "platforms"],
-    )
-
-
 @variant.command(name="ls")
 def variant_ls(
     model_id: str | None = None,
@@ -297,6 +289,9 @@ def variant_ls(
     limit: int = 50,
     sort: str = "updated",
     order: Order = "desc",
+    field: Annotated[
+        list[str] | None, Parameter(name=["--field", "-f"])
+    ] = None,
 ) -> None:
     """Lists model versions.
 
@@ -318,8 +313,12 @@ def variant_ls(
         Sort the model versions by this field.
     order : Literal["asc", "desc"]
         By which order to sort the model versions.
+    field : list[str] | None
+        List of fields to show in the output.
+        By default, ["name", "version", "slug", "platforms"] are shown.
     """
-    _variant_ls(
+    hub_ls(
+        "modelVersions",
         model_id=model_id,
         is_public=is_public,
         slug=slug,
@@ -329,6 +328,7 @@ def variant_ls(
         sort=sort,
         order=order,
         _silent=False,
+        keys=field or ["name", "version", "slug", "platforms"],
     )
 
 
@@ -470,6 +470,9 @@ def instance_ls(
     limit: int = 50,
     sort: str = "updated",
     order: Order = "desc",
+    field: Annotated[
+        list[str] | None, Parameter(name=["--field", "-f"])
+    ] = None,
 ) -> None:
     """Lists model instances.
 
@@ -509,8 +512,12 @@ def instance_ls(
         Sort the model instances by this field.
     order : Literal["asc", "desc"]
         By which order to sort the model instances.
+    field : list[str] | None
+        List of fields to show in the output.
+        By default, ["slug", "id", "model_type", "is_nn_archive"] are shown.
     """
-    _instance_ls(
+    hub_ls(
+        "modelInstances",
         platforms=[platform.name for platform in platforms]
         if platforms
         else [],
@@ -530,6 +537,14 @@ def instance_ls(
         sort=sort,
         order=order,
         _silent=False,
+        keys=field
+        or [
+            "slug",
+            "id",
+            "model_type",
+            "is_nn_archive",
+            "model_precision_type",
+        ],
     )
 
 
@@ -568,7 +583,7 @@ def instance_info(identifier: str, *, json: bool = False) -> None:
 
 @instance.command(name="download")
 def instance_download(
-    identifier: str, output_dir: str | None = None, cache: bool = False
+    identifier: str, output_dir: str | None = None, force: bool = False
 ) -> Path:
     """Downloads files from a model instance.
 
@@ -579,6 +594,8 @@ def instance_download(
     output_dir : str | None
         The directory to save the downloaded files.
         If not specified, the files will be saved in the current directory.
+    force : bool
+        Whether to force download the files even if they already exist.
     """
     dest = Path(output_dir) if output_dir else None
     model_instance_id = get_resource_id(identifier, "modelInstances")
@@ -586,6 +603,14 @@ def instance_download(
     urls = Request.get(f"modelInstances/{model_instance_id}/download")
     if not urls:
         raise ValueError("No files to download")
+
+    def cleanup(sigint: int, _: FrameType | None) -> None:
+        nonlocal file_path
+        print(f"Received signal {sigint}. Download interrupted...")
+        file_path.unlink(missing_ok=True)
+
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
 
     for url in urls:
         with requests.get(url, stream=True, timeout=10) as response:
@@ -602,8 +627,11 @@ def instance_download(
             dest.mkdir(parents=True, exist_ok=True)
 
             file_path = dest / filename
-            if file_path.exists() and cache:
-                print(f"File '{filename}' already exists. Skipping download.")
+            if file_path.exists() and not force:
+                print(
+                    f"File '{filename}' already exists. Skipping download. "
+                    "Use --force to overwrite."
+                )
                 downloaded_path = file_path
                 continue
 

@@ -47,7 +47,7 @@ class Benchmark(ABC):
                 model_instance,
             ) = hub_match.groups()
             if is_hubai_available(model_name, model_variant):
-                self.model_path = Path(model_path)
+                self.model_path = model_path
                 self.model_name = model_name
                 self.model_instance = model_instance
             else:
@@ -143,14 +143,20 @@ class Benchmark(ABC):
     def run(self, full: bool = True, save: bool = False, **kwargs) -> None:
         logger.info(f"Running benchmarking for {self.model_name}")
         for key, value in self.default_configuration.items():
-            if key in kwargs:
+            if key in kwargs and value is not None:
                 kwargs[key] = type(value)(kwargs[key])
 
-        configurations = (
-            [{**self.default_configuration, **kwargs}]
-            if not full
-            else self.all_configurations
-        )
+        if not full:
+            configurations = [{**self.default_configuration, **kwargs}]
+        else:
+            configurations = [
+                {
+                    **config,
+                    **{k: v for k, v in kwargs.items() if k not in config},
+                }
+                for config in self.all_configurations  # add only kwarg keys that are not already there to not overwrite
+            ]
+
         results: list[tuple[Configuration, BenchmarkResult]] = [
             (configuration, self.benchmark(configuration))
             for configuration in configurations

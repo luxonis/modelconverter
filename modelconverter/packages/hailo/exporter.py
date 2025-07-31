@@ -53,7 +53,7 @@ class HailoExporter(Exporter):
         if self.is_tflite:
             cast(Callable[..., None], runner.translate_tf_model)(
                 str(self.input_model),
-                self.input_model.stem,
+                net_name=self.model_name,
                 start_node_names=start_nodes,
                 tensor_shapes=net_input_shapes,
                 end_node_names=list(self.outputs.keys()),
@@ -61,7 +61,7 @@ class HailoExporter(Exporter):
         else:
             cast(Callable[..., None], runner.translate_onnx_model)(
                 str(self.input_model),
-                self.input_model.stem,
+                net_name=self.model_name,
                 start_node_names=start_nodes,
                 net_input_shapes=net_input_shapes,
                 end_node_names=list(self.outputs.keys()),
@@ -70,8 +70,8 @@ class HailoExporter(Exporter):
         har_path = self.input_model.with_suffix(".har")
         runner.save_har(har_path)
         if self._disable_calibration:
-            self._inference_model_path = (
-                self.output_dir / self.model_name
+            self._inference_model_path = self.output_dir / Path(
+                self.original_model_name
             ).with_suffix(".har")
             return har_path
 

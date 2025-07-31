@@ -52,7 +52,7 @@ class Request:
             requests.get(
                 Request._get_url(endpoint),
                 headers=Request.headers(),
-                timeout=10,
+                timeout=200,
                 **kwargs,
             )
         )
@@ -63,7 +63,7 @@ class Request:
             requests.get(
                 Request._get_url(endpoint, Request.dag_url()),
                 headers=Request.headers(),
-                timeout=10,
+                timeout=200,
                 **kwargs,
             )
         )
@@ -77,7 +77,7 @@ class Request:
             requests.post(
                 Request._get_url(endpoint),
                 headers=headers,
-                timeout=10,
+                timeout=200,
                 **kwargs,
             )
         )
@@ -88,7 +88,7 @@ class Request:
             requests.delete(
                 Request._get_url(endpoint),
                 headers=Request.headers(),
-                timeout=10,
+                timeout=200,
                 **kwargs,
             )
         )
@@ -102,7 +102,7 @@ class Request:
             requests.put(
                 Request._get_url(endpoint),
                 headers=headers,
-                timeout=10,
+                timeout=200,
                 **kwargs,
             )
         )
@@ -116,7 +116,7 @@ class Request:
             requests.patch(
                 Request._get_url(endpoint),
                 headers=headers,
-                timeout=10,
+                timeout=200,
                 **kwargs,
             )
         )

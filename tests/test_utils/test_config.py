@@ -26,6 +26,7 @@ from modelconverter.utils.types import (
     InputFileType,
     PotDevice,
     ResizeMethod,
+    Target,
 )
 
 DATA_DIR = Path("tests/data/test_utils/test_config")
@@ -63,6 +64,7 @@ DEFAULT_TARGET_CONFIGS = {
         "disable_calibration": False,
         "use_per_channel_quantization": True,
         "use_per_row_quantization": False,
+        "compress_to_fp16": False,
     },
     "hailo": {
         "optimization_level": 2,
@@ -278,6 +280,7 @@ def load_and_compare(
         name = expected["input_model"].stem
         expected = {
             "name": name,
+            "rich_logging": True,
             "stages": {name: expected},
         }
     assert config == expected
@@ -942,6 +945,7 @@ def test_output_nn_config_from_yaml(
         preprocessing,
         "dummy_model",
         DATA_DIR / "dummy_model.onnx",
+        Target.RVC4,
     )
 
     input_0_preprocessing = nn_config.model.inputs[0].preprocessing
@@ -1148,6 +1152,7 @@ def test_output_nn_config_from_nn_archive(
         preprocessing,
         main_stage,
         DATA_DIR / "dummy_model.onnx",
+        Target.RVC4,
     )
 
     input_0_preprocessing = nn_config.model.inputs[0].preprocessing

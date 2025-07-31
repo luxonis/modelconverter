@@ -7,12 +7,19 @@ import onnx
 import onnx_graphsurgeon as gs
 import onnxruntime as ort
 from loguru import logger
-from onnx import checker, helper
+from onnx import TensorProto, checker, helper
 from onnxsim import simplify
 
 from modelconverter.utils.config import InputConfig
 
 from .exceptions import ONNXException
+
+
+def get_opset_version(model: onnx.ModelProto) -> int:
+    for imp in model.opset_import:
+        if imp.domain == "":
+            return imp.version
+    raise ONNXException("No opset version found in the ONNX model.")
 
 
 def onnx_attach_normalization_to_inputs(
@@ -78,21 +85,42 @@ def onnx_attach_normalization_to_inputs(
 
         # 1. Reverse channels if needed
         if cfg.encoding_mismatch:
+            opset = get_opset_version(model)
             split_names = [f"split_{i}_{input_name}" for i in range(3)]
-            split_node = helper.make_node(
-                "Split",
-                inputs=[last_output],
-                outputs=split_names,
-                axis=1 if layout == "NCHW" else 3,
-                name=f"split_{input_name}",
-            )
+            axis = 1 if layout == "NCHW" else 3
+
+            if opset < 13:
+                split_node = helper.make_node(
+                    "Split",
+                    inputs=[last_output],
+                    outputs=split_names,
+                    axis=axis,
+                    split=[1] * n_channels,
+                    name=f"split_{input_name}",
+                )
+            else:
+                split_lengths_name = f"split_{input_name}_lengths"
+                split_lengths_tensor = helper.make_tensor(
+                    name=split_lengths_name,
+                    data_type=TensorProto.INT64,
+                    dims=[n_channels],
+                    vals=[1] * n_channels,
+                )
+                new_initializers.append(split_lengths_tensor)
+                split_node = helper.make_node(
+                    "Split",
+                    inputs=[last_output, split_lengths_name],
+                    outputs=split_names,
+                    axis=axis,
+                    name=f"split_{input_name}",
+                )
             new_nodes.append(split_node)
 
             concat_node = helper.make_node(
                 "Concat",
                 inputs=split_names[::-1],
                 outputs=[f"normalized_{input_name}"],
-                axis=1 if layout == "NCHW" else 3,
+                axis=axis,
                 name=f"concat_{input_name}",
             )
             new_nodes.append(concat_node)
@@ -292,7 +320,7 @@ class ONNXModifier:
                     sess_options.optimized_model_filepath
                 )
 
-                Path.unlink(Path(sess_options.optimized_model_filepath))
+                Path(sess_options.optimized_model_filepath).unlink()
 
         optimized_onnx_model, _ = simplify(
             optimized_onnx_model, perform_optimization=False
@@ -526,6 +554,17 @@ class ONNXModifier:
 
         for node in self.onnx_gs.nodes:
             if node.op == source_node:
+                next_nodes = [
+                    n
+                    for n in self.onnx_gs.nodes
+                    if node.outputs[0] in n.inputs
+                ]
+                # Skip optimization for nodes followed by Erf operations due to conversion compatibility issues with SNPE 2.32.6.
+                if any(n.op == "Erf" for n in next_nodes):
+                    logger.warning(
+                        f"Skipping `substitute_node_by_type ({source_node} -> {target_node})` optimization for node {node.name} with op {node.op} because it is followed by an Erf node."
+                    )
+                    continue
                 constant = self.get_constant_value(node, constant_map)
                 if constant is not None:
                     _, const_idx = constant
