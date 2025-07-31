@@ -15,6 +15,29 @@ import docker
 from docker.utils import parse_repository_tag
 
 
+def get_docker_client_from_active_context() -> docker.DockerClient:
+    ctx_name = subprocess.check_output(
+        ["docker", "context", "show"], text=True
+    ).strip()
+
+    ctx_info_raw = subprocess.check_output(
+        ["docker", "context", "inspect", ctx_name]
+    )
+    ctx_info = json.loads(ctx_info_raw)[0]
+
+    endpoint = ctx_info["Endpoints"]["docker"]
+    host = endpoint.get("Host", None)
+    tls_skip = endpoint.get("SkipTLSVerify", False)
+
+    kwargs = {}
+    if host:
+        kwargs["base_url"] = host
+    if host and host.startswith("tcp://") and not tls_skip:
+        kwargs["tls"] = True
+
+    return docker.DockerClient(**kwargs)
+
+
 def get_default_target_version(
     target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
 ) -> str:
@@ -152,7 +175,7 @@ def get_docker_image(
 ) -> str:
     check_docker()
 
-    client = docker.from_env()
+    client = get_docker_client_from_active_context()
     tag = f"{version}-{bare_tag}"
 
     image = f"luxonis/modelconverter-{target}:{tag}"
