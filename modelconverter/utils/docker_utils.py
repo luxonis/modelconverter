@@ -117,7 +117,9 @@ def get_docker_image(
     image = f"luxonis/modelconverter-{target}:{tag}"
 
     for docker_image in client.images.list():
-        if {image, f"docker.io/{image}"} & set(docker_image.tags):
+        if {image, f"docker.io/{image}", f"ghcr.io/{image}"} & set(
+            docker_image.tags
+        ):
             return image
 
     logger.warning(f"Image '{image}' not found, pulling latest image...")
@@ -126,7 +128,7 @@ def get_docker_image(
         docker_image = cast(Image, client.images.pull(f"ghcr.io/{image}", tag))
         docker_image.tag(image, tag)
 
-    except (docker.errors.APIError, docker.errors.DockerException):
+    except Exception:
         logger.error("Failed to pull image, building it locally...")
         docker_build(target, bare_tag, version)
 
