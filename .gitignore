@@ -134,7 +134,7 @@ dmypy.json
 vino/
 models/
 docker/extra_packages/*
-!docker/extra_packages/mo_patch.diff
+!docker/extra_packages/.gitkeep
 envs
 results.csv
 
