@@ -1,17 +1,18 @@
+import json
 import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 import yaml
 from loguru import logger
 from luxonis_ml.utils import environ
+from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 import docker
-import docker.errors
-from docker.models.images import Image
+from docker.utils import parse_repository_tag
 
 
 def get_default_target_version(
@@ -73,6 +74,13 @@ def check_docker() -> None:
         raise RuntimeError("Docker is not installed on this system.")
 
 
+def docker_bin() -> str:
+    docker_path = shutil.which("docker")
+    if docker_path is None:
+        raise RuntimeError("Docker is not installed on this system.")
+    return docker_path
+
+
 # NOTE: docker SDK is not used here because it's too slow
 def docker_build(
     target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
@@ -87,7 +95,7 @@ def docker_build(
 
     image = f"luxonis/modelconverter-{target}:{tag}"
     args = [
-        "docker",
+        docker_bin(),
         "build",
         "-f",
         f"docker/{target}/Dockerfile",
@@ -101,6 +109,39 @@ def docker_build(
     result = subprocess.run(args, check=False)
     if result.returncode != 0:
         raise RuntimeError("Failed to build the docker image")
+    return image
+
+
+# We cannot simply call `docker pull` in a subprocess because
+# it interactively asks for login credentials if the image is private.
+def pull_image(client: docker.DockerClient, image: str) -> str:
+    repository, tag = parse_repository_tag(image)
+
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+    ) as progress:
+        bars = {}
+        for log in client.api.pull(repository, tag=tag, stream=True):
+            log = json.loads(log)
+            status = log["status"]
+            if status in {"Downloading", "Extracting"}:
+                id = log["id"]
+                detail = log["progressDetail"]
+                if id not in bars:
+                    bars[id] = progress.add_task(
+                        f"{id} [{status}]:",
+                        completed=detail["current"],
+                        total=detail["total"],
+                    )
+                else:
+                    progress.update(
+                        bars[id],
+                        completed=detail["current"],
+                        total=detail["total"],
+                        description=f"{id} [{status}]:",
+                    )
     return image
 
 
@@ -122,17 +163,17 @@ def get_docker_image(
         ):
             return image
 
-    logger.warning(f"Image '{image}' not found, pulling latest image...")
+    logger.warning(
+        f"Image '{image}' not found, pulling "
+        f"the latest image from 'ghcr.io/{image}'..."
+    )
 
     try:
-        docker_image = cast(Image, client.images.pull(f"ghcr.io/{image}", tag))
-        docker_image.tag(image, tag)
+        return pull_image(client, f"ghcr.io/{image}")
 
     except Exception:
-        logger.error("Failed to pull image, building it locally...")
-        docker_build(target, bare_tag, version)
-
-    return image
+        logger.error("Failed to pull the image, building it locally...")
+        return docker_build(target, bare_tag, version)
 
 
 def docker_exec(
@@ -156,7 +197,7 @@ def docker_exec(
         return arg.replace("'", "\\'").replace('"', '\\"').replace(" ", "\\ ")
 
     os.execlpe(
-        "docker",
+        docker_bin(),
         *f"docker compose -f {f.name} run --remove-orphans modelconverter".split(),
         *map(sanitize, args),
         os.environ,
