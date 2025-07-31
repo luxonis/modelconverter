@@ -1,17 +1,18 @@
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 import yaml
 from loguru import logger
 from luxonis_ml.utils import environ
 
 import docker
-import docker.errors
 from docker.models.images import Image
+from docker.utils import parse_repository_tag
 
 
 def get_default_target_version(
@@ -104,6 +105,13 @@ def docker_build(
     return image
 
 
+def pull_image(client: docker.DockerClient, image: str) -> Image:
+    repository, tag = parse_repository_tag(image)
+    for log in client.api.pull(repository, tag=tag, stream=True):
+        sys.stderr.write(log.decode("utf-8"))
+    return client.images.get(f"{repository}:latest")
+
+
 def get_docker_image(
     target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
     bare_tag: str,
@@ -122,11 +130,13 @@ def get_docker_image(
         ):
             return image
 
-    logger.warning(f"Image '{image}' not found, pulling latest image...")
+    logger.warning(
+        f"Image '{image}' not found, pulling "
+        f"the latest image from 'ghcr.io/{image}'..."
+    )
 
     try:
-        docker_image = cast(Image, client.images.pull(f"ghcr.io/{image}", tag))
-        docker_image.tag(image, tag)
+        docker_image = pull_image(client, f"ghcr.io/{image}")
 
     except Exception:
         logger.error("Failed to pull image, building it locally...")
