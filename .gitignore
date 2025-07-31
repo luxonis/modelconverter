@@ -148,3 +148,8 @@ tests/data/test_packages
 tests/data/test_utils/hubai_models
 
 .DS_Store
+comparison
+mappings.csv
+zoo_migration/shared_with_container/*
+datasets
+results

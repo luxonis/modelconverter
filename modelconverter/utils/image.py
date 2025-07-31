@@ -18,7 +18,10 @@ def read_image(
 ) -> np.ndarray:
     path = Path(path)
     if path.suffix == ".npy":
-        return np.load(path)
+        arr = np.load(path)
+        if data_type is not None:
+            arr = arr.astype(data_type.as_numpy_dtype())
+        return arr
 
     if path.suffix == ".raw":
         if data_type is None:

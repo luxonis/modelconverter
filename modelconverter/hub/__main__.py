@@ -436,6 +436,21 @@ def variant_delete(identifier: str) -> None:
     print(f"Model variant '{variant_id}' deleted")
 
 
+def _instance_ls(*args, **kwargs) -> list[dict[str, Any]]:
+    return hub_ls(
+        "modelInstances",
+        *args,
+        **kwargs,
+        keys=[
+            "name",
+            "slug",
+            "platforms",
+            "is_nn_archive",
+            "id",
+        ],
+    )
+
+
 @instance.command(name="ls")
 def instance_ls(
     *,

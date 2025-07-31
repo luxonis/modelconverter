@@ -82,6 +82,8 @@ class Analyzer(ABC):
         return new_layer_names
 
     def _replace_bad_layer_name(self, ln: str) -> str:
+        ln = ln.replace("efficientnet-lite4/model/", "")
+        ln = ln.replace("efficientnet-lite4_model_", "")
         ln = ln.replace("..", ".")
         ln = ln.replace("__", "_")
         ln = ln.replace(".", "_")

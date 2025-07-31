@@ -29,6 +29,18 @@ def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
     raise ValueError(f"Input {name} not found in the archive config")
 
 
+def safe_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
+    """Filter members to prevent path traversal attacks."""
+    safe_files = []
+    for member in tar.getmembers():
+        # Normalize path and ensure it's within the extraction folder
+        if not member.name.startswith("/") and ".." not in member.name:
+            safe_files.append(member)
+        else:
+            logger.warning(f"Skipping unsafe file: {member.name}")
+    return safe_files
+
+
 def process_nn_archive(
     path: Path, overrides: dict[str, Any] | None
 ) -> tuple[Config, NNArchiveConfig, str]:
@@ -49,17 +61,6 @@ def process_nn_archive(
     elif tarfile.is_tarfile(path):
         if untar_path.suffix == ".tar":
             untar_path = MISC_DIR / untar_path.stem
-
-        def safe_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
-            """Filter members to prevent path traversal attacks."""
-            safe_files = []
-            for member in tar.getmembers():
-                # Normalize path and ensure it's within the extraction folder
-                if not member.name.startswith("/") and ".." not in member.name:
-                    safe_files.append(member)
-                else:
-                    logger.warning(f"Skipping unsafe file: {member.name}")
-            return safe_files
 
         with tarfile.open(path, mode="r") as tf:
             for member in safe_members(tf):
@@ -88,7 +89,7 @@ def process_nn_archive(
 
         layout = inp.layout
         encoding = "NONE"
-        if inp.input_type == InputType.IMAGE:
+        if inp.input_type == InputType.IMAGE and len(inp.shape) == 4:
             if dai_type is not None:
                 if (reverse and dai_type.startswith("BGR")) or (
                     reverse is False and dai_type.startswith("RGB")
@@ -137,6 +138,17 @@ def process_nn_archive(
                         layout = "NHWC"
                     else:
                         layout = "NCHW"
+
+            if layout is not None:
+                guessed_layout = make_default_layout(inp.shape)
+                if layout != guessed_layout:
+                    logger.warning(
+                        f"Layout `{layout}` is incompatible with the shape `{inp.shape}`. "
+                        "This is likely due to misconfigured NN Archive. "
+                        f"Using default layout `{guessed_layout}` instead."
+                    )
+                    layout = guessed_layout
+
             channels = (
                 inp.shape[layout.index("C")]
                 if layout and "C" in layout
@@ -177,14 +189,14 @@ def process_nn_archive(
     for head in archive_config.model.heads or []:
         postprocessor_path = getattr(head.metadata, "postprocessor_path", None)
         if postprocessor_path is not None:
-            input_model_path = untar_path / postprocessor_path
+            postprocessor_model = untar_path / postprocessor_path
             head_stage_config = {
-                "input_model": str(input_model_path),
+                "input_model": str(postprocessor_model),
                 "inputs": [],
                 "outputs": [],
                 "encoding": {"from": "NONE", "to": "NONE"},
             }
-            stages[input_model_path.stem] = head_stage_config
+            stages[postprocessor_model.stem] = head_stage_config
 
     if stages:
         main_stage_key = main_stage_config.pop("name")
@@ -263,12 +275,13 @@ def modelconverter_config_to_nn(
         else:
             layout = make_default_layout(new_shape)
         dai_type = inp.encoding.to.value
-        if inp.data_type == DataType.FLOAT16:
-            type = "F16F16F16"
-        else:
-            type = "888"
-        dai_type += type
-        dai_type += "i" if layout == "NHWC" else "p"
+        if dai_type != "NONE":
+            if inp.data_type == DataType.FLOAT16:
+                type = "F16F16F16"
+            else:
+                type = "888"
+            dai_type += type
+            dai_type += "i" if layout == "NHWC" else "p"
 
         dtype = _get_io_dtype(
             target,
