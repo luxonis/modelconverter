@@ -536,7 +536,6 @@ def launcher(
     target = bound.arguments["target"]
 
     if dev:
-        print("dev mode")
         docker_build(target.value, bare_tag=tag, version=tool_version)
 
     docker_exec(

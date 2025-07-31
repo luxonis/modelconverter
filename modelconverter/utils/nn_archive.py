@@ -196,7 +196,7 @@ def process_nn_archive(
                 "outputs": [],
                 "encoding": {"from": "NONE", "to": "NONE"},
             }
-            stages[input_model_path.stem] = head_stage_config
+            stages[postprocessor_model.stem] = head_stage_config
 
     if stages:
         main_stage_key = main_stage_config.pop("name")
