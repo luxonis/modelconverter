@@ -24,3 +24,4 @@ bcrypt>=3.2
 pynacl>=1.5
 webencodings
 pexpect>4.3; sys_platform != "win32"
+setuptools<80.0.0
