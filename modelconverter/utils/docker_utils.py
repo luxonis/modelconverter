@@ -117,7 +117,9 @@ def get_docker_image(
     image = f"luxonis/modelconverter-{target}:{tag}"
 
     for docker_image in client.images.list():
-        if {image, f"docker.io/{image}"} & set(docker_image.tags):
+        if {image, f"docker.io/{image}", f"ghcr.io/{image}"} & set(
+            docker_image.tags
+        ):
             return image
 
     logger.warning(f"Image '{image}' not found, pulling latest image...")
