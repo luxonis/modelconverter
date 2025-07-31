@@ -26,7 +26,7 @@ class RVC4Analyzer(Analyzer):
 
         output_dir = Path(
             self._run_dlc(
-                f"/data/local/snpe/snpe_32/aarch64-oe-linux-gcc11.2/bin/snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float"
+                f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float"
             )
         )
         dlc_matcher = {k: output_dir / v for k, v in dlc_matcher.items()}
@@ -293,7 +293,7 @@ class RVC4Analyzer(Analyzer):
         _ = self._prepare_raw_inputs(input_matcher)
 
         output_dir = self._run_dlc(
-            f"/data/local/snpe/snpe_32/aarch64-oe-linux-gcc11.2/bin/snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_auto"
+            f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_auto"
         )
 
         csv_path = Path(output_dir + "/layer_stats.csv")

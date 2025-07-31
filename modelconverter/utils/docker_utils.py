@@ -77,8 +77,6 @@ def docker_build(
 
     tag = f"{version}-{bare_tag}"
 
-    # odstrani
-    # image = f"ghcr.io/luxonis/modelconverter-{target}:{tag}"
     image = f"luxonis/modelconverter-{target}:{tag}"
     args = [
         "docker",
@@ -107,8 +105,8 @@ def get_docker_image(
 
     client = docker.from_env()
     tag = f"{version}-{bare_tag}"
-    print("getting docker image")
-    image = f"ghcr.io/luxonis/modelconverter-{target}:{tag}"
+
+    image = f"luxonis/modelconverter-{target}:{tag}"
 
     for docker_image in client.images.list():
         if {image, f"docker.io/{image}"} & set(docker_image.tags):
