@@ -1,6 +1,6 @@
 Pillow
 gcsfs
-luxonis-ml[data,nn_archive]>=0.6.4,<0.7.0
+luxonis-ml[data,nn_archive]==0.7.2
 onnx>=1.17.0
 onnxruntime
 onnxsim
@@ -11,5 +11,6 @@ cyclopts
 docker
 keyring
 onnx_graphsurgeon
+onnxoptimizer
 wget
 aiobotocore<2.18
