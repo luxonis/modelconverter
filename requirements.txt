@@ -14,3 +14,13 @@ onnx_graphsurgeon
 onnxoptimizer
 wget
 aiobotocore<2.18
+jupyter-core!=5.0.*,>=4.12
+jinja2>=3.0
+websocket-client
+anyio>=3.1.0
+jsonschema>=4.18.0
+markupsafe>=2.0
+bcrypt>=3.2
+pynacl>=1.5
+webencodings
+pexpect>4.3; sys_platform != "win32"
