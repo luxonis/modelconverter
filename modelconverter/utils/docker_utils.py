@@ -17,11 +17,11 @@ from docker.utils import parse_repository_tag
 
 def get_docker_client_from_active_context() -> docker.DockerClient:
     ctx_name = subprocess.check_output(
-        ["docker", "context", "show"], text=True
+        [docker_bin(), "context", "show"], text=True
     ).strip()
 
     ctx_info_raw = subprocess.check_output(
-        ["docker", "context", "inspect", ctx_name]
+        [docker_bin(), "context", "inspect", ctx_name]
     )
     ctx_info = json.loads(ctx_info_raw)[0]
 
@@ -222,7 +222,14 @@ def docker_exec(
 
     os.execlpe(
         docker_bin(),
-        *f"docker compose -f {f.name} run --remove-orphans modelconverter".split(),
+        docker_bin(),
+        "compose",
+        "-f",
+        f.name,
+        "run",
+        "--rm",
+        "--remove-orphans",
+        "modelconverter",
         *map(sanitize, args),
         os.environ,
     )
