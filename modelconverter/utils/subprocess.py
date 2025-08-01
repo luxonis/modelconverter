@@ -32,7 +32,7 @@ def subprocess_run(
     if isinstance(args, list):
         cmd_name = args[0]
     else:
-        cmd_name = args
+        cmd_name = args.split()[0]
     
 
     if shutil.which(cmd_name) is None:
