@@ -22,12 +22,15 @@ def subprocess_run(
     @type silent: bool
     @param silent: If True, the command will not be logged.
     """
-    if isinstance(cmd, str):
-        args = cmd.split()
-    else:
-        args = [str(arg) for arg in cmd]
-        cmd = " ".join(args)
+    # if isinstance(cmd, str):
+    #     args = cmd.split()
+    # else:
+    #     args = [str(arg) for arg in cmd]
+    #     cmd = " ".join(args)
+    args = cmd
+    
     cmd_name = args[0]
+    
 
     if shutil.which(cmd_name) is None:
         raise SubprocessException(
