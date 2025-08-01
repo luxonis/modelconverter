@@ -393,7 +393,7 @@ def wait_for_export(run_id: str) -> None:
 
     if run["status"] == "FAILURE":
         if run["logs"] is None:
-            print(run["id"])
+            logger.info(run["id"])
             raise RuntimeError("Export failed with no logs.")
 
         if run["logs"] is None:
