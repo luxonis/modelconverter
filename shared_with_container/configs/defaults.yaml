@@ -211,3 +211,6 @@ stages:
       # to `snpe-dlc-graph-prepare`, and the `qcs8550` platform
       # to the `htp_socs` list.
       compress_to_fp16: False
+
+      # Optimization level for the DLC graph preparation. The available levels are: 1, 2, and 3. Higher optimization levels incur longer offline prepare time but yields more optimal graph and hence faster execution time for most graphs.
+      optimization_level: 2

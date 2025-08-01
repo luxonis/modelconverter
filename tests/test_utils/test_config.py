@@ -65,6 +65,7 @@ DEFAULT_TARGET_CONFIGS = {
         "use_per_channel_quantization": True,
         "use_per_row_quantization": False,
         "compress_to_fp16": False,
+        "optimization_level": 2,
     },
     "hailo": {
         "optimization_level": 2,
