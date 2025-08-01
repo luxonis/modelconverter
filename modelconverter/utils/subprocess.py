@@ -29,8 +29,10 @@ def subprocess_run(
     #     cmd = " ".join(args)
     args = cmd
     print("args", args)
-    
-    cmd_name = args[0]
+    if isinstance(args, list):
+        cmd_name = args[0]
+    else:
+        cmd_name = args
     
 
     if shutil.which(cmd_name) is None:
