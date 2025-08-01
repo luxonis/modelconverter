@@ -28,6 +28,7 @@ def subprocess_run(
     #     args = [str(arg) for arg in cmd]
     #     cmd = " ".join(args)
     args = cmd
+    print("args", args)
     
     cmd_name = args[0]
     
