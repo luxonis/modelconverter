@@ -45,6 +45,7 @@ class RVC4Exporter(Exporter):
             rvc4_cfg.use_per_channel_quantization
         )
         self.use_per_row_quantization = rvc4_cfg.use_per_row_quantization
+        self.optimization_level = rvc4_cfg.optimization_level
         self.keep_raw_images = rvc4_cfg.keep_raw_images
         if "--htp_socs" in self.snpe_dlc_graph_prepare:
             i = self.snpe_dlc_graph_prepare.index("--htp_socs")
@@ -108,6 +109,9 @@ class RVC4Exporter(Exporter):
         self._add_args(
             args,
             ["--set_output_tensors", ",".join(name for name in self.outputs)],
+        )
+        self._add_args(
+            args, ["--optimization_level", str(self.optimization_level)]
         )
         self._add_args(args, ["--htp_socs", ",".join(self.htp_socs)])
         if self.compress_to_fp16:

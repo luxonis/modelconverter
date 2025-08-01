@@ -269,6 +269,7 @@ class RVC4Config(TargetConfig):
     keep_raw_images: bool = False
     use_per_channel_quantization: bool = True
     use_per_row_quantization: bool = False
+    optimization_level: Literal[1, 2, 3] = 2
     htp_socs: list[
         Literal["sm8350", "sm8450", "sm8550", "sm8650", "qcs6490", "qcs8550"]
     ] = ["sm8550"]
