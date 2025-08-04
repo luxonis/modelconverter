@@ -1,4 +1,5 @@
 import io
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,12 +45,15 @@ def _get_metadata_dlc(path: Path) -> Metadata:
 
     if path.suffix == ".csv":
         csv_path = path
+        content = csv_path.read_text()
     else:
-        csv_path = Path("info.csv")
-        subprocess_run(
-            ["snpe-dlc-info", "-i", path, "-s", csv_path], silent=True
-        )
-    content = csv_path.read_text()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir) / "info.csv"
+            subprocess_run(
+                ["snpe-dlc-info", "-i", path, "-s", tmp_path], silent=True
+            )
+            csv_path = tmp_path
+            content = csv_path.read_text()
 
     metadata = {}
 
@@ -71,7 +75,10 @@ def _get_metadata_dlc(path: Path) -> Metadata:
         shapes = df.select(
             [
                 pl.col(f"{typ.capitalize()} Name"),
-                pl.col("Dimensions").str.split(",").cast(pl.List(pl.Int64)),
+                pl.col("Dimensions")
+                .cast(pl.Utf8)
+                .str.split(",")
+                .cast(pl.List(pl.Int64)),
             ]
         ).to_dict(as_series=False)
         metadata[f"{typ}_shapes"] = dict(
