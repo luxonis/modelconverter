@@ -12,7 +12,6 @@ import requests
 from cyclopts import App, Parameter
 from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
-from rich import print
 from rich.progress import Progress
 from rich.prompt import Prompt
 
@@ -86,22 +85,22 @@ def login(
         Relogin if already logged in.
     """
     if environ.HUBAI_API_KEY and not relogin:
-        print(
+        logger.info(
             "User already logged in. Use `modelconverter hub --relogin` to relogin."
         )
         return
 
-    print("User not logged in. Follow the link to get your API key.")
+    logger.info("User not logged in. Follow the link to get your API key.")
     webbrowser.open("https://hub.luxonis.com/team-settings", new=2)
     sleep(0.1)
     api_key = Prompt.ask("Enter your API key: ", password=True)
     if not validate_api_key(api_key):
-        print("Invalid API key. Please try again.")
+        logger.error("Invalid API key. Please try again.")
         sys.exit(1)
 
     keyring.set_password("ModelConverter", "api_key", api_key)
 
-    print("API key stored successfully.")
+    logger.info("API key stored successfully.")
 
 
 @model.command(name="ls")
@@ -259,7 +258,7 @@ def model_create(
         ):
             raise ValueError(f"Model '{name}' already exists") from e
         raise
-    print(f"Model '{res['name']}' created with ID '{res['id']}'")
+    logger.info(f"Model '{res['name']}' created with ID '{res['id']}'")
     if not silent:
         model_info(res["id"])
     return res
@@ -276,7 +275,7 @@ def model_delete(identifier: str) -> None:
     """
     model_id = get_resource_id(identifier, "models")
     Request.delete(f"models/{model_id}")
-    print(f"Model '{identifier}' deleted")
+    logger.info(f"Model '{identifier}' deleted")
 
 
 @variant.command(name="ls")
@@ -416,7 +415,7 @@ def variant_create(
                 f"Model variant '{name}' already exists for model '{model_id}'"
             ) from e
         raise
-    print(f"Model variant '{res['name']}' created with ID '{res['id']}'")
+    logger.info(f"Model variant '{res['name']}' created with ID '{res['id']}'")
     if not silent:
         variant_info(res["id"])
     return res
@@ -433,7 +432,7 @@ def variant_delete(identifier: str) -> None:
     """
     variant_id = get_resource_id(identifier, "modelVersions")
     Request.delete(f"modelVersions/{variant_id}")
-    print(f"Model variant '{variant_id}' deleted")
+    logger.info(f"Model variant '{variant_id}' deleted")
 
 
 @instance.command(name="ls")
@@ -591,7 +590,7 @@ def instance_download(
 
     def cleanup(sigint: int, _: FrameType | None) -> None:
         nonlocal file_path
-        print(f"Received signal {sigint}. Download interrupted...")
+        logger.info(f"Received signal {sigint}. Download interrupted...")
         file_path.unlink(missing_ok=True)
 
     signal.signal(signal.SIGINT, cleanup)
@@ -613,7 +612,7 @@ def instance_download(
 
             file_path = dest / filename
             if file_path.exists() and not force:
-                print(
+                logger.info(
                     f"File '{filename}' already exists. Skipping download. "
                     "Use --force to overwrite."
                 )
@@ -630,11 +629,11 @@ def instance_download(
                             f.write(chunk)
                             progress.update(task, advance=len(chunk))
             except:
-                print(f"Failed to download '{filename}'")
+                logger.error(f"Failed to download '{filename}'")
                 file_path.unlink(missing_ok=True)
                 raise
 
-            print(f"Downloaded '{file_path.name}'")
+            logger.info(f"Downloaded '{file_path.name}'")
             downloaded_path = file_path
 
     assert downloaded_path is not None
@@ -693,7 +692,9 @@ def instance_create(
         "is_deployable": is_deployable,
     }
     res = Request.post("modelInstances", json=data)
-    print(f"Model instance '{res['name']}' created with ID '{res['id']}'")
+    logger.info(
+        f"Model instance '{res['name']}' created with ID '{res['id']}'"
+    )
     if not silent:
         instance_info(res["id"])
     return res
@@ -710,7 +711,7 @@ def instance_delete(identifier: str) -> None:
     """
     instance_id = get_resource_id(identifier, "modelInstances")
     Request.delete(f"modelInstances/{instance_id}")
-    print(f"Model instance '{identifier}' deleted")
+    logger.info(f"Model instance '{identifier}' deleted")
 
 
 @instance.command
@@ -723,7 +724,7 @@ def config(identifier: str) -> None:
         The model instance ID or slug.
     """
     model_instance_id = get_resource_id(identifier, "modelInstances")
-    print(Request.get(f"modelInstances/{model_instance_id}/config"))
+    logger.info(Request.get(f"modelInstances/{model_instance_id}/config"))
 
 
 @instance.command
@@ -736,7 +737,7 @@ def files(identifier: str) -> None:
         The model instance ID or slug.
     """
     model_instance_id = get_resource_id(identifier, "modelInstances")
-    print(Request.get(f"modelInstances/{model_instance_id}/files"))
+    logger.info(Request.get(f"modelInstances/{model_instance_id}/files"))
 
 
 @instance.command
@@ -754,7 +755,9 @@ def upload(file_path: str, identifier: str) -> None:
     with open(file_path, "rb") as file:
         files = {"files": file}
         Request.post(f"modelInstances/{model_instance_id}/upload", files=files)
-    print(f"File '{file_path}' uploaded to model instance '{identifier}'")
+    logger.info(
+        f"File '{file_path}' uploaded to model instance '{identifier}'"
+    )
 
 
 @app.command
@@ -1016,7 +1019,7 @@ def _export(
         f"modelInstances/{model_instance_id}/export/{target.value}",
         json=json,
     )
-    print(
+    logger.info(
         f"Model instance '{name}' created for {target.name} export with ID '{res['id']}'"
     )
     return res
