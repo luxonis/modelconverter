@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Literal
@@ -218,18 +219,22 @@ def docker_exec(
         )
 
     def sanitize(arg: str) -> str:
-        return arg.replace("'", "\\'").replace('"', '\\"').replace(" ", "\\ ")
+        return arg.replace('"', "'")
 
-    os.execlpe(
-        docker_bin(),
-        docker_bin(),
-        "compose",
-        "-f",
-        f.name,
-        "run",
-        "--rm",
-        "--remove-orphans",
-        "modelconverter",
-        *map(sanitize, args),
-        os.environ,
+    sys.exit(
+        subprocess.run(
+            [
+                docker_bin(),
+                "compose",
+                "-f",
+                f.name,
+                "run",
+                "--rm",
+                "--remove-orphans",
+                "modelconverter",
+                *map(sanitize, args),
+            ],
+            env=os.environ,
+            check=False,
+        ).returncode
     )
