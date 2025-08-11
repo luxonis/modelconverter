@@ -120,10 +120,11 @@ stages:
 
     # --- Hailo-Specific Arguments ---
     hailo:
-      # Specifies the optimization level. A number between 0 and 3.
+      # Specifies the optimization level.
+      # Either a number between 0 and 4 or -100 to disable all optimizations.
       optimization_level: 2
 
-      # Specifies the compression level. A number between 0 and 4.
+      # Specifies the compression level. A number between 0 and 5.
       compression_level: 2
 
       # Batch size for the calibration.
