@@ -369,9 +369,12 @@ def benchmark(
 @app.meta.command(group=device_commands)
 def analyze(
     *,
+    device_id: str | None = None,
     dlc_model_path: str,
     onnx_model_path: str,
-    image_dirs: Annotated[list[str], Parameter(negative_iterable=[], consume_multiple=True)],
+    image_dirs: Annotated[
+        list[str], Parameter(negative_iterable=[], consume_multiple=True)
+    ],
     analyze_outputs: bool = True,
     analyze_cycles: bool = True,
 ) -> None:
@@ -412,7 +415,9 @@ def analyze(
                 for i in range(0, len(image_dirs), 2)
             }
 
-        analyzer = get_analyzer(Target.RVC4, dlc_model_path, image_dirs_dict)
+        analyzer = get_analyzer(
+            Target.RVC4, device_id, dlc_model_path, image_dirs_dict
+        )
         if analyze_outputs:
             logger.info("Analyzing layer outputs")
             analyzer.analyze_layer_outputs(

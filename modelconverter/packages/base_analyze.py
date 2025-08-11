@@ -88,6 +88,7 @@ class Analyzer(ABC):
         ln = ln.replace("/", "_")
         ln = ln.replace("_output_0", "")
         ln = ln.replace("(cycles)", "")
+
         return ln.strip("_")
 
     def _get_output_sizes(self) -> dict[str, list[int]]:
