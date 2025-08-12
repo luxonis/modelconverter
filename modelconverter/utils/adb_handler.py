@@ -54,7 +54,7 @@ class AdbHandler:
 
     def _check_adb_connection(self, device_id: str | None) -> str:
         result = subprocess.run(
-            "adb devices", check=False, capture_output=True
+            ["adb", "devices"], check=False, capture_output=True
         )
         if result.returncode == 0:
             pattern = re.compile(r"^(\w+)\s+device$", re.MULTILINE)
