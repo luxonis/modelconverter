@@ -251,7 +251,7 @@ class RVC4Analyzer(Analyzer):
                 "max_abs_diff",
                 "MSE",
                 "cos_sim",
-                "max_absolute_percentage_error",
+                "mean_absolute_percentage_error",
             ],
             orient="row",
         )
@@ -260,16 +260,16 @@ class RVC4Analyzer(Analyzer):
                 pl.col("max_abs_diff").mean().alias("max_abs_diff"),
                 pl.col("MSE").mean().alias("MSE"),
                 pl.col("cos_sim").mean().alias("cos_sim"),
-                pl.col("max_absolute_percentage_error")
+                pl.col("mean_absolute_percentage_error")
                 .mean()
-                .alias("max_absolute_percentage_error"),
+                .alias("mean_absolute_percentage_error"),
             ]
         )
         grouped_df = grouped_df.with_columns(
             pl.col("max_abs_diff").round(6),
             pl.col("MSE").round(6),
             pl.col("cos_sim").round(6),
-            pl.col("max_absolute_percentage_error").round(4),
+            pl.col("mean_absolute_percentage_error").round(4),
         )
 
         layer_mapping = {name: idx for idx, name in enumerate(layer_names)}
