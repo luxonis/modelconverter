@@ -84,17 +84,20 @@ class RVC4Analyzer(Analyzer):
             input_row = ""
             dlc_matcher[i] = "Result_" + str(i)
             for input_name, img_path in input_dict.items():
-                if not img_path.endswith((".png", ".jpg", ".npy")):
+                if not img_path.endswith((".png", ".jpg", ".jpeg",".npy")):
                     continue
                 img_name = Path(img_path).stem
+                width_height = self.input_sizes[input_name][1:3][::-1]
                 if img_path.endswith(
                     ".npy"
                 ):  # expects numpy array to already be in correct format
                     raw_image = cast(np.ndarray, np.load(img_path)).astype(
                         type
                     )
+                    
+                    if raw_image.shape != tuple(width_height):
+                        raise ValueError(f"Input image {img_name} has incorrect shape: {raw_image.shape}, expected: {tuple(width_height)}")
                 else:
-                    width_height = self.input_sizes[input_name][1:3][::-1]
                     image = self._resize_image(img_path, width_height)
                     image = image.astype(type)
                     raw_image = cast(np.ndarray, image).astype(type)
@@ -199,15 +202,17 @@ class RVC4Analyzer(Analyzer):
         for i, input_dict in input_matcher.items():
             onnx_input_dict = {}
             for input_name, img_path in input_dict.items():
-                if not img_path.endswith((".png", ".jpg", ".npy")):
+                if not img_path.endswith((".png", ".jpg", ".jpeg", ".npy")):
                     continue
 
+                shape = onnx_input_shapes[input_name][2:][::-1] 
                 if img_path.endswith(
                     ".npy"
-                ):  # expects numpy array to already be in correct format
+                ):  
                     image = np.load(img_path)
+                    if image.shape != tuple(shape):
+                        raise ValueError(f"Input image {img_path} has incorrect shape: {image.shape}, expected: {tuple(shape)}")
                 else:
-                    shape = onnx_input_shapes[input_name][2:][::-1]
                     image = self._resize_image(img_path, shape)
                     image = np.transpose(
                         image, [2, 0, 1]

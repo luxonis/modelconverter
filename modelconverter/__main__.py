@@ -365,7 +365,6 @@ def benchmark(
     get_benchmark(target, model_path).run(full=full, save=save, **kwargs)
 
 
-# TODO: Specify device ID in case more than one device is connected
 @app.meta.command(group=device_commands)
 def analyze(
     *,
@@ -385,6 +384,8 @@ def analyze(
 
     Parameters
     ----------
+    device_id : str | None
+        The ID of the device to run the analysis on. If not provided, the first listed device will be used.
     dlc_model_path : str
         The path to the DLC model file.
 
