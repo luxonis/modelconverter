@@ -296,6 +296,7 @@ class SingleStageConfig(CustomBaseModel):
     disable_onnx_simplification: bool = False
     disable_onnx_optimization: bool = False
     output_remote_url: str | None = None
+    intermediate_outputs_remote_url: str | None = None
     put_file_plugin: str | None = None
 
     hailo: HailoConfig = HailoConfig()

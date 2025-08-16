@@ -183,15 +183,15 @@ def convert(
             ]
 
         if isinstance(exporter.config, SingleStageConfig):
-            upload_url = exporter.config.output_remote_url
-            put_file_plugin = exporter.config.put_file_plugin
+            _cfg = exporter.config
         else:
             _cfg = next(iter(exporter.config.stages.values()))
-            upload_url = _cfg.output_remote_url
-            put_file_plugin = _cfg.put_file_plugin
+        upload_url = _cfg.output_remote_url
+        intermediate_url = _cfg.intermediate_outputs_remote_url
+        put_file_plugin = _cfg.put_file_plugin
 
-        for model_path in out_models:
-            if upload_url is not None:
+        if upload_url is not None:
+            for model_path in out_models:
                 logger.info(f"Uploading {model_path} to {upload_url}")
                 upload_file_to_remote(
                     model_path,
@@ -200,6 +200,22 @@ def convert(
                 )
 
             logger.info("Conversion finished successfully")
+
+        if intermediate_url is not None:
+            exporters = (
+                exporter.exporters.values()
+                if isinstance(exporter, MultiStageExporter)
+                else [exporter]
+            )
+            for exporter in exporters:
+                logger.info(
+                    f"Uploading intermediate outputs to {intermediate_url}"
+                )
+                upload_file_to_remote(
+                    exporter.intermediate_outputs_dir,
+                    intermediate_url,
+                    put_file_plugin,
+                )
 
 
 @app.command(group=docker_commands)
@@ -371,7 +387,9 @@ def analyze(
     *,
     dlc_model_path: str,
     onnx_model_path: str,
-    image_dirs: Annotated[list[str], Parameter(negative_iterable=[], consume_multiple=True)],
+    image_dirs: Annotated[
+        list[str], Parameter(negative_iterable=[], consume_multiple=True)
+    ],
     analyze_outputs: bool = True,
     analyze_cycles: bool = True,
 ) -> None:
