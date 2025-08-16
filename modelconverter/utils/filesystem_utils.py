@@ -53,17 +53,21 @@ def download_from_remote(
     return local_path
 
 
-def upload_file_to_remote(
+def upload_to_remote(
     local_path: Path | str,
     url: str,
     put_file_plugin: str | None = None,
 ) -> None:
     """Uploads a file to remote bucket storage."""
 
+    local_path = Path(local_path)
     absolute_path, remote_path = LuxonisFileSystem.split_full_path(url)
     fs = LuxonisFileSystem(absolute_path, put_file_plugin=put_file_plugin)
 
-    fs.put_file(str(local_path), remote_path)
+    if local_path.is_dir():
+        fs.put_dir(local_path, remote_path)
+    else:
+        fs.put_file(local_path, remote_path)
 
 
 def get_protocol(url: str) -> str:

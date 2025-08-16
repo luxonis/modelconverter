@@ -7,7 +7,7 @@ import pytest
 
 from modelconverter.utils.filesystem_utils import (
     download_from_remote,
-    upload_file_to_remote,
+    upload_to_remote,
 )
 
 S3_BASE_URL = "s3://luxonis-test-bucket/modelconverter-test/test_data/test_utils/test_s3_tools/"
@@ -48,9 +48,7 @@ def setup_remote_tests():
 
 @skip_if_no_remote_credentials
 def test_dir():
-    upload_file_to_remote(
-        LOCAL_FILE_IN_DIR_PATH, f"{S3_DIR_URL}/file_in_dir.txt"
-    )
+    upload_to_remote(LOCAL_FILE_IN_DIR_PATH, f"{S3_DIR_URL}/file_in_dir.txt")
     download_from_remote(S3_DIR_URL, S3_LOCAL_ROOT)
     assert S3_LOCAL_FILE_IN_DIR_PATH.exists()
     assert sorted(path.name for path in S3_LOCAL_DIR_PATH.iterdir()) == sorted(
@@ -62,7 +60,7 @@ def test_dir():
 
 @skip_if_no_remote_credentials
 def test_file():
-    upload_file_to_remote(LOCAL_FILE_PATH, S3_FILE_URL)
+    upload_to_remote(LOCAL_FILE_PATH, S3_FILE_URL)
     download_from_remote(S3_FILE_URL, S3_LOCAL_ROOT)
     assert S3_LOCAL_FILE_PATH.exists()
     assert S3_LOCAL_FILE_PATH.read_text() == LOCAL_FILE_PATH.read_text()

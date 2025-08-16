@@ -33,7 +33,7 @@ from modelconverter.utils import (
     docker_exec,
     in_docker,
     resolve_path,
-    upload_file_to_remote,
+    upload_to_remote,
 )
 from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.constants import MODELS_DIR
@@ -193,7 +193,7 @@ def convert(
         if upload_url is not None:
             for model_path in out_models:
                 logger.info(f"Uploading {model_path} to {upload_url}")
-                upload_file_to_remote(
+                upload_to_remote(
                     model_path,
                     upload_url,
                     put_file_plugin,
@@ -211,7 +211,7 @@ def convert(
                 logger.info(
                     f"Uploading intermediate outputs to {intermediate_url}"
                 )
-                upload_file_to_remote(
+                upload_to_remote(
                     exporter.intermediate_outputs_dir,
                     intermediate_url,
                     put_file_plugin,
@@ -503,7 +503,7 @@ def archive(
     ).make_archive()
 
     if protocol != "file":
-        upload_file_to_remote(archive_save_path, save_path, put_file_plugin)
+        upload_to_remote(archive_save_path, save_path, put_file_plugin)
         Path(archive_save_path).unlink()
         logger.info(f"Archive uploaded to {save_path}")
     else:
