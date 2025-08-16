@@ -9,6 +9,8 @@ from luxonis_ml.utils import LuxonisFileSystem, setup_logging
 from typing_extensions import Annotated
 
 from modelconverter.cli import (
+    AnalyzeCyclesOption,
+    AnalyzeOutputsOption,
     ArchivePreprocessOption,
     ComparisonPathArgument,
     DevOption,
@@ -16,8 +18,6 @@ from modelconverter.cli import (
     FormatOption,
     GPUOption,
     ImagePathArgument,
-    AnalyzeCyclesOption,
-    AnalyzeOutputsOption,
     ModelPathArgument,
     ModelPathOption,
     OptsArgument,
@@ -262,7 +262,7 @@ def analyze(
     """
 
     tag = "dev" if dev else "latest"
-    
+
     if in_docker():
         try:
             logger.info("Starting analysis")
@@ -282,7 +282,9 @@ def analyze(
             analyzer = Analyzer(dlc_model_path, image_dirs_dict)
             if analyze_outputs:
                 logger.info("Analyzing layer outputs")
-                analyzer.analyze_layer_outputs(resolve_path(onnx_model_path, Path.cwd()))
+                analyzer.analyze_layer_outputs(
+                    resolve_path(onnx_model_path, Path.cwd())
+                )
             if analyze_cycles:
                 logger.info("Analyzing layer cycles")
                 analyzer.analyze_layer_cycles()
@@ -293,8 +295,8 @@ def analyze(
     else:
         if dev:
             docker_build("rvc4", bare_tag=tag)
-            
-        args =[
+
+        args = [
             "analyze",
             "--dlc-model-path",
             dlc_model_path,
@@ -304,18 +306,19 @@ def analyze(
         ]
         args.extend(image_dirs)
         args.append(
-            "--analyze-outputs" if analyze_outputs else "--no-analyze-outputs")
+            "--analyze-outputs" if analyze_outputs else "--no-analyze-outputs"
+        )
         args.append(
-            "--analyze-cycles" if analyze_cycles else "--no-analyze-cycles")
-        
+            "--analyze-cycles" if analyze_cycles else "--no-analyze-cycles"
+        )
+
         docker_exec(
             "rvc4",
             *args,
             bare_tag=tag,
             use_gpu=False,
         )
-        
-        
+
 
 @app.command()
 def visualize(
@@ -439,12 +442,12 @@ def convert(
                 logger.info(f"Model exported to {out_models[0]}")
 
             if isinstance(exporter.config, SingleStageConfig):
-                upload_url = exporter.config.output_remote_url
-                put_file_plugin = exporter.config.put_file_plugin
+                _cfg = exporter.config
             else:
                 _cfg = next(iter(exporter.config.stages.values()))
-                upload_url = _cfg.output_remote_url
-                put_file_plugin = _cfg.put_file_plugin
+            upload_url = _cfg.output_remote_url
+            intermediate_url = _cfg.intermediate_outputs_remote_url
+            put_file_plugin = _cfg.put_file_plugin
 
             for model_path in out_models:
                 if upload_url is not None:
@@ -456,6 +459,22 @@ def convert(
                     )
 
                 logger.info("Conversion finished successfully")
+
+            if intermediate_url is not None:
+                exporters = (
+                    exporter.exporters.values()
+                    if isinstance(exporter, MultiStageExporter)
+                    else [exporter]
+                )
+                for exporter in exporters:
+                    logger.info(
+                        f"Uploading intermediate outputs to {intermediate_url}"
+                    )
+                    upload_file_to_remote(
+                        exporter.intermediate_outputs_dir,
+                        intermediate_url,
+                        put_file_plugin,
+                    )
         except ModelconverterException:
             logger.exception(
                 "Encountered an exception in the conversion process!"
