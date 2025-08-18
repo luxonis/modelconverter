@@ -98,7 +98,7 @@ COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libunwind.so.1 \
     /usr/lib/x86_64-linux-gnu/libatomic.so.1 \
     /usr/lib/x86_64-linux-gnu/libtinfo.so.5 \
-    /usr/lib/x86_64-linux-gnu/libLLVM-14.so.1 \
+    /usr/lib/x86_64-linux-gnu/libLLVM-19.so.1 \
     /usr/lib/x86_64-linux-gnu/libedit.so.2 \
     /usr/lib/x86_64-linux-gnu/libz3.so.4 \
     /usr/lib/x86_64-linux-gnu/libxml2.so.2 \
