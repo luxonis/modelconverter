@@ -16,8 +16,8 @@ RUN <<EOF
         libc++-dev      \
         ffmpeg          \
         libcurl4        \
-        libncurses5     \
-        llvm-14-runtime \
+        libncurses6     \
+        llvm-19-runtime \
         git
 
 EOF
