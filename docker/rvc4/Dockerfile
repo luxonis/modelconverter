@@ -78,8 +78,6 @@ COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/librtmp.so.1 \
     /usr/lib/x86_64-linux-gnu/libssh2.so.1 \
     /usr/lib/x86_64-linux-gnu/libpsl.so.5 \
-    /usr/lib/x86_64-linux-gnu/libldap-2.5.so.0 \
-    /usr/lib/x86_64-linux-gnu/liblber-2.5.so.0 \
     /usr/lib/x86_64-linux-gnu/libbrotlidec.so.1 \
     /usr/lib/x86_64-linux-gnu/libsasl2.so.2 \
     /usr/lib/x86_64-linux-gnu/libbrotlicommon.so.1 \
@@ -97,13 +95,9 @@ COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libc++abi.so.1 \
     /usr/lib/x86_64-linux-gnu/libunwind.so.1 \
     /usr/lib/x86_64-linux-gnu/libatomic.so.1 \
-    /usr/lib/x86_64-linux-gnu/libtinfo.so.5 \
-    /usr/lib/x86_64-linux-gnu/libLLVM-19.so.1 \
     /usr/lib/x86_64-linux-gnu/libedit.so.2 \
     /usr/lib/x86_64-linux-gnu/libz3.so.4 \
     /usr/lib/x86_64-linux-gnu/libxml2.so.2 \
-    /usr/lib/x86_64-linux-gnu/libicuuc.so.72 \
-    /usr/lib/x86_64-linux-gnu/libicudata.so.72 \
     /usr/lib/
 
 
