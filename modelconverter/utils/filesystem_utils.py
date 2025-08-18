@@ -64,8 +64,12 @@ def upload_file_to_remote(
 
     absolute_path, remote_path = LuxonisFileSystem.split_full_path(url)
     fs = LuxonisFileSystem(absolute_path, put_file_plugin=put_file_plugin)
+    local_path = Path(local_path)
 
-    fs.put_file(str(local_path), remote_path)
+    if local_path.is_dir():
+        fs.put_dir(local_path, remote_path)
+    else:
+        fs.put_file(local_path, remote_path)
 
 
 def get_protocol(url: str) -> str:
