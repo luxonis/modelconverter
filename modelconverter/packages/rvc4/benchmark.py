@@ -42,7 +42,6 @@ RUNTIMES: dict[str, str] = {
 
 
 class RVC4Benchmark(Benchmark):
-    adb = AdbHandler()
     force_cpu: bool = False
 
     @property
@@ -258,6 +257,7 @@ class RVC4Benchmark(Benchmark):
                 "benchmark_time",
             ]:
                 configuration.pop(key, None)
+            self.adb = AdbHandler()
             return self._benchmark_snpe(self.model_path, **configuration)
         finally:
             if not dai_benchmark:
