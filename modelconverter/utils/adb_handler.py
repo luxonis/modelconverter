@@ -1,3 +1,4 @@
+import re
 import subprocess
 
 from loguru import logger
@@ -8,6 +9,7 @@ class AdbHandler:
     def __init__(
         self, device_id: str | None = None, silent: bool = True
     ) -> None:
+        device_id = self._check_adb_connection(device_id)
         self.device_args = ["-s", device_id] if device_id else []
         self.silent = silent
 
@@ -49,3 +51,29 @@ class AdbHandler:
 
     def push(self, src: PathType, dst: PathType) -> tuple[int, str, str]:
         return self._adb_run("push", src, dst)
+
+    def _check_adb_connection(self, device_id: str | None) -> str:
+        result = subprocess.run(
+            ["adb", "devices"], check=False, capture_output=True
+        )
+        if result.returncode == 0:
+            pattern = re.compile(r"^(\w+)\s+device$", re.MULTILINE)
+            devices = pattern.findall(result.stdout.decode())
+        else:
+            raise RuntimeError("Unable to verify device ID")
+
+        if device_id is None:
+            if len(devices) == 0:
+                raise RuntimeError("No devices connected")
+            logger.warning(
+                "No device ID specified, using the first connected "
+                f"device: {devices[0]}"
+            )
+            return devices[0]
+        if device_id not in devices:
+            raise ValueError(
+                f"Device ID '{device_id}' not found in connected devices: {devices}"
+            )
+        logger.info(f"Using device ID: {device_id}")
+
+        return device_id

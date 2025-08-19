@@ -365,13 +365,15 @@ def benchmark(
     get_benchmark(target, model_path).run(full=full, save=save, **kwargs)
 
 
-# TODO: Specify device ID in case more than one device is connected
 @app.meta.command(group=device_commands)
 def analyze(
     *,
+    device_id: str | None = None,
     dlc_model_path: str,
     onnx_model_path: str,
-    image_dirs: Annotated[list[str], Parameter(negative_iterable=[], consume_multiple=True)],
+    image_dirs: Annotated[
+        list[str], Parameter(negative_iterable=[], consume_multiple=True)
+    ],
     analyze_outputs: bool = True,
     analyze_cycles: bool = True,
 ) -> None:
@@ -382,6 +384,8 @@ def analyze(
 
     Parameters
     ----------
+    device_id : str | None
+        The ID of the device to run the analysis on. If not provided, the first listed device will be used.
     dlc_model_path : str
         The path to the DLC model file.
 
@@ -412,7 +416,9 @@ def analyze(
                 for i in range(0, len(image_dirs), 2)
             }
 
-        analyzer = get_analyzer(Target.RVC4, dlc_model_path, image_dirs_dict)
+        analyzer = get_analyzer(
+            Target.RVC4, device_id, dlc_model_path, image_dirs_dict
+        )
         if analyze_outputs:
             logger.info("Analyzing layer outputs")
             analyzer.analyze_layer_outputs(
