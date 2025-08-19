@@ -389,7 +389,7 @@ class RVC4Benchmark(Benchmark):
             img = np.random.randint(0, 255, inputSize, np.uint8)
             inputData.addTensor(name, img, dataType=data_type)
 
-        with dai.Pipeline(device) as pipeline, Progress() as progress:
+        with dai.Pipeline(device) as pipeline:
             if benchmark_time:
 
                 def format_time(seconds: float) -> str:
