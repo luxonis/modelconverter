@@ -38,6 +38,7 @@ from modelconverter.packages import (
     get_inferer,
     get_visualizer,
 )
+from modelconverter.packages.multistage_exporter import MultiStageExporter
 from modelconverter.utils import (
     ModelconverterException,
     archive_from_model,
