@@ -1,16 +1,14 @@
-import time
 from pathlib import Path
 
 import depthai as dai
 import numpy as np
-from rich.progress import Progress, TextColumn
 
 from modelconverter.packages.base_benchmark import (
     Benchmark,
     BenchmarkResult,
     Configuration,
 )
-from modelconverter.utils import environ
+from modelconverter.utils import create_progress_handler, environ
 
 
 class RVC2Benchmark(Benchmark):
@@ -74,7 +72,7 @@ class RVC2Benchmark(Benchmark):
         inputSizes = []
         inputNames = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            modelArhive = dai.NNArchive(str(modelPath))
+            modelArhive = dai.NNArchive(str(modelPath))  # type: ignore[arg-type]
             for input in modelArhive.getConfig().model.inputs:
                 inputSizes.append(input.shape[::-1])
                 inputNames.append(input.name)
@@ -92,23 +90,6 @@ class RVC2Benchmark(Benchmark):
             inputData.addTensor(name, img)
 
         with dai.Pipeline(device) as pipeline:
-            if benchmark_time:
-
-                def format_time(seconds: float) -> str:
-                    mins = int(seconds // 60)
-                    secs = int(seconds % 60)
-                    return f"{mins:02d}:{secs:02d}"
-
-                progress = Progress(TextColumn("{task.description}"))
-                progress_task = progress.add_task("", total=benchmark_time)
-            else:
-                progress = Progress()
-                progress_task = progress.add_task(
-                    "[magenta]Repetition", total=repetitions
-                )
-
-            progress.start()
-
             benchmarkOut = pipeline.create(dai.node.BenchmarkOut)
             benchmarkOut.setRunOnHost(False)
             benchmarkOut.setFps(-1)
@@ -136,50 +117,27 @@ class RVC2Benchmark(Benchmark):
             pipeline.start()
             inputQueue.send(inputData)
 
-            rep = 0
+            progress, on_tick, should_continue = create_progress_handler(
+                benchmark_time, repetitions
+            )
+
             fps_list = []
             avg_latency_list = []
 
-            if benchmark_time:
-                start_time = time.time()
-                while (
-                    pipeline.isRunning()
-                    and (time.time() - start_time) < benchmark_time
-                ):
+            with progress:
+                while pipeline.isRunning() and should_continue():
                     benchmarkReport = outputQueue.get()
                     if not isinstance(benchmarkReport, dai.BenchmarkReport):
                         raise TypeError(
                             f"Expected BenchmarkReport, got {type(benchmarkReport)}"
                         )
-                    fps = benchmarkReport.fps
-                    avg_latency = benchmarkReport.averageLatency * 1000
 
-                    fps_list.append(fps)
-                    avg_latency_list.append(avg_latency)
-
-                    elapsed = time.time() - start_time
-                    capped_elapsed = min(elapsed, benchmark_time)
-                    elapsed_str = format_time(capped_elapsed)
-                    total_str = format_time(benchmark_time)
-                    progress.update(
-                        progress_task,
-                        description=f"[magenta]Time Elapsed (mm:ss) [cyan]{elapsed_str} / {total_str}",
+                    fps_list.append(benchmarkReport.fps)
+                    avg_latency_list.append(
+                        benchmarkReport.averageLatency * 1000
                     )
-            else:
-                while pipeline.isRunning() and rep < repetitions:
-                    benchmarkReport = outputQueue.get()
-                    if not isinstance(benchmarkReport, dai.BenchmarkReport):
-                        raise TypeError(
-                            f"Expected BenchmarkReport, got {type(benchmarkReport)}"
-                        )
-                    fps = benchmarkReport.fps
-                    avg_latency = benchmarkReport.averageLatency * 1000
 
-                    fps_list.append(fps)
-                    avg_latency_list.append(avg_latency)
-                    progress.update(progress_task, advance=1)
-                    rep += 1
-            progress.stop()
+                    on_tick()
 
             # Currently, the latency measurement is not supported on RVC2 by the depthai library.
             return BenchmarkResult(float(np.mean(fps_list)), "N/A")
