@@ -432,6 +432,9 @@ def get_target_specific_options(
             options["ir_version"] = tool_version
         if target is Target.RVC3:
             options["pot_target_device"] = cfg.rvc3.pot_target_device
+        if target is Target.RVC2:
+            options["superblob"] = cfg.rvc2.superblob
+            options["number_of_shaves"] = cfg.rvc2.number_of_shaves
     elif target is Target.HAILO:
         options["optimization_level"] = cfg.hailo.optimization_level
         options["compression_level"] = cfg.hailo.compression_level
