@@ -1018,6 +1018,9 @@ def _export(
     res = Request.post(
         f"modelInstances/{model_instance_id}/export/{target.value}",
         json=json,
+        params={
+            "legacy": not json.get("superblob", True) and target is Target.RVC2
+        },
     )
     logger.info(
         f"Model instance '{name}' created for {target.name} export with ID '{res['id']}'"
