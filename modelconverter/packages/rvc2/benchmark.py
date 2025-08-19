@@ -2,24 +2,30 @@ from pathlib import Path
 
 import depthai as dai
 import numpy as np
-from rich.progress import Progress
 
 from modelconverter.packages.base_benchmark import (
     Benchmark,
     BenchmarkResult,
     Configuration,
 )
-from modelconverter.utils import environ
+from modelconverter.utils import create_progress_handler, environ
 
 
 class RVC2Benchmark(Benchmark):
     @property
     def default_configuration(self) -> Configuration:
         """
-        repetitions: The number of repetitions to perform.
+        repetitions: The number of repetitions to perform (ignored if benchmark_time is set).
+        benchmark_time: Duration in seconds for time-based benchmarking (overrides repetitions).
+        num_messages: The number of messages to send for benchmarking.
         num_threads: The number of threads to use for inference.
         """
-        return {"repetitions": 10, "num_messages": 50, "num_threads": 2}
+        return {
+            "repetitions": 10,
+            "benchmark_time": None,
+            "num_messages": 50,
+            "num_threads": 2,
+        }
 
     @property
     def all_configurations(self) -> list[Configuration]:
@@ -34,6 +40,7 @@ class RVC2Benchmark(Benchmark):
         repetitions: int,
         num_messages: int,
         num_threads: int,
+        benchmark_time: int | None = None,
     ) -> BenchmarkResult:
         device = dai.Device()
         if device.getPlatform() != dai.Platform.RVC2:
@@ -65,7 +72,7 @@ class RVC2Benchmark(Benchmark):
         inputSizes = []
         inputNames = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            modelArhive = dai.NNArchive(str(modelPath))
+            modelArhive = dai.NNArchive(str(modelPath))  # type: ignore[arg-type]
             for input in modelArhive.getConfig().model.inputs:
                 inputSizes.append(input.shape[::-1])
                 inputNames.append(input.name)
@@ -82,11 +89,7 @@ class RVC2Benchmark(Benchmark):
             )
             inputData.addTensor(name, img)
 
-        with dai.Pipeline(device) as pipeline, Progress() as progress:
-            repet_task = progress.add_task(
-                "[magenta]Repetition", total=repetitions
-            )
-
+        with dai.Pipeline(device) as pipeline:
             benchmarkOut = pipeline.create(dai.node.BenchmarkOut)
             benchmarkOut.setRunOnHost(False)
             benchmarkOut.setFps(-1)
@@ -114,22 +117,27 @@ class RVC2Benchmark(Benchmark):
             pipeline.start()
             inputQueue.send(inputData)
 
-            rep = 0
+            progress, on_tick, should_continue = create_progress_handler(
+                benchmark_time, repetitions
+            )
+
             fps_list = []
             avg_latency_list = []
-            while pipeline.isRunning() and rep < repetitions:
-                benchmarkReport = outputQueue.get()
-                if not isinstance(benchmarkReport, dai.BenchmarkReport):
-                    raise TypeError(
-                        f"Expected BenchmarkReport, got {type(benchmarkReport)}"
-                    )
-                fps = benchmarkReport.fps
-                avg_latency = benchmarkReport.averageLatency * 1000
 
-                fps_list.append(fps)
-                avg_latency_list.append(avg_latency)
-                progress.update(repet_task, advance=1)
-                rep += 1
+            with progress:
+                while pipeline.isRunning() and should_continue():
+                    benchmarkReport = outputQueue.get()
+                    if not isinstance(benchmarkReport, dai.BenchmarkReport):
+                        raise TypeError(
+                            f"Expected BenchmarkReport, got {type(benchmarkReport)}"
+                        )
+
+                    fps_list.append(benchmarkReport.fps)
+                    avg_latency_list.append(
+                        benchmarkReport.averageLatency * 1000
+                    )
+
+                    on_tick()
 
             # Currently, the latency measurement is not supported on RVC2 by the depthai library.
             return BenchmarkResult(float(np.mean(fps_list)), "N/A")

@@ -32,6 +32,7 @@ from .nn_archive import (
     process_nn_archive,
 )
 from .onnx_tools import ONNXModifier, onnx_attach_normalization_to_inputs
+from .progress_handler import create_progress_handler
 from .subprocess import subprocess_run
 
 __all__ = [
@@ -43,6 +44,7 @@ __all__ = [
     "SubprocessException",
     "archive_from_model",
     "check_docker",
+    "create_progress_handler",
     "docker_build",
     "docker_exec",
     "download_calibration_data",

@@ -285,6 +285,9 @@ def benchmark(
     full: bool = False,
     save: bool = False,
     repetitions: Annotated[int, Parameter(group=["RVC2", "RVC4"])] = 10,
+    benchmark_time: Annotated[
+        int | None, Parameter(group=["RVC2", "RVC4"])
+    ] = None,
     num_threads: Annotated[int, Parameter(group=["RVC2", "RVC4"])] = 2,
     num_messages: Annotated[int, Parameter(group=["RVC2", "RVC4"])] = 50,
     requests: Annotated[int, Parameter(group="RVC3")] = 1,
@@ -324,6 +327,8 @@ def benchmark(
 
     repetitions : int
         The number of repetitions to perform. Only relevant for DAI benchmark.
+    benchmark_time : int | None
+        The duration in seconds for time-based benchmarking (overrides repetitions).
     num_threads : int
         The number of threads to use for inference. Only relevant for DAI benchmark.
     num_messages : int
@@ -347,6 +352,7 @@ def benchmark(
     if target in {Target.RVC2, Target.RVC4}:
         kwargs = {
             "repetitions": repetitions,
+            "benchmark_time": benchmark_time,
             "num_threads": num_threads,
             "num_messages": num_messages,
         }

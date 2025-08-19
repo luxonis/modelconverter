@@ -161,6 +161,20 @@ class Benchmark(ABC):
             (configuration, self.benchmark(configuration))
             for configuration in configurations
         ]
+
+        # Clean up configuration keys: keep either benchmark_time or repetitions
+        for configuration, _ in results:
+            if configuration.get("benchmark_time"):
+                items = list(configuration.items())
+                configuration.clear()
+                for k, v in items:
+                    if k == "benchmark_time":
+                        configuration["benchmark_time (s)"] = v
+                    elif k != "repetitions":
+                        configuration[k] = v
+            else:
+                configuration.pop("benchmark_time", None)
+
         self.print_results(results)
         if save:
             self.save_results(results)
