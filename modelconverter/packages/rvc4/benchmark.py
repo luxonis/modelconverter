@@ -3,6 +3,7 @@ import json
 import re
 import shutil
 import tempfile
+import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Final, cast
@@ -11,7 +12,7 @@ import depthai as dai
 import numpy as np
 import polars as pl
 from loguru import logger
-from rich.progress import Progress
+from rich.progress import Progress, TextColumn
 
 from modelconverter.packages.base_benchmark import (
     Benchmark,
@@ -51,7 +52,8 @@ class RVC4Benchmark(Benchmark):
         runtime: The SNPE runtime to use for inference.
         num_images: The number of images to use for inference.
         dai_benchmark: Whether to use the DepthAI for benchmarking.
-        repetitions: The number of repetitions to perform (dai-benchmark only).
+        repetitions: The number of repetitions to perform (dai-benchmark only, ignored if benchmark_time is set).
+        benchmark_time: Duration in seconds for time-based benchmarking (overrides repetitions).
         num_threads: The number of threads to use for inference (dai-benchmark only).
         num_messages: The number of messages to use for inference (dai-benchmark only).
         """
@@ -61,6 +63,7 @@ class RVC4Benchmark(Benchmark):
             "num_images": 1000,
             "dai_benchmark": True,
             "repetitions": 10,
+            "benchmark_time": None,
             "num_threads": 2,
             "num_messages": 50,
             "device_ip": None,
@@ -252,8 +255,9 @@ class RVC4Benchmark(Benchmark):
                 "repetitions",
                 "num_threads",
                 "num_messages",
+                "benchmark_time",
             ]:
-                configuration.pop(key)
+                configuration.pop(key, None)
             return self._benchmark_snpe(self.model_path, **configuration)
         finally:
             if not dai_benchmark:
@@ -336,6 +340,7 @@ class RVC4Benchmark(Benchmark):
         num_threads: int,
         num_messages: int,
         device_ip: str | None = None,
+        benchmark_time: int | None = None,
     ) -> BenchmarkResult:
         if device_ip:
             device = dai.Device(dai.DeviceInfo(device_ip))
@@ -385,9 +390,22 @@ class RVC4Benchmark(Benchmark):
             inputData.addTensor(name, img, dataType=data_type)
 
         with dai.Pipeline(device) as pipeline, Progress() as progress:
-            repet_task = progress.add_task(
-                "[magenta]Repetition", total=repetitions
-            )
+            if benchmark_time:
+
+                def format_time(seconds: float) -> str:
+                    mins = int(seconds // 60)
+                    secs = int(seconds % 60)
+                    return f"{mins:02d}:{secs:02d}"
+
+                progress = Progress(TextColumn("{task.description}"))
+                progress_task = progress.add_task("", total=benchmark_time)
+            else:
+                progress = Progress()
+                progress_task = progress.add_task(
+                    "[magenta]Repetition", total=repetitions
+                )
+
+            progress.start()
 
             benchmarkOut = pipeline.create(dai.node.BenchmarkOut)
             benchmarkOut.setRunOnHost(False)
@@ -430,19 +448,47 @@ class RVC4Benchmark(Benchmark):
             rep = 0
             fps_list = []
             avg_latency_list = []
-            while pipeline.isRunning() and rep < repetitions:
-                benchmarkReport = outputQueue.get()
-                if not isinstance(benchmarkReport, dai.BenchmarkReport):
-                    raise TypeError(
-                        f"Expected BenchmarkReport, got {type(benchmarkReport)}"
-                    )
-                fps = benchmarkReport.fps
-                avg_latency = benchmarkReport.averageLatency * 1000
 
-                fps_list.append(fps)
-                avg_latency_list.append(avg_latency)
-                progress.update(repet_task, advance=1)
-                rep += 1
+            if benchmark_time:
+                start_time = time.time()
+                while (
+                    pipeline.isRunning()
+                    and (time.time() - start_time) < benchmark_time
+                ):
+                    benchmarkReport = outputQueue.get()
+                    if not isinstance(benchmarkReport, dai.BenchmarkReport):
+                        raise TypeError(
+                            f"Expected BenchmarkReport, got {type(benchmarkReport)}"
+                        )
+                    fps = benchmarkReport.fps
+                    avg_latency = benchmarkReport.averageLatency * 1000
+
+                    fps_list.append(fps)
+                    avg_latency_list.append(avg_latency)
+
+                    elapsed = time.time() - start_time
+                    capped_elapsed = min(elapsed, benchmark_time)
+                    elapsed_str = format_time(capped_elapsed)
+                    total_str = format_time(benchmark_time)
+                    progress.update(
+                        progress_task,
+                        description=f"[magenta]Time Elapsed (mm:ss) [cyan]{elapsed_str} / {total_str}",
+                    )
+            else:
+                while pipeline.isRunning() and rep < repetitions:
+                    benchmarkReport = outputQueue.get()
+                    if not isinstance(benchmarkReport, dai.BenchmarkReport):
+                        raise TypeError(
+                            f"Expected BenchmarkReport, got {type(benchmarkReport)}"
+                        )
+                    fps = benchmarkReport.fps
+                    avg_latency = benchmarkReport.averageLatency * 1000
+
+                    fps_list.append(fps)
+                    avg_latency_list.append(avg_latency)
+                    progress.update(progress_task, advance=1)
+                    rep += 1
+            progress.stop()
 
             # Currently, the latency measurement is only supported on RVC4 when using ImgFrame as the input to the BenchmarkOut which we don't do here.
             return BenchmarkResult(float(np.mean(fps_list)), "N/A")
