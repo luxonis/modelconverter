@@ -286,6 +286,7 @@ class SingleStageConfig(CustomBaseModel):
     disable_onnx_optimization: bool = False
     output_remote_url: Optional[str] = None
     put_file_plugin: Optional[str] = None
+    intermediate_outputs_remote_url: Optional[str] = None
 
     hailo: HailoConfig = HailoConfig()
     rvc2: RVC2Config = RVC2Config()
