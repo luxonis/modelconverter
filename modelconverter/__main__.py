@@ -391,10 +391,6 @@ def convert(
             output_path.mkdir(parents=True, exist_ok=True)
             setup_logging(file=str(output_path / "modelconverter.log"))
             if is_multistage:
-                from modelconverter.packages.multistage_exporter import (
-                    MultiStageExporter,
-                )
-
                 exporter = MultiStageExporter(
                     target=target, config=cfg, output_dir=output_path
                 )
