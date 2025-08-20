@@ -18,7 +18,7 @@ from .filesystem_utils import (
     download_from_remote,
     get_protocol,
     resolve_path,
-    upload_file_to_remote,
+    upload_to_remote,
 )
 from .general import sanitize_net_name
 from .hubai_utils import is_hubai_available
@@ -67,5 +67,5 @@ __all__ = [
     "resolve_path",
     "sanitize_net_name",
     "subprocess_run",
-    "upload_file_to_remote",
+    "upload_to_remote",
 ]

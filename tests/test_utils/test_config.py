@@ -92,6 +92,7 @@ DEFAULT_GENERAL_CONFIG = {
     "disable_onnx_simplification": False,
     "disable_onnx_optimization": False,
     "output_remote_url": None,
+    "intermediate_outputs_remote_url": None,
     "put_file_plugin": None,
     "input_bin": None,
     "input_file_type": InputFileType.ONNX,

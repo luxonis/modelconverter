@@ -82,6 +82,9 @@ stages:
     # Remote path where to upload the compiled model. Optional.
     output_remote_url: ~
 
+    # Remote path where to upload the intermediate outputs.
+    intermediate_outputs_remote_url: ~
+
     # Keep the intermediate files created during the compilation.
     keep_intermediate_outputs: true
 
