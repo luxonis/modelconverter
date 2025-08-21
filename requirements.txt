@@ -1,6 +1,6 @@
 Pillow
 gcsfs
-luxonis-ml[data,nn_archive]==0.7.2
+luxonis-ml[data,nn_archive]==0.8.0
 onnx>=1.17.0
 onnxruntime
 onnxsim
