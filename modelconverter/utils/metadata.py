@@ -54,16 +54,60 @@ def _get_metadata_dlc(path: Path) -> Metadata:
     metadata = {}
 
     for typ in ["input", "output"]:
-        start_marker = f"{typ.capitalize()} Name,Dimensions,Type,Encoding Info"
-        if typ == "input":
-            end_marker = "Output Name,Dimensions,Type,Encoding Info"
-        else:
-            end_marker = "Total parameters:"
-        start_index = content.find(start_marker)
-        end_index = content.find(end_marker, start_index)
+        header_pattern = f"{typ.capitalize()} Name"
 
-        relevant_csv_part = content[start_index:end_index].strip()
-        if not relevant_csv_part:
+        start_index = content.find(header_pattern)
+        if start_index == -1:
+            continue
+
+        line_start = content.rfind("\n", 0, start_index) + 1
+        possible_endings = []
+
+        if typ == "input":
+            output_idx = content.find(
+                "Output Name", start_index + len(header_pattern)
+            )
+            if output_idx != -1:
+                possible_endings.append(output_idx)
+        else:
+            unconsumed_idx = content.find(
+                "Unconsumed Tensor Name", start_index + len(header_pattern)
+            )
+            total_idx = content.find(
+                "Total parameters:", start_index + len(header_pattern)
+            )
+
+            if unconsumed_idx != -1:
+                possible_endings.append(unconsumed_idx)
+            if total_idx != -1:
+                possible_endings.append(total_idx)
+
+        if possible_endings:
+            end_index = min(possible_endings)
+        else:
+            end_index = len(content)
+
+        section = content[line_start:end_index].strip()
+        if not section:
+            continue
+
+        lines = section.split("\n")
+        cleaned_lines = []
+
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not all(c in "-|+= " for c in stripped):
+                cleaned_line = line.strip()
+                if cleaned_line.startswith("|") and cleaned_line.endswith("|"):
+                    cleaned_line = cleaned_line[1:-1].strip()
+                    import re
+
+                    cleaned_line = re.sub(r"\s*\|\s*", ",", cleaned_line)
+                cleaned_lines.append(cleaned_line)
+
+        relevant_csv_part = "\n".join(cleaned_lines)
+
+        if not relevant_csv_part.strip():
             continue
 
         df = pl.read_csv(io.StringIO(relevant_csv_part))
