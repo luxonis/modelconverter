@@ -45,7 +45,7 @@ def get_default_target_version(
     return {
         "rvc2": "2022.3.0",
         "rvc3": "2022.3.0",
-        "rvc4": "2.23.0",
+        "rvc4": "2.32.6",
         "hailo": "2025.04",
     }[target]
 
