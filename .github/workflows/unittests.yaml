@@ -4,6 +4,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - modelconverter/__init__.py
       - requirements.txt
       - 'tests/test_utils/**'
       - 'modelconverter/**'
