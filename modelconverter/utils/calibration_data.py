@@ -3,6 +3,7 @@ import zipfile
 from pathlib import Path
 
 import cv2
+import numpy as np
 from loguru import logger
 from luxonis_ml.data import LuxonisDataset, LuxonisLoader
 
@@ -81,6 +82,11 @@ def load_from_ldf(
         loader = LuxonisLoader(dataset, view=view)
 
     for i, (img_arr, _) in enumerate(loader):  # type: ignore
+        if not isinstance(img_arr, np.ndarray):
+            raise NotImplementedError(
+                "Multi input LDF datasets are not yet "
+                "supported for calibration data"
+            )
         img_path = calibration_data_dir / f"{i}.png"
         cv2.imwrite(str(img_path), img_arr)
 
