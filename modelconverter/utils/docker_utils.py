@@ -55,9 +55,12 @@ def generate_compose_config(image: str, gpu: bool = False) -> str:
         "services": {
             "modelconverter": {
                 "environment": {
-                    "AWS_ACCESS_KEY_ID": environ.AWS_ACCESS_KEY_ID or "",
-                    "AWS_SECRET_ACCESS_KEY": environ.AWS_SECRET_ACCESS_KEY
-                    or "",
+                    "AWS_ACCESS_KEY_ID": environ.AWS_ACCESS_KEY_ID.get_secret_value()
+                    if environ.AWS_ACCESS_KEY_ID
+                    else "",
+                    "AWS_SECRET_ACCESS_KEY": environ.AWS_SECRET_ACCESS_KEY.get_secret_value()
+                    if environ.AWS_SECRET_ACCESS_KEY
+                    else "",
                     "AWS_S3_ENDPOINT_URL": environ.AWS_S3_ENDPOINT_URL or "",
                     "LUXONISML_BUCKET": environ.LUXONISML_BUCKET or "",
                     "TF_CPP_MIN_LOG_LEVEL": "3",
@@ -73,8 +76,9 @@ def generate_compose_config(image: str, gpu: bool = False) -> str:
         },
         "secrets": {
             "gcp-credentials": {
-                "file": environ.GOOGLE_APPLICATION_CREDENTIALS
-                or tempfile.NamedTemporaryFile(delete=False).name,  # noqa: SIM115
+                "file": environ.GOOGLE_APPLICATION_CREDENTIALS.get_secret_value()
+                if environ.GOOGLE_APPLICATION_CREDENTIALS
+                else tempfile.NamedTemporaryFile(delete=False).name,  # noqa: SIM115
             }
         },
     }
