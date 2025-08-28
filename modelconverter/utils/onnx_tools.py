@@ -274,9 +274,9 @@ class ONNXModifier:
             self.onnx_model = onnx.load(self.model_path.as_posix())
         onnx.checker.check_model(self.onnx_model)
 
-        self.dtype = onnx.mapping.TENSOR_TYPE_TO_NP_TYPE[
+        self.dtype = helper.tensor_dtype_to_np_dtype(
             self.onnx_model.graph.input[0].type.tensor_type.elem_type
-        ]
+        )
         self.input_shape = [
             dim.dim_value
             for dim in self.onnx_model.graph.input[
