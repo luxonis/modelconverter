@@ -119,7 +119,7 @@ class RVC4Benchmark(Benchmark):
                 if data_types[name] == "Float_32":
                     self.force_cpu = True
                     numpy_type = np.float32
-                elif data_types[name] == "Float_16":
+                elif data_types[name] in ["uFxp_16", "Float_16"]:
                     numpy_type = np.float16
                 elif data_types[name] == "uFxp_8":
                     numpy_type = np.uint8
@@ -171,7 +171,7 @@ class RVC4Benchmark(Benchmark):
         model_input = next(iter(data_types.values()))
         if model_input == "Float_32":
             return dai.TensorInfo.DataType.FP32
-        if model_input == "Float_16":
+        if model_input in ["uFxp_16", "Float_16"]:
             return dai.TensorInfo.DataType.FP16
         if model_input == "uFxp_8":
             return dai.TensorInfo.DataType.U8F

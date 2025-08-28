@@ -71,7 +71,7 @@ class RVC2Exporter(Exporter):
                     inp_str += ","
                 inp_str += name
                 if inp.shape is not None:
-                    inp_str += f"{_lst_join(inp.shape, sep=' ')}"
+                    inp_str += f"{_lst_join(inp.shape, sep=',')}"
                 if inp.data_type is not None:
                     if OV_2021 and self.compress_to_fp16:
                         data_type = DataType("float16")
@@ -138,7 +138,7 @@ class RVC2Exporter(Exporter):
                 if mean_values_str:
                     mean_values_str += ","
                 mean_values_str += (
-                    f"{name}[{', '.join(str(v) for v in inp.mean_values)}]"
+                    f"{name}[{','.join(str(v) for v in inp.mean_values)}]"
                 )
 
             # Append scale values in a similar style
@@ -146,7 +146,7 @@ class RVC2Exporter(Exporter):
                 if scale_values_str:
                     scale_values_str += ","
                 scale_values_str += (
-                    f"{name}[{', '.join(str(v) for v in inp.scale_values)}]"
+                    f"{name}[{','.join(str(v) for v in inp.scale_values)}]"
                 )
         # Extend args with mean and scale values if they were collected
         if mean_values_str:
