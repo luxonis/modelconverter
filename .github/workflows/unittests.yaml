@@ -65,7 +65,7 @@ jobs:
 
     - name: Install package
       working-directory: modelconverter
-      run: python -m pip install -e .[dev] --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local/
+      run: python -m pip install -e .[dev]
 
     - name: Install specified luxonis-ml
       shell: bash
