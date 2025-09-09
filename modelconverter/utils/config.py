@@ -11,6 +11,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PositiveInt,
     field_validator,
     model_validator,
 )
@@ -247,6 +248,7 @@ class BlobBaseConfig(TargetConfig):
 class RVC2Config(BlobBaseConfig):
     number_of_shaves: int = 8
     superblob: bool = True
+    n_workers: PositiveInt | None = None
 
     @model_validator(mode="after")
     def _validate_superblob(self) -> Self:

@@ -36,6 +36,7 @@ class RVC2Exporter(Exporter):
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)
+        self.n_workers = config.rvc2.n_workers
         self.compress_to_fp16 = config.rvc2.compress_to_fp16
         self.number_of_shaves = config.rvc2.number_of_shaves
         # Setting the number_of_cmx_slices equal to the number_of_shaves is intentional from the DAI's perspective to maximize RVC2 pipeline performance.
@@ -286,7 +287,10 @@ class RVC2Exporter(Exporter):
 
         logger.info("Compiling superblob.")
 
-        with Pool(cpu_count()) as pool:
+        n_workers = self.n_workers or cpu_count()
+
+        logger.info(f"Using {n_workers} workers for superblob compilation.")
+        with Pool(n_workers) as pool:
             for _ in track(
                 pool.imap_unordered(
                     partial(
