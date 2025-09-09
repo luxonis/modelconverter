@@ -1,5 +1,6 @@
 import importlib.metadata
 import os
+import resource
 import signal
 import sys
 from contextlib import contextmanager
@@ -216,6 +217,8 @@ def convert(
                     intermediate_url,
                     put_file_plugin,
                 )
+    ram = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    logger.info(f"Peak RAM usage: {ram:.2f} MB")
 
 
 @app.command(group=docker_commands)
