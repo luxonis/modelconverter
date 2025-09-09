@@ -71,7 +71,7 @@ class RVC2Exporter(Exporter):
                     inp_str += ","
                 inp_str += name
                 if inp.shape is not None:
-                    inp_str += f"{_lst_join(inp.shape, sep=',')}"
+                    inp_str += f"{_lst_join(inp.shape, sep=' ')}"
                 if inp.data_type is not None:
                     if OV_2021 and self.compress_to_fp16:
                         data_type = DataType("float16")
