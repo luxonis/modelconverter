@@ -248,7 +248,7 @@ class BlobBaseConfig(TargetConfig):
 class RVC2Config(BlobBaseConfig):
     number_of_shaves: int = 8
     superblob: bool = True
-    n_workers: PositiveInt | None = None
+    n_workers: PositiveInt | Literal["auto"] | None = None
 
     @model_validator(mode="after")
     def _validate_superblob(self) -> Self:

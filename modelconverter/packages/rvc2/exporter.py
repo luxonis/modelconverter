@@ -1,15 +1,20 @@
+import math
 import shutil
 import subprocess
 import tempfile
+from collections import Counter
 from collections.abc import Iterable
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from os import environ as env
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Literal
 
+import psutil
 import tflite2onnx
+from defusedxml import ElementTree
 from loguru import logger
+from luxonis_ml.typing import PathType
 from rich.progress import track
 
 from modelconverter.packages.base_exporter import Exporter
@@ -36,7 +41,7 @@ class RVC2Exporter(Exporter):
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)
-        self.n_workers = config.rvc2.n_workers
+        self.n_workers: int | Literal["auto"] | None = config.rvc2.n_workers
         self.compress_to_fp16 = config.rvc2.compress_to_fp16
         self.number_of_shaves = config.rvc2.number_of_shaves
         # Setting the number_of_cmx_slices equal to the number_of_shaves is intentional from the DAI's perspective to maximize RVC2 pipeline performance.
@@ -232,6 +237,7 @@ class RVC2Exporter(Exporter):
             xml_path = self.input_model
         else:
             raise NotImplementedError
+
         self._inference_model_path = xml_path
         args = self.compile_tool_args
         self._add_args(args, ["-d", self.device])
@@ -241,7 +247,7 @@ class RVC2Exporter(Exporter):
         args += ["-m", xml_path]
 
         if self.superblob:
-            return self.compile_superblob(args)
+            return self.compile_superblob(args, xml_path)
 
         return self.compile_blob(args)
 
@@ -268,7 +274,7 @@ class RVC2Exporter(Exporter):
         logger.info(f"Blob compiled to {blob_output_path}")
         return blob_output_path
 
-    def compile_superblob(self, args: list) -> Path:
+    def compile_superblob(self, args: list, xml_path: Path) -> Path:
         blobs_directory = self.intermediate_outputs_dir / "blobs"
         blobs_directory.mkdir(parents=True, exist_ok=True)
 
@@ -287,7 +293,11 @@ class RVC2Exporter(Exporter):
 
         logger.info("Compiling superblob.")
 
-        n_workers = self.n_workers or cpu_count()
+        n_workers: int | Literal["auto"] = self.n_workers or cpu_count()
+
+        if n_workers == "auto":
+            n_workers = _suggest_n_workers(xml_path)
+            logger.info(f"Auto-selected {n_workers} workers.")
 
         logger.info(f"Using {n_workers} workers for superblob compilation.")
         with Pool(n_workers) as pool:
@@ -396,3 +406,46 @@ class RVC2Exporter(Exporter):
 
 def _lst_join(args: Iterable[Any], sep: str = ",") -> str:
     return f"[{sep.join(map(str, args))}]"
+
+
+def _get_openvino_histogram(xml_path: PathType) -> dict[str, int]:
+    tree = ElementTree.parse(xml_path)
+    root = tree.getroot()
+    if root is None:
+        return {}
+
+    layer_types = []
+    for layer in root.findall("./layers/layer"):
+        layer_types.append(layer.attrib.get("type"))
+
+    return Counter(layer_types)
+
+
+def _suggest_n_workers(xml_path: PathType, safety_margin: float = 0.8) -> int:
+    xml_path = Path(xml_path)
+    counts = _get_openvino_histogram(xml_path)
+    bin_path = xml_path.with_suffix(".bin")
+    bin_size = bin_path.stat().st_size
+
+    # Tunable coefficients (rough starting point, in bytes)
+    alpha = 5.0  # multiplier for bin size
+    beta = 50e6  # per heavy op
+    gamma = 10e6  # per medium op
+
+    heavy_ops = {
+        "Convolution",
+        "MatMul",
+        "FullyConnected",
+        "GRU",
+        "LSTM",
+        "Deconvolution",
+    }
+    medium_ops = {"Pooling", "BatchNormalization"}
+
+    est_mem = alpha * bin_size
+    est_mem += beta * sum(counts[op] for op in heavy_ops)
+    est_mem += gamma * sum(counts[op] for op in medium_ops)
+
+    total_ram = psutil.virtual_memory().total
+    usable = total_ram * safety_margin
+    return min(max(1, math.floor(usable / est_mem)), cpu_count())
