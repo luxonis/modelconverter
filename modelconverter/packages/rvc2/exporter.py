@@ -298,8 +298,9 @@ class RVC2Exporter(Exporter):
 
         n_workers: int | Literal["auto"] = self.n_workers or cpu_count()
 
+        peak_mem = result.peak_memory
+
         if n_workers == "auto":
-            peak_mem = result.peak_memory
             avail_ram = get_container_memory_available()
             logger.info("Computing optimal number of workers...")
             logger.info(f"Available RAM: {avail_ram / 1e9:.2f} GB")
