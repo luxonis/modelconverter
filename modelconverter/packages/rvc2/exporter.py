@@ -305,9 +305,13 @@ class RVC2Exporter(Exporter):
             logger.info(f"Available RAM: {avail_ram / 1e9:.2f} GB")
             logger.info(f"Peak RAM per compile: {peak_mem / 1e6:.2f} MB")
             n_workers = min(max(1, avail_ram // peak_mem - 1), cpu_count())
-            logger.info(f"Auto-selected {n_workers} workers.")
-
-        logger.info(f"Using {n_workers} workers for superblob compilation.")
+            logger.info(
+                f"Auto-selected {n_workers} workers for superblob compilation."
+            )
+        else:
+            logger.info(
+                f"Using {n_workers} workers for superblob compilation."
+            )
         logger.info(
             f"Estimated total RAM usage: {n_workers * peak_mem / 1e9:.2f} GB"
         )
@@ -323,7 +327,7 @@ class RVC2Exporter(Exporter):
                 (i for i in range(1, 17) if i != 8),
             ):
                 logger.info(
-                    f"Compiled {shaves} shaves patch in {total:.2f} s, "
+                    f"Compiled {shaves}-shave patch in {total:.2f} s, "
                     f"peak RAM {peak / 1e6:.2f} MB"
                 )
 
