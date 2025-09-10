@@ -63,6 +63,14 @@ def onnx_attach_normalization_to_inputs(
 
         shape = cfg.shape
         layout = cfg.layout or "NCHW"
+        if layout not in ["NCHW", "NHWC"]:
+            logger.warning(
+                f"Input '{input_name}' has layout '{layout}', "
+                "but only 'NCHW' and 'NHWC' are supported for normalization. "
+                "Skipping."
+            )
+            continue
+
         if shape is not None:
             n_channels = shape[layout.index("C")]
             if n_channels != 3:
@@ -72,14 +80,6 @@ def onnx_attach_normalization_to_inputs(
                     "Skipping."
                 )
                 continue
-
-        if layout not in ["NCHW", "NHWC"]:
-            logger.warning(
-                f"Input '{input_name}' has layout '{layout}', "
-                "but only 'NCHW' and 'NHWC' are supported for normalization. "
-                "Skipping."
-            )
-            continue
 
         last_output = input_name
 
@@ -274,9 +274,9 @@ class ONNXModifier:
             self.onnx_model = onnx.load(self.model_path.as_posix())
         onnx.checker.check_model(self.onnx_model)
 
-        self.dtype = onnx.mapping.TENSOR_TYPE_TO_NP_TYPE[
+        self.dtype = helper.tensor_dtype_to_np_dtype(
             self.onnx_model.graph.input[0].type.tensor_type.elem_type
-        ]
+        )
         self.input_shape = [
             dim.dim_value
             for dim in self.onnx_model.graph.input[
