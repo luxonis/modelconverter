@@ -307,12 +307,10 @@ class RVC2Exporter(Exporter):
             logger.info(f"Peak RAM per compile: {peak_mem / 1e6:.2f} MB")
             n_workers = min(max(1, avail_ram // peak_mem - 1), cpu_count())
             logger.info(
-                f"Auto-selected {n_workers} workers for superblob compilation."
+                f"Auto-selected {n_workers} workers for superblob compilation"
             )
         else:
-            logger.info(
-                f"Using {n_workers} workers for superblob compilation."
-            )
+            logger.info(f"Using {n_workers} workers for superblob compilation")
         logger.info(
             f"Estimated total RAM usage: {n_workers * peak_mem / 1e9:.2f} GB"
         )
