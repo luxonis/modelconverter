@@ -4,6 +4,8 @@ from .docker_utils import (
     check_docker,
     docker_build,
     docker_exec,
+    get_container_memory_available,
+    get_container_memory_limit,
     get_docker_image,
     in_docker,
 )
@@ -52,6 +54,8 @@ __all__ = [
     "environ",
     "exit_with",
     "get_archive_input",
+    "get_container_memory_available",
+    "get_container_memory_limit",
     "get_docker_image",
     "get_metadata",
     "get_protocol",

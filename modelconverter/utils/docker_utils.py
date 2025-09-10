@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
+import psutil
 import yaml
 from loguru import logger
 from luxonis_ml.utils import environ
@@ -50,7 +51,12 @@ def get_default_target_version(
     }[target]
 
 
-def generate_compose_config(image: str, gpu: bool = False) -> str:
+def generate_compose_config(
+    image: str,
+    gpu: bool = False,
+    memory: str | None = None,
+    cpus: float | None = None,
+) -> str:
     config = {
         "services": {
             "modelconverter": {
@@ -82,6 +88,16 @@ def generate_compose_config(image: str, gpu: bool = False) -> str:
             }
         },
     }
+    limits = {}
+    if memory is not None:
+        limits["memory"] = memory
+    if cpus is not None:
+        limits["cpus"] = str(cpus)
+
+    if limits:
+        config["services"]["modelconverter"]["deploy"] = {
+            "resources": {"limits": limits}
+        }
 
     if gpu:
         config["services"]["modelconverter"]["runtime"] = "nvidia"
@@ -211,6 +227,8 @@ def docker_exec(
     bare_tag: str,
     use_gpu: bool,
     version: str | None = None,
+    memory: str | None = None,
+    cpus: float | None = None,
 ) -> None:
     version = version or get_default_target_version(target)
     image = get_docker_image(target, bare_tag, version)
@@ -218,7 +236,10 @@ def docker_exec(
     with tempfile.NamedTemporaryFile(delete=False) as f:
         f.write(
             generate_compose_config(
-                image, gpu=use_gpu and target == "hailo"
+                image,
+                gpu=use_gpu and target == "hailo",
+                memory=memory,
+                cpus=cpus,
             ).encode()
         )
 
@@ -242,3 +263,32 @@ def docker_exec(
             check=False,
         ).returncode
     )
+
+
+def get_container_memory_limit() -> int:
+    """Returns the memory limit of the current container in bytes."""
+    # cgroup v2 (common on modern Linux/Docker)
+    cgroup_v2_path = Path("/sys/fs/cgroup/memory.max")
+    if cgroup_v2_path.exists():
+        val = cgroup_v2_path.read_text().strip()
+        if val.isdigit():
+            return int(val)
+        if val == "max":
+            return psutil.virtual_memory().available
+    # fallback to cgroup v1
+    cgroup_v1_path = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+    if cgroup_v1_path.exists():
+        val = cgroup_v1_path.read_text().strip()
+        if val.isdigit():
+            return int(val)
+    return psutil.virtual_memory().available
+
+
+def get_container_memory_available() -> int:
+    """Return bytes of memory available to this container, or None if
+    unlimited."""
+    limit = get_container_memory_limit()
+    # sum RSS of all processes in the container
+    total_usage = sum(p.memory_info().rss for p in psutil.process_iter())
+    available = limit - total_usage
+    return max(0, available)

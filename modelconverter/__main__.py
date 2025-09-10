@@ -1,5 +1,6 @@
 import importlib.metadata
 import os
+import re
 import resource
 import signal
 import sys
@@ -556,8 +557,40 @@ def launcher(
             "Available options differ based on the target platform. ",
         ),
     ] = None,
+    memory: Annotated[
+        str | None,
+        Parameter(
+            group=docker_parameters,
+            help="Amount of memory to allocate to the docker container. "
+            "The format is a number followed by a suffix, e.g. '4g' for 4 gigabytes. "
+            "Available suffixes are 'b', 'k', 'm', 'g'. "
+            "By default, uses all available system memory.",
+        ),
+    ] = None,
+    cpus: Annotated[
+        float | None,
+        Parameter(
+            group=docker_parameters,
+            help="Number of CPU cores to allocate to the docker container. "
+            "Can be a fractional number, e.g. '0.5' for half a core. "
+            "By default, uses all available CPU cores.",
+        ),
+    ] = None,
 ):
     command, bound, _ = app.parse_args(tokens)
+
+    if memory is not None:
+        if not re.match(r"^\d+(?:[bkmgBKMG])?$", memory):
+            raise ValueError(
+                "Invalid memory format. Use a number followed by an optional suffix: b, k, m, g."
+            )
+        mem_value = int(memory[:-1])
+        if mem_value <= 0:
+            raise ValueError("Memory value must be a positive integer.")
+        memory = memory.upper()
+
+    if cpus is not None and cpus <= 0:
+        raise ValueError("CPUs value must be a positive number.")
 
     if in_docker():
         return command(*bound.args, **bound.kwargs)
@@ -575,6 +608,8 @@ def launcher(
         bare_tag=tag,
         use_gpu=gpu,
         version=tool_version,
+        memory=memory,
+        cpus=cpus,
     )
 
 

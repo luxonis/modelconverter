@@ -1,25 +1,21 @@
-import math
 import shutil
 import subprocess
 import tempfile
-from collections import Counter
 from collections.abc import Iterable
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from os import environ as env
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, NamedTuple
 
-import psutil
 import tflite2onnx
-from defusedxml import ElementTree
 from loguru import logger
-from luxonis_ml.typing import PathType
 from rich.progress import track
 
 from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
+    get_container_memory_available,
     onnx_attach_normalization_to_inputs,
     subprocess_run,
 )
@@ -34,6 +30,11 @@ from modelconverter.utils.types import (
 OV_2021: Final[bool] = env.get("VERSION") == "2021.4.0"
 
 DEFAULT_SUPER_SHAVES: Final[int] = 8
+
+
+class CompileResult(NamedTuple):
+    blob_path: Path
+    peak_memory: int
 
 
 class RVC2Exporter(Exporter):
@@ -249,9 +250,9 @@ class RVC2Exporter(Exporter):
         if self.superblob:
             return self.compile_superblob(args, xml_path)
 
-        return self.compile_blob(args)
+        return self.compile_blob(args).blob_path
 
-    def compile_blob(self, args: list) -> Path:
+    def compile_blob(self, args: list) -> CompileResult:
         output_path = (
             self.output_dir / f"{self.model_name}-{self.target.name.lower()}"
         )
@@ -270,9 +271,11 @@ class RVC2Exporter(Exporter):
                 ),
             ]
 
-        self._subprocess_run(["compile_tool", *args], meta_name="compile_tool")
+        result = self._subprocess_run(
+            ["compile_tool", *args], meta_name="compile_tool"
+        )
         logger.info(f"Blob compiled to {blob_output_path}")
-        return blob_output_path
+        return CompileResult(blob_output_path, result.peak_memory)
 
     def compile_superblob(self, args: list, xml_path: Path) -> Path:
         blobs_directory = self.intermediate_outputs_dir / "blobs"
@@ -280,7 +283,7 @@ class RVC2Exporter(Exporter):
 
         orig_args = args.copy()
 
-        default_blob_path = self.compile_blob(
+        default_blob_path, peak_mem = self.compile_blob(
             [
                 *orig_args,
                 "-o",
@@ -296,7 +299,11 @@ class RVC2Exporter(Exporter):
         n_workers: int | Literal["auto"] = self.n_workers or cpu_count()
 
         if n_workers == "auto":
-            n_workers = _suggest_n_workers(xml_path)
+            avail_ram = get_container_memory_available()
+            logger.info("Computing optimal number of workers...")
+            logger.info(f"Available RAM: {avail_ram / 1e9:.2f} GB")
+            logger.info(f"Peak RAM per compile: {peak_mem / 1e6:.2f} MB")
+            n_workers = min(max(1, avail_ram // peak_mem - 1), cpu_count())
             logger.info(f"Auto-selected {n_workers} workers.")
 
         logger.info(f"Using {n_workers} workers for superblob compilation.")
@@ -406,46 +413,3 @@ class RVC2Exporter(Exporter):
 
 def _lst_join(args: Iterable[Any], sep: str = ",") -> str:
     return f"[{sep.join(map(str, args))}]"
-
-
-def _get_openvino_histogram(xml_path: PathType) -> dict[str, int]:
-    tree = ElementTree.parse(xml_path)
-    root = tree.getroot()
-    if root is None:
-        return {}
-
-    layer_types = []
-    for layer in root.findall("./layers/layer"):
-        layer_types.append(layer.attrib.get("type"))
-
-    return Counter(layer_types)
-
-
-def _suggest_n_workers(xml_path: PathType, safety_margin: float = 0.8) -> int:
-    xml_path = Path(xml_path)
-    counts = _get_openvino_histogram(xml_path)
-    bin_path = xml_path.with_suffix(".bin")
-    bin_size = bin_path.stat().st_size
-
-    # Tunable coefficients (rough starting point, in bytes)
-    alpha = 5.0  # multiplier for bin size
-    beta = 50e6  # per heavy op
-    gamma = 10e6  # per medium op
-
-    heavy_ops = {
-        "Convolution",
-        "MatMul",
-        "FullyConnected",
-        "GRU",
-        "LSTM",
-        "Deconvolution",
-    }
-    medium_ops = {"Pooling", "BatchNormalization"}
-
-    est_mem = alpha * bin_size
-    est_mem += beta * sum(counts[op] for op in heavy_ops)
-    est_mem += gamma * sum(counts[op] for op in medium_ops)
-
-    total_ram = psutil.virtual_memory().total
-    usable = total_ram * safety_margin
-    return min(max(1, math.floor(usable / est_mem)), cpu_count())
