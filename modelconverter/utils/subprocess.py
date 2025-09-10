@@ -13,9 +13,10 @@ class SubprocessResult(subprocess.CompletedProcess):
     """Extension of subprocess.CompletedProcess that also carries peak
     memory usage."""
 
-    def __init__(self, *args, peak_memory: int, **kwargs):
+    def __init__(self, *args, peak_memory: int, total_time: float, **kwargs):
         super().__init__(*args, **kwargs)
         self.peak_memory = peak_memory
+        self.total_time = total_time
 
 
 def subprocess_run(
@@ -64,11 +65,16 @@ def subprocess_run(
         time.sleep(0.1)
 
     stdout, stderr = proc.communicate()
+    t = time.time() - start_time
     result = SubprocessResult(
-        args, proc.returncode, stdout, stderr, peak_memory=peak_mem
+        args,
+        proc.returncode,
+        stdout,
+        stderr,
+        peak_memory=peak_mem,
+        total_time=t,
     )
 
-    t = time.time() - start_time
     info_string = (
         f"Command `{cmd_name}` finished in {t:.2f} seconds "
         f"with return code {result.returncode}."

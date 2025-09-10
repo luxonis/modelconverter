@@ -10,7 +10,6 @@ from typing import Any, Final, Literal, NamedTuple
 
 import tflite2onnx
 from loguru import logger
-from rich.progress import track
 
 from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import (
@@ -20,6 +19,7 @@ from modelconverter.utils import (
     subprocess_run,
 )
 from modelconverter.utils.config import SingleStageConfig
+from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -34,7 +34,7 @@ DEFAULT_SUPER_SHAVES: Final[int] = 8
 
 class CompileResult(NamedTuple):
     blob_path: Path
-    peak_memory: int
+    result: SubprocessResult
 
 
 class RVC2Exporter(Exporter):
@@ -248,7 +248,7 @@ class RVC2Exporter(Exporter):
         args += ["-m", xml_path]
 
         if self.superblob:
-            return self.compile_superblob(args, xml_path)
+            return self.compile_superblob(args)
 
         return self.compile_blob(args).blob_path
 
@@ -275,15 +275,15 @@ class RVC2Exporter(Exporter):
             ["compile_tool", *args], meta_name="compile_tool"
         )
         logger.info(f"Blob compiled to {blob_output_path}")
-        return CompileResult(blob_output_path, result.peak_memory)
+        return CompileResult(blob_output_path, result)
 
-    def compile_superblob(self, args: list, xml_path: Path) -> Path:
+    def compile_superblob(self, args: list) -> Path:
         blobs_directory = self.intermediate_outputs_dir / "blobs"
         blobs_directory.mkdir(parents=True, exist_ok=True)
 
         orig_args = args.copy()
 
-        default_blob_path, peak_mem = self.compile_blob(
+        default_blob_path, result = self.compile_blob(
             [
                 *orig_args,
                 "-o",
@@ -299,6 +299,7 @@ class RVC2Exporter(Exporter):
         n_workers: int | Literal["auto"] = self.n_workers or cpu_count()
 
         if n_workers == "auto":
+            peak_mem = result.peak_memory
             avail_ram = get_container_memory_available()
             logger.info("Computing optimal number of workers...")
             logger.info(f"Available RAM: {avail_ram / 1e9:.2f} GB")
@@ -307,22 +308,24 @@ class RVC2Exporter(Exporter):
             logger.info(f"Auto-selected {n_workers} workers.")
 
         logger.info(f"Using {n_workers} workers for superblob compilation.")
+        logger.info(
+            f"Estimated total RAM usage: {n_workers * peak_mem / 1e9:.2f} GB"
+        )
+        logger.info("Compiling patches for superblob...")
         with Pool(n_workers) as pool:
-            for _ in track(
-                pool.imap_unordered(
-                    partial(
-                        self._superblob_compile_step,
-                        orig_args,
-                        blobs_directory,
-                        self.model_name,
-                    ),
-                    (i for i in range(1, 17) if i != 8),
+            for total, peak, shaves in pool.imap_unordered(
+                partial(
+                    self._superblob_compile_step,
+                    orig_args,
+                    blobs_directory,
+                    self.model_name,
                 ),
-                total=16,
-                description="[magenta]Compiling [yellow italic]superblob",
-                transient=True,
+                (i for i in range(1, 17) if i != 8),
             ):
-                pass
+                logger.info(
+                    f"Compiled {shaves} shaves patch in {total:.2f} s, "
+                    f"peak RAM {peak / 1e6:.2f} MB"
+                )
 
         superblob_path = self.output_dir / f"{self.model_name}.superblob"
 
@@ -369,7 +372,7 @@ class RVC2Exporter(Exporter):
         blobs_directory: Path,
         model_name: str,
         shaves: int,
-    ) -> None:
+    ) -> tuple[float, int, int]:
         import bsdiff4
 
         args = orig_args.copy()
@@ -380,10 +383,11 @@ class RVC2Exporter(Exporter):
         )
         args += ["-o", blob_path]
 
-        subprocess_run(["compile_tool", *args], silent=True)
+        res = subprocess_run(["compile_tool", *args], silent=True)
 
         patch_file = blob_path.with_suffix(".patch")
         bsdiff4.file_diff(default_blob_path, blob_path, patch_file)
+        return res.total_time, res.peak_memory, shaves
 
     def exporter_buildinfo(self) -> dict[str, Any]:
         mo_version = (
