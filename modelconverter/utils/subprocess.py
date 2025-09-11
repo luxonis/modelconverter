@@ -20,18 +20,13 @@ class SubprocessResult(subprocess.CompletedProcess):
 
 
 def subprocess_run(
-    cmd: str | list[Any],
-    *,
-    silent: bool = False,
-    track_memory: bool = False,
+    cmd: str | list[Any], *, silent: bool = False
 ) -> SubprocessResult:
     """Wrapper around subprocess.run that logs, raises on error, and
     optionally tracks peak RAM usage.
 
     @param cmd: Command to execute. String or list of arguments.
     @param silent: If True, suppress logs.
-    @param track_memory: If True, peak RSS will be recorded in
-        result.peak_memory.
     @return: SubprocessResult with .peak_memory attribute.
     """
     if isinstance(cmd, str):
