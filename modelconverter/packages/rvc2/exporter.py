@@ -112,6 +112,7 @@ class RVC2Exporter(Exporter):
                 output_path=self._attach_suffix(
                     self.input_model, "modified_optimized.onnx"
                 ),
+                skip_optimization=True,
             )
 
             try:
