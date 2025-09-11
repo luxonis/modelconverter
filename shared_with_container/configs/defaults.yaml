@@ -166,8 +166,7 @@ stages:
       compress_to_fp16: true
 
       # Number of workers to use for parallel superblob compilation.
-      # Can be set to 'auto' for automatic detection of the optimal
-      # number of workers based on the RAM requirements.
+      # Will override the automatically determined number of workers.
       n_workers: ~
 
     # --- RVC3-Specific Argument ---
