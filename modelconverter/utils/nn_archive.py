@@ -145,8 +145,20 @@ def process_nn_archive(
             if channels and channels == 1:
                 encoding = "GRAY"
 
-        mean = inp.preprocessing.mean or [0, 0, 0]
-        scale = inp.preprocessing.scale or [1, 1, 1]
+        _enc = encoding if isinstance(encoding, str) else encoding["from"]
+        mean = inp.preprocessing.mean
+        if mean is None:
+            if _enc in {"RGB", "BGR"}:
+                mean = [0, 0, 0]
+            elif _enc == "GRAY":
+                mean = [0]
+
+        scale = inp.preprocessing.scale
+        if scale is None:
+            if _enc in {"RGB", "BGR"}:
+                scale = [1, 1, 1]
+            elif _enc == "GRAY":
+                scale = [1]
 
         main_stage_config["inputs"].append(
             {
