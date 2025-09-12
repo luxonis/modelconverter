@@ -244,6 +244,7 @@ class ONNXModifier:
         model_path: Path,
         output_path: Path,
         skip_optimization: bool = False,
+        skip_constant_folding: bool = False,
     ) -> None:
         self.model_path = model_path
         if model_path.with_suffix(".onnx_data").exists():
@@ -252,6 +253,7 @@ class ONNXModifier:
             self.has_external_data = False
         self.output_path = output_path
         self.skip_optimization = skip_optimization
+        self.skip_constant_folding = skip_constant_folding
         self.load_onnx()
         self.prev_onnx_model = self.onnx_model
         self.prev_onnx_gs = self.onnx_gs
@@ -266,6 +268,7 @@ class ONNXModifier:
             self.onnx_model, _ = simplify(
                 self.model_path.as_posix(),
                 perform_optimization=True and not self.skip_optimization,
+                skip_constant_folding=self.skip_constant_folding,
             )
         except Exception as e:
             logger.warning(
@@ -310,8 +313,8 @@ class ONNXModifier:
                 sess_options.graph_optimization_level = (
                     ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
                 )
-                sess_options.optimized_model_filepath = (
-                    tmp_file.name + "_optimized.onnx"
+                sess_options.optimized_model_filepath = tmp_file.name.replace(
+                    ".onnx", "_optimized.onnx"
                 )
 
                 _ = ort.InferenceSession(tmp_file.name, sess_options)
@@ -322,9 +325,16 @@ class ONNXModifier:
 
                 Path(sess_options.optimized_model_filepath).unlink()
 
-        optimized_onnx_model, _ = simplify(
-            optimized_onnx_model, perform_optimization=False
-        )
+        try:
+            optimized_onnx_model, _ = simplify(
+                optimized_onnx_model,
+                perform_optimization=False,
+                skip_constant_folding=self.skip_constant_folding,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to simplify optimized ONNX model with error: {e}\nProceeding without simplification."
+            )
 
         if self.has_external_data:
             with tempfile.NamedTemporaryFile(
@@ -1200,7 +1210,9 @@ class ONNXModifier:
         try:
             optimization_func()
             if not self.compare_outputs(from_modelproto=True):
-                logger.warning(f"Failed: {step_name}, reverting changes...")
+                logger.warning(
+                    f"Failed: {step_name} due to output mismatch, reverting changes..."
+                )
                 self.revert_changes()
         except Exception as e:
             logger.warning(
