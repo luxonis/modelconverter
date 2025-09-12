@@ -78,7 +78,7 @@ In the conversion process, you have options to control the color encoding format
 
 ### YAML Configuration File
 
-The `encoding` flag in the YAML configuration file allows you to specify color encoding as follows:
+The `encoding` flag in the YAML configuration file specifies the format that the **ONNX model expects** (`from`), and the format that **DepthAI** will use at runtime (`to`). It allows you to specify color encoding as follows:
 
 - **Single-Value `encoding`**:
   Setting encoding to a single value, such as *"RGB"*, *"BGR"*, *"GRAY"*, or *"NONE"*, will automatically apply this setting to both `encoding.from` and `encoding.to`. For example, `encoding: RGB` sets both `encoding.from` and `encoding.to` to *"RGB"* internally.
@@ -89,7 +89,7 @@ The `encoding` flag in the YAML configuration file allows you to specify color e
     from: RGB
     to: BGR
   ```
-  This configuration specifies that the input data is in RGB format and will be converted to BGR format during processing.
+  This configuration indicates that the **ONNX model** expects inputs in **RGB format**, and the converter will transform the input data to **BGR format** for **DepthAI** execution.
 
 > [!NOTE]
 > If the encoding is not specified in the YAML configuration, the default values are set to `encoding.from=RGB` and `encoding.to=BGR`.
@@ -102,12 +102,40 @@ The `encoding` flag in the YAML configuration file allows you to specify color e
 In the NN Archive configuration, there are two flags related to color encoding control:
 
 - **`dai_type`**:
-  Provides a more comprehensive control over the input type compatible with the DAI backend. It is read by DepthAI to automatically configure the processing pipeline, including any necessary modifications to the input image format.
+  Provides comprehensive control over the input type, including both **color encoding** (e.g., RGB, BGR, GRAY) and **memory layout** (planar `NCHW` vs. interleaved `NHWC`). The value of this flag should always reflect what the original ONNX model expects (not what DepthAI will generate at runtime). \
+  For example:
+
+  - If the ONNX model was trained with RGB planar inputs, use:
+    ```json
+    "dai_type": "RGB888p"
+    ```
+  - If the ONNX model was trained with BGR interleaved inputs, use:
+    ```json
+    "dai_type": "BGR888i"
+    ```
+
+  > [!NOTE]
+  > You can check the `enum Type` in the [DepthAI API documentation](https://docs.luxonis.com/software-v3/depthai/depthai-components/messages/img_frame) for all possible values of `dai_type`.
+
 - **`reverse_channels` (Deprecated)**:
-  Determines the input color format of the model: when set to *True*, the input is considered to be *"RGB"*, and when set to *False*, it is treated as *"BGR"*. This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
+  A simpler flag controlling only channel order:
+
+  - `True`: Assumes the ONNX model expects RGB inputs. Since DepthAI always generates BGR images, the converter will insert extra ONNX nodes to swap the channels.
+  - `False`: Assumes the ONNX model expects BGR inputs. No channel reordering is performed.
+
+  This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
+
+- **`interleaved_to_planar`**:
+  A boolean flag indicating whether the input data should be converted from interleaved (`NHWC`) to planar (`NCHW`) format.
+
+  - `True`: The converter will insert extra ONNX nodes to change the layout from interleaved to planar.
+  - `False`: No layout conversion is performed.
+
+  If this flag is set to `null` or not provided, the converter will automatically determine and apply the necessary layout conversions. \
+  This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
 
 > [!NOTE]
-> If neither `dai_type` nor `reverse_channels` the input to the model is considered to be *"RGB"*.
+> If neither `dai_type` nor `reverse_channels` are provided, the input to the model is considered to be *"RGB"*.
 
 > [!NOTE]
 > If both `dai_type` and `reverse_channels` are provided, the converter will give priority to `dai_type`.
