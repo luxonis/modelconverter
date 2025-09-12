@@ -57,6 +57,23 @@ def subprocess_run(
             peak_mem = max(peak_mem, mem)
         except psutil.NoSuchProcess:
             break
+
+        # Needs to be in this strange order to ensure the
+        # streams are consumed. Otherwise some commands
+        # may block if they write too much to stderr or stdout.
+        # This is a case for `snpe-dlc-info` for example.
+        if proc.stdout:
+            for line in proc.stdout:
+                line = line.decode(errors="ignore")
+                if not silent:
+                    logger.info(line)
+
+        if proc.stderr:
+            for line in proc.stderr:
+                line = line.decode(errors="ignore")
+                if not silent:
+                    logger.info(line)
+
         time.sleep(0.1)
 
     stdout, stderr = proc.communicate()
@@ -78,18 +95,6 @@ def subprocess_run(
 
     if not silent:
         log_message(info_string)
-
-    if result.stderr:
-        string = result.stderr.decode(errors="ignore")
-        if not silent:
-            log_message(f"[ STDERR ]:\n{string}")
-        info_string += f"\n[ STDERR ]:\n{string}"
-
-    if result.stdout:
-        string = result.stdout.decode(errors="ignore")
-        if not silent:
-            log_message(f"[ STDOUT ]:\n{string}")
-        info_string += f"\n[ STDOUT ]:\n{string}"
 
     if result.returncode != 0:
         raise SubprocessException(info_string)
