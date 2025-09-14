@@ -1,7 +1,8 @@
+import io
 import shutil
 import subprocess
+import threading
 import time
-from typing import Any
 
 import psutil
 from loguru import logger
@@ -20,10 +21,10 @@ class SubprocessResult(subprocess.CompletedProcess):
 
 
 def subprocess_run(
-    cmd: str | list[Any], *, silent: bool = False
+    cmd: str | list[str], *, silent: bool = False
 ) -> SubprocessResult:
     """Wrapper around subprocess.run that logs, raises on error, and
-    optionally tracks peak RAM usage.
+    tracks peak RAM usage without hanging on stdout/stderr.
 
     @param cmd: Command to execute. String or list of arguments.
     @param silent: If True, suppress logs.
@@ -46,10 +47,32 @@ def subprocess_run(
     start_time = time.time()
 
     proc = subprocess.Popen(
-        args, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=1,
+        text=False,
     )
     ps_proc = psutil.Process(proc.pid)
     peak_mem = 0
+
+    stdout_buf, stderr_buf = [], []
+
+    def _reader(stream: io.BufferedReader, buf: list[str]) -> None:
+        for line in iter(stream.readline, b""):
+            text = line.decode(errors="ignore")
+            buf.append(text)
+            if not silent:
+                logger.info(text.strip())
+        stream.close()
+
+    threads = [
+        threading.Thread(target=_reader, args=(proc.stdout, stdout_buf)),
+        threading.Thread(target=_reader, args=(proc.stderr, stderr_buf)),
+    ]
+    for t in threads:
+        t.daemon = True
+        t.start()
 
     while proc.poll() is None:
         try:
@@ -57,32 +80,17 @@ def subprocess_run(
             peak_mem = max(peak_mem, mem)
         except psutil.NoSuchProcess:
             break
-
-        # We need to ensure the streams are being consumed.
-        # Otherwise some commands may block if they write
-        # too much to stderr or stdout.
-        # This is a case for `snpe-dlc-info` for example.
-        if proc.stdout:
-            for line in proc.stdout:
-                line = line.decode(errors="ignore")
-                if not silent:
-                    logger.info(line)
-
-        if proc.stderr:
-            for line in proc.stderr:
-                line = line.decode(errors="ignore")
-                if not silent:
-                    logger.info(line)
-
         time.sleep(0.1)
 
-    stdout, stderr = proc.communicate()
+    for t in threads:
+        t.join(timeout=1.0)
+
     t = time.time() - start_time
     result = SubprocessResult(
         args,
         proc.returncode,
-        stdout,
-        stderr,
+        "".join(stdout_buf).encode(),
+        "".join(stderr_buf).encode(),
         peak_memory=peak_mem,
         total_time=t,
     )
