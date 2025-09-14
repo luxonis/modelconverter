@@ -58,9 +58,9 @@ def subprocess_run(
         except psutil.NoSuchProcess:
             break
 
-        # Needs to be in this strange order to ensure the
-        # streams are consumed. Otherwise some commands
-        # may block if they write too much to stderr or stdout.
+        # We need to ensure the streams are being consumed.
+        # Otherwise some commands may block if they write
+        # too much to stderr or stdout.
         # This is a case for `snpe-dlc-info` for example.
         if proc.stdout:
             for line in proc.stdout:
