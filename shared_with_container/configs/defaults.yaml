@@ -165,6 +165,10 @@ stages:
       # If the original model has FP32 weights or biases, they are compressed to FP16. All intermediate data is kept in original precision.
       compress_to_fp16: true
 
+      # Number of workers to use for parallel superblob compilation.
+      # Will override the automatically determined number of workers.
+      n_workers: ~
+
     # --- RVC3-Specific Argument ---
     rvc3:
       # Target device for POT. Can be one of { VPU, ANY }

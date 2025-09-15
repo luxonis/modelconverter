@@ -20,6 +20,7 @@ from modelconverter.utils.config import (
     RandomCalibrationConfig,
     SingleStageConfig,
 )
+from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import InputFileType, Target
 
 
@@ -234,6 +235,7 @@ class Exporter(ABC):
 
     def _subprocess_run(
         self, args: list[str], meta_name: str, **kwargs
-    ) -> None:
-        subprocess_run(args, **kwargs)
+    ) -> SubprocessResult:
+        result = subprocess_run(args, **kwargs)
         self._cmd_info[meta_name] = [str(arg) for arg in args]
+        return result

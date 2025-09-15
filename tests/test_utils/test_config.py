@@ -47,6 +47,7 @@ DEFAULT_TARGET_CONFIGS = {
         "number_of_shaves": 8,
         "disable_calibration": False,
         "compress_to_fp16": True,
+        "n_workers": None,
     },
     "rvc3": {
         "mo_args": [],

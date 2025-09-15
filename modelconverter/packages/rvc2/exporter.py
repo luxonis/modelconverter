@@ -1,24 +1,28 @@
 import shutil
 import subprocess
 import tempfile
+import time
 from collections.abc import Iterable
+from concurrent.futures import Future, ThreadPoolExecutor
 from functools import partial
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count
 from os import environ as env
 from pathlib import Path
-from typing import Any, Final
+from threading import Lock
+from typing import Any, Final, NamedTuple
 
 import tflite2onnx
 from loguru import logger
-from rich.progress import track
 
 from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
+    get_container_memory_available,
     onnx_attach_normalization_to_inputs,
     subprocess_run,
 )
 from modelconverter.utils.config import SingleStageConfig
+from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -31,11 +35,17 @@ OV_2021: Final[bool] = env.get("VERSION") == "2021.4.0"
 DEFAULT_SUPER_SHAVES: Final[int] = 8
 
 
+class CompileResult(NamedTuple):
+    blob_path: Path
+    result: SubprocessResult
+
+
 class RVC2Exporter(Exporter):
     target: Target = Target.RVC2
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)
+        self.n_workers = config.rvc2.n_workers
         self.compress_to_fp16 = config.rvc2.compress_to_fp16
         self.number_of_shaves = config.rvc2.number_of_shaves
         # Setting the number_of_cmx_slices equal to the number_of_shaves is intentional from the DAI's perspective to maximize RVC2 pipeline performance.
@@ -232,6 +242,7 @@ class RVC2Exporter(Exporter):
             xml_path = self.input_model
         else:
             raise NotImplementedError
+
         self._inference_model_path = xml_path
         args = self.compile_tool_args
         self._add_args(args, ["-d", self.device])
@@ -243,9 +254,9 @@ class RVC2Exporter(Exporter):
         if self.superblob:
             return self.compile_superblob(args)
 
-        return self.compile_blob(args)
+        return self.compile_blob(args).blob_path
 
-    def compile_blob(self, args: list) -> Path:
+    def compile_blob(self, args: list) -> CompileResult:
         output_path = (
             self.output_dir / f"{self.model_name}-{self.target.name.lower()}"
         )
@@ -264,17 +275,20 @@ class RVC2Exporter(Exporter):
                 ),
             ]
 
-        self._subprocess_run(["compile_tool", *args], meta_name="compile_tool")
+        result = self._subprocess_run(
+            ["compile_tool", *args], meta_name="compile_tool"
+        )
         logger.info(f"Blob compiled to {blob_output_path}")
-        return blob_output_path
+        return CompileResult(blob_output_path, result)
 
-    def compile_superblob(self, args: list) -> Path:
+    def compile_superblob(self, args: list[str]) -> Path:
         blobs_directory = self.intermediate_outputs_dir / "blobs"
         blobs_directory.mkdir(parents=True, exist_ok=True)
 
         orig_args = args.copy()
 
-        default_blob_path = self.compile_blob(
+        # Base blob compile to get peak RAM usage
+        default_blob_path, result = self.compile_blob(
             [
                 *orig_args,
                 "-o",
@@ -287,22 +301,74 @@ class RVC2Exporter(Exporter):
 
         logger.info("Compiling superblob.")
 
-        with Pool(cpu_count()) as pool:
-            for _ in track(
-                pool.imap_unordered(
-                    partial(
-                        self._superblob_compile_step,
-                        orig_args,
-                        blobs_directory,
-                        self.model_name,
-                    ),
-                    (i for i in range(1, 17) if i != 8),
-                ),
-                total=16,
-                description="[magenta]Compiling [yellow italic]superblob",
-                transient=True,
-            ):
-                pass
+        base_peak_mem = result.peak_memory * 1.5
+        peaks = [base_peak_mem]
+
+        avail_ram = get_container_memory_available()
+        n_workers = int(
+            max(1, min(cpu_count(), avail_ram // base_peak_mem - 1))
+        )
+        if self.n_workers is not None:
+            if self.n_workers > n_workers:
+                logger.warning(
+                    f"Requested {self.n_workers} workers, which is "
+                    f"more than the recommended {n_workers} based on "
+                    "available RAM. This may lead to out-of-memory errors."
+                )
+            n_workers = self.n_workers
+
+        logger.info(f"Available RAM: {avail_ram / 1e9:.2f} GB")
+        logger.info(f"Base compile peak: {base_peak_mem / 1e6:.1f} MB")
+        logger.info(f"Using {n_workers} workers for superblob compilation")
+
+        compile_step = partial(
+            self._superblob_compile_step,
+            orig_args,
+            blobs_directory,
+            self.model_name,
+        )
+        shave_list = [i for i in range(1, 17) if i != 8]
+
+        lock = Lock()
+
+        def _memory_safe_submit(
+            executor: ThreadPoolExecutor, shave: int
+        ) -> Future:
+            while True:
+                with lock:
+                    avail_ram = get_container_memory_available()
+                    est_peak = max(peaks)
+                if avail_ram > est_peak or shave == 1:
+                    fut = executor.submit(compile_step, shave)
+                    with lock:
+                        time.sleep(1)
+                        new_estimate = max(
+                            (avail_ram - get_container_memory_available())
+                            * 1.5,
+                            *peaks,
+                        )
+                        peaks.append(new_estimate)
+                    return fut
+                time.sleep(0.1)
+
+        futures: set[Future] = set()
+        t = time.time()
+        with ThreadPoolExecutor(n_workers) as executor:
+            for shave in shave_list:
+                futures.add(_memory_safe_submit(executor, shave))
+                time.sleep(0.2)
+
+            while any(not fut.done() for fut in futures):
+                done = {fut for fut in futures if fut.done()}
+                for fut in done:
+                    total, peak, shaves = fut.result()
+                    logger.info(
+                        f"Compiled {shaves}-shave patch in {total:.2f} s, "
+                        f"peak RAM {peak / 1e6:.1f} MB"
+                    )
+                    futures.remove(fut)
+
+        logger.info(f"Superblob compiled in {time.time() - t:.2f} seconds.")
 
         superblob_path = self.output_dir / f"{self.model_name}.superblob"
 
@@ -314,24 +380,19 @@ class RVC2Exporter(Exporter):
         patch2idx = {patch: idx for idx, patch in idx2patch.items()}
 
         with open(superblob_path, "wb") as superblob_file:
-            # Write header = default blob size, patch size for each patch
-            header = default_blob_path.stat().st_size.to_bytes(
-                8, byteorder="big"
-            )
+            header = default_blob_path.stat().st_size.to_bytes(8, "big")
             for patch_idx in range(1, 17):
                 patchsize = (
                     idx2patch[patch_idx].stat().st_size
                     if patch_idx in idx2patch
                     else 0
                 )
-                header += patchsize.to_bytes(8, byteorder="big")
+                header += patchsize.to_bytes(8, "big")
             superblob_file.write(header)
 
-            # Write default blob
             with open(default_blob_path, "rb") as default_blob_file:
                 superblob_file.write(default_blob_file.read())
 
-            # Write patches
             patches = sorted(patch2idx.keys(), key=lambda x: patch2idx[x])
             if not patches:
                 raise RuntimeError("No patches found.")
@@ -349,7 +410,7 @@ class RVC2Exporter(Exporter):
         blobs_directory: Path,
         model_name: str,
         shaves: int,
-    ) -> None:
+    ) -> tuple[float, int, int]:
         import bsdiff4
 
         args = orig_args.copy()
@@ -360,10 +421,12 @@ class RVC2Exporter(Exporter):
         )
         args += ["-o", blob_path]
 
-        subprocess_run(["compile_tool", *args], silent=True)
+        logger.info(f"Compiling {shaves}-shave patch...")
+        res = subprocess_run(["compile_tool", *args], silent=True)
 
         patch_file = blob_path.with_suffix(".patch")
         bsdiff4.file_diff(default_blob_path, blob_path, patch_file)
+        return res.total_time, res.peak_memory, shaves
 
     def exporter_buildinfo(self) -> dict[str, Any]:
         mo_version = (

@@ -1,26 +1,34 @@
+import io
 import shutil
 import subprocess
+import threading
 import time
-from typing import Any
 
+import psutil
 from loguru import logger
 
 from .exceptions import SubprocessException
 
 
-def subprocess_run(
-    cmd: str | list[Any],
-    *,
-    silent: bool = False,
-) -> subprocess.CompletedProcess:
-    """Wrapper around `subprocess.run` that logs the command and its
-    output.
+class SubprocessResult(subprocess.CompletedProcess):
+    """Extension of subprocess.CompletedProcess that also carries peak
+    memory usage."""
 
-    @type cmd: Union[str, List[Any]]
-    @param cmd: Command to execute. Can be a string or a list of
-        arguments.
-    @type silent: bool
-    @param silent: If True, the command will not be logged.
+    def __init__(self, *args, peak_memory: int, total_time: float, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.peak_memory = peak_memory
+        self.total_time = total_time
+
+
+def subprocess_run(
+    cmd: str | list[str], *, silent: bool = False
+) -> SubprocessResult:
+    """Wrapper around subprocess.run that logs, raises on error, and
+    tracks peak RAM usage without hanging on stdout/stderr.
+
+    @param cmd: Command to execute. String or list of arguments.
+    @param silent: If True, suppress logs.
+    @return: SubprocessResult with .peak_memory attribute.
     """
     if isinstance(cmd, str):
         args = cmd.split()
@@ -31,38 +39,71 @@ def subprocess_run(
 
     if shutil.which(cmd_name) is None:
         raise SubprocessException(
-            f"Command `{cmd_name}` not found. "
-            "Ensure it is installed and in your PATH."
+            f"Command `{cmd_name}` not found. Ensure it is installed and in your PATH."
         )
 
     if not silent:
         logger.info(f"Executing `{cmd}`")
     start_time = time.time()
 
-    result = subprocess.run(args, capture_output=True, check=False)
+    proc = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=1,
+        text=False,
+    )
+    ps_proc = psutil.Process(proc.pid)
+    peak_mem = 0
+
+    stdout_buf, stderr_buf = [], []
+
+    def _reader(stream: io.BufferedReader, buf: list[str]) -> None:
+        for line in iter(stream.readline, b""):
+            text = line.decode(errors="ignore")
+            buf.append(text)
+            if not silent:
+                logger.info(text.strip())
+        stream.close()
+
+    threads = [
+        threading.Thread(target=_reader, args=(proc.stdout, stdout_buf)),
+        threading.Thread(target=_reader, args=(proc.stderr, stderr_buf)),
+    ]
+    for t in threads:
+        t.daemon = True
+        t.start()
+
+    while proc.poll() is None:
+        try:
+            mem = ps_proc.memory_info().rss
+            peak_mem = max(peak_mem, mem)
+        except psutil.NoSuchProcess:
+            break
+        time.sleep(0.1)
+
+    for t in threads:
+        t.join(timeout=1.0)
+
     t = time.time() - start_time
+    result = SubprocessResult(
+        args,
+        proc.returncode,
+        "".join(stdout_buf).encode(),
+        "".join(stderr_buf).encode(),
+        peak_memory=peak_mem,
+        total_time=t,
+    )
 
     info_string = (
         f"Command `{cmd_name}` finished in {t:.2f} seconds "
         f"with return code {result.returncode}."
     )
-    if result.returncode != 0:
-        log_message = logger.error
-    else:
-        log_message = logger.info
+    log_message = logger.error if result.returncode != 0 else logger.info
 
     if not silent:
         log_message(info_string)
-    if result.stderr:
-        string = result.stderr.decode(errors="ignore")
-        if not silent:
-            log_message(f"[ STDERR ]:\n{string}")
-        info_string += f"\n[ STDERR ]:\n{string}"
-    if result.stdout:
-        string = result.stdout.decode(errors="ignore")
-        if not silent:
-            log_message(f"[ STDOUT ]:\n{string}")
-        info_string += f"\n[ STDOUT ]:\n{string}"
+
     if result.returncode != 0:
         raise SubprocessException(info_string)
 
