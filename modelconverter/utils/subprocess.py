@@ -51,19 +51,20 @@ def subprocess_run(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         bufsize=1,
-        text=False,
+        text=True,
+        encoding="utf-8",
+        errors="ignore",
     )
     ps_proc = psutil.Process(proc.pid)
     peak_mem = 0
 
     stdout_buf, stderr_buf = [], []
 
-    def _reader(stream: io.BufferedReader, buf: list[str]) -> None:
-        for line in iter(stream.readline, b""):
-            text = line.decode(errors="ignore")
-            buf.append(text)
+    def _reader(stream: io.TextIOWrapper, buf: list[str]) -> None:
+        for line in iter(stream.readline, ""):
+            buf.append(line)
             if not silent:
-                logger.info(text.strip())
+                logger.info(line.strip())
         stream.close()
 
     threads = [
