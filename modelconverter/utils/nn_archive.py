@@ -1,5 +1,6 @@
 import json
 import tarfile
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, Literal
 
@@ -231,7 +232,20 @@ def modelconverter_config_to_nn(
 
     # TODO: This might be more complicated for Hailo
 
-    compress_to_fp16 = getattr(target_cfg, "compress_to_fp16", False)
+    onnx_args = getattr(target_cfg, "snpe_onnx_to_dlc_args", [])
+    prep_args = getattr(target_cfg, "snpe_dlc_graph_prepare_args", [])
+    fb16 = any(
+        a == "--float_bitwidth" and str(b) == "16"
+        for a, b in pairwise(onnx_args)
+    ) or any(
+        isinstance(x, str)
+        and x.startswith("--float_bitwidth=")
+        and x.split("=", 1)[1] == "16"
+        for x in onnx_args
+    )
+    compress_to_fp16 = getattr(target_cfg, "compress_to_fp16", False) or (
+        fb16 and "--use_float_io" in prep_args
+    )
     disable_calibration = target_cfg.disable_calibration
 
     match target, compress_to_fp16, disable_calibration:
