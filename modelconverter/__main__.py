@@ -221,8 +221,8 @@ def convert(
                     put_file_plugin,
                 )
     ram = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-    logger.info(f"Conversion finished in {time.time() - t:.2f} seconds")
     logger.info(f"Peak RAM usage: {ram:.2f} MB")
+    logger.info(f"Conversion finished in {time.time() - t:.2f} seconds")
 
 
 @app.command(group=docker_commands)

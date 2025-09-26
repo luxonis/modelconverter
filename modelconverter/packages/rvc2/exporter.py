@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Iterable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future
 from multiprocessing import cpu_count
 from os import environ as env
 from pathlib import Path
@@ -12,6 +12,7 @@ from typing import Any, Final, NamedTuple
 
 import tflite2onnx
 from loguru import logger
+from pebble import ThreadPool
 
 from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import (
@@ -21,6 +22,7 @@ from modelconverter.utils import (
     onnx_attach_normalization_to_inputs,
 )
 from modelconverter.utils.config import SingleStageConfig
+from modelconverter.utils.docker_utils import get_container_memory_limit
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import (
     DataType,
@@ -303,9 +305,9 @@ class RVC2Exporter(Exporter):
         base_peak_mem = result.peak_memory * 1.5
         peaks = [base_peak_mem]
 
-        avail_ram = get_container_memory_available() * 0.7
+        avail_ram = get_container_memory_available() * 0.8
         n_workers = int(
-            max(1, min(cpu_count(), avail_ram // base_peak_mem - 1))
+            max(1, min(cpu_count(), 15, avail_ram // base_peak_mem - 1))
         )
         if self.n_workers is not None:
             if self.n_workers > n_workers:
@@ -316,8 +318,8 @@ class RVC2Exporter(Exporter):
                 )
             n_workers = self.n_workers
 
-        logger.info(f"Available RAM: {avail_ram / 1e9:.2f} GB")
-        logger.info(f"Base compile peak: {base_peak_mem / 1e6:.1f} MB")
+        logger.info(f"Available RAM: {avail_ram // 1e9} GB")
+        logger.info(f"Base compile peak: {base_peak_mem // 1e6} MB")
         logger.info(f"Using {n_workers} workers for superblob compilation")
 
         # Order to compile patches to minimize RAM usage spikes
@@ -346,7 +348,7 @@ class RVC2Exporter(Exporter):
                 while handle.poll() is None:
                     if handle.is_suspended():
                         with lock:
-                            avail_ram = get_container_memory_available() * 0.7
+                            avail_ram = get_container_memory_available() * 0.8
                             if avail_ram > max(peaks):
                                 handle.resume()
                                 # Give it a moment to ramp up so other
@@ -361,7 +363,7 @@ class RVC2Exporter(Exporter):
                                 time.sleep(5)
                     else:
                         with lock:
-                            avail_ram = get_container_memory_available() * 0.7
+                            avail_ram = get_container_memory_available() * 0.8
                         if avail_ram < max(peaks):
                             logger.warning(
                                 f"Suspending {shaves}-shave compile due to "
@@ -369,7 +371,7 @@ class RVC2Exporter(Exporter):
                                 f"{max(peaks) // 1e6} MB)"
                             )
                             handle.suspend()
-                        time.sleep(0.1)
+                        time.sleep(0.5)
                 res = handle.result()
 
             patch_file = blob_path.with_suffix(".patch")
@@ -381,11 +383,22 @@ class RVC2Exporter(Exporter):
             )
 
         t = time.time()
-        with ThreadPoolExecutor(n_workers) as executor:
+        futures: set[Future] = set()
+        with ThreadPool(n_workers) as executor:
             for shave in shave_list:
-                executor.submit(_superblob_compile_step, shaves=shave)
+                futures.add(
+                    executor.submit(_superblob_compile_step, shaves=shave)
+                )
                 time.sleep(0.2)
-        executor.shutdown(wait=False)
+            while any(not f.done() for f in futures):
+                with lock:
+                    avail_ram = get_container_memory_available() * 0.8
+                    total_ram = get_container_memory_limit()
+                logger.info(
+                    f"Superblob compile in progress "
+                    f"[{avail_ram // 1e6} / {total_ram // 1e6}] MB"
+                )
+                time.sleep(0.5)
 
         logger.info(f"Superblob compiled in {time.time() - t:.2f} seconds.")
 
