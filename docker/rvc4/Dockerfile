@@ -7,6 +7,8 @@ RUN <<EOF
 
     set -e
 
+    echo 'deb http://deb.debian.org/debian oldstable main' >> /etc/apt/sources.list
+
     apt-get update
     apt-get install -y --fix-missing \
         cmake           \
@@ -15,8 +17,9 @@ RUN <<EOF
         libatomic1      \
         libc++-dev      \
         ffmpeg          \
-        libcurl4        \
-        libncurses6     \
+        libcurl4t64     \
+        libncurses5     \
+        libtinfo5       \
         llvm-19-runtime \
         git
 
@@ -98,6 +101,7 @@ COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libedit.so.2 \
     /usr/lib/x86_64-linux-gnu/libz3.so.4 \
     /usr/lib/x86_64-linux-gnu/libxml2.so.2 \
+    /usr/lib/x86_64-linux-gnu/libtinfo.so.5 \
     /usr/lib/
 
 
