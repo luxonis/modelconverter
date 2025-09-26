@@ -2,3 +2,4 @@ tflite
 psutil
 numpy<2
 polars
+pytest # this is actually required by snpe packages
