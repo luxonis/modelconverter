@@ -122,15 +122,18 @@ class SubprocessHandle:
 
         self._threads = [
             threading.Thread(
-                target=_reader, args=(self._proc.stdout, self.stdout_buf)
+                target=_reader,
+                args=(self._proc.stdout, self.stdout_buf),
+                daemon=True,
             ),
             threading.Thread(
-                target=_reader, args=(self._proc.stderr, self.stderr_buf)
+                target=_reader,
+                args=(self._proc.stderr, self.stderr_buf),
+                daemon=True,
             ),
-            threading.Thread(target=_memory_monitor),
+            threading.Thread(target=_memory_monitor, daemon=True),
         ]
         for t in self._threads:
-            t.daemon = True
             t.start()
 
         return self
