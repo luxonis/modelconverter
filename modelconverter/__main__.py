@@ -4,6 +4,7 @@ import re
 import resource
 import signal
 import sys
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeAlias
@@ -122,6 +123,7 @@ def convert(
 
     if output_dir is not None:
         output_dir = sanitize_net_name(output_dir)
+    t = time.time()
 
     with catch_exceptions():
         init_dirs()
@@ -219,6 +221,7 @@ def convert(
                     put_file_plugin,
                 )
     ram = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    logger.info(f"Conversion finished in {time.time() - t:.2f} seconds")
     logger.info(f"Peak RAM usage: {ram:.2f} MB")
 
 
