@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import threading
 import time
+from collections.abc import Iterator
 from contextlib import suppress
 from types import TracebackType
 from typing import Any
@@ -22,6 +23,35 @@ class SubprocessResult(subprocess.CompletedProcess):
         self.peak_memory = peak_memory
         self.total_time = total_time
 
+    def _human_memory(self) -> str:
+        """Return human-readable peak memory usage."""
+        units = ["B", "KB", "MB"]
+        mem = self.peak_memory
+        for unit in units:
+            if mem < 1024:
+                return f"{mem:.2f} {unit}"
+            mem /= 1024
+        return f"{mem:.2f} GB"
+
+    def __repr__(self) -> str:
+        base = super().__repr__()
+        return (
+            f"{base.rstrip(')')}, "
+            f"peak_memory={self._human_memory()}, "
+            f"total_time={round(self.total_time, 3)}s)"
+        )
+
+    def __str__(self) -> str:
+        return repr(self)
+
+    def __rich_repr__(self) -> Iterator[tuple[str, Any]]:
+        yield "args", self.args
+        yield "returncode", self.returncode
+        yield "stdout", self.stdout
+        yield "stderr", self.stderr
+        yield "peak_memory", self._human_memory()
+        yield "total_time", f"{round(self.total_time, 3)}s"
+
 
 class SubprocessHandle:
     """Context manager wrapping a subprocess with live psutil access and
@@ -29,13 +59,31 @@ class SubprocessHandle:
 
     def __init__(
         self,
-        args: list[str],
+        cmd: str | list[Any],
         *,
         silent: bool = False,
         timeout: float | None = None,
     ):
-        self.args = args
-        self.cmd_name = args[0]
+        """Initialize the subprocess handle.
+
+        @type args: str | list[Any]
+        @param args: Command to execute. If a string is given, it will
+            be split on whitespace. If a list is given, each element
+            will be converted to a string.
+        @type silent: bool
+        @param silent: If True, suppress all output from the command.
+        @type timeout: float | None
+        @param timeout: If given, the maximum time in seconds to allow
+            the process to run. If the timeout is exceeded, the process
+            will be
+        """
+
+        if isinstance(cmd, str):
+            self.cmd = cmd.split()
+        else:
+            self.cmd = [str(arg) for arg in cmd]
+
+        self.cmd_name = self.cmd[0]
         self.silent = silent
         self.peak_mem: int = 0
         self.stdout_buf: list[str] = []
@@ -64,6 +112,19 @@ class SubprocessHandle:
                 "You must use `SubprocessHandle` as a context manager."
             )
         return self._ps_proc
+
+    def __bool__(self) -> bool:
+        """Return whether the process is still running."""
+        if time.time() - self._start_time > (self.timeout or float("inf")):
+            with suppress(psutil.NoSuchProcess):
+                self.ps_proc.terminate()
+            raise subprocess.TimeoutExpired(
+                self.cmd,
+                self.timeout or 0,
+                output="".join(self.stdout_buf).encode(),
+                stderr="".join(self.stderr_buf).encode(),
+            )
+        return self.poll() is None
 
     def is_suspended(self) -> bool:
         """Return whether the process is currently suspended."""
@@ -103,11 +164,11 @@ class SubprocessHandle:
             )
 
         if not self.silent:
-            logger.info(f"Executing `{' '.join(self.args)}`")
+            logger.info(f"Executing `{' '.join(self.cmd)}`")
 
         self._start_time = time.time()
         self._proc = subprocess.Popen(
-            self.args,
+            self.cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=1,
@@ -153,7 +214,7 @@ class SubprocessHandle:
         traceback: TracebackType | None,
     ) -> None:
         if self.poll() is None:
-            self.wait()
+            self.wait(self.timeout)
         for t in self._threads:
             t.join(timeout=1.0)
 
@@ -185,7 +246,7 @@ class SubprocessHandle:
             t.join(timeout=1.0)
         total_time = time.time() - self._start_time
         res = SubprocessResult(
-            self.args,
+            self.cmd,
             self.proc.returncode,
             "".join(self.stdout_buf).encode(),
             "".join(self.stderr_buf).encode(),
@@ -205,18 +266,30 @@ class SubprocessHandle:
 
 
 def subprocess_run(
-    cmd: str | list[Any], *, silent: bool = False
+    cmd: str | list[Any], *, silent: bool = False, timeout: float | None = None
 ) -> SubprocessResult:
     """Backwards-compatible wrapper.
 
     Blocks until done and returns result.
+    @type cmd: str | list[Any]
+    @param cmd: Command to execute. If a string is given, it will be
+        split on whitespace. If a list is given, each element will be
+        converted to a string.
+    @type silent: bool
+    @param silent: If True, suppress all output from the command.
+    @type timeout: float | None
+    @param timeout: If given, the maximum time in seconds to allow the
+        process to run. If the timeout is exceeded, the process will be
+        terminated and a TimeoutExpired exception will be raised.
+    @rtype: SubprocessResult
+    @return: Result of the command.
     """
     if isinstance(cmd, str):
         args = cmd.split()
     else:
         args = [str(arg) for arg in cmd]
 
-    with SubprocessHandle(args, silent=silent) as handle:
-        while handle.poll() is None:
+    with SubprocessHandle(args, silent=silent, timeout=timeout) as proc:
+        while proc:
             time.sleep(0.1)
-        return handle.result()
+        return proc.result()
