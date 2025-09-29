@@ -114,7 +114,10 @@ class SubprocessHandle:
         return self._ps_proc
 
     def __bool__(self) -> bool:
-        """Return whether the process is still running."""
+        """Return whether the process is still running.
+
+        Also checks for timeout and raises TimeoutExpired if exceeded.
+        """
         if time.time() - self._start_time > (self.timeout or float("inf")):
             with suppress(psutil.NoSuchProcess):
                 self.ps_proc.terminate()
