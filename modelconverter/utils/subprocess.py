@@ -27,17 +27,25 @@ class SubprocessHandle:
     """Context manager wrapping a subprocess with live psutil access and
     deferred result collection."""
 
-    def __init__(self, args: list[str], *, silent: bool = False):
+    def __init__(
+        self,
+        args: list[str],
+        *,
+        silent: bool = False,
+        timeout: float | None = None,
+    ):
         self.args = args
         self.cmd_name = args[0]
         self.silent = silent
-        self._proc: subprocess.Popen | None = None
-        self._ps_proc: psutil.Process | None = None
         self.peak_mem: int = 0
         self.stdout_buf: list[str] = []
         self.stderr_buf: list[str] = []
+        self.timeout = timeout
+
         self._threads: list[threading.Thread] = []
         self._start_time: float = 0.0
+        self._proc: subprocess.Popen | None = None
+        self._ps_proc: psutil.Process | None = None
 
     @property
     def proc(self) -> subprocess.Popen:
@@ -86,7 +94,7 @@ class SubprocessHandle:
 
         Returns returncode.
         """
-        return self.proc.wait(timeout=timeout)
+        return self.proc.wait(timeout=self.timeout or timeout)
 
     def __enter__(self) -> "SubprocessHandle":
         if shutil.which(self.cmd_name) is None:
@@ -210,6 +218,5 @@ def subprocess_run(
 
     with SubprocessHandle(args, silent=silent) as handle:
         while handle.poll() is None:
-            handle.monitor_memory()
             time.sleep(0.1)
         return handle.result()
