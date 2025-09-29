@@ -22,7 +22,6 @@ from modelconverter.utils import (
     onnx_attach_normalization_to_inputs,
 )
 from modelconverter.utils.config import SingleStageConfig
-from modelconverter.utils.docker_utils import get_container_memory_limit
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import (
     DataType,
@@ -391,13 +390,6 @@ class RVC2Exporter(Exporter):
                 )
                 time.sleep(0.2)
             while any(not f.done() for f in futures):
-                with lock:
-                    avail_ram = get_container_memory_available() * 0.8
-                    total_ram = get_container_memory_limit()
-                logger.info(
-                    f"Superblob compile in progress "
-                    f"[{avail_ram // 1e6} / {total_ram // 1e6}] MB"
-                )
                 time.sleep(0.5)
 
         logger.info(f"Superblob compiled in {time.time() - t:.2f} seconds.")
