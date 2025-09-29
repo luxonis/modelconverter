@@ -289,6 +289,11 @@ def get_container_memory_available() -> int:
     unlimited."""
     limit = get_container_memory_limit()
     # sum RSS of all processes in the container
-    total_usage = sum(p.memory_info().rss for p in psutil.process_iter())
+    total_usage = 0
+    for p in psutil.process_iter():
+        try:
+            total_usage += p.memory_info().rss
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
     available = limit - total_usage
     return max(0, available)
