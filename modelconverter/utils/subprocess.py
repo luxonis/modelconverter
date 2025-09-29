@@ -1,4 +1,5 @@
 import io
+import re
 import shutil
 import subprocess
 import threading
@@ -183,6 +184,7 @@ class SubprocessHandle:
 
         def _reader(stream: io.TextIOWrapper, buf: list[str]) -> None:
             for line in iter(stream.readline, ""):
+                line = strip_ansi(line)
                 buf.append(line)
                 if not self.silent:
                     logger.info(line.strip())
@@ -296,3 +298,7 @@ def subprocess_run(
         while proc:
             time.sleep(0.1)
         return proc.result()
+
+
+def strip_ansi(s: str) -> str:
+    return re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])").sub("", s)
