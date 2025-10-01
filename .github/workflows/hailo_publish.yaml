@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ["2024-10", "2025.01", "2025.04"]
+        version: ["2024.10", "2025.01", "2025.04"]
 
     uses: ./.github/workflows/publish.yaml
     secrets: inherit
