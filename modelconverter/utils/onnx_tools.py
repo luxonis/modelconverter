@@ -604,6 +604,12 @@ class ONNXModifier:
 
                         nodes_to_remove.append(node)
 
+        if not any([nodes_to_add, nodes_to_remove, connections_to_fix]):
+            logger.warning(
+                "No applicable Sub-Add or Div-Mul pattern found for substitution."
+            )
+            return
+
         self.graph_cleanup(nodes_to_add, nodes_to_remove, connections_to_fix)
         self.onnx_model = gs.export_onnx(self.onnx_gs)
 
@@ -759,6 +765,12 @@ class ONNXModifier:
                 if seq_node.op != "Conv":
                     nodes_to_remove.append(seq_node)
 
+        if not any([nodes_to_add, nodes_to_remove, connections_to_fix]):
+            logger.warning(
+                "No applicable Conv-Add-Mul pattern found for batch normalization fusion."
+            )
+            return
+
         self.graph_cleanup(nodes_to_add, nodes_to_remove, connections_to_fix)
         self.onnx_model = gs.export_onnx(self.onnx_gs)
 
@@ -882,6 +894,12 @@ class ONNXModifier:
                         add_node.inputs[0],
                     )
                 )
+
+        if not any([nodes_to_remove, connections_to_fix]):
+            logger.warning(
+                "No applicable Add-Mul-Conv pattern found for fusion."
+            )
+            return
 
         self.graph_cleanup([], nodes_to_remove, connections_to_fix)
         self.onnx_model = gs.export_onnx(self.onnx_gs)
@@ -1089,6 +1107,11 @@ class ONNXModifier:
                     )
                 )
 
+        if not any([nodes_to_remove, connections_to_fix]):
+            logger.warning(
+                "No applicable Add-Mul-Conv pattern found for fusion."
+            )
+            return
         self.graph_cleanup([], nodes_to_remove, connections_to_fix)
         self.onnx_model = gs.export_onnx(self.onnx_gs)
 
@@ -1185,6 +1208,12 @@ class ONNXModifier:
                 )
 
                 break
+
+        if not any([nodes_to_remove, connections_to_fix]):
+            logger.warning(
+                "No applicable Split-Conv-Concat pattern found for fusion."
+            )
+            return
 
         self.graph_cleanup([], nodes_to_remove, connections_to_fix)
         self.onnx_model = gs.export_onnx(self.onnx_gs)
