@@ -12,7 +12,6 @@ from typing import Any, Final, NamedTuple
 
 import tflite2onnx
 from loguru import logger
-from pebble import ThreadPool
 
 from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import (
@@ -282,6 +281,8 @@ class RVC2Exporter(Exporter):
         return CompileResult(blob_output_path, result)
 
     def compile_superblob(self, args: list[str]) -> Path:
+        from pebble import ThreadPool
+
         blobs_directory = self.intermediate_outputs_dir / "blobs"
         blobs_directory.mkdir(parents=True, exist_ok=True)
 
