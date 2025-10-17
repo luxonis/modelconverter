@@ -305,7 +305,7 @@ class RVC2Exporter(Exporter):
         base_peak_mem = result.peak_memory * 1.5
         peaks = [base_peak_mem]
 
-        avail_ram = get_container_memory_available() * 0.8
+        avail_ram = _get_available_memory()
         n_workers = int(
             max(1, min(cpu_count(), 15, avail_ram // base_peak_mem - 1))
         )
@@ -348,7 +348,7 @@ class RVC2Exporter(Exporter):
                 while handle.poll() is None:
                     if handle.is_suspended():
                         with lock:
-                            avail_ram = get_container_memory_available() * 0.8
+                            avail_ram = _get_available_memory()
                             if avail_ram > max(peaks):
                                 handle.resume()
                                 # Give it a moment to ramp up so other
@@ -363,7 +363,7 @@ class RVC2Exporter(Exporter):
                                 time.sleep(5)
                     else:
                         with lock:
-                            avail_ram = get_container_memory_available() * 0.8
+                            avail_ram = _get_available_memory()
                         if avail_ram < max(peaks):
                             logger.warning(
                                 f"Suspending {shaves}-shave compile due to "
@@ -457,3 +457,7 @@ class RVC2Exporter(Exporter):
 
 def _lst_join(args: Iterable[Any], sep: str = ",") -> str:
     return f"[{sep.join(map(str, args))}]"
+
+
+def _get_available_memory() -> int:
+    return int(get_container_memory_available() * 0.7)
