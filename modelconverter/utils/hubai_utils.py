@@ -2,7 +2,8 @@ from contextlib import suppress
 
 
 def is_hubai_available(model_name: str, model_variant: str) -> bool:
-    from modelconverter.cli import Request, slug_to_id
+    from modelconverter.cli import slug_to_id
+    from modelconverter.utils.hub_requests import Request
 
     model_slug = f"{model_name}:{model_variant}"
 
