@@ -1,3 +1,4 @@
+import json
 import shutil
 import subprocess
 import time
@@ -22,6 +23,7 @@ from modelconverter.utils.types import (
     DataType,
     Encoding,
     InputFileType,
+    QuantizationMode,
     ResizeMethod,
     Target,
 )
@@ -37,7 +39,6 @@ class RVC4Exporter(Exporter):
         super().__init__(config=config, output_dir=output_dir)
 
         rvc4_cfg = config.rvc4
-        self.compress_to_fp16 = rvc4_cfg.compress_to_fp16
         self.snpe_onnx_to_dlc = rvc4_cfg.snpe_onnx_to_dlc_args
         self.snpe_dlc_quant = rvc4_cfg.snpe_dlc_quant_args
         self.snpe_dlc_graph_prepare = rvc4_cfg.snpe_dlc_graph_prepare_args
@@ -46,6 +47,14 @@ class RVC4Exporter(Exporter):
         )
         self.use_per_row_quantization = rvc4_cfg.use_per_row_quantization
         self.optimization_level = rvc4_cfg.optimization_level
+        self.quantization_mode = rvc4_cfg.quantization_mode
+        if self.quantization_mode != QuantizationMode.CUSTOM:
+            self.snpe_onnx_to_dlc = []
+            self.snpe_dlc_quant = []
+            self.snpe_dlc_graph_prepare = []
+            logger.warning(
+                f"Overriding user-provided SNPE arguments. Using pre-defined arguments for quantization mode {self.quantization_mode.value}."
+            )
         self.keep_raw_images = rvc4_cfg.keep_raw_images
         if "--htp_socs" in self.snpe_dlc_graph_prepare:
             i = self.snpe_dlc_graph_prepare.index("--htp_socs")
@@ -114,7 +123,7 @@ class RVC4Exporter(Exporter):
             args, ["--optimization_level", str(self.optimization_level)]
         )
         self._add_args(args, ["--htp_socs", ",".join(self.htp_socs)])
-        if self.compress_to_fp16:
+        if self.quantization_mode == QuantizationMode.FP16_STD:
             self._add_args(args, ["--use_float_io"])
         self._subprocess_run(
             ["snpe-dlc-graph-prepare", *args], meta_name="graph_prepare"
@@ -156,6 +165,15 @@ class RVC4Exporter(Exporter):
 
         if self.use_per_row_quantization:
             args.append("--use_per_row_quantization")
+
+        if self.quantization_mode == QuantizationMode.INT8_ACC:
+            self._add_args(args, ["--param_quantizer", "enhanced"])
+            self._add_args(args, ["--act_quantizer", "enhanced"])
+        elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
+            self._add_args(args, ["--param_quantizer", "enhanced"])
+            self._add_args(args, ["--act_quantizer", "enhanced"])
+            self._add_args(args, ["--act_bitwidth", "16"])
+            args.append("--override_params")
 
         start_time = time.time()
         self._subprocess_run(
@@ -241,6 +259,21 @@ class RVC4Exporter(Exporter):
                 f.write(entry_str + "\n")
         return self.input_list_path
 
+    def generate_io_encodings(self) -> Path:
+        encodings_dict = {"activation_encodings": {}, "param_encodings": {}}
+        if not (list(self.inputs.keys()) and list(self.outputs.keys())):
+            logger.warning(
+                "Cannot generate I/O encodings as inputs or outputs are not defined. The resulting DLC may not be compatible with DAI."
+            )
+        for name in list(self.inputs.keys()) + list(self.outputs.keys()):
+            encodings_dict["activation_encodings"][name] = [
+                {"bitwidth": 8, "dtype": "int"}
+            ]
+        encodings_path = self.intermediate_outputs_dir / "io_encodings.json"
+        with open(encodings_path, "w") as encodings_file:
+            json.dump(encodings_dict, encodings_file, indent=4)
+        return encodings_path
+
     def onnx_to_dlc(self) -> Path:
         logger.info("Exporting for RVC4")
         args = self.snpe_onnx_to_dlc
@@ -293,8 +326,17 @@ class RVC4Exporter(Exporter):
                         "Proceeding wihtout specifying layout."
                     )
 
-        if self.compress_to_fp16:
+        if self.quantization_mode == QuantizationMode.FP16_STD:
             self._add_args(args, ["--float_bitwidth", "16"])
+        elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
+            io_encodings_file = self.generate_io_encodings()
+            self._add_args(
+                args,
+                [
+                    "--quantization_overrides",
+                    f"{io_encodings_file}",
+                ],
+            )
 
         if self.is_tflite:
             command = "snpe-tflite-to-dlc"

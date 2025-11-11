@@ -3,7 +3,7 @@ from typing import Literal
 
 from luxonis_ml.typing import Kwargs, PathType
 
-from modelconverter.utils.types import PotDevice, Target
+from modelconverter.utils.types import PotDevice, QuantizationMode, Target
 
 from .__main__ import convert as cli_convert
 
@@ -125,6 +125,14 @@ class convert:
         snpe_dlc_graph_prepare_args: list[str] | None = None,
         use_per_channel_quantization: bool = True,
         use_per_row_quantization: bool = False,
+        quantization_mode: QuantizationMode
+        | Literal[
+            "INT8_STANDARD",
+            "INT8_ACCURACY_FOCUSED",
+            "INT8_INT16_MIXED",
+            "FP16_STANDARD",
+            "CUSTOM",
+        ] = QuantizationMode.INT8_STD,
         htp_socs: list[
             Literal[
                 "sm8350", "sm8450", "sm8550", "sm8650", "qcs6490", "qcs8550"
@@ -150,6 +158,8 @@ class convert:
             Whether to use per-channel quantization.
         use_per_row_quantization : bool, default False
             Whether to use per-row quantization.
+        quantization_mode : QuantizationMode | Literal["INT8_STANDARD", "INT8_ACCURACY_FOCUSED", "INT8_INT16_MIXED", "FP16_STANDARD", "CUSTOM"], default QuantizationMode.INT8_STD
+            Pre-defined quantization modes for the model conversion.
         htp_socs : list[str] | None, optional
             List of HTP SoCs for the final DLC graph.
         opts : dict[str, Any] | list[str] | None, optional
@@ -160,6 +170,8 @@ class convert:
             online conversion.
         """
         htp_socs = htp_socs or ["sm8550"]
+        if not isinstance(quantization_mode, QuantizationMode):
+            quantization_mode = QuantizationMode(quantization_mode)
         return cli_convert(
             Target.RVC4,
             _combine_opts(
@@ -172,6 +184,7 @@ class convert:
                     "use_per_channel_quantization": use_per_channel_quantization
                     or [],
                     "use_per_row_quantization": use_per_row_quantization,
+                    "quantization_mode": quantization_mode.value,
                     "htp_socs": htp_socs,
                 },
                 opts,
