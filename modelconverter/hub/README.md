@@ -133,7 +133,6 @@ Parameters specific to the `RVC4` conversion.
 | `snpe_dlc_graph_prepare_args`  | `list[str] \| None` | The arguments to pass to the `snpe-dlc-graph-prepare` tool.  |
 | `use_per_channel_quantization` | `bool`              | Whether to use per-channel quantization. Defaults to `True`. |
 | `use_per_row_quantization`     | `bool`              | Whether to use per-row quantization. Defaults to `False`.    |
-| `quantization_mode`            | `Literal["INT8_STANDARD", "INT8_ACCURACY_FOCUSED", "INT8_INT16_MIXED", "FP16_STANDARD", "CUSTOM"]`  | The pre-defined quantization mode to use. Defaults to `INT8_STANDARD`.   |
 | `htp_socs`                     | `list[str] \| None` | The list of HTP SoCs to use.                                 |
 
 **Hailo Parameters**
