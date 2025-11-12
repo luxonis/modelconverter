@@ -282,8 +282,6 @@ class RVC4Config(TargetConfig):
         if self.quantization_mode != QuantizationMode.FP16_STD:
             return self
         self.disable_calibration = True
-        if "qcs8550" not in self.htp_socs:
-            self.htp_socs.append("qcs8550")
         return self
 
 
