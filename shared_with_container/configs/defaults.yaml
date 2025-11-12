@@ -117,6 +117,9 @@ stages:
 
     # --- Hailo-Specific Arguments ---
     hailo:
+      # Force onnx names on the final .har and .hef model
+      force_onnx_names: true
+
       # Specifies the optimization level. A number between 0 and 3.
       optimization_level: 2
 

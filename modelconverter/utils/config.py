@@ -228,6 +228,7 @@ class TargetConfig(CustomBaseModel):
 
 
 class HailoConfig(TargetConfig):
+    force_onnx_names: bool = True
     optimization_level: Literal[-100, 0, 1, 2, 3, 4] = 2
     compression_level: Literal[0, 1, 2, 3, 4, 5] = 2
     batch_size: int = 8

@@ -59,6 +59,7 @@ class HailoExporter(Exporter):
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)
+        self.force_onnx_names = config.hailo.force_onnx_names
         self.optimization_level = config.hailo.optimization_level
         self.compression_level = config.hailo.compression_level
         self.batch_size = config.hailo.batch_size
@@ -115,7 +116,8 @@ class HailoExporter(Exporter):
         har_path = self.input_model.with_suffix(".har")
         runner.save_har(har_path)
 
-        har_path = self._force_onnx_names(har_path)
+        if self.force_onnx_names:
+            har_path = self._force_onnx_names(har_path)
 
         if self._disable_calibration:
             self._inference_model_path = (
@@ -155,107 +157,52 @@ class HailoExporter(Exporter):
         return net_name
 
     def _force_onnx_names(self, har_path: Path) -> Path:
+        """Force ONNX layer names into a .har model."""
+
         runner = ClientRunner(hw_arch=self.hw_arch, har=str(har_path))
         hn = runner.get_hn()
-        npz = runner.get_params()
+        npz = dict(runner.get_params())
 
-        # get old names and onnx names
         hn_layers = hn["layers"]
-        items = list(hn_layers.items())
 
-        # get layer names
         map_list = []
-        for i in range(len(items)):
-            if items[i][1]["type"] == "output_layer":
-                # print (items[i][1])
-                layer_name = items[i][1]["input"][0]
-                # Extract the first part of the old name, which is the context name
-                split_name = layer_name.split("/")
-                context_name = split_name[0]
-                orig_layer_name = items[i][1]["original_names"][0]
-                origName = context_name + "/" + orig_layer_name
-                map_list.append(tuple((layer_name, origName)))
-                # print('({0}, {1}), '.format(layer_name, orig_layer_name), end="")
+        for name, layer in hn_layers.items():
+            if layer["type"] == "output_layer":
+                input_name = layer["input"][0]
+                context = input_name.split("/")[0]
+                orig_name = layer["original_names"][0]
+                new_name = f"{context}/{orig_name}"
+                map_list.append((input_name, new_name))
 
-        # map layer names
-        items = list(hn_layers.items())
-        new_items = []
-        npz = dict(npz)  # weights dictionary
-        list_keys = list(npz.keys())
-        for i in range(len(items)):
-            # Iterate through old2newName_map
-            # If layer name matches the name in the list old2newName_map then change name of the layer and in the npz weight dictionay, replace the corresponding layer's key name
-            # If output layer of that layer matches the name in the list old2newName_map then change output layer name
-            # If input layer of that layer matches the name in the list old2newName_map then change input layer name
-            for j in range(len(map_list)):
-                if items[i][0] == map_list[j][0]:
-                    newName = map_list[j][1]
-                    print(
-                        "Layer {0} changed to {1}".format(
-                            map_list[j][0], newName
-                        )
-                    )
-                    # Since tuple is immutable, convert to list first
-                    item_list = list(items[i])
-                    item_list[0] = newName
-                    # print(item_list)
-                    # Convert back to tuple before writing
-                    items[i] = tuple(item_list)
-                    # In the npz weight dictionay, look for any entry whose key contains the corresponding layer's name and replace the key with the new name
-                    for k in range(len(list_keys)):
-                        if map_list[j][0] in list_keys[k]:
-                            old_key_name = list_keys[k]
-                            new_key_name = old_key_name.replace(
-                                map_list[j][0], map_list[j][1]
-                            )
-                            npz[new_key_name] = npz.pop(old_key_name)
-                            print(
-                                "In npz file, replaced {0} with {1}".format(
-                                    old_key_name, new_key_name
-                                )
-                            )
-                    break  # break the 'for j' loop since we have found a name match
+        name_map = dict(map_list)
 
-                if items[i][1]["output"] != []:
-                    for k in range(len(items[i][1]["output"])):
-                        if items[i][1]["output"][k] == map_list[j][0]:
-                            newName = map_list[j][1]
-                            print(
-                                "Layer {0}: changed the output layer field from {1} to {2}".format(
-                                    items[i][0], map_list[j][0], newName
-                                )
-                            )
-                            items[i][1]["output"][k] = newName
-                            break  # break the 'for j' loop since we have found a name match
+        new_layers = {}
+        for name, layer in hn_layers.items():
+            new_name = name_map.get(name, name)
+            if "input" in layer:
+                layer["input"] = [name_map.get(i, i) for i in layer["input"]]
+            if "output" in layer:
+                layer["output"] = [name_map.get(o, o) for o in layer["output"]]
+            new_layers[new_name] = layer
 
-                if items[i][1]["input"] != []:
-                    for k in range(len(items[i][1]["input"])):
-                        if items[i][1]["input"][k] == map_list[j][0]:
-                            newName = map_list[j][1]
-                            print(
-                                "Layer {0}: changed the input layer field from {1} to {2}".format(
-                                    items[i][0], map_list[j][0], newName
-                                )
-                            )
-                            items[i][1]["input"][k] = newName
-                            break  # break the 'for j' loop since we have found a name match
-
-            new_items.append(items[i])
-
-        new_layers = dict(new_items)
         hn["layers"] = new_layers
 
-        # hn_layers = hn['layers']
-        # print(hn_layers.items())
+        updated_npz = {}
+        for key, val in npz.items():
+            for old, new in name_map.items():
+                if old in key:
+                    key = key.replace(old, new)
+                    break
+            updated_npz[key] = val
+        npz = updated_npz
 
-        # configure output layers
-        hn["net_params"]["output_layers_order"] = list(
-            map(dict(map_list).get, hn["net_params"]["output_layers_order"])
-        )
+        outputs = hn["net_params"]["output_layers_order"]
+        hn["net_params"]["output_layers_order"] = [name_map.get(o, o) for o in outputs]
 
         runner.set_hn(hn)
         runner.load_params(npz)
         runner.save_har(har_path)
+
         return har_path
 
     def _get_calibration_data(
