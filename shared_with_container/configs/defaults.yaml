@@ -198,6 +198,9 @@ stages:
       # List of additional arguments to pass to SNPE snpe-dlc-graph-prepare.
       snpe_dlc_graph_prepare_args: []
 
+      # Disables calibration/quantization.
+      disable_calibration: false
+
       # Whether to include the raw images in the intermediate outputs.
       # Warning: the raw images can get very large.
       keep_raw_images: False
