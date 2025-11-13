@@ -361,6 +361,19 @@ Below is a table of common command-line options available when using the `modelc
 > [!NOTE]
 > This table is not exhaustive. For more detailed information about available options, run `modelconverter convert --help` in your command line interface. You can also check all the `[ config overrides ]` available at [defaults.yaml](shared_with_container/configs/defaults.yaml).
 
+##### RVC4 Quantization Mode Option
+
+The `rvc4.quantization_mode` CLI option allows you to choose between different pre-defined quantization modes for RVC4 conversions. The available modes are:
+
+- `INT8_STANDARD`: Standard INT8 quantization **with calibration** (default), for optimal performance (FPS) and model size.
+- `INT8_ACCURACY_FOCUSED`: INT8 quantization **with calibration**. This mode utilizes more advanced quantization techniques that may improve accuracy without reducing performance or increasing the model size, depending on the model.
+- `INT8_INT16_MIXED`: Mixed INT8 and INT16 quantization **with calibration**. This mode uses 8-bit weights and 16-bit activations across all layers for improved numeric stability and accuracy at the cost of reduced performance (FPS) and increased model size.
+- `FP16_STANDARD`: FP16 quantization **without calibration**, for models that require higher accuracy and numeric stability, at the cost of performance (FPS) and increased model size.
+- `CUSTOM`: Custom quantization mode, where the user can specify more advanced options in the configuration file or via command-line arguments.
+
+> [!IMPORTANT]
+> When `rvc4.quantization_mode` is set to anything other than `CUSTOM`, the default settings for that mode will override any custom settings provided in the configuration file or via command-line arguments (via the `rvc4.snpe_onnx_to_dlc_args`, `rvc4.snpe_dlc_quant_args`, or `rvc4.snpe_dlc_graph_prepare_args` options).
+
 #### Handling Large ONNX Files (Exceeding 2GB)
 
 When working with ONNX models that exceed 2GB in size, the model data must be stored using ONNX's external data mechanism. This separates the model structure from the large weight data.

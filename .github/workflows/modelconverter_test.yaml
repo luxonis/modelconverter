@@ -43,7 +43,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Docker
-      uses: crazy-max/ghaction-setup-docker@v3
+      uses: crazy-max/ghaction-setup-docker@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5

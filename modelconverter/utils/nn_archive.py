@@ -20,7 +20,12 @@ from modelconverter.utils.config import BlobBaseConfig, Config, TargetConfig
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
 from modelconverter.utils.metadata import Metadata, get_metadata
-from modelconverter.utils.types import DataType, Encoding, Target
+from modelconverter.utils.types import (
+    DataType,
+    Encoding,
+    QuantizationMode,
+    Target,
+)
 
 
 def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
@@ -231,21 +236,27 @@ def modelconverter_config_to_nn(
     target_cfg = cfg.get_target_config(target)
 
     # TODO: This might be more complicated for Hailo
-
-    onnx_args = getattr(target_cfg, "snpe_onnx_to_dlc_args", [])
-    prep_args = getattr(target_cfg, "snpe_dlc_graph_prepare_args", [])
-    fb16 = any(
-        a == "--float_bitwidth" and str(b) == "16"
-        for a, b in pairwise(onnx_args)
-    ) or any(
-        isinstance(x, str)
-        and x.startswith("--float_bitwidth=")
-        and x.split("=", 1)[1] == "16"
-        for x in onnx_args
-    )
-    compress_to_fp16 = getattr(target_cfg, "compress_to_fp16", False) or (
-        fb16 and "--use_float_io" in prep_args
-    )
+    quantization_mode = getattr(target_cfg, "quantization_mode", None)
+    if (
+        quantization_mode is None
+        or quantization_mode == QuantizationMode.CUSTOM
+    ):
+        onnx_args = getattr(target_cfg, "snpe_onnx_to_dlc_args", [])
+        prep_args = getattr(target_cfg, "snpe_dlc_graph_prepare_args", [])
+        fb16 = any(
+            a == "--float_bitwidth" and str(b) == "16"
+            for a, b in pairwise(onnx_args)
+        ) or any(
+            isinstance(x, str)
+            and x.startswith("--float_bitwidth=")
+            and x.split("=", 1)[1] == "16"
+            for x in onnx_args
+        )
+        compress_to_fp16 = getattr(target_cfg, "compress_to_fp16", False) or (
+            fb16 and "--use_float_io" in prep_args
+        )
+    else:
+        compress_to_fp16 = quantization_mode == QuantizationMode.FP16_STD
     disable_calibration = target_cfg.disable_calibration
 
     match target, compress_to_fp16, disable_calibration:
@@ -290,10 +301,10 @@ def modelconverter_config_to_nn(
             layout = make_default_layout(new_shape)
         dai_type = inp.encoding.to.value
         if inp.data_type == DataType.FLOAT16:
-            type = "F16F16F16"
+            channel_format = "F16F16F16"
         else:
-            type = "888"
-        dai_type += type
+            channel_format = "888"
+        dai_type += channel_format
         dai_type += "i" if layout == "NHWC" else "p"
 
         dtype = _get_io_dtype(

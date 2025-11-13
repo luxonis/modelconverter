@@ -25,6 +25,7 @@ from modelconverter.utils.types import (
     Encoding,
     InputFileType,
     PotDevice,
+    QuantizationMode,
     ResizeMethod,
     Target,
 )
@@ -65,7 +66,7 @@ DEFAULT_TARGET_CONFIGS = {
         "disable_calibration": False,
         "use_per_channel_quantization": True,
         "use_per_row_quantization": False,
-        "compress_to_fp16": False,
+        "quantization_mode": QuantizationMode.INT8_STD,
         "optimization_level": 2,
     },
     "hailo": {

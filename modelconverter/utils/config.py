@@ -27,6 +27,7 @@ from modelconverter.utils.types import (
     Encoding,
     InputFileType,
     PotDevice,
+    QuantizationMode,
     ResizeMethod,
     Target,
 )
@@ -264,7 +265,6 @@ class RVC3Config(BlobBaseConfig):
 
 
 class RVC4Config(TargetConfig):
-    compress_to_fp16: bool = False
     snpe_onnx_to_dlc_args: list[str] = []
     snpe_dlc_quant_args: list[str] = []
     snpe_dlc_graph_prepare_args: list[str] = []
@@ -272,17 +272,16 @@ class RVC4Config(TargetConfig):
     use_per_channel_quantization: bool = True
     use_per_row_quantization: bool = False
     optimization_level: Literal[1, 2, 3] = 2
+    quantization_mode: QuantizationMode = QuantizationMode.INT8_STD
     htp_socs: list[
         Literal["sm8350", "sm8450", "sm8550", "sm8650", "qcs6490", "qcs8550"]
     ] = ["sm8550"]
 
     @model_validator(mode="after")
     def _validate_fp16(self) -> Self:
-        if not self.compress_to_fp16:
+        if self.quantization_mode != QuantizationMode.FP16_STD:
             return self
         self.disable_calibration = True
-        if "qcs8550" not in self.htp_socs:
-            self.htp_socs.append("qcs8550")
         return self
 
 
