@@ -233,7 +233,6 @@ class QuantizationMode(Enum):
     INT8_STD = "INT8_STANDARD"
     INT8_ACC = "INT8_ACCURACY_FOCUSED"
     INT8_16_MIX = "INT8_INT16_MIXED"
-    INT8_FP16_MIX = "INT8_FP16_MIXED"  # Added for future use
     FP16_STD = "FP16_STANDARD"
     CUSTOM = "CUSTOM"
 

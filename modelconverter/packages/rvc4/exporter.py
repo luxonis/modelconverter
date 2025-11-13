@@ -53,7 +53,7 @@ class RVC4Exporter(Exporter):
             self.snpe_dlc_quant = []
             self.snpe_dlc_graph_prepare = []
             logger.warning(
-                f"Overriding user-provided SNPE arguments. Using pre-defined arguments for quantization mode {self.quantization_mode.value}."
+                f"Using pre-defined arguments for quantization mode {self.quantization_mode.value}, which will override user-provided SNPE arguments. If you need full control of SNPE arguments, set `rvc4.quantization_mode: CUSTOM` in the config or CLI."
             )
         self.keep_raw_images = rvc4_cfg.keep_raw_images
         if "--htp_socs" in self.snpe_dlc_graph_prepare:
