@@ -202,7 +202,7 @@ class HailoExporter(Exporter):
                 )
 
         self._alls = alls
-        return "\n".join(alls)
+        return "\n\n".join(alls)
 
     def exporter_buildinfo(self) -> dict[str, Any]:
         return {
