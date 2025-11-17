@@ -35,7 +35,8 @@ RUN <<EOF
         nvidia-dali-cuda110 --no-cache-dir
     pip install --extra-index-url \
         https://developer.download.nvidia.com/compute/redist \
-        nvidia-dali-tf-plugin-cuda110 --no-cache-dir
+        nvidia-dali-tf-plugin-cuda110 --no-cache-dir \
+        --use-pep517 --no-build-isolation
 
 EOF
 
