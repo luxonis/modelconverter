@@ -191,13 +191,13 @@ class HailoExporter(Exporter):
             scale_values = inp.scale_values or [1.0] * values_len
             mean_values = inp.mean_values or [0.0] * values_len
             alls.append(
-                f"normalization_{safe_name} = normalization("
+                f"normalization_{safe_name}=normalization("
                 f"{mean_values},{scale_values},{hn_name})"
             )
 
             if inp.encoding_mismatch:
                 alls.append(
-                    f"bgr_to_rgb_{safe_name} = input_conversion("
+                    f"bgr_to_rgb_{safe_name}=input_conversion("
                     f"{hn_name},bgr_to_rgb)"
                 )
 
