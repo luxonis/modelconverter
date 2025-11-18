@@ -22,7 +22,8 @@ RUN <<EOF
     pip install -r requirements.txt --no-cache-dir
     pip install -U --extra-index-url \
         https://developer.download.nvidia.com/compute/redist \
-        -r requirements-hailo.txt --no-cache-dir
+        --no-cache-dir --use-pep517 --no-build-isolation \
+        -r requirements-hailo.txt
 
 EOF
 
