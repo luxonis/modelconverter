@@ -70,6 +70,7 @@ DEFAULT_TARGET_CONFIGS = {
         "optimization_level": 2,
     },
     "hailo": {
+        "force_onnx_names": True,
         "optimization_level": 2,
         "compression_level": 2,
         "batch_size": 8,
@@ -370,6 +371,7 @@ def test_correct():
             },
             "rvc4": {**DEFAULT_TARGET_CONFIGS["rvc4"]},
             "hailo": {
+                "force_onnx_names": True,
                 "disable_calibration": False,
                 "optimization_level": 3,
                 "compression_level": 3,
