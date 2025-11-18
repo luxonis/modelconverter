@@ -198,6 +198,9 @@ stages:
       # List of additional arguments to pass to SNPE snpe-dlc-graph-prepare.
       snpe_dlc_graph_prepare_args: []
 
+      # Disables calibration/quantization.
+      disable_calibration: false
+
       # Whether to include the raw images in the intermediate outputs.
       # Warning: the raw images can get very large.
       keep_raw_images: False
@@ -213,12 +216,8 @@ stages:
       # List of platforms to pre-compute the DLC graph for.
       htp_socs: ["sm8550"]
 
-      # Configures conversion to float16 precision. This will
-      # disable the calibration, add the `--float_bitwidth 16`
-      # flag to `snpe-onnx-to-dlc`,  the `--use_float_io` flag
-      # to `snpe-dlc-graph-prepare`, and the `qcs8550` platform
-      # to the `htp_socs` list.
-      compress_to_fp16: False
-
       # Optimization level for the DLC graph preparation. The available levels are: 1, 2, and 3. Higher optimization levels incur longer offline prepare time but yields more optimal graph and hence faster execution time for most graphs.
       optimization_level: 2
+
+      # Pre-defined quantization modes for the RVC4 exporter. Pre-defined modes (except CUSTOM) will override any user-provided SNPE arguments via `snpe_onnx_to_dlc_args`, `snpe_dlc_quant_args`, and `snpe_dlc_graph_prepare_args`. The available quantization modes are: INT8_STANDARD, INT8_ACCURACY_FOCUSED, INT8_INT16_MIXED, FP16_STANDARD, and CUSTOM.
+      quantization_mode: INT8_STANDARD

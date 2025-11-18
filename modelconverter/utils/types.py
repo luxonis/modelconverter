@@ -229,6 +229,14 @@ class Target(Enum):
     RVC4 = "rvc4"
 
 
+class QuantizationMode(Enum):
+    INT8_STD = "INT8_STANDARD"
+    INT8_ACC = "INT8_ACCURACY_FOCUSED"
+    INT8_16_MIX = "INT8_INT16_MIXED"
+    FP16_STD = "FP16_STANDARD"
+    CUSTOM = "CUSTOM"
+
+
 class InputFileType(Enum):
     ONNX = "ONNX"
     IR = "IR"
