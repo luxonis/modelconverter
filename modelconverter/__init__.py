@@ -1,8 +1,11 @@
 from importlib.metadata import entry_points
+from typing import Final
 
 from luxonis_ml.utils import PUT_FILE_REGISTRY
+from pydantic_extra_types.semantic_version import SemanticVersion
 
-__version__ = "0.4.5"
+__version__: Final[str] = "0.5.0"
+__semver__: Final[SemanticVersion] = SemanticVersion.parse(__version__)
 
 
 def load_put_file_plugins() -> None:
