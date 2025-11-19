@@ -59,6 +59,7 @@ class HailoExporter(Exporter):
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)
+        self.force_onnx_names = config.hailo.force_onnx_names
         self.optimization_level = config.hailo.optimization_level
         self.compression_level = config.hailo.compression_level
         self.batch_size = config.hailo.batch_size
@@ -114,6 +115,10 @@ class HailoExporter(Exporter):
         logger.info("Model translated to Hailo IR.")
         har_path = self.input_model.with_suffix(".har")
         runner.save_har(har_path)
+
+        if self.force_onnx_names:
+            har_path = self._force_onnx_names(har_path)
+
         if self._disable_calibration:
             self._inference_model_path = (
                 self.output_dir / self.model_name
@@ -150,6 +155,55 @@ class HailoExporter(Exporter):
             )
             return sanitized
         return net_name
+
+    def _force_onnx_names(self, har_path: Path) -> Path:
+        """Force ONNX layer names into a .har model."""
+
+        runner = ClientRunner(hw_arch=self.hw_arch, har=str(har_path))
+        hn = runner.get_hn()
+        npz = dict(runner.get_params())
+
+        hn_layers = hn["layers"]
+
+        map_list = []
+        for name, layer in hn_layers.items():
+            if layer["type"] == "output_layer":
+                input_name = layer["input"][0]
+                context = input_name.split("/")[0]
+                orig_name = layer["original_names"][0]
+                new_name = f"{context}/{orig_name}"
+                map_list.append((input_name, new_name))
+
+        name_map = dict(map_list)
+
+        new_layers = {}
+        for name, layer in hn_layers.items():
+            new_name = name_map.get(name, name)
+            if "input" in layer:
+                layer["input"] = [name_map.get(i, i) for i in layer["input"]]
+            if "output" in layer:
+                layer["output"] = [name_map.get(o, o) for o in layer["output"]]
+            new_layers[new_name] = layer
+
+        hn["layers"] = new_layers
+
+        updated_npz = {}
+        for key, val in npz.items():
+            for old, new in name_map.items():
+                if old in key:
+                    key = key.replace(old, new)
+                    break
+            updated_npz[key] = val
+        npz = updated_npz
+
+        outputs = hn["net_params"]["output_layers_order"]
+        hn["net_params"]["output_layers_order"] = [name_map.get(o, o) for o in outputs]
+
+        runner.set_hn(hn)
+        runner.load_params(npz)
+        runner.save_har(har_path)
+
+        return har_path
 
     def _get_calibration_data(
         self, runner: ClientRunner
