@@ -156,7 +156,7 @@ If you prefer not to share your models with the cloud, you can run the conversio
 We provide official Docker images only for RVC2 and RVC3 platforms.
 Images for Hailo and RVC4 need to be built manually, as described in the [Build Instructions](#build-instructions) section.
 
-The following images are available on `Luxonis GitHub Container Registry`:
+The following images are available on [Luxonis GitHub Container Registry](https://github.com/orgs/luxonis/packages?tab=packages&q=modelconverter):
 
 **RVC2**
 
