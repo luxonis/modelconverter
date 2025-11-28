@@ -69,7 +69,7 @@ There are two main ways to execute configure the conversion process:
 1. **YAML Configuration File (Primary Method)**:
    The primary way to configure the conversion is through a YAML configuration file. For reference, you can check [defaults.yaml](shared_with_container/configs/defaults.yaml) and other examples located in the [shared_with_container/configs](shared_with_container/configs) directory.
 1. **NN Archive**:
-   Alternatively, you can use an [NN Archive](https://rvc4.docs.luxonis.com/software/ai-inference/nn-archive/#NN%20Archive) as input. An NN Archive includes a model in one of the supported formats—ONNX (.onnx), OpenVINO IR (.xml and .bin), or TensorFlow Lite (.tflite)—alongside a `config.json` file. The config.json file follows a specific configuration format as described in the [NN Archive Configuration Guide](https://rvc4.docs.luxonis.com/software/ai-inference/nn-archive/#NN%20Archive-Configuration).
+   Alternatively, you can use an [NN Archive](https://docs.luxonis.com/software-v3/ai-inference/nn-archive/#NN%20Archive) as input. An NN Archive includes a model in one of the supported formats—ONNX (.onnx), OpenVINO IR (.xml and .bin), or TensorFlow Lite (.tflite)—alongside a `config.json` file. The config.json file follows a specific configuration format as described under the `Configuration` section.
 
 **Modifying Settings with Command-Line Arguments**:
 In addition to these two configuration methods, you have the flexibility to override specific settings directly via command-line arguments. By supplying `key-value` pairs in the CLI, you can adjust particular settings without explicitly altering the config files (YAML or NN Archive). For further details, refer to the [Examples](#examples) section.
@@ -156,7 +156,7 @@ If you prefer not to share your models with the cloud, you can run the conversio
 We provide official Docker images only for RVC2 and RVC3 platforms.
 Images for Hailo and RVC4 need to be built manually, as described in the [Build Instructions](#build-instructions) section.
 
-The following images are available on [GitHub Container Registry](https://ghcr.io/luxonis):
+The following images are available on [Luxonis GitHub Container Registry](https://github.com/orgs/luxonis/packages?tab=packages&q=modelconverter):
 
 **RVC2**
 
