@@ -19,9 +19,11 @@ from modelconverter.packages.base_benchmark import (
 )
 from modelconverter.utils import (
     AdbHandler,
+    get_adb_id,
     create_progress_handler,
     environ,
     subprocess_run,
+    AdbMonitor,
 )
 
 PROFILES: Final[list[str]] = [
@@ -246,24 +248,39 @@ class RVC4Benchmark(Benchmark):
         return dai.TensorInfo.DataType.U8F
 
     def benchmark(self, configuration: Configuration) -> BenchmarkResult:
+        self.adb = AdbHandler(get_adb_id(configuration.get("device_ip")))
+        adb_monitor = AdbMonitor(
+            self.adb,
+            monitor_power=configuration.get("monitor_power"),
+            monitor_dsp=configuration.get("monitor_dsp"),
+        )
+        adb_monitor.start()
+
         dai_benchmark = configuration.get("dai_benchmark")
         try:
             if dai_benchmark:
                 for key in ["dai_benchmark", "num_images"]:
                     configuration.pop(key)
-                return self._benchmark_dai(self.model_path, **configuration)
-            for key in [
-                "dai_benchmark",
-                "repetitions",
-                "num_threads",
-                "num_messages",
-                "benchmark_time",
-            ]:
-                configuration.pop(key, None)
-            self.adb = AdbHandler()
-            logger.info("Running SNPE benchmark over ADB")
-            return self._benchmark_snpe(self.model_path, **configuration)
+                result = self._benchmark_dai(self.model_path, **configuration)
+            else:
+                for key in [
+                    "dai_benchmark",
+                    "repetitions",
+                    "num_threads",
+                    "num_messages",
+                    "benchmark_time",
+                    "device_ip",
+                ]:
+                    configuration.pop(key, None)
+                logger.info("Running SNPE benchmark over ADB")
+                result = self._benchmark_snpe(self.model_path, **configuration)
+            
+            adb_monitor_stats = adb_monitor.get_stats()
+            breakpoint() ## debug
+
+            return result
         finally:
+            adb_monitor.stop()
             if not dai_benchmark:
                 # so we don't delete the wrong directory
                 assert self.model_name
