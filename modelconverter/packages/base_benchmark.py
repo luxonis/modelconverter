@@ -14,7 +14,7 @@ class BenchmarkResult(NamedTuple):
 
     fps: float
     latency: float | Literal["N/A"]
-    power: Tuple[float, float] | None = None
+    power: Tuple[float | None, float | None] = (None, None)
     dsp: float | None = None
 
 Configuration: TypeAlias = dict[str, Any]

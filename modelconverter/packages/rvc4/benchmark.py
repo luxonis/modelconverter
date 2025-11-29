@@ -286,8 +286,7 @@ class RVC4Benchmark(Benchmark):
             
             if adb_monitor:
                 adb_stats = adb_monitor.get_stats()
-                result._replace(power=adb_stats["power"])
-                result._replace(dsp=adb_stats["dsp"])
+                result = result._replace(power=adb_stats["power"], dsp=adb_stats["dsp"])
             return result
         finally:
             if adb_monitor:
