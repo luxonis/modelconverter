@@ -36,7 +36,7 @@ from .nn_archive import (
 from .onnx_tools import ONNXModifier, onnx_attach_normalization_to_inputs
 from .progress_handler import create_progress_handler
 from .subprocess import SubprocessHandle, subprocess_run
-from .adb_monitor import AdbMonitor
+from .adb_monitor import AdbMonitorDSP, AdbMonitorPower
 
 __all__ = [
     "AdbHandler",
@@ -75,5 +75,6 @@ __all__ = [
     "sanitize_net_name",
     "subprocess_run",
     "upload_to_remote",
-    "AdbMonitor",
+    "AdbMonitorDSP",
+    "AdbMonitorPower",
 ]

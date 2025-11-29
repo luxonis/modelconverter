@@ -23,7 +23,8 @@ from modelconverter.utils import (
     create_progress_handler,
     environ,
     subprocess_run,
-    AdbMonitor,
+    AdbMonitorDSP,
+    AdbMonitorPower,
 )
 
 PROFILES: Final[list[str]] = [
@@ -252,17 +253,15 @@ class RVC4Benchmark(Benchmark):
                 
         self.adb = AdbHandler(get_adb_id(configuration.get("device_ip")))
         
-        self.monitor_power=configuration.get("power_benchmark")
-        self.monitor_dsp=configuration.get("dsp_benchmark")
-        if self.monitor_power or self.monitor_dsp:
-            adb_monitor = AdbMonitor(
-                self.adb,
-                monitor_power=self.monitor_power,
-                monitor_dsp=self.monitor_dsp,
-            )
-            adb_monitor.start()
-        else:
-            adb_monitor=None
+        self.power_monitor=None
+        if configuration.get("power_benchmark"):
+            self.power_monitor = AdbMonitorPower(self.adb)
+            self.power_monitor.start()
+
+        self.dsp_monitor=None
+        if configuration.get("dsp_benchmark"):
+            self.dsp_monitor = AdbMonitorDSP(self.adb)
+            self.dsp_monitor.start()
 
         try:
             if dai_benchmark:
@@ -284,13 +283,16 @@ class RVC4Benchmark(Benchmark):
                 logger.info("Running SNPE benchmark over ADB")
                 result = self._benchmark_snpe(self.model_path, **configuration)
             
-            if adb_monitor:
-                adb_stats = adb_monitor.get_stats()
-                result = result._replace(power=adb_stats["power"], dsp=adb_stats["dsp"])
+            if self.power_monitor:
+                result = result._replace(power=self.power_monitor.get_stats())
+            if self.dsp_monitor:
+                result = result._replace(dsp=self.dsp_monitor.get_stats())
             return result
         finally:
-            if adb_monitor:
-                adb_monitor.stop()
+            if self.power_monitor:
+                self.power_monitor.stop()
+            if self.dsp_monitor:
+                self.dsp_monitor.stop()
             if not dai_benchmark:
                 # so we don't delete the wrong directory
                 assert self.model_name
@@ -490,10 +492,10 @@ class RVC4Benchmark(Benchmark):
     ) -> list[str]:
         
         heads = []
-        if self.monitor_power:
+        if self.power_monitor:
             heads.append("power_sys (W)")
             heads.append("power_core (W)")
-        if self.monitor_dsp:
+        if self.dsp_monitor:
             heads.append("dsp (%)")
         return heads
 
@@ -505,8 +507,8 @@ class RVC4Benchmark(Benchmark):
         power_sys, power_core = result.power
         dsp = result.dsp
 
-        if self.monitor_power:
+        if self.power_monitor:
             yield f"{power_sys:.2f}" if power_sys else "N/A"
             yield f"{power_core:.2f}" if power_core else "N/A"
-        if self.monitor_dsp:
+        if self.dsp_monitor:
             yield f"{dsp:.2f}" if dsp else "N/A"
