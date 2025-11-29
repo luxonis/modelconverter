@@ -506,7 +506,7 @@ class RVC4Benchmark(Benchmark):
         dsp = result.dsp
 
         if self.monitor_power:
-            yield f"[blue]{power_sys:.2f}" if power_sys else "[blue]N/A"
-            yield f"[blue]{power_core:.2f}" if power_core else "[blue]N/A"
+            yield f"{power_sys:.2f}" if power_sys else "N/A"
+            yield f"{power_core:.2f}" if power_core else "N/A"
         if self.monitor_dsp:
-            yield f"[blue]{dsp:.2f}" if dsp else "[blue]N/A"
+            yield f"{dsp:.2f}" if dsp else "N/A"
