@@ -40,7 +40,7 @@ from .adb_monitor import AdbMonitorDSP, AdbMonitorPower
 
 __all__ = [
     "AdbHandler",
-    "get_adb_id"
+    "get_adb_id",
     "Metadata",
     "ModelconverterException",
     "ONNXModifier",

@@ -88,4 +88,4 @@ def get_adb_id(device_ip: str) -> str:
             device_mxid = int(device.getDeviceId())
     except:
         raise RuntimeError(f"Failed to connect to device: {device_ip}")
-    return format(device_mxid, 'x') # abd_id is hex version of mxid
+    return format(device_mxid, "x")  # abd_id is hex version of mxid

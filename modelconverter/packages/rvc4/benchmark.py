@@ -250,22 +250,27 @@ class RVC4Benchmark(Benchmark):
 
     def benchmark(self, configuration: Configuration) -> BenchmarkResult:
         dai_benchmark = configuration.get("dai_benchmark")
-                
+
         self.adb = AdbHandler(get_adb_id(configuration.get("device_ip")))
-        
-        self.power_monitor=None
+
+        self.power_monitor = None
         if configuration.get("power_benchmark"):
             self.power_monitor = AdbMonitorPower(self.adb)
             self.power_monitor.start()
 
-        self.dsp_monitor=None
+        self.dsp_monitor = None
         if configuration.get("dsp_benchmark"):
             self.dsp_monitor = AdbMonitorDSP(self.adb)
             self.dsp_monitor.start()
 
         try:
             if dai_benchmark:
-                for key in ["dai_benchmark", "num_images", "power_benchmark", "dsp_benchmark"]:
+                for key in [
+                    "dai_benchmark",
+                    "num_images",
+                    "power_benchmark",
+                    "dsp_benchmark",
+                ]:
                     configuration.pop(key)
                 result = self._benchmark_dai(self.model_path, **configuration)
             else:
@@ -276,13 +281,13 @@ class RVC4Benchmark(Benchmark):
                     "num_messages",
                     "benchmark_time",
                     "device_ip",
-                    "power_benchmark"
-                    "dsp_benchmark"
+                    "power_benchmark",
+                    "dsp_benchmark",
                 ]:
                     configuration.pop(key, None)
                 logger.info("Running SNPE benchmark over ADB")
                 result = self._benchmark_snpe(self.model_path, **configuration)
-            
+
             if self.power_monitor:
                 result = result._replace(power=self.power_monitor.get_stats())
             if self.dsp_monitor:
@@ -485,12 +490,12 @@ class RVC4Benchmark(Benchmark):
 
             # Currently, the latency measurement is only supported on RVC4 when using ImgFrame as the input to the BenchmarkOut which we don't do here.
             return BenchmarkResult(float(np.mean(fps_list)), "N/A")
-        
+
     def _extra_header(
         self,
         results: list[tuple[Configuration, BenchmarkResult]],
     ) -> list[str]:
-        
+
         heads = []
         if self.power_monitor:
             heads.append("power_sys (W)")
