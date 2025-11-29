@@ -1,5 +1,4 @@
 from .adb_handler import AdbHandler
-from .adb_id import get_adb_id
 from .calibration_data import download_calibration_data
 from .docker_utils import (
     check_docker,
@@ -41,7 +40,6 @@ from .adb_monitor import AdbMonitorDSP, AdbMonitorPower
 
 __all__ = [
     "AdbHandler",
-    "get_adb_id",
     "Metadata",
     "ModelconverterException",
     "ONNXModifier",

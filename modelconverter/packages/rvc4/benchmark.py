@@ -19,7 +19,6 @@ from modelconverter.packages.base_benchmark import (
 )
 from modelconverter.utils import (
     AdbHandler,
-    get_adb_id,
     create_progress_handler,
     environ,
     subprocess_run,
@@ -517,3 +516,14 @@ class RVC4Benchmark(Benchmark):
             yield f"{power_core:.2f}" if power_core else "N/A"
         if self.dsp_monitor:
             yield f"{dsp:.2f}" if dsp else "N/A"
+
+
+def get_adb_id(device_ip: str) -> str:
+    if device_ip is None:
+        return None
+    try:
+        with dai.Device(device_ip) as device:
+            device_mxid = int(device.getDeviceId())
+    except:
+        raise RuntimeError(f"Failed to connect to device: {device_ip}")
+    return format(device_mxid, "x")  # abd_id is hex version of mxid
