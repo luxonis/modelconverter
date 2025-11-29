@@ -370,6 +370,10 @@ def benchmark(
         Whether to run the benchmark using the DAI V3. If False the SNPE tools are used.
     device_ip : str | None
         The IP address of the device to run the benchmark on. If not provided, the default device found by DAI will be used.
+    power_benchmark : bool
+        Whether to run power consumption measurements.
+    dsp_benchmark : bool
+        Whether to run DSP utilization measurements.
     """
 
     if target in {Target.RVC2, Target.RVC4}:
