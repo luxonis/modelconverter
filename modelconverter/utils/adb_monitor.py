@@ -16,8 +16,8 @@ class AdbMonitor:
     ----------
     adb_handler : AdbHandler
         Android Debug Bridge (adb) CLI wrapper.
-    period : float, optional
-        Sampling period in seconds. Default is 0.1.
+    interval : float, optional
+        Sampling interval in seconds. Default is 0.1.
     monitor_power : bool, optional
         Whether to attempt reading power from hwmon. Default is False.
     monitor_dsp : bool, optional
@@ -27,12 +27,12 @@ class AdbMonitor:
     def __init__(
         self,
         adb_handler,
-        period: float = 0.1,
         monitor_power: bool = False,
         monitor_dsp: bool = False,
+        interval: float = 0.1,
     ) -> None:
         self.adb_handler = adb_handler
-        self.period = period
+        self.interval = interval
         self.monitor_power = monitor_power
         self.monitor_dsp = monitor_dsp
 
@@ -112,7 +112,7 @@ class AdbMonitor:
                     self._measurements.append(val)
             except Exception:
                 logger.error("Monitor read failed")
-            time.sleep(self.period)
+            time.sleep(self.interval)
 
     def _read_power(self) -> tuple[float | None, float | None] | None:
         """
@@ -187,7 +187,6 @@ class AdbMonitor:
         dsp_vals = [dsp for _, dsp in self._measurements if dsp is not None]
 
         return {
-            "power0": statistics.fmean(p0_vals) if p0_vals else -1,
-            "power1": statistics.fmean(p1_vals) if p1_vals else -1,
-            "dsp": statistics.fmean(dsp_vals) if dsp_vals else -1,
+            "power": (statistics.fmean(p0_vals) if p0_vals else None, statistics.fmean(p1_vals) if p1_vals else None),
+            "dsp": statistics.fmean(dsp_vals) if dsp_vals else None,
         }

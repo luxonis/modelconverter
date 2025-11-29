@@ -484,3 +484,30 @@ class RVC4Benchmark(Benchmark):
 
             # Currently, the latency measurement is only supported on RVC4 when using ImgFrame as the input to the BenchmarkOut which we don't do here.
             return BenchmarkResult(float(np.mean(fps_list)), "N/A")
+        
+    def _extra_header(
+        self,
+        results: list[tuple[Configuration, BenchmarkResult]],
+    ) -> list[str]:
+        
+        heads = []
+        if self.monitor_power:
+            heads.append("power_sys (W)")
+            heads.append("power_core (W)")
+        if self.monitor_dsp:
+            heads.append("dsp (%)")
+        return heads
+
+    def _extra_row_cells(
+        self,
+        configuration: Configuration,
+        result: BenchmarkResult,
+    ):
+        power_sys, power_core = result.power
+        dsp = result.dsp
+
+        if self.monitor_power:
+            yield f"[blue]{power_sys:.2f}" if power_sys else "[blue]N/A"
+            yield f"[blue]{power_core:.2f}" if power_core else "[blue]N/A"
+        if self.monitor_dsp:
+            yield f"[blue]{dsp:.2f}" if dsp else "[blue]N/A"
