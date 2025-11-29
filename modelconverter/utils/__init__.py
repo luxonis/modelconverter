@@ -1,4 +1,5 @@
-from .adb_handler import AdbHandler, get_adb_id
+from .adb_handler import AdbHandler
+from .adb_id import get_adb_id
 from .calibration_data import download_calibration_data
 from .docker_utils import (
     check_docker,
