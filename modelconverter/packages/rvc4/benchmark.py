@@ -248,18 +248,25 @@ class RVC4Benchmark(Benchmark):
         return dai.TensorInfo.DataType.U8F
 
     def benchmark(self, configuration: Configuration) -> BenchmarkResult:
-        self.adb = AdbHandler(get_adb_id(configuration.get("device_ip")))
-        adb_monitor = AdbMonitor(
-            self.adb,
-            monitor_power=configuration.get("monitor_power"),
-            monitor_dsp=configuration.get("monitor_dsp"),
-        )
-        adb_monitor.start()
-
         dai_benchmark = configuration.get("dai_benchmark")
+                
+        self.adb = AdbHandler(get_adb_id(configuration.get("device_ip")))
+        
+        self.monitor_power=configuration.get("power_benchmark")
+        self.monitor_dsp=configuration.get("dsp_benchmark")
+        if self.monitor_power or self.monitor_dsp:
+            adb_monitor = AdbMonitor(
+                self.adb,
+                monitor_power=self.monitor_power,
+                monitor_dsp=self.monitor_dsp,
+            )
+            adb_monitor.start()
+        else:
+            adb_monitor=None
+
         try:
             if dai_benchmark:
-                for key in ["dai_benchmark", "num_images"]:
+                for key in ["dai_benchmark", "num_images", "power_benchmark", "dsp_benchmark"]:
                     configuration.pop(key)
                 result = self._benchmark_dai(self.model_path, **configuration)
             else:
@@ -270,17 +277,21 @@ class RVC4Benchmark(Benchmark):
                     "num_messages",
                     "benchmark_time",
                     "device_ip",
+                    "power_benchmark"
+                    "dsp_benchmark"
                 ]:
                     configuration.pop(key, None)
                 logger.info("Running SNPE benchmark over ADB")
                 result = self._benchmark_snpe(self.model_path, **configuration)
             
-            adb_monitor_stats = adb_monitor.get_stats()
-            breakpoint() ## debug
-
+            if adb_monitor:
+                adb_stats = adb_monitor.get_stats()
+                result._replace(power=adb_stats["power"])
+                result._replace(dsp=adb_stats["dsp"])
             return result
         finally:
-            adb_monitor.stop()
+            if adb_monitor:
+                adb_monitor.stop()
             if not dai_benchmark:
                 # so we don't delete the wrong directory
                 assert self.model_name

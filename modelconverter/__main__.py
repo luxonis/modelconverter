@@ -332,6 +332,8 @@ def benchmark(
     num_images: Annotated[int, Parameter(group="RVC4")] = 1000,
     dai_benchmark: Annotated[bool, Parameter(group="RVC4")] = True,
     device_ip: Annotated[str | None, Parameter(group="RVC4")] = None,
+    power_benchmark: Annotated[bool, Parameter(group="RVC4")] = False,
+    dsp_benchmark: Annotated[bool, Parameter(group="RVC4")] = False,
 ) -> None:
     """Runs benchmark on the specified target platform.
 
@@ -384,6 +386,8 @@ def benchmark(
                 "num_images": num_images,
                 "dai_benchmark": dai_benchmark,
                 "device_ip": device_ip,
+                "power_benchmark": power_benchmark,
+                "dsp_benchmark": dsp_benchmark,
             }
     elif target is Target.RVC3:
         kwargs = {
