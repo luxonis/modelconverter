@@ -18,7 +18,7 @@ class _BaseAdbMonitor(ABC):
     """
 
     adb_handler: object
-    interval: float = 0.1
+    interval: float = 0.5
 
     _measurements: list[object] | None = field(default=None, init=False)
     _running: bool = field(default=False, init=False)
@@ -96,10 +96,14 @@ class AdbMonitorPower(_BaseAdbMonitor):
     `adb_handler`. Each sample is stored as a tuple `(power0, power1)` in watts.
     """
 
-    def __init__(self, adb_handler, interval: float = 0.1) -> None:
+    def __init__(self, adb_handler, interval: float = 0.5) -> None:
         super().__init__(adb_handler=adb_handler, interval=interval)
         self.hwmon0_exists = self._check_hwmon("hwmon0")
         self.hwmon1_exists = self._check_hwmon("hwmon1")
+        if self.hwmon0_exists and self.hwmon1_exists:
+            self.idle_power_system: float = 0.0
+            self.idle_power_processor: float = 0.0
+            self.set_idle_power()
 
     def _check_hwmon(self, hwmon: str) -> bool:
         """
@@ -117,6 +121,7 @@ class AdbMonitorPower(_BaseAdbMonitor):
         """
         try:
             self.adb_handler.shell(f"ls /sys/class/hwmon/{hwmon}/power1_input")
+            time.sleep(self.interval)
             return True
         except Exception:
             logger.warning(
@@ -162,7 +167,6 @@ class AdbMonitorPower(_BaseAdbMonitor):
         power0 = self._read_hwmon("hwmon0") if self.hwmon0_exists else None
         power1 = self._read_hwmon("hwmon1") if self.hwmon1_exists else None
 
-        # If both are missing/unavailable, we can just say "no sample"
         if power0 is None and power1 is None:
             return None
         return (power0, power1)
@@ -177,14 +181,27 @@ class AdbMonitorPower(_BaseAdbMonitor):
             `(mean_power0, mean_power1)` in watts. Each value is None if no
             valid samples were collected for that channel.
         """
-        # mypy/pyright: measurements are Sequence[object]; we know actual type here
         samples = [m for m in self.measurements if isinstance(m, tuple) and len(m) == 2]
-        p0_vals = [p0 for (p0, _) in samples if p0 is not None]
-        p1_vals = [p1 for (_, p1) in samples if p1 is not None]
+        p0_vals = [p0 for (p0, _) in samples if p0 is not None and p0 > self.idle_power_system]
+        p1_vals = [p1 for (_, p1) in samples if p1 is not None and p1 > self.idle_power_processor]
 
         mean_p0 = statistics.fmean(p0_vals) if p0_vals else None
         mean_p1 = statistics.fmean(p1_vals) if p1_vals else None
         return mean_p0, mean_p1
+
+    def set_idle_power(self) -> None:
+        logger.info("Calculating idle power consumption...")
+        self.start()
+        time.sleep(5)
+        self.stop()
+
+        self.idle_power_system, self.idle_power_processor = self.get_stats() or (0.0, 0.0)
+        self.idle_power_system *= 1.1  # add 10% margin
+        self.idle_power_processor *= 1.1  # add 10% margin
+        logger.info(
+            f"Idle power consumption: system={self.idle_power_system:.4f} W, processor={self.idle_power_processor:.4f} W"
+        )
+        time.sleep(self.interval)
 
 
 class AdbMonitorDSP(_BaseAdbMonitor):
@@ -196,9 +213,101 @@ class AdbMonitorDSP(_BaseAdbMonitor):
     utilization as a float in the range [0, 100].
     """
 
-    def __init__(self, adb_handler, interval: float = 0.1) -> None:
+    def __init__(self, adb_handler, interval: float = 0.5) -> None:
         super().__init__(adb_handler=adb_handler, interval=interval)
         self.dsp_exists = self._check_dsp()
+        if self.dsp_exists:
+            self.idle_dsp_utilization: float = 0.0
+            self.set_idle_dsp()
+
+    def _prepare_dsp_util_script(self) -> None:
+        """
+        Create the DSP utility script directly on the device via ADB.
+
+        """
+        remote_script_path = "/data/local/oak_dsp_util.sh"
+
+        script_content = r'''SYS_MON_APP="/usr/bin/sysMonApp"
+SLEEP_TIME=1.0
+
+$SYS_MON_APP getPowerStats --clear 1 --q6 cdsp >/dev/null 2>&1
+
+$SYS_MON_APP getPowerStats --q6 cdsp >/data/local/dsp_read1_full 2>/dev/null
+
+grep '^[[:space:]]*[0-9]*\.[0-9]*[[:space:]]*[0-9]*\.[0-9]*' \
+    /data/local/dsp_read1_full > /data/local/dsp_read1
+
+sleep $SLEEP_TIME
+
+$SYS_MON_APP getPowerStats --q6 cdsp > /data/local/dsp_read2_full 2>/dev/null
+
+grep '^[[:space:]]*[0-9]*\.[0-9]*[[:space:]]*[0-9]*\.[0-9]*' \
+    /data/local/dsp_read2_full > /data/local/dsp_read2
+
+dsp_util=$(
+awk -v interval=$SLEEP_TIME '
+    FILENAME == ARGV[1] && FNR > 1 {
+        gsub(/^[[:blank:]]+/, "", $0);
+        if (NF >= 2) {
+            freq = $1;
+            active1[freq] = $2;
+            all_freqs[freq] = 1;
+        }
+    }
+    FILENAME == ARGV[2] && FNR > 1 {
+        gsub(/^[[:blank:]]+/, "", $0);
+        if (NF >= 2) {
+            freq = $1;
+            active2[freq] = $2;
+            all_freqs[freq] = 1;
+        }
+    }
+    END {
+        sum_delta = 0;
+        max_freq = 0;
+        delete deltas;
+        for (freq in all_freqs) {
+            f = freq + 0;
+            if (f > max_freq) max_freq = f;
+            a1 = (freq in active1) ? active1[freq] + 0 : 0;
+            a2 = (freq in active2) ? active2[freq] + 0 : 0;
+            delta = a2 - a1;
+            if (delta < 0) {
+                delta = 0;
+            }
+            deltas[freq] = delta;
+            sum_delta += delta;
+        }
+
+        scale_factor = 1;
+        if (sum_delta > interval) {
+            scale_factor = interval / sum_delta;
+        }
+
+        sum_cycles = 0;
+        for (freq in all_freqs) {
+            f = freq + 0;
+            adjusted_delta = deltas[freq] * scale_factor;
+            sum_cycles += f * adjusted_delta;
+        }
+
+        if (max_freq == 0) {
+            print "Error: Maximum frequency is zero." > "/dev/stderr";
+            exit 1;
+        }
+
+        utilization = (sum_cycles / (max_freq * interval)) * 100;
+        print utilization
+    }
+    ' /data/local/dsp_read1 /data/local/dsp_read2
+)
+
+echo "$dsp_util"
+'''
+
+        cmd = f"cat > {remote_script_path} <<'EOF'\n{script_content}\nEOF\n"
+        self.adb_handler.shell(cmd)
+        self.adb_handler.shell(f"chmod +x {remote_script_path}")
 
     def _check_dsp(self) -> bool:
         """
@@ -210,9 +319,11 @@ class AdbMonitorDSP(_BaseAdbMonitor):
             True if a supported utility is present, False otherwise.
         """
         try:
+            self._prepare_dsp_util_script()
             self.adb_handler.shell(
-                "ls -d /data/local/oak_dsp_util.sh /data/local/sysMonAppLE"
+                "ls -d /data/local/oak_dsp_util.sh /usr/bin/sysMonApp"
             )
+            time.sleep(self.interval)
             return True
         except Exception:
             logger.warning(
@@ -242,16 +353,22 @@ class AdbMonitorDSP(_BaseAdbMonitor):
             logger.warning("Failed to read DSP value.")
             return None
 
-    def stop(self) -> None:
+    def stop(self, full_cleanup: bool = False) -> None:
         """
         Stop the monitor and clean up temporary files on the device.
         """
         super().stop()
         if self.dsp_exists:
-            returncode, _, _ = self.adb_handler.shell(
-                "rm /data/local/dsp_read1 /data/local/dsp_read2 "
-                "/data/local/dsp_read1_full /data/local/dsp_read2_full"
-            )
+            files_to_remove = [
+                "/data/local/dsp_read1",
+                "/data/local/dsp_read2",
+                "/data/local/dsp_read1_full",
+                "/data/local/dsp_read2_full",
+            ]
+            if full_cleanup:
+                files_to_remove.append("/data/local/oak_dsp_util.sh")
+
+            returncode, _, _ = self.adb_handler.shell(f"rm -f {' '.join(files_to_remove)}")
             if returncode != 0:
                 logger.warning("Failed to cleanup DSP monitor tmp files")
 
@@ -265,5 +382,17 @@ class AdbMonitorDSP(_BaseAdbMonitor):
             Mean DSP utilization (0–100). None if no valid samples were
             collected.
         """
-        dsp_vals = [dsp for dsp in self.measurements if isinstance(dsp, (int, float))]
+        dsp_vals = [dsp for dsp in self.measurements if isinstance(dsp, (int, float)) and dsp > self.idle_dsp_utilization]
+
         return statistics.fmean(dsp_vals) if dsp_vals else None
+
+    def set_idle_dsp(self) -> None:
+        logger.info("Calculating idle DSP utilization...")
+        self.start()
+        time.sleep(5)
+        self.stop()
+
+        self.idle_dsp_utilization = self.get_stats() or 0.0
+        self.idle_dsp_utilization *= 1.1  # add 10% margin
+        logger.info(f"Idle DSP utilization: {self.idle_dsp_utilization:.4f}%")
+        time.sleep(self.interval)

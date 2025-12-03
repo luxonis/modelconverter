@@ -296,7 +296,7 @@ class RVC4Benchmark(Benchmark):
             if self.power_monitor:
                 self.power_monitor.stop()
             if self.dsp_monitor:
-                self.dsp_monitor.stop()
+                self.dsp_monitor.stop(full_cleanup=True)
             if not dai_benchmark:
                 # so we don't delete the wrong directory
                 assert self.model_name
@@ -512,11 +512,10 @@ class RVC4Benchmark(Benchmark):
         dsp = result.dsp
 
         if self.power_monitor:
-            yield f"{power_sys:.2f}" if power_sys else "N/A"
-            yield f"{power_core:.2f}" if power_core else "N/A"
+            yield f"{power_sys:.2f}" if power_sys else "[orange3]N/A"
+            yield f"{power_core:.2f}" if power_core else "[orange3]N/A"
         if self.dsp_monitor:
-            yield f"{dsp:.2f}" if dsp else "N/A"
-
+            yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
 
 def get_adb_id(device_ip: str) -> str:
     if device_ip is None:
