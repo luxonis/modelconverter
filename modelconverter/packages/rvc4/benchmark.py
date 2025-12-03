@@ -24,6 +24,7 @@ from modelconverter.utils import (
     subprocess_run,
     AdbMonitorDSP,
     AdbMonitorPower,
+    get_device_info,
 )
 
 PROFILES: Final[list[str]] = [
@@ -71,6 +72,7 @@ class RVC4Benchmark(Benchmark):
             "num_threads": 2,
             "num_messages": 50,
             "device_ip": None,
+            "device_mxid": None,
         }
 
     @property
@@ -250,7 +252,10 @@ class RVC4Benchmark(Benchmark):
     def benchmark(self, configuration: Configuration) -> BenchmarkResult:
         dai_benchmark = configuration.get("dai_benchmark")
 
-        self.adb = AdbHandler(get_adb_id(configuration.get("device_ip")))
+        device_ip, device_adb_id = get_device_info(configuration.get("device_ip"), configuration.get("device_mxid"))
+        self.adb = AdbHandler(device_adb_id)
+
+        configuration["device_ip"] = device_ip
 
         self.power_monitor = None
         if configuration.get("power_benchmark"):
@@ -267,6 +272,7 @@ class RVC4Benchmark(Benchmark):
                 for key in [
                     "dai_benchmark",
                     "num_images",
+                    "device_mxid",
                     "power_benchmark",
                     "dsp_benchmark",
                 ]:
@@ -280,6 +286,7 @@ class RVC4Benchmark(Benchmark):
                     "num_messages",
                     "benchmark_time",
                     "device_ip",
+                    "device_mxid",
                     "power_benchmark",
                     "dsp_benchmark",
                 ]:
@@ -516,13 +523,3 @@ class RVC4Benchmark(Benchmark):
             yield f"{power_core:.2f}" if power_core else "[orange3]N/A"
         if self.dsp_monitor:
             yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
-
-def get_adb_id(device_ip: str) -> str:
-    if device_ip is None:
-        return None
-    try:
-        with dai.Device(device_ip) as device:
-            device_mxid = int(device.getDeviceId())
-    except:
-        raise RuntimeError(f"Failed to connect to device: {device_ip}")
-    return format(device_mxid, "x")  # abd_id is hex version of mxid

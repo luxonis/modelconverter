@@ -201,8 +201,6 @@ class AdbMonitorPower(_BaseAdbMonitor):
         logger.info(
             f"Idle power consumption: system={self.idle_power_system:.4f} W, processor={self.idle_power_processor:.4f} W"
         )
-        time.sleep(self.interval)
-
 
 class AdbMonitorDSP(_BaseAdbMonitor):
     """
@@ -395,4 +393,3 @@ echo "$dsp_util"
         self.idle_dsp_utilization = self.get_stats() or 0.0
         self.idle_dsp_utilization *= 1.1  # add 10% margin
         logger.info(f"Idle DSP utilization: {self.idle_dsp_utilization:.4f}%")
-        time.sleep(self.interval)

@@ -3,7 +3,7 @@ import subprocess
 
 from loguru import logger
 from luxonis_ml.typing import PathType
-
+import depthai as dai
 
 class AdbHandler:
     def __init__(
@@ -77,3 +77,27 @@ class AdbHandler:
         logger.info(f"Using device ID: {device_id}")
 
         return device_id
+
+def mxid_to_adb_id(mxid: str) -> str:
+    if mxid.isdigit():
+        return format(int(mxid), "x")
+    return mxid.encode("ascii").hex()
+
+def get_device_info(device_ip: str | None, device_mxid: str | None) -> tuple[str | None, str | None]:
+    if not device_ip and not device_mxid:
+        return None, None
+
+    if device_mxid:
+        for info in dai.Device.getAllAvailableDevices():
+            if device_mxid == info.getDeviceId():
+                if device_ip and device_ip != info.name:
+                    logger.warning(
+                        f"Both device_mxid and device_ip provided, but they refer to different devices. Using device with device_mxid: {device_mxid} and device_ip: {info.name}."
+                    )
+                return info.name, mxid_to_adb_id(device_mxid)
+    if device_ip:
+        with dai.Device(device_ip) as device:
+            inferred_mxid = device.getDeviceId()
+            return device_ip, mxid_to_adb_id(inferred_mxid)
+
+    return None, None

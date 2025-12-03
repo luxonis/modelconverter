@@ -13,20 +13,22 @@ from loguru import logger
 from PIL import Image
 
 from modelconverter.packages.base_analyze import Analyzer
-from modelconverter.utils import AdbHandler, constants, subprocess_run
+from modelconverter.utils import AdbHandler, constants, subprocess_run, get_device_info
 
 
 class RVC4Analyzer(Analyzer):
     def __init__(
         self,
-        device_id: str | None,
+        device_ip: str | None,
+        device_mxid: str | None,
         dlc_model_path: str,
         image_dirs: dict[str, str],
     ):
         super().__init__(dlc_model_path, image_dirs)
-        self.adb = AdbHandler(device_id)
+        _, device_adb_id = get_device_info(device_ip, device_mxid)
+        self.adb = AdbHandler(device_adb_id)
 
-        self.device_id = device_id
+        self.device_id = device_adb_id
 
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
         input_matcher = self._prepare_input_matcher()
@@ -94,7 +96,7 @@ class RVC4Analyzer(Analyzer):
                     raw_image = cast(np.ndarray, np.load(img_path)).astype(
                         type
                     )
-                    
+
                     if raw_image.shape != tuple(width_height):
                         raise ValueError(f"Input image {img_name} has incorrect shape: {raw_image.shape}, expected: {tuple(width_height)}")
                 else:
@@ -205,10 +207,10 @@ class RVC4Analyzer(Analyzer):
                 if not img_path.endswith((".png", ".jpg", ".jpeg", ".npy")):
                     continue
 
-                shape = onnx_input_shapes[input_name][2:][::-1] 
+                shape = onnx_input_shapes[input_name][2:][::-1]
                 if img_path.endswith(
                     ".npy"
-                ):  
+                ):
                     image = np.load(img_path)
                     if image.shape != tuple(shape):
                         raise ValueError(f"Input image {img_path} has incorrect shape: {image.shape}, expected: {tuple(shape)}")
