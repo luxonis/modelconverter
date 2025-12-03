@@ -3,6 +3,7 @@ import json
 import re
 import shutil
 import tempfile
+from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
 from typing import Final, cast
@@ -19,12 +20,11 @@ from modelconverter.packages.base_benchmark import (
 )
 from modelconverter.utils import (
     AdbHandler,
+    AdbMonitorDSP,
+    AdbMonitorPower,
     create_progress_handler,
     environ,
     subprocess_run,
-    AdbMonitorDSP,
-    AdbMonitorPower,
-    get_device_info,
 )
 
 PROFILES: Final[list[str]] = [
@@ -252,7 +252,9 @@ class RVC4Benchmark(Benchmark):
     def benchmark(self, configuration: Configuration) -> BenchmarkResult:
         dai_benchmark = configuration.get("dai_benchmark")
 
-        device_ip, device_adb_id = get_device_info(configuration.get("device_ip"), configuration.get("device_mxid"))
+        device_ip, device_adb_id = get_device_info(
+            configuration.get("device_ip"), configuration.get("device_mxid")
+        )
         self.adb = AdbHandler(device_adb_id)
 
         configuration["device_ip"] = device_ip
@@ -501,7 +503,6 @@ class RVC4Benchmark(Benchmark):
         self,
         results: list[tuple[Configuration, BenchmarkResult]],
     ) -> list[str]:
-
         heads = []
         if self.power_monitor:
             heads.append("power_sys (W)")
@@ -514,7 +515,7 @@ class RVC4Benchmark(Benchmark):
         self,
         configuration: Configuration,
         result: BenchmarkResult,
-    ):
+    ) -> Iterable[str]:
         power_sys, power_core = result.power
         dsp = result.dsp
 
@@ -523,3 +524,31 @@ class RVC4Benchmark(Benchmark):
             yield f"{power_core:.2f}" if power_core else "[orange3]N/A"
         if self.dsp_monitor:
             yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
+
+
+def mxid_to_adb_id(mxid: str) -> str:
+    if mxid.isdigit():
+        return format(int(mxid), "x")
+    return mxid.encode("ascii").hex()
+
+
+def get_device_info(
+    device_ip: str | None, device_mxid: str | None
+) -> tuple[str | None, str | None]:
+    if not device_ip and not device_mxid:
+        return None, None
+
+    if device_mxid:
+        for info in dai.Device.getAllAvailableDevices():
+            if device_mxid == info.getDeviceId():
+                if device_ip and device_ip != info.name:
+                    logger.warning(
+                        f"Both device_mxid and device_ip provided, but they refer to different devices. Using device with device_mxid: {device_mxid} and device_ip: {info.name}."
+                    )
+                return info.name, mxid_to_adb_id(device_mxid)
+    if device_ip:
+        with dai.Device(device_ip) as device:
+            inferred_mxid = device.getDeviceId()
+            return device_ip, mxid_to_adb_id(inferred_mxid)
+
+    return None, None

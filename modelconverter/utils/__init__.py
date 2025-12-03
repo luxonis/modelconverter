@@ -1,4 +1,5 @@
 from .adb_handler import AdbHandler
+from .adb_monitor import AdbMonitorDSP, AdbMonitorPower, get_device_info
 from .calibration_data import download_calibration_data
 from .docker_utils import (
     check_docker,
@@ -36,10 +37,11 @@ from .nn_archive import (
 from .onnx_tools import ONNXModifier, onnx_attach_normalization_to_inputs
 from .progress_handler import create_progress_handler
 from .subprocess import SubprocessHandle, subprocess_run
-from .adb_monitor import AdbMonitorDSP, AdbMonitorPower, get_device_info
 
 __all__ = [
     "AdbHandler",
+    "AdbMonitorDSP",
+    "AdbMonitorPower",
     "Metadata",
     "ModelconverterException",
     "ONNXModifier",
@@ -75,6 +77,4 @@ __all__ = [
     "sanitize_net_name",
     "subprocess_run",
     "upload_to_remote",
-    "AdbMonitorDSP",
-    "AdbMonitorPower",
 ]

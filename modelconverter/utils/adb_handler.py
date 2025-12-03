@@ -4,6 +4,7 @@ import subprocess
 from loguru import logger
 from luxonis_ml.typing import PathType
 
+
 class AdbHandler:
     def __init__(
         self, device_id: str | None = None, silent: bool = True

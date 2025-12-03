@@ -459,7 +459,11 @@ def analyze(
             }
 
         analyzer = get_analyzer(
-            Target.RVC4, device_ip, device_mxid, dlc_model_path, image_dirs_dict
+            Target.RVC4,
+            device_ip,
+            device_mxid,
+            dlc_model_path,
+            image_dirs_dict,
         )
         if analyze_outputs:
             logger.info("Analyzing layer outputs")

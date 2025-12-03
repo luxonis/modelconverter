@@ -1,7 +1,8 @@
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Literal, NamedTuple, TypeAlias, Tuple, Iterable
+from typing import Any, Literal, NamedTuple, TypeAlias
 
 import polars as pl
 from loguru import logger
@@ -10,12 +11,14 @@ from modelconverter.utils import is_hubai_available, resolve_path
 
 
 class BenchmarkResult(NamedTuple):
-    """Benchmark result, tuple (FPS, latency in ms, system and processor power in W, dsp utilization)"""
+    """Benchmark result, tuple (FPS, latency in ms, system and processor
+    power in W, dsp utilization)"""
 
     fps: float
     latency: float | Literal["N/A"]
-    power: Tuple[float | None, float | None] = (None, None)
+    power: tuple[float | None, float | None] = (None, None)
     dsp: float | None = None
+
 
 Configuration: TypeAlias = dict[str, Any]
 
@@ -117,7 +120,8 @@ class Benchmark(ABC):
         configuration: Configuration,
         result: BenchmarkResult,
     ) -> Iterable[str]:
-        """Shared row cells for each result (configuration + fps + latency)."""
+        """Shared row cells for each result (configuration + fps +
+        latency)."""
         # configuration values
         for x in configuration.values():
             yield f"[magenta]{x}"
@@ -158,7 +162,10 @@ class Benchmark(ABC):
         configuration: Configuration,
         result: BenchmarkResult,
     ) -> Iterable[str]:
-        """Extra cells to append after the base row cells (default: none)."""
+        """Extra cells to append after the base row cells (default:
+
+        none).
+        """
         return []
 
     def save_results(
