@@ -331,7 +331,7 @@ def benchmark(
     runtime: Annotated[Literal["dsp", "cpu"], Parameter(group="RVC4")] = "dsp",
     num_images: Annotated[int, Parameter(group="RVC4")] = 1000,
     device_ip: Annotated[str | None, Parameter(group="RVC4")] = None,
-    device_mxid: Annotated[str | None, Parameter(group="RVC4")] = None,
+    device_id: Annotated[str | None, Parameter(group="RVC4")] = None,
     dai_benchmark: Annotated[bool, Parameter(group="RVC4")] = True,
     power_benchmark: Annotated[bool, Parameter(group="RVC4")] = False,
     dsp_benchmark: Annotated[bool, Parameter(group="RVC4")] = False,
@@ -368,9 +368,9 @@ def benchmark(
     num_images : int
         The number of images to use for inference.
     device_ip : str | None
-        IP address of the device to run the benchmark on. Interchangeable with device_mxid. If neither is given, DAI selects the default device. If both are given, device_mxid takes precedence.
-    device_mxid : str | None
-        MXID of the device to run the benchmark on. Interchangeable with device_ip. If neither is given, DAI selects the default device. If both are given, device_mxid takes precedence.
+        IP address of the device to run the benchmark on. Interchangeable with device_id. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
+    device_id : str | None
+        DeviceId of the device to run the benchmark on. Interchangeable with device_ip. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
     dai_benchmark : bool
         Whether to run the benchmark using the DAI V3. If False the SNPE tools are used.
     power_benchmark : bool
@@ -393,7 +393,7 @@ def benchmark(
                 "num_images": num_images,
                 "dai_benchmark": dai_benchmark,
                 "device_ip": device_ip,
-                "device_mxid": device_mxid,
+                "device_id": device_id,
                 "power_benchmark": power_benchmark,
                 "dsp_benchmark": dsp_benchmark,
             }
@@ -408,7 +408,7 @@ def benchmark(
 def analyze(
     *,
     device_ip: str | None = None,
-    device_mxid: str | None = None,
+    device_id: str | None = None,
     dlc_model_path: str,
     onnx_model_path: str,
     image_dirs: Annotated[
@@ -425,9 +425,9 @@ def analyze(
     Parameters
     ----------
     device_ip : str | None
-        IP address of the device to run the benchmark on. Interchangeable with device_mxid. If neither is given, DAI selects the default device. If both are given, device_mxid takes precedence.
-    device_mxid : str | None
-        MXID of the device to run the benchmark on. Interchangeable with device_ip. If neither is given, DAI selects the default device. If both are given, device_mxid takes precedence.
+        IP address of the device to run the benchmark on. Interchangeable with device_id. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
+    device_id : str | None
+        DeviceId of the device to run the benchmark on. Interchangeable with device_ip. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
     dlc_model_path : str
         The path to the DLC model file.
 
@@ -461,7 +461,7 @@ def analyze(
         analyzer = get_analyzer(
             Target.RVC4,
             device_ip,
-            device_mxid,
+            device_id,
             dlc_model_path,
             image_dirs_dict,
         )

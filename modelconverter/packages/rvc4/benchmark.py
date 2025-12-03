@@ -72,7 +72,7 @@ class RVC4Benchmark(Benchmark):
             "num_threads": 2,
             "num_messages": 50,
             "device_ip": None,
-            "device_mxid": None,
+            "device_id": None,
         }
 
     @property
@@ -253,7 +253,7 @@ class RVC4Benchmark(Benchmark):
         dai_benchmark = configuration.get("dai_benchmark")
 
         device_ip, device_adb_id = get_device_info(
-            configuration.get("device_ip"), configuration.get("device_mxid")
+            configuration.get("device_ip"), configuration.get("device_id")
         )
         self.adb = AdbHandler(device_adb_id)
 
@@ -274,7 +274,7 @@ class RVC4Benchmark(Benchmark):
                 for key in [
                     "dai_benchmark",
                     "num_images",
-                    "device_mxid",
+                    "device_id",
                     "power_benchmark",
                     "dsp_benchmark",
                 ]:
@@ -288,7 +288,7 @@ class RVC4Benchmark(Benchmark):
                     "num_messages",
                     "benchmark_time",
                     "device_ip",
-                    "device_mxid",
+                    "device_id",
                     "power_benchmark",
                     "dsp_benchmark",
                 ]:
@@ -526,29 +526,28 @@ class RVC4Benchmark(Benchmark):
             yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
 
 
-def mxid_to_adb_id(mxid: str) -> str:
-    if mxid.isdigit():
-        return format(int(mxid), "x")
-    return mxid.encode("ascii").hex()
+def device_id_to_adb_id(device_id: str) -> str:
+    if device_id.isdigit():
+        return format(int(device_id), "x")
+    return device_id.encode("ascii").hex()
 
 
 def get_device_info(
-    device_ip: str | None, device_mxid: str | None
+    device_ip: str | None, device_id: str | None
 ) -> tuple[str | None, str | None]:
-    if not device_ip and not device_mxid:
+    if not device_ip and not device_id:
         return None, None
 
-    if device_mxid:
+    if device_id:
         for info in dai.Device.getAllAvailableDevices():
-            if device_mxid == info.getDeviceId():
+            if device_id == info.getDeviceId():
                 if device_ip and device_ip != info.name:
                     logger.warning(
-                        f"Both device_mxid and device_ip provided, but they refer to different devices. Using device with device_mxid: {device_mxid} and device_ip: {info.name}."
+                        f"Both device_id and device_ip provided, but they refer to different devices. Using device with device_id: {device_id} and device_ip: {info.name}."
                     )
-                return info.name, mxid_to_adb_id(device_mxid)
+                return info.name, device_id_to_adb_id(device_id)
     if device_ip:
         with dai.Device(device_ip) as device:
-            inferred_mxid = device.getDeviceId()
-            return device_ip, mxid_to_adb_id(inferred_mxid)
-
+            inferred_device_id = device.getDeviceId()
+            return device_ip, device_id_to_adb_id(inferred_device_id)
     return None, None

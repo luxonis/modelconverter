@@ -21,12 +21,12 @@ class RVC4Analyzer(Analyzer):
     def __init__(
         self,
         device_ip: str | None,
-        device_mxid: str | None,
+        device_id: str | None,
         dlc_model_path: str,
         image_dirs: dict[str, str],
     ):
         super().__init__(dlc_model_path, image_dirs)
-        _, device_adb_id = get_device_info(device_ip, device_mxid)
+        _, device_adb_id = get_device_info(device_ip, device_id)
         self.adb = AdbHandler(device_adb_id)
 
         self.device_id = device_adb_id
