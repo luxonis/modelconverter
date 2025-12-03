@@ -1,5 +1,5 @@
 from .adb_handler import AdbHandler
-from .adb_monitor import AdbMonitorDSP, AdbMonitorPower, get_device_info
+from .adb_monitor import AdbMonitorDSP, AdbMonitorPower
 from .calibration_data import download_calibration_data
 from .docker_utils import (
     check_docker,
@@ -60,7 +60,6 @@ __all__ = [
     "get_archive_input",
     "get_container_memory_available",
     "get_container_memory_limit",
-    "get_device_info",
     "get_docker_image",
     "get_metadata",
     "get_protocol",
