@@ -117,7 +117,7 @@ class RVC4Benchmark(Benchmark):
     def _prepare_raw_inputs(self, num_images: int) -> None:
         input_sizes, data_types = self._get_input_sizes()
         input_list = ""
-        self.adb.shell(f"mkdir /data/local/tmp/{self.model_name}/inputs")
+        self.adb.shell(f"mkdir /data/tmp/{self.model_name}/inputs")
         for i in range(num_images):
             for name, size in input_sizes.items():
                 if data_types[name] == "Float_32":
@@ -138,16 +138,16 @@ class RVC4Benchmark(Benchmark):
                     img.tofile(f)
                     self.adb.push(
                         f.name,
-                        f"/data/local/tmp/{self.model_name}/inputs/{name}_{i}.raw",
+                        f"/data/tmp/{self.model_name}/inputs/{name}_{i}.raw",
                     )
 
-                input_list += f"{name}:=/data/local/tmp/{self.model_name}/inputs/{name}_{i}.raw "
+                input_list += f"{name}:=/data/tmp/{self.model_name}/inputs/{name}_{i}.raw "
             input_list += "\n"
 
         with tempfile.NamedTemporaryFile() as f:
             f.write(input_list.encode())
             self.adb.push(
-                f.name, f"/data/local/tmp/{self.model_name}/input_list.txt"
+                f.name, f"/data/tmp/{self.model_name}/input_list.txt"
             )
 
     def _get_data_type_from_dlc(self) -> dai.TensorInfo.DataType:
@@ -313,7 +313,7 @@ class RVC4Benchmark(Benchmark):
                 # so we don't delete the wrong directory
                 assert self.model_name
 
-                self.adb.shell(f"rm -rf /data/local/tmp/{self.model_name}")
+                self.adb.shell(f"rm -rf /data/tmp/{self.model_name}")
 
     def _benchmark_snpe(
         self,
@@ -349,10 +349,8 @@ class RVC4Benchmark(Benchmark):
                 "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
             )
 
-        self.adb.shell(f"mkdir /data/local/tmp/{self.model_name}")
-        self.adb.push(
-            str(dlc_path), f"/data/local/tmp/{self.model_name}/model.dlc"
-        )
+        self.adb.shell(f"mkdir /data/tmp/{self.model_name}")
+        self.adb.push(str(dlc_path), f"/data/tmp/{self.model_name}/model.dlc")
         self._prepare_raw_inputs(num_images)
         if self.force_cpu:
             logger.warning(
@@ -361,11 +359,11 @@ class RVC4Benchmark(Benchmark):
             runtime = "use_cpu"
 
         _, stdout, _ = self.adb.shell(
-            # "source /data/local/tmp/source_me.sh && "
+            # "source /data/tmp/source_me.sh && "
             "snpe-parallel-run "
-            f"--container /data/local/tmp/{self.model_name}/model.dlc "
-            f"--input_list /data/local/tmp/{self.model_name}/input_list.txt "
-            f"--output_dir /data/local/tmp/{self.model_name}/outputs "
+            f"--container /data/tmp/{self.model_name}/model.dlc "
+            f"--input_list /data/tmp/{self.model_name}/input_list.txt "
+            f"--output_dir /data/tmp/{self.model_name}/outputs "
             f"--perf_profile {profile} "
             "--cpu_fallback true "
             f"--{runtime}"
