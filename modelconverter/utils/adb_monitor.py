@@ -136,6 +136,7 @@ class _BaseAdbMonitor(ABC):
         """
         if self._running:
             return
+        time.sleep(self.interval)
         self._measurements = []
         self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
@@ -193,7 +194,6 @@ class AdbMonitorPower(_BaseAdbMonitor):
         """
         try:
             self.adb_handler.shell(f"ls /sys/class/hwmon/{hwmon}/power1_input")
-            time.sleep(self.interval)
         except Exception:
             logger.warning(
                 f"Hardware monitoring device {hwmon} missing. "
@@ -324,7 +324,6 @@ class AdbMonitorDSP(_BaseAdbMonitor):
             self.adb_handler.shell(
                 "ls -d /data/local/oak_dsp_util.sh /usr/bin/sysMonApp"
             )
-            time.sleep(self.interval)
         except Exception:
             logger.warning(
                 "No DSP utility scripts found. Proceeding without DSP monitoring."
