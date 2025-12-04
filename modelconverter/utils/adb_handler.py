@@ -67,12 +67,12 @@ class AdbHandler:
                 raise RuntimeError("No devices connected")
             logger.warning(
                 "No device ID specified, using the first connected "
-                f"device: {devices[0]}"
+                f"device: {devices[0]}."
             )
             return devices[0]
         if device_id not in devices:
             raise ValueError(
-                f"Device ID '{device_id}' not found in connected devices: {devices}"
+                f"Device ID '{device_id}' not found in connected devices: {devices}. Please check the device connection."
             )
         logger.info(f"Using device ID: {device_id}")
 

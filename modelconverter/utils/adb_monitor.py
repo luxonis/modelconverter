@@ -326,7 +326,7 @@ class AdbMonitorDSP(_BaseAdbMonitor):
             )
         except Exception:
             logger.warning(
-                "No DSP utility scripts found. Proceeding without DSP monitoring."
+                "No DSP utility script found under /usr/bin/sysMonApp. Consider updating the device OS. Proceeding without DSP monitoring."
             )
             return False
         return True
