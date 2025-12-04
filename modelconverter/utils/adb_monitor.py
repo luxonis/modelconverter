@@ -9,6 +9,84 @@ from loguru import logger
 
 from modelconverter.utils.adb_handler import AdbHandler
 
+DSP_UTIL_SCRIPT_CONTENT = r"""SYS_MON_APP="/usr/bin/sysMonApp"
+SLEEP_TIME=1.0
+
+$SYS_MON_APP getPowerStats --clear 1 --q6 cdsp >/dev/null 2>&1
+
+$SYS_MON_APP getPowerStats --q6 cdsp >/data/local/dsp_read1_full 2>/dev/null
+
+grep '^[[:space:]]*[0-9]*\.[0-9]*[[:space:]]*[0-9]*\.[0-9]*' \
+    /data/local/dsp_read1_full > /data/local/dsp_read1
+
+sleep $SLEEP_TIME
+
+$SYS_MON_APP getPowerStats --q6 cdsp > /data/local/dsp_read2_full 2>/dev/null
+
+grep '^[[:space:]]*[0-9]*\.[0-9]*[[:space:]]*[0-9]*\.[0-9]*' \
+    /data/local/dsp_read2_full > /data/local/dsp_read2
+
+dsp_util=$(
+awk -v interval=$SLEEP_TIME '
+    FILENAME == ARGV[1] && FNR > 1 {
+        gsub(/^[[:blank:]]+/, "", $0);
+        if (NF >= 2) {
+            freq = $1;
+            active1[freq] = $2;
+            all_freqs[freq] = 1;
+        }
+    }
+    FILENAME == ARGV[2] && FNR > 1 {
+        gsub(/^[[:blank:]]+/, "", $0);
+        if (NF >= 2) {
+            freq = $1;
+            active2[freq] = $2;
+            all_freqs[freq] = 1;
+        }
+    }
+    END {
+        sum_delta = 0;
+        max_freq = 0;
+        delete deltas;
+        for (freq in all_freqs) {
+            f = freq + 0;
+            if (f > max_freq) max_freq = f;
+            a1 = (freq in active1) ? active1[freq] + 0 : 0;
+            a2 = (freq in active2) ? active2[freq] + 0 : 0;
+            delta = a2 - a1;
+            if (delta < 0) {
+                delta = 0;
+            }
+            deltas[freq] = delta;
+            sum_delta += delta;
+        }
+
+        scale_factor = 1;
+        if (sum_delta > interval) {
+            scale_factor = interval / sum_delta;
+        }
+
+        sum_cycles = 0;
+        for (freq in all_freqs) {
+            f = freq + 0;
+            adjusted_delta = deltas[freq] * scale_factor;
+            sum_cycles += f * adjusted_delta;
+        }
+
+        if (max_freq == 0) {
+            print "Error: Maximum frequency is zero." > "/dev/stderr";
+            exit 1;
+        }
+
+        utilization = (sum_cycles / (max_freq * interval)) * 100;
+        print utilization
+    }
+    ' /data/local/dsp_read1 /data/local/dsp_read2
+)
+
+echo "$dsp_util"
+"""
+
 
 @dataclass
 class _BaseAdbMonitor(ABC):
@@ -228,85 +306,7 @@ class AdbMonitorDSP(_BaseAdbMonitor):
         ADB."""
         remote_script_path = "/data/local/oak_dsp_util.sh"
 
-        script_content = r"""SYS_MON_APP="/usr/bin/sysMonApp"
-SLEEP_TIME=1.0
-
-$SYS_MON_APP getPowerStats --clear 1 --q6 cdsp >/dev/null 2>&1
-
-$SYS_MON_APP getPowerStats --q6 cdsp >/data/local/dsp_read1_full 2>/dev/null
-
-grep '^[[:space:]]*[0-9]*\.[0-9]*[[:space:]]*[0-9]*\.[0-9]*' \
-    /data/local/dsp_read1_full > /data/local/dsp_read1
-
-sleep $SLEEP_TIME
-
-$SYS_MON_APP getPowerStats --q6 cdsp > /data/local/dsp_read2_full 2>/dev/null
-
-grep '^[[:space:]]*[0-9]*\.[0-9]*[[:space:]]*[0-9]*\.[0-9]*' \
-    /data/local/dsp_read2_full > /data/local/dsp_read2
-
-dsp_util=$(
-awk -v interval=$SLEEP_TIME '
-    FILENAME == ARGV[1] && FNR > 1 {
-        gsub(/^[[:blank:]]+/, "", $0);
-        if (NF >= 2) {
-            freq = $1;
-            active1[freq] = $2;
-            all_freqs[freq] = 1;
-        }
-    }
-    FILENAME == ARGV[2] && FNR > 1 {
-        gsub(/^[[:blank:]]+/, "", $0);
-        if (NF >= 2) {
-            freq = $1;
-            active2[freq] = $2;
-            all_freqs[freq] = 1;
-        }
-    }
-    END {
-        sum_delta = 0;
-        max_freq = 0;
-        delete deltas;
-        for (freq in all_freqs) {
-            f = freq + 0;
-            if (f > max_freq) max_freq = f;
-            a1 = (freq in active1) ? active1[freq] + 0 : 0;
-            a2 = (freq in active2) ? active2[freq] + 0 : 0;
-            delta = a2 - a1;
-            if (delta < 0) {
-                delta = 0;
-            }
-            deltas[freq] = delta;
-            sum_delta += delta;
-        }
-
-        scale_factor = 1;
-        if (sum_delta > interval) {
-            scale_factor = interval / sum_delta;
-        }
-
-        sum_cycles = 0;
-        for (freq in all_freqs) {
-            f = freq + 0;
-            adjusted_delta = deltas[freq] * scale_factor;
-            sum_cycles += f * adjusted_delta;
-        }
-
-        if (max_freq == 0) {
-            print "Error: Maximum frequency is zero." > "/dev/stderr";
-            exit 1;
-        }
-
-        utilization = (sum_cycles / (max_freq * interval)) * 100;
-        print utilization
-    }
-    ' /data/local/dsp_read1 /data/local/dsp_read2
-)
-
-echo "$dsp_util"
-"""
-
-        cmd = f"cat > {remote_script_path} <<'EOF'\n{script_content}\nEOF\n"
+        cmd = f"cat > {remote_script_path} <<'EOF'\n{DSP_UTIL_SCRIPT_CONTENT}\nEOF\n"
         self.adb_handler.shell(cmd)
         self.adb_handler.shell(f"chmod +x {remote_script_path}")
 
