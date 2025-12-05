@@ -29,8 +29,6 @@ class RVC4Analyzer(Analyzer):
         _, device_adb_id = get_device_info(device_ip, device_id)
         self.adb = AdbHandler(device_adb_id)
 
-        self.device_id = device_adb_id
-
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
         input_matcher = self._prepare_input_matcher()
         dlc_matcher = self._prepare_raw_inputs(input_matcher, np.float32)

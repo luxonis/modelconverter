@@ -370,7 +370,7 @@ def benchmark(
     device_ip : str | None
         IP address of the device to run the benchmark on. Interchangeable with device_id. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
     device_id : str | None
-        DeviceId of the device to run the benchmark on. Interchangeable with device_ip. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
+        The unique ID of the device to run the benchmark on. Interchangeable with device_ip. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
     dai_benchmark : bool
         Whether to run the benchmark using the DAI V3. If False the SNPE tools are used.
     power_benchmark : bool

@@ -136,7 +136,7 @@ class _BaseAdbMonitor(ABC):
         """
         if self._running:
             return
-        time.sleep(self.interval)
+        time.sleep(1)  # Small delay to avoid overlapping ADB commands
         self._measurements = []
         self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
