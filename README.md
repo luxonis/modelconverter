@@ -534,7 +534,7 @@ optionally saves the results to a `.csv` file.
 > - `--benchmark-time`: Duration in seconds for time-based benchmarking (default: 20)
 > - `--repetitions`: Number of iterations to perform (default: 10)
 >
-> By default, the benchmarking uses `--benchmark-time` (20 seconds) which takes precedence over `--repetitions`. To use `--repetitions` instead, you must explicitly set `--benchmark-time` to `None`.
+> By default, the benchmarking uses `--benchmark-time` (20 seconds) which takes precedence over `--repetitions`. To use `--repetitions` instead, you must explicitly set `--benchmark-time` to a negative value (e.g., `--benchmark-time -1`).
 
 > [!IMPORTANT]
 > **ADB Connection Requirements for RVC4**: The device must be connected and accessible using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb) in the following cases:
