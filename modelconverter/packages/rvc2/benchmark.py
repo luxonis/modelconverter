@@ -22,7 +22,7 @@ class RVC2Benchmark(Benchmark):
         """
         return {
             "repetitions": 10,
-            "benchmark_time": None,
+            "benchmark_time": 20,
             "num_messages": 50,
             "num_threads": 2,
         }

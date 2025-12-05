@@ -68,7 +68,7 @@ class RVC4Benchmark(Benchmark):
             "num_images": 1000,
             "dai_benchmark": True,
             "repetitions": 10,
-            "benchmark_time": None,
+            "benchmark_time": 20,
             "num_threads": 2,
             "num_messages": 50,
             "device_ip": None,
