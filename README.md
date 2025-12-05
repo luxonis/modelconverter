@@ -29,11 +29,15 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
   - [NN Archive Configuration File](#nn-archive-configuration-file)
 - [Online Usage](#online-usage)
 - [Local Usage](#local-usage)
-  - [Prerequisites](#prerequisites)
+  - [Official Docker Images](#official-docker-images)
+  - [Build Instructions](#build-instructions)
+    - [Prerequisites](#prerequisites)
+    - [Building the Images](#building-the-images)
     - [GPU Support](#gpu-support)
   - [Sharing Files](#sharing-files)
   - [Running ModelConverter](#running-modelconverter)
     - [Available CLI Options](#available-cli-options)
+      - [RVC4 Quantization Mode](#rvc4-quantization-mode)
     - [Handling Large ONNX Files (Exceeding 2GB)](#handling-large-onnx-files-exceeding-2gb)
     - [Examples](#examples)
 - [Multi-Stage Conversion](#multi-stage-conversion)
@@ -41,8 +45,8 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
 - [Calibration Data](#calibration-data)
 - [Inference](#inference)
   - [Inference Example](#inference-example)
-- [[RVC4] DLC model analysis](#rvc4-dlc-model-analysis)
 - [Benchmarking](#benchmarking)
+- [[RVC4] DLC model analysis](#rvc4-dlc-model-analysis)
 
 ## Installation
 
@@ -318,7 +322,7 @@ Below is a table of common command-line options available when using the `modelc
 > [!NOTE]
 > This table is not exhaustive. For more detailed information about available options, run `modelconverter convert --help` in your command line interface. You can also check all the `[ config overrides ]` available at [defaults.yaml](shared_with_container/configs/defaults.yaml).
 
-##### RVC4 Quantization Mode Option
+##### RVC4 Quantization Mode
 
 The `rvc4.quantization_mode` CLI option allows you to choose between different pre-defined quantization modes for RVC4 conversions. The available modes are:
 
@@ -498,6 +502,47 @@ output_path/
     └── <outputs>
 ```
 
+## Benchmarking
+
+The ModelConverter additionally supports benchmarking of converted models.
+
+To install the package with the benchmarking dependencies, use:
+
+```bash
+pip install modelconv[bench]
+```
+
+To run the benchmark, use `modelconverter benchmark <target> <args>`.
+
+For usage instructions, see `modelconverter benchmark --help`.
+
+**Example:**
+
+```bash
+modelconverter benchmark rvc4 --model-path <path_to_model.xml>
+```
+
+The command prints a table with the benchmark results to the console and
+optionally saves the results to a `.csv` file.
+
+> [!NOTE]
+> For **RVC2** and **RVC4**: The `--model-path` can be a path to a local .blob file, an NN Archive file (.tar.xz), or a name of a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai). To access models from different teams in Luxonis HubAI, remember to update the HUBAI_API_KEY environment variable respectively.
+
+> [!NOTE]
+> **Benchmark Duration Control (RVC2/RVC4)**: Two flags can affect the duration of benchmarking:
+>
+> - `--benchmark-time`: Duration in seconds for time-based benchmarking (default: 20)
+> - `--repetitions`: Number of iterations to perform (default: 10)
+>
+> By default, the benchmarking uses `--benchmark-time` (20 seconds) which takes precedence over `--repetitions`. To use `--repetitions` instead, you must explicitly set `--benchmark-time` to a negative value (e.g., `--benchmark-time -1`).
+
+> [!IMPORTANT]
+> **ADB Connection Requirements for RVC4**: The device must be connected and accessible using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb) in the following cases:
+>
+> - When `--power-benchmark` is enabled (requires ADB connection to calculate power consumption)
+> - When `--dsp-benchmark` is enabled (requires ADB connection to calculate DSP utilization)
+> - When benchmarking is conducted using the SNPE tools (by setting `--dai-benchmark` to `False`, default is `True`)
+
 ## [RVC4] DLC model analysis
 
 ModelConverter offers additional analysis tools for the RVC4 platform. The tools provide an in-depth look at the following:
@@ -552,32 +597,3 @@ modelconverter visualize <optional_path_to_dir>
 ```
 
 This command will create interactive pyplot scatter plots and cycle usage bar plots in a local web browser, as well as save both HTML files for easier access in the future.
-
-## Benchmarking
-
-The ModelConverter additionally supports benchmarking of converted models.
-
-To install the package with the benchmarking dependencies, use:
-
-```bash
-pip install modelconv[bench]
-```
-
-To run the benchmark, use `modelconverter benchmark <target> <args>`.
-
-For usage instructions, see `modelconverter benchmark --help`.
-
-**Example:**
-
-```bash
-modelconverter benchmark rvc3 --model-path <path_to_model.xml>
-```
-
-The command prints a table with the benchmark results to the console and
-optionally saves the results to a `.csv` file.
-
-> [!NOTE]
-> For **RVC2** and **RVC4**: The `--model-path` can be a path to a local .blob file, an NN Archive file (.tar.xz), or a name of a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai). To access models from different teams in Luxonis HubAI, remember to update the HUBAI_API_KEY environment variable respectively.
-
-> [!IMPORTANT]
-> Benchmarking on *RVC4* requires the device to be connected and accessible using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb). Ensure that the device is connected and ADB is properly configured and the command `snpe-parallel-run` can be executed in it.

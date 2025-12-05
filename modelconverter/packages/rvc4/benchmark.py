@@ -68,7 +68,7 @@ class RVC4Benchmark(Benchmark):
             "num_images": 1000,
             "dai_benchmark": True,
             "repetitions": 10,
-            "benchmark_time": None,
+            "benchmark_time": 20,
             "num_threads": 2,
             "num_messages": 50,
             "device_ip": None,
@@ -388,8 +388,8 @@ class RVC4Benchmark(Benchmark):
         repetitions: int,
         num_threads: int,
         num_messages: int,
+        benchmark_time: int,
         device_ip: str | None = None,
-        benchmark_time: int | None = None,
     ) -> BenchmarkResult:
         if device_ip:
             device = dai.Device(dai.DeviceInfo(device_ip))
