@@ -14,17 +14,17 @@ SLEEP_TIME=1.0
 
 $SYS_MON_APP getPowerStats --clear 1 --q6 cdsp >/dev/null 2>&1
 
-$SYS_MON_APP getPowerStats --q6 cdsp >/data/local/dsp_read1_full 2>/dev/null
+$SYS_MON_APP getPowerStats --q6 cdsp >/data/modelconverter/dsp_read1_full 2>/dev/null
 
 grep '^[[:space:]]*[0-9]*\.[0-9]*[[:space:]]*[0-9]*\.[0-9]*' \
-    /data/local/dsp_read1_full > /data/local/dsp_read1
+    /data/modelconverter/dsp_read1_full > /data/modelconverter/dsp_read1
 
 sleep $SLEEP_TIME
 
-$SYS_MON_APP getPowerStats --q6 cdsp > /data/local/dsp_read2_full 2>/dev/null
+$SYS_MON_APP getPowerStats --q6 cdsp > /data/modelconverter/dsp_read2_full 2>/dev/null
 
 grep '^[[:space:]]*[0-9]*\.[0-9]*[[:space:]]*[0-9]*\.[0-9]*' \
-    /data/local/dsp_read2_full > /data/local/dsp_read2
+    /data/modelconverter/dsp_read2_full > /data/modelconverter/dsp_read2
 
 dsp_util=$(
 awk -v interval=$SLEEP_TIME '
@@ -81,7 +81,7 @@ awk -v interval=$SLEEP_TIME '
         utilization = (sum_cycles / (max_freq * interval)) * 100;
         print utilization
     }
-    ' /data/local/dsp_read1 /data/local/dsp_read2
+    ' /data/modelconverter/dsp_read1 /data/modelconverter/dsp_read2
 )
 
 echo "$dsp_util"
@@ -289,7 +289,7 @@ class AdbMonitorPower(_BaseAdbMonitor):
 class AdbMonitorDSP(_BaseAdbMonitor):
     """Monitor DSP utilization via ADB helper script on the device.
 
-    This monitor periodically runs `/data/local/oak_dsp_util.sh` (or an
+    This monitor periodically runs `/data/modelconverter/oak_dsp_util.sh` (or an
     equivalent utility) via `adb_handler` and stores the reported DSP
     utilization as a float in the range [0, 100].
     """
@@ -304,7 +304,8 @@ class AdbMonitorDSP(_BaseAdbMonitor):
     def _prepare_dsp_util_script(self) -> None:
         """Create the DSP utility script directly on the device via
         ADB."""
-        remote_script_path = "/data/local/oak_dsp_util.sh"
+        remote_script_path = "/data/modelconverter/oak_dsp_util.sh"
+        self.adb_handler.shell("mkdir -p /data/modelconverter")
 
         cmd = f"cat > {remote_script_path} <<'EOF'\n{DSP_UTIL_SCRIPT_CONTENT}\nEOF\n"
         self.adb_handler.shell(cmd)
@@ -322,7 +323,7 @@ class AdbMonitorDSP(_BaseAdbMonitor):
         try:
             self._prepare_dsp_util_script()
             self.adb_handler.shell(
-                "ls -d /data/local/oak_dsp_util.sh /usr/bin/sysMonApp"
+                "ls -d /data/modelconverter/oak_dsp_util.sh /usr/bin/sysMonApp"
             )
         except Exception:
             logger.warning(
@@ -345,7 +346,7 @@ class AdbMonitorDSP(_BaseAdbMonitor):
 
         try:
             _, dsp, error = self.adb_handler.shell(
-                "bash /data/local/oak_dsp_util.sh"
+                "bash /data/modelconverter/oak_dsp_util.sh"
             )
             if "Maximum frequency is zero" in error:
                 dsp = 0
@@ -360,13 +361,13 @@ class AdbMonitorDSP(_BaseAdbMonitor):
         super().stop()
         if self.dsp_exists:
             files_to_remove = [
-                "/data/local/dsp_read1",
-                "/data/local/dsp_read2",
-                "/data/local/dsp_read1_full",
-                "/data/local/dsp_read2_full",
+                "/data/modelconverter/dsp_read1",
+                "/data/modelconverter/dsp_read2",
+                "/data/modelconverter/dsp_read1_full",
+                "/data/modelconverter/dsp_read2_full",
             ]
             if full_cleanup:
-                files_to_remove.append("/data/local/oak_dsp_util.sh")
+                files_to_remove.append("/data/modelconverter/oak_dsp_util.sh")
 
             returncode, _, _ = self.adb_handler.shell(
                 f"rm -f {' '.join(files_to_remove)}"

@@ -76,8 +76,10 @@ class RVC4Analyzer(Analyzer):
         self, input_matcher: dict[str, dict[str, str]], type: type = np.uint8
     ) -> dict[str, str]:
         logger.info("Preparing raw inputs for RVC4 analysis.")
-        self.adb.shell(f"rm -rf /data/local/tmp/{self.model_name}")
-        self.adb.shell(f"mkdir -p /data/local/tmp/{self.model_name}/inputs")
+        self.adb.shell(f"rm -rf /data/modelconverter/{self.model_name}")
+        self.adb.shell(
+            f"mkdir -p /data/modelconverter/{self.model_name}/inputs"
+        )
 
         input_list = ""
         dlc_matcher = {}
@@ -109,11 +111,11 @@ class RVC4Analyzer(Analyzer):
                     raw_image.tofile(f)
                     self.adb.push(
                         f.name,
-                        f"/data/local/tmp/{self.model_name}/inputs/{input_name}_{img_name}.raw",
+                        f"/data/modelconverter/{self.model_name}/inputs/{input_name}_{img_name}.raw",
                     )
                     f.close()
 
-                input_row += f"{input_name}:=/data/local/tmp/{self.model_name}/inputs/{input_name}_{img_name}.raw "
+                input_row += f"{input_name}:=/data/modelconverter/{self.model_name}/inputs/{input_name}_{img_name}.raw "
             input_list += input_row
             input_list += "\n"
 
@@ -121,11 +123,12 @@ class RVC4Analyzer(Analyzer):
             f.write(input_list.encode())
             f.flush()
             self.adb.push(
-                f.name, f"/data/local/tmp/{self.model_name}/input_list.txt"
+                f.name,
+                f"/data/modelconverter/{self.model_name}/input_list.txt",
             )
             f.close()
         logger.info(
-            f"Raw inputs pushed to device at /data/local/tmp/{self.model_name}/input_list.txt"
+            f"Raw inputs pushed to device at /data/modelconverter/{self.model_name}/input_list.txt"
         )
         return dlc_matcher
 
@@ -320,11 +323,13 @@ class RVC4Analyzer(Analyzer):
         try:
             self.adb.push(
                 str(self.dlc_model_path),
-                f"/data/local/tmp/{self.model_name}/{self.model_name}.dlc",
+                f"/data/modelconverter/{self.model_name}/{self.model_name}.dlc",
             )
-            self.adb.shell(f"rm -rf /data/local/tmp/{self.model_name}/output")
             self.adb.shell(
-                f"cd /data/local/tmp/{self.model_name} && {command}"
+                f"rm -rf /data/modelconverter/{self.model_name}/output"
+            )
+            self.adb.shell(
+                f"cd /data/modelconverter/{self.model_name} && {command}"
             )
 
             target_dir = constants.OUTPUTS_DIR / "analysis" / self.model_name
@@ -333,7 +338,7 @@ class RVC4Analyzer(Analyzer):
 
             target_dir.mkdir(parents=True, exist_ok=True)
             self.adb.pull(
-                f"/data/local/tmp/{self.model_name}/output",
+                f"/data/modelconverter/{self.model_name}/output",
                 f"{target_dir}/output",
             )
             logger.info(
@@ -453,7 +458,7 @@ class RVC4Analyzer(Analyzer):
 
     # cleanup
     def _cleanup_dlc_outputs(self) -> None:
-        self.adb.shell(f"rm -rf /data/local/tmp/{self.model_name}")
+        self.adb.shell(f"rm -rf /data/modelconverter/{self.model_name}")
 
         output_dir = Path(
             f"{constants.OUTPUTS_DIR!s}/analysis/{self.model_name}/output"
