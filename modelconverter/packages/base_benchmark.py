@@ -206,7 +206,8 @@ class Benchmark(ABC):
 
         # Clean up configuration keys: keep either benchmark_time or repetitions
         for configuration, _ in results:
-            if configuration.get("benchmark_time"):
+            benchmark_time = configuration.get("benchmark_time")
+            if benchmark_time and benchmark_time > 0:
                 items = list(configuration.items())
                 configuration.clear()
                 for k, v in items:

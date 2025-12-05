@@ -20,7 +20,7 @@ def _format_time(seconds: float) -> str:
 
 
 def create_progress_handler(
-    benchmark_time: int | None, repetitions: int
+    benchmark_time: int, repetitions: int
 ) -> tuple[Progress, Callable[[], None], Callable[[], bool]]:
     """
     Returns:
@@ -28,7 +28,7 @@ def create_progress_handler(
       on_tick(): call once per iteration to update the bar
       should_continue(): loop guard for time/rep modes
     """
-    use_time = benchmark_time is not None
+    use_time = benchmark_time > 0
     total = int(benchmark_time) if use_time else int(repetitions)
 
     if use_time:

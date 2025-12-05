@@ -306,9 +306,7 @@ def benchmark(
     full: bool = False,
     save: bool = False,
     repetitions: Annotated[int, Parameter(group=["RVC2", "RVC4"])] = 10,
-    benchmark_time: Annotated[
-        int | None, Parameter(group=["RVC2", "RVC4"])
-    ] = None,
+    benchmark_time: Annotated[int, Parameter(group=["RVC2", "RVC4"])] = 20,
     num_threads: Annotated[int, Parameter(group=["RVC2", "RVC4"])] = 2,
     num_messages: Annotated[int, Parameter(group=["RVC2", "RVC4"])] = 50,
     requests: Annotated[int, Parameter(group="RVC3")] = 1,

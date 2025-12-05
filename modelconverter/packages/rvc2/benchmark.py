@@ -40,7 +40,7 @@ class RVC2Benchmark(Benchmark):
         repetitions: int,
         num_messages: int,
         num_threads: int,
-        benchmark_time: int | None = None,
+        benchmark_time: int,
     ) -> BenchmarkResult:
         device = dai.Device()
         if device.getPlatform() != dai.Platform.RVC2:
