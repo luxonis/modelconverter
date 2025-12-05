@@ -13,20 +13,21 @@ from loguru import logger
 from PIL import Image
 
 from modelconverter.packages.base_analyze import Analyzer
+from modelconverter.packages.rvc4.benchmark import get_device_info
 from modelconverter.utils import AdbHandler, constants, subprocess_run
 
 
 class RVC4Analyzer(Analyzer):
     def __init__(
         self,
+        device_ip: str | None,
         device_id: str | None,
         dlc_model_path: str,
         image_dirs: dict[str, str],
     ):
         super().__init__(dlc_model_path, image_dirs)
-        self.adb = AdbHandler(device_id)
-
-        self.device_id = device_id
+        _, device_adb_id = get_device_info(device_ip, device_id)
+        self.adb = AdbHandler(device_adb_id)
 
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
         input_matcher = self._prepare_input_matcher()
@@ -84,7 +85,7 @@ class RVC4Analyzer(Analyzer):
             input_row = ""
             dlc_matcher[i] = "Result_" + str(i)
             for input_name, img_path in input_dict.items():
-                if not img_path.endswith((".png", ".jpg", ".jpeg",".npy")):
+                if not img_path.endswith((".png", ".jpg", ".jpeg", ".npy")):
                     continue
                 img_name = Path(img_path).stem
                 width_height = self.input_sizes[input_name][1:3][::-1]
@@ -94,9 +95,11 @@ class RVC4Analyzer(Analyzer):
                     raw_image = cast(np.ndarray, np.load(img_path)).astype(
                         type
                     )
-                    
+
                     if raw_image.shape != tuple(width_height):
-                        raise ValueError(f"Input image {img_name} has incorrect shape: {raw_image.shape}, expected: {tuple(width_height)}")
+                        raise ValueError(
+                            f"Input image {img_name} has incorrect shape: {raw_image.shape}, expected: {tuple(width_height)}"
+                        )
                 else:
                     image = self._resize_image(img_path, width_height)
                     image = image.astype(type)
@@ -205,13 +208,13 @@ class RVC4Analyzer(Analyzer):
                 if not img_path.endswith((".png", ".jpg", ".jpeg", ".npy")):
                     continue
 
-                shape = onnx_input_shapes[input_name][2:][::-1] 
-                if img_path.endswith(
-                    ".npy"
-                ):  
+                shape = onnx_input_shapes[input_name][2:][::-1]
+                if img_path.endswith(".npy"):
                     image = np.load(img_path)
                     if image.shape != tuple(shape):
-                        raise ValueError(f"Input image {img_path} has incorrect shape: {image.shape}, expected: {tuple(shape)}")
+                        raise ValueError(
+                            f"Input image {img_path} has incorrect shape: {image.shape}, expected: {tuple(shape)}"
+                        )
                 else:
                     image = self._resize_image(img_path, shape)
                     image = np.transpose(

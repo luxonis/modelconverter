@@ -1,4 +1,5 @@
 from .adb_handler import AdbHandler
+from .adb_monitor import AdbMonitorDSP, AdbMonitorPower
 from .calibration_data import download_calibration_data
 from .docker_utils import (
     check_docker,
@@ -39,6 +40,8 @@ from .subprocess import SubprocessHandle, subprocess_run
 
 __all__ = [
     "AdbHandler",
+    "AdbMonitorDSP",
+    "AdbMonitorPower",
     "Metadata",
     "ModelconverterException",
     "ONNXModifier",

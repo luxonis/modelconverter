@@ -1,5 +1,6 @@
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, TypeAlias
 
@@ -10,10 +11,13 @@ from modelconverter.utils import is_hubai_available, resolve_path
 
 
 class BenchmarkResult(NamedTuple):
-    """Benchmark result, tuple (FPS, latency in ms)"""
+    """Benchmark result, tuple (FPS, latency in ms, system and processor
+    power in W, dsp utilization)"""
 
     fps: float
     latency: float | Literal["N/A"]
+    power: tuple[float | None, float | None] = (None, None)
+    dsp: float | None = None
 
 
 Configuration: TypeAlias = dict[str, Any]
@@ -91,40 +95,78 @@ class Benchmark(ABC):
             box=box.ROUNDED,
         )
 
-        updated_header = [
-            *results[0][0].keys(),
-            "fps",
-            "latency (ms)",
-        ]
-        for field in updated_header:
+        # HEADER
+        header = [*self._base_header(results), *self._extra_header(results)]
+        for field in header:
             table.add_column(f"[cyan]{field}")
+
+        # ROWS
         for configuration, result in results:
-            fps_color = (
+            base_cells = list(self._base_row_cells(configuration, result))
+            extra_cells = list(self._extra_row_cells(configuration, result))
+            table.add_row(*base_cells, *extra_cells)
+
+        Console().print(table)
+
+    def _base_header(
+        self,
+        results: list[tuple[Configuration, BenchmarkResult]],
+    ) -> list[str]:
+        """Shared header cells."""
+        return [*results[0][0].keys(), "fps", "latency (ms)"]
+
+    def _base_row_cells(
+        self,
+        configuration: Configuration,
+        result: BenchmarkResult,
+    ) -> Iterable[str]:
+        """Shared row cells for each result (configuration + fps +
+        latency)."""
+        # configuration values
+        for x in configuration.values():
+            yield f"[magenta]{x}"
+
+        # fps
+        fps_color = (
+            "yellow"
+            if 5 < result.fps < 15
+            else "red"
+            if result.fps < 5
+            else "green"
+        )
+        yield f"[{fps_color}]{result.fps:.2f}"
+
+        # latency
+        if isinstance(result.latency, str):
+            latency_color = "orange3"
+            yield f"[{latency_color}]{result.latency}"
+        else:
+            latency_color = (
                 "yellow"
-                if 5 < result.fps < 15
+                if 50 < result.latency < 100
                 else "red"
-                if result.fps < 5
+                if result.latency > 100
                 else "green"
             )
-            if isinstance(result.latency, str):
-                latency_color = "orange3"
-            else:
-                latency_color = (
-                    "yellow"
-                    if 50 < result.latency < 100
-                    else "red"
-                    if result.latency > 100
-                    else "green"
-                )
-            table.add_row(
-                *(f"[magenta]{x}" for x in configuration.values()),
-                f"[{fps_color}]{result.fps:.2f}",
-                f"[{latency_color}]{result.latency}"
-                if isinstance(result.latency, str)
-                else f"[{latency_color}]{result.latency:.5f}",
-            )
-        console = Console()
-        console.print(table)
+            yield f"[{latency_color}]{result.latency:.5f}"
+
+    def _extra_header(
+        self,
+        results: list[tuple[Configuration, BenchmarkResult]],
+    ) -> list[str]:
+        """Columns to append after the base header (default: none)."""
+        return []
+
+    def _extra_row_cells(
+        self,
+        configuration: Configuration,
+        result: BenchmarkResult,
+    ) -> Iterable[str]:
+        """Extra cells to append after the base row cells (default:
+
+        none).
+        """
+        return []
 
     def save_results(
         self, results: list[tuple[Configuration, BenchmarkResult]]
