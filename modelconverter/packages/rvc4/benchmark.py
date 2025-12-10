@@ -30,7 +30,6 @@ from modelconverter.utils import (
 PROFILES: Final[list[str]] = [
     "low_balanced",
     "balanced",
-    "default",
     "high_performance",
     "sustained_high_performance",
     "burst",
@@ -63,7 +62,7 @@ class RVC4Benchmark(Benchmark):
         num_messages: The number of messages to use for inference (dai-benchmark only).
         """
         return {
-            "profile": "default",
+            "profile": "balanced",
             "runtime": "dsp",
             "num_images": 1000,
             "dai_benchmark": True,
@@ -77,7 +76,11 @@ class RVC4Benchmark(Benchmark):
 
     @property
     def all_configurations(self) -> list[Configuration]:
-        return [{"profile": profile} for profile in PROFILES]
+        return [
+            {"profile": profile, "num_threads": threads}
+            for profile in PROFILES
+            for threads in [1, 2]
+        ]
 
     def _get_input_sizes(
         self, model_path: str | Path | None = None
