@@ -47,8 +47,6 @@ RUNTIMES: dict[str, str] = {
 
 
 class RVC4Benchmark(Benchmark):
-    force_cpu: bool = False
-
     @property
     def default_configuration(self) -> Configuration:
         """
@@ -126,7 +124,6 @@ class RVC4Benchmark(Benchmark):
         for i in range(num_images):
             for name, size in input_sizes.items():
                 if data_types[name] == "Float_32":
-                    self.force_cpu = True
                     numpy_type = np.float32
                 elif data_types[name] in ["uFxp_16", "Float_16"]:
                     numpy_type = np.float16
@@ -250,7 +247,6 @@ class RVC4Benchmark(Benchmark):
         if model_precision_type == "FP16":
             return dai.TensorInfo.DataType.FP16
         if model_precision_type == "FP32":
-            self.force_cpu = True
             return dai.TensorInfo.DataType.FP32
 
         return dai.TensorInfo.DataType.U8F
@@ -362,11 +358,6 @@ class RVC4Benchmark(Benchmark):
             str(dlc_path), f"/data/modelconverter/{self.model_name}/model.dlc"
         )
         self._prepare_raw_inputs(num_images)
-        if self.force_cpu:
-            logger.warning(
-                "Forcing CPU runtime due to Float_32 input data type."
-            )
-            runtime = "use_cpu"
 
         _, stdout, _ = self.adb.shell(
             # "source /data/modelconverter/source_me.sh && "
@@ -460,11 +451,6 @@ class RVC4Benchmark(Benchmark):
             ):
                 neuralNetwork.setNNArchive(modelArhive)
 
-            if self.force_cpu:
-                logger.warning(
-                    "Forcing CPU runtime due to Float_32 input data type."
-                )
-                runtime = "cpu"
             neuralNetwork.setBackendProperties(
                 {
                     "runtime": runtime,
