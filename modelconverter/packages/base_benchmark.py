@@ -178,6 +178,14 @@ class Benchmark(ABC):
                 for configuration, result in results
             ]
         )
+
+        # Split nested power list into two CSV-friendly columns
+        if "power" in df.columns and isinstance(df.schema["power"], pl.List):
+            df = df.with_columns(
+                power_system=pl.col("power").list.get(0),
+                power_processor=pl.col("power").list.get(1),
+            ).drop("power")
+
         file = f"{self.model_name}_benchmark_results.csv"
         df.write_csv(file)
         logger.info(f"Benchmark results saved to {file}.")
