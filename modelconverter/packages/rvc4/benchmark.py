@@ -263,7 +263,7 @@ class RVC4Benchmark(Benchmark):
         device_ip, device_adb_id = get_device_info(
             configuration.get("device_ip"), configuration.get("device_id")
         )
-        if power_benchmark or dsp_benchmark:
+        if power_benchmark or dsp_benchmark or not dai_benchmark:
             self.adb = AdbHandler(device_adb_id)
 
         configuration["device_ip"] = device_ip
