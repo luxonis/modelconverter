@@ -376,6 +376,9 @@ class RVC4Benchmark(Benchmark):
             f"--output_dir /data/modelconverter/{self.model_name}/outputs "
             f"--perf_profile {profile} "
             "--cpu_fallback true "
+            f"--{runtime} "
+            f"--perf_profile {profile} "
+            "--cpu_fallback true "
             f"--{runtime}"
         )
         pattern = re.compile(r"(\d+\.\d+) infs/sec")
