@@ -30,7 +30,6 @@ from modelconverter.utils import (
 PROFILES: Final[list[str]] = [
     "low_balanced",
     "balanced",
-    "default",
     "high_performance",
     "sustained_high_performance",
     "burst",
@@ -63,7 +62,7 @@ class RVC4Benchmark(Benchmark):
         num_messages: The number of messages to use for inference (dai-benchmark only).
         """
         return {
-            "profile": "default",
+            "profile": "balanced",
             "runtime": "dsp",
             "num_images": 1000,
             "dai_benchmark": True,
@@ -77,7 +76,11 @@ class RVC4Benchmark(Benchmark):
 
     @property
     def all_configurations(self) -> list[Configuration]:
-        return [{"profile": profile} for profile in PROFILES]
+        return [
+            {"profile": profile, "num_threads": threads}
+            for profile in PROFILES
+            for threads in [1, 2]
+        ]
 
     def _get_input_sizes(
         self, model_path: str | Path | None = None
@@ -260,7 +263,7 @@ class RVC4Benchmark(Benchmark):
         device_ip, device_adb_id = get_device_info(
             configuration.get("device_ip"), configuration.get("device_id")
         )
-        if power_benchmark or dsp_benchmark:
+        if power_benchmark or dsp_benchmark or not dai_benchmark:
             self.adb = AdbHandler(device_adb_id)
 
         configuration["device_ip"] = device_ip
@@ -371,6 +374,9 @@ class RVC4Benchmark(Benchmark):
             f"--container /data/modelconverter/{self.model_name}/model.dlc "
             f"--input_list /data/modelconverter/{self.model_name}/input_list.txt "
             f"--output_dir /data/modelconverter/{self.model_name}/outputs "
+            f"--perf_profile {profile} "
+            "--cpu_fallback true "
+            f"--{runtime} "
             f"--perf_profile {profile} "
             "--cpu_fallback true "
             f"--{runtime}"

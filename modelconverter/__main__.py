@@ -314,7 +314,6 @@ def benchmark(
         Literal[
             "low_balanced",
             "balanced",
-            "default",
             "high_performance",
             "sustained_high_performance",
             "burst",
@@ -325,7 +324,7 @@ def benchmark(
             "system_settings",
         ],
         Parameter(group="RVC4"),
-    ] = "default",
+    ] = "balanced",
     runtime: Annotated[Literal["dsp", "cpu"], Parameter(group="RVC4")] = "dsp",
     num_images: Annotated[int, Parameter(group="RVC4")] = 1000,
     device_ip: Annotated[str | None, Parameter(group="RVC4")] = None,
