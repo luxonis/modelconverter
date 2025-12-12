@@ -14,6 +14,13 @@ on:
         description: >
           Which version of underlying conversion tools to use
 
+      default:
+        required: true
+        type: string
+        description: >
+          The default tool version. The image using this version will be also
+          tagged with a bare `:latest` tag.
+
       os:
         required: false
         type: string
@@ -37,7 +44,9 @@ jobs:
   publish:
     runs-on: ${{ inputs.os }}
     env:
+      BARE_LOCAL_NAME: luxonis/modelconverter-${{ inputs.package }}
       LOCAL_NAME: luxonis/modelconverter-${{ inputs.package }}:${{ inputs.version }}-latest
+      DEFAULT: ${{ inputs.default }}
 
     steps:
     - name: Checkout code
@@ -98,6 +107,11 @@ jobs:
         GHCR_NAME="ghcr.io/${LOCAL_NAME}"
         docker tag "${LOCAL_NAME}" "${GHCR_NAME}"
         docker push "${GHCR_NAME}"
+        if [ "${VERSION}" = "${DEFAULT}" ]; then
+          GHCR_LATEST_NAME="ghcr.io/${NAME}:latest"
+          docker tag "${LOCAL_NAME}" "${GHCR_LATEST_NAME}"
+          docker push "${GHCR_LATEST_NAME}"
+        fi
 
     - name: GHCR publish SHA
       run: |
@@ -111,6 +125,11 @@ jobs:
         GAR_NAME="${GAR_STEM}/internal/${STEM}:${VERSION}-latest"
         docker tag "${LOCAL_NAME}" "${GAR_NAME}"
         docker push "${GAR_NAME}"
+        if [ "${VERSION}" = "${DEFAULT}" ]; then
+          GAR_LATEST_NAME="${GAR_STEM}/internal/${STEM}:latest"
+          docker tag "${LOCAL_NAME}" "${GAR_LATEST_NAME}"
+          docker push "${GAR_LATEST_NAME}"
+        fi
 
     - name: GAR publish SHA
       run: |
