@@ -21,3 +21,4 @@ jobs:
     with:
       package: rvc2
       version: ${{ matrix.version }}
+      default: "2022.3.0"
