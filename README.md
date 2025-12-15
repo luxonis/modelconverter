@@ -191,7 +191,7 @@ Only the version `2022.3.0` of `OpenVino` is supported for `RVC3`. Follow the sa
 
 **RVC4**
 
-Requires `snpe-<version>.zip` archive to be present in `docker/extra_packages`. You can download different versions from [here](https://softwarecenter.qualcomm.com/catalog/item/Qualcomm_AI_Runtime_Community). After downloading, rename the archive according to the version number. For example, if you download `version 2.32.6`, rename the file to `snpe-2.32.6.zip` and then place it in the `docker/extra_packages` directory.
+Requires `snpe-<version>.zip` archive to be present in `docker/extra_packages`. You can download different SNPE versions from [here](https://softwarecenter.qualcomm.com/catalog/item/Qualcomm_AI_Runtime_Community). After downloading, rename the archive according to the version number. For example, if you download `version 2.32.6`, rename the file to `snpe-2.32.6.zip` and then place it in the `docker/extra_packages` directory.
 
 **HAILO**
 
