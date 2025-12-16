@@ -577,6 +577,7 @@ def launcher(
     image: Annotated[
         str | None,
         Parameter(
+            ["image", "docker-image"],
             group=docker_parameters,
             help="Full name of the docker image to use. "
             "If the name includes a tag (e.g. ':latest'), "
