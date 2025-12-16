@@ -2,6 +2,8 @@
 name = "modelconv"
 description = "Converter for neural models into various formats."
 readme = "README.md"
+license-files = ["LICENSE"]
+license = "Apache-2.0"
 requires-python = ">=3.10"
 authors = [{ name = "Luxonis", email = "support@luxonis.com" }]
 maintainers = [{ name = "Luxonis", email = "support@luxonis.com" }]
