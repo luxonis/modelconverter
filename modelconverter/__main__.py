@@ -574,12 +574,14 @@ def launcher(
             "Available options differ based on the target platform. ",
         ),
     ] = None,
-    full_tag: Annotated[
+    image: Annotated[
         str | None,
         Parameter(
             group=docker_parameters,
-            help="Full tag of the docker image to use. "
-            "If provided, it takes precedence over the version parameter. ",
+            help="Full name of the docker image to use. "
+            "If the name includes a tag (e.g. ':latest'), "
+            "it will be used as is and the `--tool-version` "
+            "argument will be ignored.",
         ),
     ] = None,
     memory: Annotated[
@@ -626,7 +628,7 @@ def launcher(
 
     if dev:
         docker_build(
-            target.value, bare_tag=tag, version=tool_version, full_tag=full_tag
+            target.value, bare_tag=tag, version=tool_version, image=image
         )
 
     docker_exec(
@@ -635,7 +637,7 @@ def launcher(
         bare_tag=tag,
         use_gpu=gpu,
         version=tool_version,
-        full_tag=full_tag,
+        image=image,
         memory=memory,
         cpus=cpus,
     )

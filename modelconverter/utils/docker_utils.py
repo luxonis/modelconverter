@@ -130,15 +130,22 @@ def docker_build(
     target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
     bare_tag: str,
     version: str | None = None,
-    full_tag: str | None = None,
+    image: str | None = None,
 ) -> str:
     check_docker()
+
     if version is None:
         version = get_default_target_version(target)
 
-    tag = full_tag or f"{version}-{bare_tag}"
+    tag = f"{version}-{bare_tag}"
 
-    image = f"luxonis/modelconverter-{target}:{tag}"
+    if image is not None:
+        _, image_tag = parse_repository_tag(image)
+        if image_tag is None:
+            image = f"{image}:{tag}"
+    else:
+        image = f"luxonis/modelconverter-{target}:{tag}"
+
     args = [
         docker_bin(),
         "build",
@@ -194,14 +201,19 @@ def get_docker_image(
     target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
     bare_tag: str,
     version: str,
-    full_tag: str | None = None,
+    image: str | None = None,
 ) -> str:
     check_docker()
 
+    tag = f"{version}-{bare_tag}"
     client = get_docker_client_from_active_context()
-    tag = full_tag or f"{version}-{bare_tag}"
 
-    image = f"luxonis/modelconverter-{target}:{tag}"
+    if image is not None:
+        _, image_tag = parse_repository_tag(image)
+        if image_tag is None:
+            image = f"{image}:{tag}"
+    else:
+        image = f"luxonis/modelconverter-{target}:{tag}"
 
     for docker_image in client.images.list():
         tags = {image, f"docker.io/{image}", f"ghcr.io/{image}"} & set(
@@ -220,7 +232,7 @@ def get_docker_image(
 
     except Exception:
         logger.error("Failed to pull the image, building it locally...")
-        return docker_build(target, bare_tag, version, full_tag)
+        return docker_build(target, bare_tag, version, image)
 
 
 def docker_exec(
@@ -229,12 +241,12 @@ def docker_exec(
     bare_tag: str,
     use_gpu: bool,
     version: str | None = None,
-    full_tag: str | None = None,
+    image: str | None = None,
     memory: str | None = None,
     cpus: float | None = None,
 ) -> None:
     version = version or get_default_target_version(target)
-    image = get_docker_image(target, bare_tag, version, full_tag)
+    image = get_docker_image(target, bare_tag, version, image)
 
     with tempfile.NamedTemporaryFile(delete=False) as f:
         f.write(
