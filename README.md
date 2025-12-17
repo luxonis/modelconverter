@@ -33,11 +33,11 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
   - [Build Instructions](#build-instructions)
     - [Prerequisites](#prerequisites)
     - [Building the Images](#building-the-images)
+    - [Local Image Tagging and CLI Usage](#local-image-tagging-and-cli-usage)
     - [GPU Support](#gpu-support)
   - [Sharing Files](#sharing-files)
   - [Running ModelConverter](#running-modelconverter)
     - [Available CLI Options](#available-cli-options)
-      - [RVC4 Quantization Mode](#rvc4-quantization-mode)
     - [Handling Large ONNX Files (Exceeding 2GB)](#handling-large-onnx-files-exceeding-2gb)
     - [Examples](#examples)
 - [Multi-Stage Conversion](#multi-stage-conversion)
@@ -79,13 +79,16 @@ The `encoding` flag in the YAML configuration file specifies the format that the
 
 - **Single-Value `encoding`**:
   Setting encoding to a single value, such as *"RGB"*, *"BGR"*, *"GRAY"*, or *"NONE"*, will automatically apply this setting to both `encoding.from` and `encoding.to`. For example, `encoding: RGB` sets both `encoding.from` and `encoding.to` to *"RGB"* internally.
+
 - **Multi-Value `encoding.from` and `encoding.to`**:
   Alternatively, you can explicitly set `encoding.from` and `encoding.to` to different values. For example:
+
   ```yaml
   encoding:
     from: RGB
     to: BGR
   ```
+
   This configuration indicates that the **ONNX model** expects inputs in **RGB format**, and the converter will transform the input data to **BGR format** for **DepthAI** execution.
 
 > [!NOTE]
@@ -103,10 +106,13 @@ In the NN Archive configuration, there are two flags related to color encoding c
   For example:
 
   - If the ONNX model was trained with RGB planar inputs, use:
+
     ```json
     "dai_type": "RGB888p"
     ```
+
   - If the ONNX model was trained with BGR interleaved inputs, use:
+
     ```json
     "dai_type": "BGR888i"
     ```
@@ -210,7 +216,7 @@ docker build -f docker/$TARGET/Dockerfile \
              -t luxonis/modelconverter-$TARGET:latest .
 ```
 
-If you want to build the image with a different version of the underlying conversion tools than is the default one, you also need to pass the `--build-arg` flag with the desired version. For example, to build the `RVC2` image with ` 2021.4.0`, use:
+If you want to build the image with a different version of the underlying conversion tools than is the default one, you also need to pass the `--build-arg` flag with the desired version. For example, to build the `RVC2` image with `2021.4.0`, use:
 
 ```bash
 docker build -f docker/rvc2/Dockerfile \
@@ -223,6 +229,67 @@ docker build -f docker/rvc2/Dockerfile \
 >
 > - RVC2: `2022.3.0`
 > - RVC4: `2.32.6`
+
+#### Local Image Tagging and CLI Usage
+
+When using **locally built Docker images** with the `modelconverter` CLI, there are **two supported ways** to make sure the CLI uses the correct image. Both approaches are valid and can be chosen based on your workflow.
+By default, the CLI looks for images using the following tag pattern:
+
+- **RVC2**: `luxonis/modelconverter-rvc2:<tool-version>-latest`
+- **RVC4**: `luxonis/modelconverter-rvc4:<tool-version>-latest`
+
+Where `<tool-version>` is the value provided via the `--tool-version` CLI argument.
+
+If you build images using a generic `:latest` tag (for example `luxonis/modelconverter-rvc2:latest`), the CLI will not detect them and will instead attempt to pull the expected tag from the registry.
+
+**Option 1: Version-Matched Image Tagging**
+
+In this approach, you tag your locally built images using the `<version>-latest` scheme so that they are automatically discovered by the CLI when `--tool-version` is provided.
+
+Example for RVC2 with OpenVINO `2021.4.0`:
+
+```bash
+docker build -f docker/rvc2/Dockerfile \
+  -t luxonis/modelconverter-rvc2:2021.4.0-latest \
+  --build-arg VERSION=2021.4.0 .
+```
+
+Then run the CLI with:
+
+```bash
+modelconverter convert rvc2 --tool-version 2021.4.0 --path <config_or_archive>
+```
+
+This option works well if you want your locally built images to behave exactly like the official images expected by the CLI.
+
+**Option 2: Explicit Image Selection via `--image/docker-image`**
+
+Alternatively, you can explicitly tell the CLI which Docker image to use via the `--image/docker-image` option.
+
+- `--image/docker-image` accepts the **full Docker image name**.
+- If the value **includes a tag** (for example `luxonis/modelconverter-rvc4:my-custom-tag`), it is used **exactly as provided**.
+- If the value **does not include a tag**, the CLI uses the image name as provided and appends a tag constructed using the existing logic based on the `--tool-version` (i.e. `<tool-version>-latest` or `<tool-version>-dev`).
+- When `--image/docker-image` is provided **with an explicit tag**, it takes precedence over `--tool-version`, which is ignored.
+
+This option removes the need to re-tag locally built images and is recommended when working with custom images or non-standard tagging schemes.
+
+Example using a fully specified image name:
+
+```bash
+modelconverter convert rvc4 \
+--image luxonis/modelconverter-rvc4:my-custom-tag \
+--path <config_or_archive>
+```
+
+Example letting the CLI construct the tag automatically:
+
+```bash
+# Resolves to: luxonis/modelconverter-rvc4:2.32.6-latest
+modelconverter convert rvc4 \
+--image luxonis/modelconverter-rvc4 \
+--tool-version 2.32.6 \
+--path <config_or_archive>
+```
 
 #### GPU Support
 
@@ -313,18 +380,19 @@ You can run the built image either manually using the `docker run` command or us
 
 Below is a table of common command-line options available when using the `modelconverter convert` command:
 
-| Option                                             | Short | Type   | Description                                                                                                                        |
-| -------------------------------------------------- | ----- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `--path`                                           |       | PATH   | Path to the configuration file or NN Archive                                                                                       |
-| `--to`                                             |       | CHOICE | Output format: `native` or `nn_archive`                                                                                            |
-| `--main-stage`                                     | `-m`  | TEXT   | Name of the stage with the main model                                                                                              |
-| `--tool-version`                                   |       | TEXT   | Version of the underlying conversion tools to use. Available options differ based on the target platform (RVC2, RVC3, RVC4, HAILO) |
-| `--archive-preprocess` / `--no-archive-preprocess` |       | FLAG   | Add pre-processing to the NN archive instead of the model                                                                          |
+| Option                                             | Short | Type   | Description                                                                                                                                                |
+| -------------------------------------------------- | ----- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--path`                                           |       | PATH   | Path to the configuration file or NN Archive                                                                                                               |
+| `--to`                                             |       | CHOICE | Output format: `native` or `nn_archive`                                                                                                                    |
+| `--main-stage`                                     | `-m`  | TEXT   | Name of the stage with the main model                                                                                                                      |
+| `--tool-version`                                   |       | TEXT   | Version of the underlying conversion tools to use. Available options differ based on the target platform (RVC2, RVC3, RVC4, HAILO)                         |
+| `--image/docker-image`                             |       | TEXT   | Full Docker image name to use. If a tag is included, it is used as-is and overrides `--tool-version`, otherwise, the tag is derived from `--tool-version`. |
+| `--archive-preprocess` / `--no-archive-preprocess` |       | FLAG   | Add pre-processing to the NN archive instead of the model                                                                                                  |
 
 > [!NOTE]
 > This table is not exhaustive. For more detailed information about available options, run `modelconverter convert --help` in your command line interface. You can also check all the `[ config overrides ]` available at [defaults.yaml](shared_with_container/configs/defaults.yaml).
 
-##### RVC4 Quantization Mode
+**RVC4 Quantization Mode**
 
 The `rvc4.quantization_mode` CLI option allows you to choose between different pre-defined quantization modes for RVC4 conversions. The available modes are:
 
