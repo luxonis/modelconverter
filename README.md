@@ -213,14 +213,14 @@ In other cases, navigate to the root directory of the repository and run the fol
 
 ```bash
 docker build -f docker/$TARGET/Dockerfile \
-             -t luxonis/modelconverter-$TARGET:latest .
+             -t luxonis/modelconverter-$TARGET:<tool-version>-latest .
 ```
 
 If you want to build the image with a different version of the underlying conversion tools than is the default one, you also need to pass the `--build-arg` flag with the desired version. For example, to build the `RVC2` image with `2021.4.0`, use:
 
 ```bash
 docker build -f docker/rvc2/Dockerfile \
-             -t luxonis/modelconverter-rvc2:latest \
+             -t luxonis/modelconverter-rvc2:2021.4.0-latest \
              --build-arg VERSION=2021.4.0 .
 ```
 
@@ -240,7 +240,7 @@ By default, the CLI looks for images using the following tag pattern:
 
 Where `<tool-version>` is the value provided via the `--tool-version` CLI argument.
 
-If you build images using a generic `:latest` tag (for example `luxonis/modelconverter-rvc2:latest`), the CLI will not detect them and will instead attempt to pull the expected tag from the registry.
+If you build images with a custom tag (for example, `luxonis/modelconverter-rvc2:my-custom-tag`), the CLI will not detect them automatically and will instead try to pull the image with the default tag from the registry. You can still use custom-tagged images, but you must explicitly specify them using `--image/docker-image`, as described in Option 2 below.
 
 **Option 1: Version-Matched Image Tagging**
 
@@ -371,7 +371,7 @@ You can run the built image either manually using the `docker run` command or us
     -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
     -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
     -e AWS_S3_ENDPOINT_URL=$AWS_S3_ENDPOINT_URL \
-    luxonis/modelconverter-<package>:latest \
+    luxonis/modelconverter-<target>:<tool-version>-latest \
     convert <target> \
     --path <s3_url_or_path> [ config overrides ]
   ```
