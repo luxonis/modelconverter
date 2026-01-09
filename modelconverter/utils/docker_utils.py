@@ -206,11 +206,31 @@ def _download_file(url: str, dest: Path) -> None:
                 raise RuntimeError(
                     f"HTTP {response.status} while downloading {url}"
                 )
+            total = None
+            getheader = getattr(response, "getheader", None)
+            if callable(getheader):
+                length = getheader("Content-Length")
+                if length and length.isdigit():
+                    total = int(length)
             with tempfile.NamedTemporaryFile(
                 delete=False, dir=dest.parent, suffix=".zip"
             ) as tmp_file:
                 tmp_path = Path(tmp_file.name)
-                shutil.copyfileobj(response, tmp_file)
+                with Progress(
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TaskProgressColumn(),
+                    transient=True,
+                ) as progress:
+                    task = progress.add_task(
+                        "Downloading SNPE archive", total=total
+                    )
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        tmp_file.write(chunk)
+                        progress.update(task, advance=len(chunk))
         tmp_path.replace(dest)
     finally:
         if tmp_path is not None and tmp_path.exists() and not dest.exists():
