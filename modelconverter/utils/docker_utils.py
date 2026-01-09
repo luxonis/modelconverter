@@ -11,12 +11,12 @@ from urllib.request import Request, urlopen
 
 import psutil
 import yaml
-from docker.utils import parse_repository_tag
 from loguru import logger
 from luxonis_ml.utils import environ
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 import docker
+from docker.utils import parse_repository_tag
 
 
 def get_docker_client_from_active_context() -> docker.DockerClient:
@@ -200,8 +200,8 @@ def ensure_snpe_archive(version: str) -> Path:
 def _download_file(url: str, dest: Path) -> None:
     tmp_path: Path | None = None
     try:
-        request = Request(url, headers={"User-Agent": "modelconverter"})
-        with urlopen(request, timeout=30) as response:
+        request = Request(url, headers={"User-Agent": "modelconverter"})  # noqa: S310
+        with urlopen(request, timeout=30) as response:  # noqa: S310
             if getattr(response, "status", 200) >= 400:
                 raise RuntimeError(
                     f"HTTP {response.status} while downloading {url}"
