@@ -6,15 +6,17 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Literal
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import psutil
 import yaml
+from docker.utils import parse_repository_tag
 from loguru import logger
 from luxonis_ml.utils import environ
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 import docker
-from docker.utils import parse_repository_tag
 
 
 def get_docker_client_from_active_context() -> docker.DockerClient:
@@ -136,6 +138,8 @@ def docker_build(
 
     if version is None:
         version = get_default_target_version(target)
+    if target == "rvc4":
+        ensure_snpe_archive(version)
 
     tag = f"{version}-{bare_tag}"
 
@@ -162,6 +166,55 @@ def docker_build(
     if result.returncode != 0:
         raise RuntimeError("Failed to build the docker image")
     return image
+
+
+def ensure_snpe_archive(version: str) -> Path:
+    archive_path = Path("docker/extra_packages") / f"snpe-{version}.zip"
+    if archive_path.exists():
+        return archive_path
+
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    url = (
+        "https://softwarecenter.qualcomm.com/api/download/software/sdks/"
+        f"Qualcomm_AI_Runtime_Community/All/{version}/v{version}.zip"
+    )
+    logger.warning(
+        "SNPE archive not found at {}; attempting download from {}",
+        archive_path,
+        url,
+    )
+    try:
+        _download_file(url, archive_path)
+    except (HTTPError, URLError, RuntimeError) as exc:
+        msg = (
+            f"Failed to download SNPE archive from {url}: {exc}. "
+            "Download it manually from "
+            "https://softwarecenter.qualcomm.com/catalog/item/"
+            "Qualcomm_AI_Runtime_Community and save it as "
+            f"{archive_path}."
+        )
+        raise RuntimeError(msg) from exc
+    return archive_path
+
+
+def _download_file(url: str, dest: Path) -> None:
+    tmp_path: Path | None = None
+    try:
+        request = Request(url, headers={"User-Agent": "modelconverter"})
+        with urlopen(request, timeout=30) as response:
+            if getattr(response, "status", 200) >= 400:
+                raise RuntimeError(
+                    f"HTTP {response.status} while downloading {url}"
+                )
+            with tempfile.NamedTemporaryFile(
+                delete=False, dir=dest.parent, suffix=".zip"
+            ) as tmp_file:
+                tmp_path = Path(tmp_file.name)
+                shutil.copyfileobj(response, tmp_file)
+        tmp_path.replace(dest)
+    finally:
+        if tmp_path is not None and tmp_path.exists() and not dest.exists():
+            tmp_path.unlink(missing_ok=True)
 
 
 # We cannot simply call `docker pull` in a subprocess because
