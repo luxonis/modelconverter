@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 import psutil
@@ -51,6 +52,15 @@ def get_default_target_version(
         "rvc4": "2.32.6",
         "hailo": "2025.04",
     }[target]
+
+
+def rvc4_tag_version(version: str) -> str:
+    """Removes build component from version string (e.g. 2.32.6.250402
+    -> 2.32.6)"""
+    parts = version.split(".")
+    if len(parts) <= 3:
+        return version
+    return ".".join(parts[:3])
 
 
 def generate_compose_config(
@@ -138,10 +148,12 @@ def docker_build(
 
     if version is None:
         version = get_default_target_version(target)
+
+    tag_version = rvc4_tag_version(version) if target == "rvc4" else version
     if target == "rvc4":
         ensure_snpe_archive(version)
 
-    tag = f"{version}-{bare_tag}"
+    tag = f"{tag_version}-{bare_tag}"
 
     if image is not None:
         _, image_tag = parse_repository_tag(image)
@@ -198,6 +210,10 @@ def ensure_snpe_archive(version: str) -> Path:
 
 
 def _download_file(url: str, dest: Path) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise RuntimeError(f"Refusing to download from non-HTTPS URL: {url}")
+
     tmp_path: Path | None = None
     try:
         request = Request(url, headers={"User-Agent": "modelconverter"})  # noqa: S310
@@ -278,30 +294,42 @@ def get_docker_image(
 ) -> str:
     check_docker()
 
-    tag = f"{version}-{bare_tag}"
+    tag_version = rvc4_tag_version(version) if target == "rvc4" else version
+    tag = f"{tag_version}-{bare_tag}"
     client = get_docker_client_from_active_context()
 
     if image is not None:
-        _, image_tag = parse_repository_tag(image)
+        image_repo, image_tag = parse_repository_tag(image)
         if image_tag is None:
-            image = f"{image}:{tag}"
+            image = f"{image_repo}:{tag}"
     else:
-        image = f"luxonis/modelconverter-{target}:{tag}"
+        image_repo = f"luxonis/modelconverter-{target}"
+        image_tag = None
+        image = f"{image_repo}:{tag}"
+
+    candidate_images = [image]
+    # add full version if specified RVC4 tag is with build number included (e.g. version=2.32.6.250402 instead of version=2.32.6)
+    if target == "rvc4" and tag_version != version and image_tag is None:
+        candidate_images.append(f"{image_repo}:{version}-{bare_tag}")
+
+    candidate_tags = set()
+    for candidate in candidate_images:
+        candidate_tags.add(candidate)
+        candidate_tags.add(f"docker.io/{candidate}")
+        candidate_tags.add(f"ghcr.io/{candidate}")
 
     for docker_image in client.images.list():
-        tags = {image, f"docker.io/{image}", f"ghcr.io/{image}"} & set(
-            docker_image.tags
-        )
+        tags = candidate_tags & set(docker_image.tags)
         if tags:
             return next(iter(tags))
 
     logger.warning(
-        f"Image '{image}' not found, pulling "
-        f"the latest image from 'ghcr.io/{image}'..."
+        f"Image '{candidate_images[0]}' not found, pulling "
+        f"the latest image from 'ghcr.io/{candidate_images[0]}'..."
     )
 
     try:
-        return pull_image(client, f"ghcr.io/{image}")
+        return pull_image(client, f"ghcr.io/{candidate_images[0]}")
 
     except Exception:
         logger.error("Failed to pull the image, building it locally...")

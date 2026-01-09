@@ -197,21 +197,21 @@ Only the version `2022.3.0` of `OpenVino` is supported for `RVC3`. Follow the sa
 
 **RVC4**
 
-Requires `snpe-<version>.zip` archive to be present in `docker/extra_packages`. When building locally via the CLI, the tool will attempt to download the archive automatically if it is missing, as long as the version you pass matches one of the versions available in the Qualcomm catalog.
+Requires `snpe-<version>.zip` archive to be present in `docker/extra_packages`. When building locally via the CLI, the tool will attempt to download the archive automatically if it is missing, but only when a **full SNPE build version** is provided (e.g. `2.32.6.250402`) and that version exists in the Qualcomm catalog. If you pass only the short version (e.g. `2.32.6`), the CLI expects either the image or archive to already be present. After the first download though you can use the local image with the short or long version.
 You can also download different SNPE versions manually from [here](https://softwarecenter.qualcomm.com/catalog/item/Qualcomm_AI_Runtime_Community). After downloading, rename the archive according to the version number and place it in the `docker/extra_packages` directory.
 
-Example (auto-download on first build):
+Example (auto-download only on first build, afterwards available as `2.32.6.250402` or `2.32.6` ):
 
 ```bash
 modelconverter convert rvc4 --tool-version 2.32.6.250402 --path <config_or_archive>
 ```
 
-Example (archive is already present, no auto-download):
+Example (short version, assumes archive or image already present):
 
 ```bash
-# Place the archive ahead of time:
-# docker/extra_packages/snpe-2.40.0.zip
-modelconverter convert rvc4 --tool-version 2.40.0 --path <config_or_archive>
+# Place the archive ahead of time (or run the command above beforehand):
+# docker/extra_packages/snpe-2.32.6.zip
+modelconverter convert rvc4 --tool-version 2.32.6 --path <config_or_archive>
 ```
 
 **HAILO**
