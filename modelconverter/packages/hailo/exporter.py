@@ -111,7 +111,7 @@ class HailoExporter(Exporter):
         hn_layers = hn["layers"]
 
         map_list = []
-        for name, layer in hn_layers.items():
+        for layer in hn_layers.values():
             if layer["type"] == "output_layer":
                 input_name = layer["input"][0]
                 context = input_name.split("/")[0]
@@ -142,7 +142,9 @@ class HailoExporter(Exporter):
         npz = updated_npz
 
         outputs = hn["net_params"]["output_layers_order"]
-        hn["net_params"]["output_layers_order"] = [name_map.get(o, o) for o in outputs]
+        hn["net_params"]["output_layers_order"] = [
+            name_map.get(o, o) for o in outputs
+        ]
 
         runner.set_hn(hn)
         runner.load_params(npz)

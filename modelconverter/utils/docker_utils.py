@@ -6,6 +6,9 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Literal
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 import psutil
 import yaml
@@ -49,6 +52,15 @@ def get_default_target_version(
         "rvc4": "2.32.6",
         "hailo": "2025.04",
     }[target]
+
+
+def rvc4_tag_version(version: str) -> str:
+    """Removes build component from version string (e.g. 2.32.6.250402
+    -> 2.32.6)"""
+    parts = version.split(".")
+    if len(parts) <= 3:
+        return version
+    return ".".join(parts[:3])
 
 
 def generate_compose_config(
@@ -137,7 +149,11 @@ def docker_build(
     if version is None:
         version = get_default_target_version(target)
 
-    tag = f"{version}-{bare_tag}"
+    tag_version = rvc4_tag_version(version) if target == "rvc4" else version
+    if target == "rvc4":
+        ensure_snpe_archive(version)
+
+    tag = f"{tag_version}-{bare_tag}"
 
     if image is not None:
         _, image_tag = parse_repository_tag(image)
@@ -162,6 +178,79 @@ def docker_build(
     if result.returncode != 0:
         raise RuntimeError("Failed to build the docker image")
     return image
+
+
+def ensure_snpe_archive(version: str) -> Path:
+    archive_path = Path("docker/extra_packages") / f"snpe-{version}.zip"
+    if archive_path.exists():
+        return archive_path
+
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    url = (
+        "https://softwarecenter.qualcomm.com/api/download/software/sdks/"
+        f"Qualcomm_AI_Runtime_Community/All/{version}/v{version}.zip"
+    )
+    logger.warning(
+        "SNPE archive not found at {}; attempting download from {}",
+        archive_path,
+        url,
+    )
+    try:
+        _download_file(url, archive_path)
+    except (HTTPError, URLError, RuntimeError) as exc:
+        msg = (
+            f"Failed to download SNPE archive from {url}: {exc}. "
+            "Download it manually from "
+            "https://softwarecenter.qualcomm.com/catalog/item/"
+            "Qualcomm_AI_Runtime_Community and save it as "
+            f"{archive_path}."
+        )
+        raise RuntimeError(msg) from exc
+    return archive_path
+
+
+def _download_file(url: str, dest: Path) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise RuntimeError(f"Refusing to download from non-HTTPS URL: {url}")
+
+    tmp_path: Path | None = None
+    try:
+        request = Request(url, headers={"User-Agent": "modelconverter"})  # noqa: S310
+        with urlopen(request, timeout=30) as response:  # noqa: S310
+            if getattr(response, "status", 200) >= 400:
+                raise RuntimeError(
+                    f"HTTP {response.status} while downloading {url}"
+                )
+            total = None
+            getheader = getattr(response, "getheader", None)
+            if callable(getheader):
+                length = getheader("Content-Length")
+                if length and length.isdigit():
+                    total = int(length)
+            with tempfile.NamedTemporaryFile(
+                delete=False, dir=dest.parent, suffix=".zip"
+            ) as tmp_file:
+                tmp_path = Path(tmp_file.name)
+                with Progress(
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TaskProgressColumn(),
+                    transient=True,
+                ) as progress:
+                    task = progress.add_task(
+                        "Downloading SNPE archive", total=total
+                    )
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        tmp_file.write(chunk)
+                        progress.update(task, advance=len(chunk))
+        tmp_path.replace(dest)
+    finally:
+        if tmp_path is not None and tmp_path.exists() and not dest.exists():
+            tmp_path.unlink(missing_ok=True)
 
 
 # We cannot simply call `docker pull` in a subprocess because
@@ -205,30 +294,42 @@ def get_docker_image(
 ) -> str:
     check_docker()
 
-    tag = f"{version}-{bare_tag}"
+    tag_version = rvc4_tag_version(version) if target == "rvc4" else version
+    tag = f"{tag_version}-{bare_tag}"
     client = get_docker_client_from_active_context()
 
     if image is not None:
-        _, image_tag = parse_repository_tag(image)
+        image_repo, image_tag = parse_repository_tag(image)
         if image_tag is None:
-            image = f"{image}:{tag}"
+            image = f"{image_repo}:{tag}"
     else:
-        image = f"luxonis/modelconverter-{target}:{tag}"
+        image_repo = f"luxonis/modelconverter-{target}"
+        image_tag = None
+        image = f"{image_repo}:{tag}"
+
+    candidate_images = [image]
+    # add full version if specified RVC4 tag is with build number included (e.g. version=2.32.6.250402 instead of version=2.32.6)
+    if target == "rvc4" and tag_version != version and image_tag is None:
+        candidate_images.append(f"{image_repo}:{version}-{bare_tag}")
+
+    candidate_tags = set()
+    for candidate in candidate_images:
+        candidate_tags.add(candidate)
+        candidate_tags.add(f"docker.io/{candidate}")
+        candidate_tags.add(f"ghcr.io/{candidate}")
 
     for docker_image in client.images.list():
-        tags = {image, f"docker.io/{image}", f"ghcr.io/{image}"} & set(
-            docker_image.tags
-        )
+        tags = candidate_tags & set(docker_image.tags)
         if tags:
             return next(iter(tags))
 
     logger.warning(
-        f"Image '{image}' not found, pulling "
-        f"the latest image from 'ghcr.io/{image}'..."
+        f"Image '{candidate_images[0]}' not found, pulling "
+        f"the latest image from 'ghcr.io/{candidate_images[0]}'..."
     )
 
     try:
-        return pull_image(client, f"ghcr.io/{image}")
+        return pull_image(client, f"ghcr.io/{candidate_images[0]}")
 
     except Exception:
         logger.error("Failed to pull the image, building it locally...")
