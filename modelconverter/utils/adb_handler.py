@@ -13,11 +13,11 @@ class AdbHandler:
         self.device_args = ["-s", device_id] if device_id else []
         self.silent = silent
 
-    def _adb_run(self, *args, **kwargs) -> tuple[int, str, str]:
+    def _adb_run(self, *args, check: bool, **kwargs) -> tuple[int, str, str]:
         subprocess.run(
             ["adb", *map(str, self.device_args), "root"],
             capture_output=True,
-            check=False,
+            check=check,
         )
         if not self.silent:
             logger.info(f"Executing adb command: {' '.join(map(str, args))}")
@@ -25,7 +25,7 @@ class AdbHandler:
             ["adb", *self.device_args, *args],
             **kwargs,
             capture_output=True,
-            check=False,
+            check=check,
         )
         stdout = result.stdout
         stderr = result.stderr
@@ -43,14 +43,18 @@ class AdbHandler:
             stderr.decode(errors="ignore"),
         )
 
-    def shell(self, cmd: str) -> tuple[int, str, str]:
-        return self._adb_run("shell", cmd)
+    def shell(self, cmd: str, *, check: bool = False) -> tuple[int, str, str]:
+        return self._adb_run("shell", cmd, check=check)
 
-    def pull(self, src: PathType, dst: PathType) -> tuple[int, str, str]:
-        return self._adb_run("pull", src, dst)
+    def pull(
+        self, src: PathType, dst: PathType, *, check: bool = False
+    ) -> tuple[int, str, str]:
+        return self._adb_run("pull", src, dst, check=check)
 
-    def push(self, src: PathType, dst: PathType) -> tuple[int, str, str]:
-        return self._adb_run("push", src, dst)
+    def push(
+        self, src: PathType, dst: PathType, check: bool = False
+    ) -> tuple[int, str, str]:
+        return self._adb_run("push", src, dst, check=check)
 
     def _check_adb_connection(self, device_id: str | None) -> str:
         result = subprocess.run(
