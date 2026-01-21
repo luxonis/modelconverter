@@ -524,6 +524,6 @@ def _get_io_dtype(
     if dtypes[name] is None:
         if config_dtype is not None:
             return config_dtype.as_nn_archive_dtype()
-        return "uint8"
+        return "int8"
 
     return dtypes[name].as_nn_archive_dtype()
