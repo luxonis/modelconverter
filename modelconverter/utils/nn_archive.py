@@ -313,6 +313,7 @@ def modelconverter_config_to_nn(
             model_metadata,
             target_cfg,
             mode="input",
+            config_dtype=inp.data_type,
         )
 
         archive_cfg["model"]["inputs"].append(
@@ -360,6 +361,7 @@ def modelconverter_config_to_nn(
             model_metadata,
             target_cfg,
             mode="output",
+            config_dtype=out.data_type,
         )
         archive_cfg["model"]["outputs"].append(
             {
@@ -488,6 +490,7 @@ def _get_io_dtype(
     cfg: TargetConfig,
     *,
     mode: Literal["input", "output"],
+    config_dtype: DataType | None = None,
 ) -> str:
     if mode == "input":
         dtypes = metadata.input_dtypes
@@ -517,5 +520,10 @@ def _get_io_dtype(
 
         blob_dtype = compile_tool_args[idx + 1].upper()
         return DataType.from_ir_ie_dtype(blob_dtype).as_nn_archive_dtype()
+
+    if dtypes[name] is None:
+        if config_dtype is not None:
+            return config_dtype.as_nn_archive_dtype()
+        return "uint8"
 
     return dtypes[name].as_nn_archive_dtype()
