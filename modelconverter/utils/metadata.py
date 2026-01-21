@@ -267,12 +267,13 @@ def _get_metadata_hailo(model_path: Path) -> Metadata:
             shape = list(params["input_shapes"][0])
             if shape[0] == -1:
                 shape[0] = 1
+            # TODO: should find a way to read the dtypes from Hailo SDK instead of hard-coding int8
             if params["type"] == "input_layer":
                 input_shapes[name] = shape
-                input_dtypes[name] = None
+                input_dtypes[name] = DataType.INT8
             else:
                 output_shapes[name] = shape
-                output_dtypes[name] = None
+                output_dtypes[name] = DataType.INT8
 
     return Metadata(
         input_shapes=input_shapes,
