@@ -414,6 +414,7 @@ The `rvc4.quantization_mode` CLI option allows you to choose between different p
 - `INT8_STANDARD`: Standard INT8 quantization **with calibration** (default), for optimal performance (FPS) and model size.
 - `INT8_ACCURACY_FOCUSED`: INT8 quantization **with calibration**. This mode utilizes more advanced quantization techniques that may improve accuracy without reducing performance or increasing the model size, depending on the model.
 - `INT8_INT16_MIXED`: Mixed INT8 and INT16 quantization **with calibration**. This mode uses 8-bit weights and 16-bit activations across all layers for improved numeric stability and accuracy at the cost of reduced performance (FPS) and increased model size.
+- `INT8_INT16_MIXED_ACCURACY_FOCUSED`: Mixed INT8 and INT16 quantization **with calibration**. This mode uses more advanced quantization techniques that may improve accuracy while using 8-bit weights and 16-bit activations across all layers, at the cost of reduced performance (FPS) and increased model size.
 - `FP16_STANDARD`: FP16 quantization **without calibration**, for models that require higher accuracy and numeric stability, at the cost of performance (FPS) and increased model size.
 - `CUSTOM`: Custom quantization mode, where the user can specify more advanced options in the configuration file or via command-line arguments.
 
