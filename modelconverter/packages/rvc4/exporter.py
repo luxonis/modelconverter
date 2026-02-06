@@ -340,12 +340,15 @@ class RVC4Exporter(Exporter):
                 else:
                     logger.warning(
                         f"Layout '{layout}' not supported by snpe for input '{name}'. "
-                        "Proceeding wihtout specifying layout."
+                        "Proceeding without specifying layout."
                     )
 
         if self.quantization_mode == QuantizationMode.FP16_STD:
             self._add_args(args, ["--float_bitwidth", "16"])
-        elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
+        elif self.quantization_mode in [
+            QuantizationMode.INT8_16_MIX,
+            QuantizationMode.INT8_16_MIX_ACC,
+        ]:
             io_encodings_file = self.generate_io_encodings()
             self._add_args(
                 args,
