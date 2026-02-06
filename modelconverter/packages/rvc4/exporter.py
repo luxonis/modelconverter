@@ -11,6 +11,7 @@ from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
     exit_with,
+    get_extra_quant_tensors,
     onnx_attach_normalization_to_inputs,
     read_image,
 )
@@ -48,6 +49,7 @@ class RVC4Exporter(Exporter):
         self.use_per_row_quantization = rvc4_cfg.use_per_row_quantization
         self.optimization_level = rvc4_cfg.optimization_level
         self.quantization_mode = rvc4_cfg.quantization_mode
+        self.extra_quant_tensors = []
         if self.quantization_mode != QuantizationMode.CUSTOM:
             self.snpe_onnx_to_dlc = []
             self.snpe_dlc_quant = []
@@ -94,6 +96,14 @@ class RVC4Exporter(Exporter):
                 finally:
                     if onnx_modifier.output_path.exists():
                         onnx_modifier.output_path.unlink()
+
+            if self.quantization_mode in [
+                QuantizationMode.INT8_16_MIX,
+                QuantizationMode.INT8_16_MIX_ACC,
+            ]:
+                self.extra_quant_tensors = get_extra_quant_tensors(
+                    self.input_model, self.outputs, depth=2
+                )
         else:
             logger.warning(
                 "Input file type is not ONNX. Skipping pre-processing."
@@ -169,9 +179,12 @@ class RVC4Exporter(Exporter):
         if self.quantization_mode == QuantizationMode.INT8_ACC:
             self._add_args(args, ["--param_quantizer", "enhanced"])
             self._add_args(args, ["--act_quantizer", "enhanced"])
-        elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
+        elif self.quantization_mode == QuantizationMode.INT8_16_MIX_ACC:
             self._add_args(args, ["--param_quantizer", "enhanced"])
             self._add_args(args, ["--act_quantizer", "enhanced"])
+            self._add_args(args, ["--act_bitwidth", "16"])
+            args.append("--override_params")
+        elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
             self._add_args(args, ["--act_bitwidth", "16"])
             args.append("--override_params")
 
@@ -265,7 +278,11 @@ class RVC4Exporter(Exporter):
             logger.warning(
                 "Cannot generate I/O encodings as inputs or outputs are not defined. The resulting DLC may not be compatible with DAI."
             )
-        for name in list(self.inputs.keys()) + list(self.outputs.keys()):
+        for name in (
+            list(self.inputs.keys())
+            + list(self.outputs.keys())
+            + self.extra_quant_tensors
+        ):
             encodings_dict["activation_encodings"][name] = [
                 {"bitwidth": 8, "dtype": "int"}
             ]
@@ -323,12 +340,15 @@ class RVC4Exporter(Exporter):
                 else:
                     logger.warning(
                         f"Layout '{layout}' not supported by snpe for input '{name}'. "
-                        "Proceeding wihtout specifying layout."
+                        "Proceeding without specifying layout."
                     )
 
         if self.quantization_mode == QuantizationMode.FP16_STD:
             self._add_args(args, ["--float_bitwidth", "16"])
-        elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
+        elif self.quantization_mode in [
+            QuantizationMode.INT8_16_MIX,
+            QuantizationMode.INT8_16_MIX_ACC,
+        ]:
             io_encodings_file = self.generate_io_encodings()
             self._add_args(
                 args,

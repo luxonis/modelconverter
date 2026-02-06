@@ -34,7 +34,11 @@ from .nn_archive import (
     modelconverter_config_to_nn,
     process_nn_archive,
 )
-from .onnx_tools import ONNXModifier, onnx_attach_normalization_to_inputs
+from .onnx_tools import (
+    ONNXModifier,
+    get_extra_quant_tensors,
+    onnx_attach_normalization_to_inputs,
+)
 from .progress_handler import create_progress_handler
 from .subprocess import SubprocessHandle, subprocess_run
 
@@ -61,6 +65,7 @@ __all__ = [
     "get_container_memory_available",
     "get_container_memory_limit",
     "get_docker_image",
+    "get_extra_quant_tensors",
     "get_metadata",
     "get_protocol",
     "guess_new_layout",
