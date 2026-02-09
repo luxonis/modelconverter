@@ -4,7 +4,7 @@ luxonis-ml[data,nn_archive]>=0.8.1
 onnx>=1.17.0,<1.19.0
 onnxruntime
 onnxsim
-s3fs
+s3fs==2026.1.0
 s3transfer
 click==8.1.8
 cyclopts
