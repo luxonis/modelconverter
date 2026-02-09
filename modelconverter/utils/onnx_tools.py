@@ -27,37 +27,41 @@ def get_extra_quant_tensors(
     output_configs: dict[str, OutputConfig],
     depth: int = 2,
 ) -> list[str]:
-    """Returns tensor names that are inputs to nodes encountered when
-    walking backwards from the graph outputs up to `depth` producer-node
-    hops."""
+    """Return unique tensor names that are inputs to producer nodes encountered when walking upstream from the selected graph outputs, up to depth producer hops.
+
+    - Starts from graph outputs whose names are keys in output_configs.
+    - At each hop: for each tensor, find its producing node; add that node's
+      non-empty, non-initializer inputs to results and to the next frontier.
+    """
     if depth < 1:
         return []
 
     model = onnx.load(str(model_path))
     graph = model.graph
 
-    graph_output_names = [o.name for o in graph.output]
-    if not all(name in graph_output_names for name in output_configs):
+    graph_outputs = {o.name for o in graph.output}
+    requested = set(output_configs.keys())
+    missing = requested - graph_outputs
+    if missing:
         raise ONNXException(
-            "Not all output names specified in output_configs match the actual ONNX model outputs."
+            f"Some output names in output_configs are not graph outputs: {sorted(missing)}"
         )
 
-    initializer_names = [init.name for init in graph.initializer]
+    initializer_names = {init.name for init in graph.initializer}
 
-    producer_by_output = {}
-    for node in graph.node:
-        for out_name in node.output:
-            if out_name:
-                producer_by_output[out_name] = node
+    producer_by_output = {
+        out_name: node
+        for node in graph.node
+        for out_name in node.output
+        if out_name
+    }
 
     extra_quant_tensors = []
-    seen_tensors = set(extra_quant_tensors)
+    seen_tensors = set()
 
-    frontier_tensors = [
-        out.name for out in graph.output if out.name in output_configs
-    ]
+    frontier_tensors = [name for name in graph_outputs if name in requested]
 
-    visited_node_ids = []
+    visited_node_ids = set()
 
     for _ in range(depth):
         next_frontier = []
@@ -70,7 +74,7 @@ def get_extra_quant_tensors(
             node_id = id(producing_node)
             if node_id in visited_node_ids:
                 continue
-            visited_node_ids.append(node_id)
+            visited_node_ids.add(node_id)
 
             for input_name in producing_node.input:
                 if not input_name or input_name in initializer_names:
@@ -82,9 +86,9 @@ def get_extra_quant_tensors(
 
                 next_frontier.append(input_name)
 
-        frontier_tensors = next_frontier
         if not frontier_tensors:
             break
+        frontier_tensors = next_frontier
 
     return extra_quant_tensors
 
