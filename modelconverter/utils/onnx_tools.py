@@ -10,7 +10,7 @@ from loguru import logger
 from onnx import TensorProto, checker, helper
 from onnxsim import simplify
 
-from modelconverter.utils.config import InputConfig
+from modelconverter.utils.config import InputConfig, OutputConfig
 
 from .exceptions import ONNXException
 
@@ -20,6 +20,77 @@ def get_opset_version(model: onnx.ModelProto) -> int:
         if imp.domain == "":
             return imp.version
     raise ONNXException("No opset version found in the ONNX model.")
+
+
+def get_extra_quant_tensors(
+    model_path: Path,
+    output_configs: dict[str, OutputConfig],
+    depth: int = 2,
+) -> list[str]:
+    """Return unique tensor names that are inputs to producer nodes encountered when walking upstream from the selected graph outputs, up to depth producer hops.
+
+    - Starts from graph outputs whose names are keys in output_configs.
+    - At each hop: for each tensor, find its producing node; add that node's
+      non-empty, non-initializer inputs to results and to the next frontier.
+    """
+    if depth < 1:
+        return []
+
+    model = onnx.load(str(model_path))
+    graph = model.graph
+
+    graph_outputs = {o.name for o in graph.output}
+    requested = set(output_configs.keys())
+    missing = requested - graph_outputs
+    if missing:
+        raise ONNXException(
+            f"Some output names in output_configs are not graph outputs: {sorted(missing)}"
+        )
+
+    initializer_names = {init.name for init in graph.initializer}
+
+    producer_by_output = {
+        out_name: node
+        for node in graph.node
+        for out_name in node.output
+        if out_name
+    }
+
+    extra_quant_tensors = []
+    seen_tensors = set()
+
+    frontier_tensors = [name for name in graph_outputs if name in requested]
+
+    visited_node_ids = set()
+
+    for _ in range(depth):
+        next_frontier = []
+
+        for tensor_name in frontier_tensors:
+            producing_node = producer_by_output.get(tensor_name)
+            if producing_node is None:
+                continue
+
+            node_id = id(producing_node)
+            if node_id in visited_node_ids:
+                continue
+            visited_node_ids.add(node_id)
+
+            for input_name in producing_node.input:
+                if not input_name or input_name in initializer_names:
+                    continue
+
+                if input_name not in seen_tensors:
+                    extra_quant_tensors.append(input_name)
+                    seen_tensors.add(input_name)
+
+                next_frontier.append(input_name)
+
+        if not frontier_tensors:
+            break
+        frontier_tensors = next_frontier
+
+    return extra_quant_tensors
 
 
 def onnx_attach_normalization_to_inputs(
