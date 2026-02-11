@@ -117,8 +117,8 @@ In the NN Archive configuration, there are two flags related to color encoding c
     "dai_type": "BGR888i"
     ```
 
-  > [!NOTE]
-  > You can check the `enum Type` in the [DepthAI API documentation](https://docs.luxonis.com/software-v3/depthai/depthai-components/messages/img_frame) for all possible values of `dai_type`.
+> [!NOTE]
+> You can check the `enum Type` in the [DepthAI API documentation](https://docs.luxonis.com/software-v3/depthai/depthai-components/messages/img_frame) for all possible values of `dai_type`.
 
 - **`reverse_channels` (Deprecated)**:
   A simpler flag controlling only channel order:
