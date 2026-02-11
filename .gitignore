@@ -133,8 +133,8 @@ dmypy.json
 
 vino/
 models/
-docker/extra_packages/*
-!docker/extra_packages/.gitkeep
+modelconverter/docker/extra_packages/*
+!modelconverter/docker/extra_packages/.gitkeep
 envs
 results.csv
 
