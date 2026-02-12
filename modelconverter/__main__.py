@@ -45,7 +45,9 @@ from modelconverter.utils.types import Target
 
 app = App(
     name="Modelconverter",
-    version=lambda: f"ModelConverter v{importlib.metadata.version('modelconv')}",
+    version=lambda: (
+        f"ModelConverter v{importlib.metadata.version('modelconv')}"
+    ),
 )
 
 app.meta.group_parameters = Group("Global Parameters", sort_key=0)

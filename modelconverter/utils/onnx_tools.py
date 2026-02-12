@@ -27,7 +27,9 @@ def get_extra_quant_tensors(
     output_configs: dict[str, OutputConfig],
     depth: int = 2,
 ) -> list[str]:
-    """Return unique tensor names that are inputs to producer nodes encountered when walking upstream from the selected graph outputs, up to depth producer hops.
+    """Return unique tensor names that are inputs to producer nodes
+    encountered when walking upstream from the selected graph outputs,
+    up to depth producer hops.
 
     - Starts from graph outputs whose names are keys in output_configs.
     - At each hop: for each tensor, find its producing node; add that node's
@@ -1398,21 +1400,21 @@ class ONNXModifier:
 
         inputs = {}
         for input in ort_session_1.get_inputs():
-            if input.type in ["tensor(float64)"]:
+            if input.type == "tensor(float64)":
                 input_type = np.float64
-            elif input.type in ["tensor(float32)", "tensor(float)"]:
+            elif input.type in {"tensor(float32)", "tensor(float)"}:
                 input_type = np.float32
-            elif input.type in ["tensor(float16)"]:
+            elif input.type == "tensor(float16)":
                 input_type = np.float16
-            elif input.type in ["tensor(int64)"]:
+            elif input.type == "tensor(int64)":
                 input_type = np.int64
-            elif input.type in ["tensor(int32)"]:
+            elif input.type == "tensor(int32)":
                 input_type = np.int32
-            elif input.type in ["tensor(int16)"]:
+            elif input.type == "tensor(int16)":
                 input_type = np.int16
-            elif input.type in ["tensor(int8)"]:
+            elif input.type == "tensor(int8)":
                 input_type = np.int8
-            elif input.type in ["tensor(bool)"]:
+            elif input.type == "tensor(bool)":
                 input_type = "bool"
 
             inputs[input.name] = np.random.rand(*input.shape).astype(

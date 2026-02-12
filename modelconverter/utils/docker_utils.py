@@ -12,12 +12,12 @@ from urllib.request import Request, urlopen
 
 import psutil
 import yaml
+from docker.utils import parse_repository_tag
 from loguru import logger
 from luxonis_ml.utils import environ
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 import docker
-from docker.utils import parse_repository_tag
 
 
 def get_docker_client_from_active_context() -> docker.DockerClient:
