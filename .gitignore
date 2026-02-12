@@ -147,4 +147,6 @@ shared_with_container/configs/_*
 tests/data/test_packages
 tests/data/test_utils/hubai_models
 
+.build
+
 .DS_Store
