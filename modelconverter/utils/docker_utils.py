@@ -155,10 +155,8 @@ def docker_build(
     tag_version = rvc4_tag_version(version) if target == "rvc4" else version
     if target == "rvc4":
         build_dir = prepare_build_environemnt(target, version)
-        dockerfile_path = build_dir / "docker" / target / "Dockerfile"
     else:
         build_dir = Path()
-        dockerfile_path = Path("docker", target, "Dockerfile")
 
     tag = f"{tag_version}-{bare_tag}"
 
@@ -173,7 +171,7 @@ def docker_build(
         docker_bin(),
         "build",
         "-f",
-        str(dockerfile_path),
+        str(build_dir / "docker" / target / "Dockerfile"),
         "-t",
         image,
         "--load",
