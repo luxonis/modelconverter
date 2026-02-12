@@ -435,9 +435,7 @@ class RVC4Analyzer(Analyzer):
             pl.col("layer_name")
             .str.split(":")
             .list.first()
-            .map_elements(
-                lambda x: self._replace_bad_layer_name(x), return_dtype=pl.Utf8
-            )
+            .map_elements(self._replace_bad_layer_name, return_dtype=pl.Utf8)
             .alias("layer_name"),
             pl.col("time_mean")
             .mul(1 / total_time)

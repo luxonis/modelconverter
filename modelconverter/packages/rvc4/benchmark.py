@@ -334,7 +334,7 @@ class RVC4Benchmark(Benchmark):
                     model_path,
                     platform=dai.Platform.RVC4.name,
                 ),
-                apiKey=environ.HUBAI_API_KEY if environ.HUBAI_API_KEY else "",
+                apiKey=environ.HUBAI_API_KEY or "",
             )
             tmp_dir = Path(model_archive).parent / "tmp"
             shutil.unpack_archive(model_archive, tmp_dir)
@@ -413,7 +413,7 @@ class RVC4Benchmark(Benchmark):
                     model_path,
                     platform=device.getPlatformAsString(),
                 ),
-                apiKey=environ.HUBAI_API_KEY if environ.HUBAI_API_KEY else "",
+                apiKey=environ.HUBAI_API_KEY or "",
             )
         elif str(model_path).endswith(".tar.xz"):
             modelPath = str(model_path)
