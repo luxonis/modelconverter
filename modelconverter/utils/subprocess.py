@@ -11,6 +11,7 @@ from typing import Any
 
 import psutil
 from loguru import logger
+from typing_extensions import Self
 
 from .exceptions import SubprocessException
 
@@ -161,7 +162,7 @@ class SubprocessHandle:
         """
         return self.proc.wait(timeout=self.timeout or timeout)
 
-    def __enter__(self) -> "SubprocessHandle":
+    def __enter__(self) -> Self:
         if shutil.which(self.cmd_name) is None:
             raise SubprocessException(
                 f"Command `{self.cmd_name}` not found. Ensure it is in PATH."

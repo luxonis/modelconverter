@@ -223,7 +223,7 @@ class RVC4Visualizer(Visualizer):
     def _get_csv_paths(
         self, dir_path: Path, comparison_type: str = "layer_comparison"
     ) -> dict[str, str]:
-        dir_path = dir_path if dir_path else constants.OUTPUTS_DIR / "analysis"
+        dir_path = dir_path or constants.OUTPUTS_DIR / "analysis"
         csv_paths = {}
 
         for file in dir_path.glob(f"*{comparison_type}*.csv"):

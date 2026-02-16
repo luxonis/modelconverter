@@ -55,9 +55,7 @@ class RVC2Benchmark(Benchmark):
                         model_path,
                         platform=device.getPlatformAsString(),
                     ),
-                    apiKey=environ.HUBAI_API_KEY
-                    if environ.HUBAI_API_KEY
-                    else "",
+                    apiKey=environ.HUBAI_API_KEY or "",
                 )
             )
         elif (
