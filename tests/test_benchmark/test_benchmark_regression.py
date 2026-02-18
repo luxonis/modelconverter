@@ -42,7 +42,11 @@ def test_benchmark_fps(
     target_enum = Target(benchmark_target)
 
     bench = get_benchmark(target_enum, model_slug)
-    configuration = {**bench.default_configuration}
+    configuration = {
+        **bench.default_configuration,
+        "power_benchmark": False,
+        "dsp_benchmark": False,
+    }
     if device_ip is not None:
         configuration["device_ip"] = device_ip
 
