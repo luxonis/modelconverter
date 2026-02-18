@@ -1,0 +1,29 @@
+{
+  "rvc4": {
+    "luxonis/yolov6-nano:r2-coco-512x288": {
+      "expected_fps": 841.98,
+      "tolerance_low": 0.05,
+      "tolerance_high": 0.30
+    },
+    "luxonis/yolov8-instance-segmentation-nano:coco-512x288": {
+      "expected_fps": 554.68,
+      "tolerance_low": 0.05,
+      "tolerance_high": 0.30
+    },
+    "luxonis/yolov8-nano-pose-estimation:coco-512x288": {
+      "expected_fps": 609.11,
+      "tolerance_low": 0.05,
+      "tolerance_high": 0.30
+    },
+    "luxonis/fastsam-s:512x288": {
+      "expected_fps": 475.68,
+      "tolerance_low": 0.05,
+      "tolerance_high": 0.30
+    },
+    "luxonis/deeplab-v3-plus:512x288": {
+      "expected_fps": 339.42,
+      "tolerance_low": 0.05,
+      "tolerance_high": 0.30
+    }
+  }
+}
