@@ -205,13 +205,10 @@ def prepare_build_environemnt(
     ) as z:
         z.extractall(build_path)
 
-    if not (
-        build_path
-        / f"modelconverter-{__version__}-beta"
-        / "docker"
-        / "extra_packages"
-        / f"snpe-{version}.zip"
-    ).exists():
+    if (p := Path("docker", "extra_packages", f"snpe-{version}.zip")).exists():
+        shutil.copy(p, build_path / f"modelconverter-{__version__}-beta" / p)
+
+    elif not (build_path / f"modelconverter-{__version__}-beta" / p).exists():
         download_snpe_archive(
             version,
             build_path
