@@ -5,15 +5,15 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'modelconverter/__init__.py'
-      - 'modelconverter/packages/hailo/**'
-      - 'modelconverter/packages/base_exporter.py'
-      - 'modelconverter/packages/base_inferer.py'
-      - 'tests/test_packages/test_hailo.py'
-      - 'docker/hailo/Dockerfile'
-      - 'docker/hailo/entrypoint.sh'
-      - '.github/workflows/modelconverter_test.yaml'
-      - '.github/workflows/hailo_test.yaml'
+      - "modelconverter/__init__.py"
+      - "modelconverter/packages/hailo/**"
+      - "modelconverter/packages/base_exporter.py"
+      - "modelconverter/packages/base_inferer.py"
+      - "tests/test_packages/test_hailo.py"
+      - "docker/hailo/Dockerfile"
+      - "docker/hailo/entrypoint.sh"
+      - ".github/workflows/modelconverter_test.yaml"
+      - ".github/workflows/hailo_test.yaml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -21,7 +21,6 @@ concurrency:
 
 jobs:
   hailo-test:
-
     strategy:
       fail-fast: false
       matrix:

@@ -1,4 +1,3 @@
-
 # Name of the model. Will be the stem of the input model if undefined.
 name: ~
 
@@ -8,10 +7,8 @@ rich_logging: true
 # List of stages for multistage models. Doesn't have to be provided
 # for single-stage models.
 stages:
-
   # Name of the stage. Required.
   stage_name:
-
     # Path to an ONNX or IR model. IR is supported only for RVC2 and RVC3 conversions.
     # It can be either a local file or an S3 url. Required.
     input_model: ~
@@ -46,19 +43,19 @@ stages:
       # The `link` section specifies how to use the outputs from the previous stage.
       # link:
 
-        # Name of the stage to link to. Required.
-        # stage: ~
+      # Name of the stage to link to. Required.
+      # stage: ~
 
-        # Name of the output to use. Either `output` or `script` must be provided.
-        # output: ~
+      # Name of the output to use. Either `output` or `script` must be provided.
+      # output: ~
 
-        # A custom python script to use for post-processing the linked output.
-        # It can be either a path or url to a python file, or a string with the script.
-        # The script must contain a function
-        # `run_script(outputs: dict[str, np.ndarray]) -> np.ndarray` which takes the
-        # dictionary of linked outputs and produces a single array.
-        # Either `output` or `script` must be provided.
-        # script: ~
+      # A custom python script to use for post-processing the linked output.
+      # It can be either a path or url to a python file, or a string with the script.
+      # The script must contain a function
+      # `run_script(outputs: dict[str, np.ndarray]) -> np.ndarray` which takes the
+      # dictionary of linked outputs and produces a single array.
+      # Either `output` or `script` must be provided.
+      # script: ~
 
     # Scale values to be used for the input image per channel.
     # Can be either:

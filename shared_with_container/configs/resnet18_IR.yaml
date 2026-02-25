@@ -5,7 +5,7 @@ input_model: "s3://luxonis-test-bucket/modelconverter-test/resnet18-simplified.b
 mean_values: "imagenet"
 scale_values: "imagenet"
 data_type: float32
-shape: [ 1, 3, 256, 256 ]
+shape: [1, 3, 256, 256]
 
 calibration:
   path: "s3://luxonis-test-bucket/modelconverter-test/coco128.zip"
