@@ -1,1 +1,71 @@
 
+name: HIL tests
+on:
+  workflow_dispatch:
+    inputs:
+      distinct_id:
+        description: "Run identifier"
+        required: false
+      oakctl:
+        required: false
+        description: "Oakctl Version"
+        type: string
+      reservation_name:
+        required: false
+        description: "Reservation Name"
+        type: string
+      hold_reservation:
+        # if set to true, testbed will stay reserved after process is done
+        # (recommended for CI use)
+        description: "Hold Testbed Reservation"
+        required: false
+        type: boolean
+      os:
+        description: "Which OS test. Supported: linux, windows, mac"
+        required: false
+        default: all
+        type: string
+      additional_options:
+        description: "Additional options:"
+        required: false
+        type: string
+
+jobs:
+  id:
+    name: Workflow ID Provider
+    runs-on: ubuntu-latest
+    steps:
+      - name: echo distinct ID ${{ github.event.inputs.distinct_id }}
+        run: echo ${{ github.event.inputs.distinct_id }}
+  BOM-test:
+    runs-on: ["self-hosted", "testbed-runner"]
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run tests
+        # yamllint disable rule:line-length
+        run: |
+          source ci/hil/prepare_hil_framework.sh ${{ secrets.HIL_PAT_TOKEN }}
+          if [[ -n "${{ github.event.inputs.reservation_name }}" ]]; then
+            RESERVATION_OPTION="--reservation-name ${{ github.event.inputs.reservation_name }}"
+          else
+            export RESERVATION_NAME="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#oakctl"
+            RESERVATION_OPTION="--reservation-name $RESERVATION_NAME"
+          fi
+
+          if [[ "${{ github.event.inputs.hold_reservation }}" == 'true' ]]; then
+            HOLD_RESERVATION="--hold-reservation"
+          fi
+
+          if [[ -n "${{ github.event.inputs.additional_options }}" ]]; then
+            ADDITIONAL_OPTIONS="${{ github.event.inputs.additional_options }}"
+          fi
+
+          exec hil_runner \
+            --platform rvc4 \
+            $HOLD_RESERVATION \
+            --wait \
+            $ADDITIONAL_OPTIONS \
+            $RESERVATION_OPTION  \
+            --sync-workspace --rsync-args="--exclude=venv"\
+            --commands "cd /tmp/modelconverter &&  export HUBAI_API_KEY=${{ secrets.HUBAI_API_KEY }} && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && python -m unittest discover -s tests -p '*_test.py'"
