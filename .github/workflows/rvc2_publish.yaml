@@ -10,7 +10,6 @@ on:
 
 jobs:
   rvc2-publish:
-
     strategy:
       fail-fast: false
       matrix:

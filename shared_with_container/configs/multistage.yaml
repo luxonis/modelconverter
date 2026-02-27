@@ -3,8 +3,8 @@ stages:
   yolov5n-seg:
     input_model: "s3://luxonis-test-bucket/modelconverter-test/yolov5n-seg.onnx"
 
-    mean_values: [ 0, 0, 0 ]
-    scale_values: [ 255, 255, 255 ]
+    mean_values: [0, 0, 0]
+    scale_values: [255, 255, 255]
     keep_intermediate_outputs: true
 
     calibration:

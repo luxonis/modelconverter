@@ -26,7 +26,7 @@ on:
         type: string
         description: >
           Which OS to use for the tests. If not specified, the default is 'ubuntu-latest'.
-        default: 'ubuntu-latest'
+        default: "ubuntu-latest"
 
 permissions:
   contents: read
@@ -49,101 +49,101 @@ jobs:
       DEFAULT: ${{ inputs.default }}
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Authenticate to Google Cloud
-      id: google-auth
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: ${{ secrets.GCP_CREDENTIALS }}
-        token_format: access_token
+      - name: Authenticate to Google Cloud
+        id: google-auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          token_format: access_token
 
-    - name: Docker login to GAR
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.GAR_LOCATION }}-docker.pkg.dev
-        username: oauth2accesstoken
-        password: ${{ steps.google-auth.outputs.access_token }}
+      - name: Docker login to GAR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GAR_LOCATION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.google-auth.outputs.access_token }}
 
-    - name: Docker login to GHCR
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
 
-    - name: Download build files from GCS
-      if: ${{ inputs.package }} != hailo
-      env:
-        GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
-      run: |
-        mkdir -p docker/extra_packages
-        cd docker/extra_packages
-        if [ "${PACKAGE}" = "rvc4" ]; then
-            gcloud storage cp                             \
-              "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
-              "snpe-${VERSION}.zip"
-        elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
-            gcloud storage cp                                    \
-              "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
-              "openvino-${VERSION}.tar.gz"
-        elif [ "${PACKAGE}" = "hailo" ]; then
-            gcloud storage cp                                    \
-              "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
-            docker load -i "hailo-${VERSION}.tar.gz"
-        fi
+      - name: Download build files from GCS
+        if: ${{ inputs.package }} != hailo
+        env:
+          GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
+        run: |
+          mkdir -p docker/extra_packages
+          cd docker/extra_packages
+          if [ "${PACKAGE}" = "rvc4" ]; then
+              gcloud storage cp                             \
+                "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
+                "snpe-${VERSION}.zip"
+          elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
+              gcloud storage cp                                    \
+                "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
+                "openvino-${VERSION}.tar.gz"
+          elif [ "${PACKAGE}" = "hailo" ]; then
+              gcloud storage cp                                    \
+                "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
+              docker load -i "hailo-${VERSION}.tar.gz"
+          fi
 
-    - name: Build image
-      run: |
-        DOCKERFILE="docker/${PACKAGE}/Dockerfile"
-        docker build -f "${DOCKERFILE}" -t "${LOCAL_NAME}" . --build-arg VERSION="${VERSION}"
+      - name: Build image
+        run: |
+          DOCKERFILE="docker/${PACKAGE}/Dockerfile"
+          docker build -f "${DOCKERFILE}" -t "${LOCAL_NAME}" . --build-arg VERSION="${VERSION}"
 
-    - name: GHCR publish latest
-      run: |
-        GHCR_NAME="ghcr.io/${LOCAL_NAME}"
-        docker tag "${LOCAL_NAME}" "${GHCR_NAME}"
-        docker push "${GHCR_NAME}"
-        if [ "${VERSION}" = "${DEFAULT}" ]; then
-          GHCR_LATEST_NAME="ghcr.io/${NAME}:latest"
-          docker tag "${LOCAL_NAME}" "${GHCR_LATEST_NAME}"
-          docker push "${GHCR_LATEST_NAME}"
-        fi
+      - name: GHCR publish latest
+        run: |
+          GHCR_NAME="ghcr.io/${LOCAL_NAME}"
+          docker tag "${LOCAL_NAME}" "${GHCR_NAME}"
+          docker push "${GHCR_NAME}"
+          if [ "${VERSION}" = "${DEFAULT}" ]; then
+            GHCR_LATEST_NAME="ghcr.io/${NAME}:latest"
+            docker tag "${LOCAL_NAME}" "${GHCR_LATEST_NAME}"
+            docker push "${GHCR_LATEST_NAME}"
+          fi
 
-    - name: GHCR publish SHA
-      run: |
-        SHA=$(git rev-parse --short HEAD)
-        GHCR_NAME="ghcr.io/${NAME}:${VERSION}-${SHA}"
-        docker tag "${LOCAL_NAME}" "${GHCR_NAME}"
-        docker push "${GHCR_NAME}"
+      - name: GHCR publish SHA
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          GHCR_NAME="ghcr.io/${NAME}:${VERSION}-${SHA}"
+          docker tag "${LOCAL_NAME}" "${GHCR_NAME}"
+          docker push "${GHCR_NAME}"
 
-    - name: GAR publish latest
-      run: |
-        GAR_NAME="${GAR_STEM}/internal/${STEM}:${VERSION}-latest"
-        docker tag "${LOCAL_NAME}" "${GAR_NAME}"
-        docker push "${GAR_NAME}"
-        if [ "${VERSION}" = "${DEFAULT}" ]; then
-          GAR_LATEST_NAME="${GAR_STEM}/internal/${STEM}:latest"
-          docker tag "${LOCAL_NAME}" "${GAR_LATEST_NAME}"
-          docker push "${GAR_LATEST_NAME}"
-        fi
+      - name: GAR publish latest
+        run: |
+          GAR_NAME="${GAR_STEM}/internal/${STEM}:${VERSION}-latest"
+          docker tag "${LOCAL_NAME}" "${GAR_NAME}"
+          docker push "${GAR_NAME}"
+          if [ "${VERSION}" = "${DEFAULT}" ]; then
+            GAR_LATEST_NAME="${GAR_STEM}/internal/${STEM}:latest"
+            docker tag "${LOCAL_NAME}" "${GAR_LATEST_NAME}"
+            docker push "${GAR_LATEST_NAME}"
+          fi
 
-    - name: GAR publish SHA
-      run: |
-        SHA=$(git rev-parse --short HEAD)
-        GAR_NAME="${GAR_STEM}/internal/${STEM}:${VERSION}-${SHA}"
-        docker tag "${LOCAL_NAME}" "${GAR_NAME}"
-        docker push "${GAR_NAME}"
+      - name: GAR publish SHA
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          GAR_NAME="${GAR_STEM}/internal/${STEM}:${VERSION}-${SHA}"
+          docker tag "${LOCAL_NAME}" "${GAR_NAME}"
+          docker push "${GAR_NAME}"
 
-    - name: GAR publish clients
-      run: |
-        read -r -a REPO_ARRAY <<< "${{ vars.EXTERNAL_CLIENTS }}"
+      - name: GAR publish clients
+        run: |
+          read -r -a REPO_ARRAY <<< "${{ vars.EXTERNAL_CLIENTS }}"
 
-        for REPO in "${REPO_ARRAY[@]}"; do
-          GAR_CLIENT_NAME="${GAR_STEM}/${REPO}/${STEM}:${VERSION}-${SHA}"
-          docker tag "${LOCAL_NAME}" "${GAR_CLIENT_NAME}"
-          docker push "${GAR_CLIENT_NAME}"
-        done
+          for REPO in "${REPO_ARRAY[@]}"; do
+            GAR_CLIENT_NAME="${GAR_STEM}/${REPO}/${STEM}:${VERSION}-${SHA}"
+            docker tag "${LOCAL_NAME}" "${GAR_CLIENT_NAME}"
+            docker push "${GAR_CLIENT_NAME}"
+          done
