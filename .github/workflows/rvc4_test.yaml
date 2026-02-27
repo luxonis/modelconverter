@@ -5,6 +5,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - requirements.txt
       - 'modelconverter/__init__.py'
       - 'modelconverter/packages/rvc4/**'
       - 'modelconverter/packages/base_exporter.py'
