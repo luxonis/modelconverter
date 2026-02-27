@@ -361,7 +361,7 @@ def get_docker_image(
 
     candidate_images = [image]
     if target == "rvc4":
-        candidate_images.append(f"{image_repo}-private:{tag}")
+        candidate_images.insert(0, f"{image_repo}-private:{tag}")
         # add full version if specified RVC4 tag is with
         # build number included (e.g. version=2.32.6.250402
         # instead of version=2.32.6)
