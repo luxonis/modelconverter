@@ -1,13 +1,9 @@
 Pillow
-gcsfs
 luxonis-ml[data,nn_archive,s3,gcs]>=0.8.2
+cyclopts
 onnx>=1.17.0,<1.19.0
 onnxruntime
 onnxsim
-s3fs==2026.1.0
-s3transfer
-click==8.1.8
-cyclopts
 docker
 keyring
 onnx_graphsurgeon

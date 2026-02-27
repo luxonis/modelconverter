@@ -153,7 +153,7 @@ def docker_build(
         version = get_default_target_version(target)
 
     tag_version = rvc4_tag_version(version) if target == "rvc4" else version
-    if target == "rvc4":
+    if target == "rvc4" and bare_tag != "dev":
         build_dir = prepare_build_environemnt(target, version)
     else:
         build_dir = Path()
