@@ -46,6 +46,7 @@ jobs:
     env:
       BARE_LOCAL_NAME: luxonis/modelconverter-${{ inputs.package }}
       LOCAL_NAME: luxonis/modelconverter-${{ inputs.package }}:${{ inputs.version }}-latest
+      PRIVATE_LOCAL_NAME: luxonis/modelconverter-${{ inputs.package }}-private:${{ inputs.version }}-latest
       DEFAULT: ${{ inputs.default }}
 
     steps:
@@ -97,6 +98,14 @@ jobs:
               docker load -i "hailo-${VERSION}.tar.gz"
           fi
 
+      - name: Check private package conditions
+        run: |
+          if [ "${PACKAGE}" = "rvc4" ] && [ "${VERSION}" = "2.23.0" ]; then
+            echo "PRIVATE_PACKAGE=true" >> $GITHUB_ENV
+          else
+            echo "PRIVATE_PACKAGE=" >> $GITHUB_ENV
+          fi
+
       - name: Build image
         run: |
           DOCKERFILE="docker/${PACKAGE}/Dockerfile"
@@ -104,7 +113,11 @@ jobs:
 
       - name: GHCR publish latest
         run: |
-          GHCR_NAME="ghcr.io/${LOCAL_NAME}"
+          if [ "${PRIVATE_PACKAGE}" ]; then
+            GHCR_NAME="ghcr.io/${PRIVATE_LOCAL_NAME}"
+          else
+            GHCR_NAME="ghcr.io/${LOCAL_NAME}"
+          fi
           docker tag "${LOCAL_NAME}" "${GHCR_NAME}"
           docker push "${GHCR_NAME}"
           if [ "${VERSION}" = "${DEFAULT}" ]; then
@@ -116,13 +129,21 @@ jobs:
       - name: GHCR publish SHA
         run: |
           SHA=$(git rev-parse --short HEAD)
-          GHCR_NAME="ghcr.io/${NAME}:${VERSION}-${SHA}"
+          if [ "${PRIVATE_PACKAGE}" ]; then
+            GHCR_NAME="ghcr.io/${NAME}-private:${VERSION}-${SHA}"
+          else
+            GHCR_NAME="ghcr.io/${NAME}:${VERSION}-${SHA}"
+          fi
           docker tag "${LOCAL_NAME}" "${GHCR_NAME}"
           docker push "${GHCR_NAME}"
 
       - name: GAR publish latest
         run: |
-          GAR_NAME="${GAR_STEM}/internal/${STEM}:${VERSION}-latest"
+          if [ "${PRIVATE_PACKAGE}" ]; then
+            GAR_NAME="${GAR_STEM}/internal/${STEM}-private:${VERSION}-latest"
+          else
+            GAR_NAME="${GAR_STEM}/internal/${STEM}:${VERSION}-latest"
+          fi
           docker tag "${LOCAL_NAME}" "${GAR_NAME}"
           docker push "${GAR_NAME}"
           if [ "${VERSION}" = "${DEFAULT}" ]; then
@@ -134,7 +155,11 @@ jobs:
       - name: GAR publish SHA
         run: |
           SHA=$(git rev-parse --short HEAD)
-          GAR_NAME="${GAR_STEM}/internal/${STEM}:${VERSION}-${SHA}"
+          if [ "${PRIVATE_PACKAGE}" ]; then
+            GAR_NAME="${GAR_STEM}/internal/${STEM}-private:${VERSION}-${SHA}"
+          else
+            GAR_NAME="${GAR_STEM}/internal/${STEM}:${VERSION}-${SHA}"
+          fi
           docker tag "${LOCAL_NAME}" "${GAR_NAME}"
           docker push "${GAR_NAME}"
 
