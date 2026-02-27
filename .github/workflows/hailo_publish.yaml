@@ -10,7 +10,6 @@ on:
 
 jobs:
   hailo-publish:
-
     strategy:
       fail-fast: false
       matrix:

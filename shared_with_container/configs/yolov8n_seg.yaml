@@ -2,8 +2,8 @@ name: yolov8_instance_seg
 stages:
   yolov8-seg:
     input_model: "models/yolov8n_seg_512x288.onnx"
-    mean_values: [ 0, 0, 0 ]
-    scale_values: [ 255, 255, 255 ]
+    mean_values: [0, 0, 0]
+    scale_values: [255, 255, 255]
     keep_intermediate_outputs: true
     calibration:
       path: "shared_with_container/calibration_data/imagenette-calib"

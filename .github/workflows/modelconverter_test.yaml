@@ -19,7 +19,7 @@ on:
         type: string
         description: >
           Which OS to use for the tests. If not specified, the default is 'ubuntu-latest'.
-        default: 'ubuntu-latest'
+        default: "ubuntu-latest"
 
 permissions:
   contents: read
@@ -34,52 +34,50 @@ env:
 
 jobs:
   tests:
-
     runs-on: ${{ inputs.os }}
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Set up Docker
+        uses: crazy-max/ghaction-setup-docker@v4
 
-    - name: Set up Docker
-      uses: crazy-max/ghaction-setup-docker@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        cache: pip
+      - name: Install dependencies
+        run: pip install -e .[dev]
 
-    - name: Install dependencies
-      run: pip install -e .[dev]
+      - name: Authenticate to Google Cloud
+        id: google-auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          token_format: access_token
 
-    - name: Authenticate to Google Cloud
-      id: google-auth
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: ${{ secrets.GCP_CREDENTIALS }}
-        token_format: access_token
+      - name: Prepare build dependencies
+        env:
+          GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
+        run: |
+          mkdir -p docker/extra_packages
+          if [ "${PACKAGE}" = "rvc4" ]; then
+              gcloud storage cp                             \
+                "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
+                "docker/extra_packages/snpe-${VERSION}.zip"
+          elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
+              gcloud storage cp                                    \
+                "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
+                "docker/extra_packages/openvino-${VERSION}.tar.gz"
+          elif [ "${PACKAGE}" = "hailo" ]; then
+              gcloud storage cp                                    \
+                "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
+              docker load -i "hailo-${VERSION}.tar.gz"
+          fi
 
-    - name: Prepare build dependencies
-      env:
-        GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
-      run: |
-        mkdir -p docker/extra_packages
-        if [ "${PACKAGE}" = "rvc4" ]; then
-            gcloud storage cp                             \
-              "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
-              "docker/extra_packages/snpe-${VERSION}.zip"
-        elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
-            gcloud storage cp                                    \
-              "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
-              "docker/extra_packages/openvino-${VERSION}.tar.gz"
-        elif [ "${PACKAGE}" = "hailo" ]; then
-            gcloud storage cp                                    \
-              "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
-            docker load -i "hailo-${VERSION}.tar.gz"
-        fi
-
-    - name: Run Tests
-      run: |
-        pytest -x "tests/test_packages/test_${PACKAGE}.py" --tool-version "${VERSION}"
+      - name: Run Tests
+        run: |
+          pytest -x "tests/test_packages/test_${PACKAGE}.py" --tool-version "${VERSION}"
