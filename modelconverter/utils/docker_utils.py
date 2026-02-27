@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 from urllib.error import HTTPError, URLError
@@ -359,9 +360,13 @@ def get_docker_image(
         image = f"{image_repo}:{tag}"
 
     candidate_images = [image]
-    # add full version if specified RVC4 tag is with build number included (e.g. version=2.32.6.250402 instead of version=2.32.6)
-    if target == "rvc4" and tag_version != version and image_tag is None:
-        candidate_images.append(f"{image_repo}:{version}-{bare_tag}")
+    if target == "rvc4":
+        candidate_images.insert(0, f"{image_repo}-private:{tag}")
+        # add full version if specified RVC4 tag is with
+        # build number included (e.g. version=2.32.6.250402
+        # instead of version=2.32.6)
+        if tag_version != version and image_tag is None:
+            candidate_images.append(f"{image_repo}:{version}-{bare_tag}")
 
     candidate_tags = set()
     for candidate in candidate_images:
@@ -374,17 +379,17 @@ def get_docker_image(
         if tags:
             return next(iter(tags))
 
-    logger.warning(
-        f"Image '{candidate_images[0]}' not found, pulling "
-        f"the latest image from 'ghcr.io/{candidate_images[0]}'..."
-    )
+    for candidate in candidate_images:
+        logger.warning(
+            f"Image '{candidate}' not found locally, pulling "
+            f"the latest image from 'ghcr.io/{candidate}'..."
+        )
 
-    try:
-        return pull_image(client, f"ghcr.io/{candidate_images[0]}")
+        with suppress(Exception):
+            return pull_image(client, f"ghcr.io/{candidate}")
 
-    except Exception:
-        logger.error("Failed to pull the image, building it locally...")
-        return docker_build(target, bare_tag, version, image)
+    logger.error("Failed to pull the image, building it locally...")
+    return docker_build(target, bare_tag, version, image)
 
 
 def docker_exec(
