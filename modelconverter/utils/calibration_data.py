@@ -27,15 +27,32 @@ def read_img_dir(path: Path, max_images: int) -> list[Path]:
     return imgs
 
 
+def _find_content_root(path: Path) -> Path:
+    current = path
+    while True:
+        contents = list(current.iterdir())
+        subdirs = [p for p in contents if p.is_dir()]
+        files = [p for p in contents if p.is_file()]
+
+        if files:
+            return current
+        if len(subdirs) == 1:
+            current = subdirs[0]
+        else:
+            # Multiple subdirectories and no files. Return current and let read_img_dir raise an error
+            return current
+
+
 def _get_from_remote(string: str, dest: Path, max_images: int = -1) -> Path:
     path = download_from_remote(string, dest, max_images)
     if path.suffix == ".zip":
         extracted_path = path.with_suffix("")
         if extracted_path.exists():
             shutil.rmtree(extracted_path)
+        extracted_path.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(path, "r") as zip_ref:
-            zip_ref.extractall(path.parent)
-        return extracted_path
+            zip_ref.extractall(extracted_path)
+        return _find_content_root(extracted_path)
     return path
 
 
