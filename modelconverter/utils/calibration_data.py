@@ -29,7 +29,7 @@ def read_img_dir(path: Path, max_images: int) -> list[Path]:
 
 def _find_content_root(path: Path) -> Path:
     IGNORE_DIRS = {"__MACOSX"}
-    IGNORE_FILES = {".DS_Store"}
+    IGNORE_FILES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
     current = path
     while True:
