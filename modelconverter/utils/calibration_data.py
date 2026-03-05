@@ -28,18 +28,17 @@ def read_img_dir(path: Path, max_images: int) -> list[Path]:
 
 
 def _find_content_root(path: Path) -> Path:
-    IGNORE_DIRS = {"__MACOSX"}
-    IGNORE_FILES = {".DS_Store", "Thumbs.db", "desktop.ini"}
+    ignored_entries = {"__MACOSX", "Thumbs.db", "desktop.ini"}
 
     current = path
     while True:
-        contents = list(current.iterdir())
-        subdirs = [
-            p for p in contents if p.is_dir() and p.name not in IGNORE_DIRS
+        contents = [
+            p
+            for p in current.iterdir()
+            if p.name not in ignored_entries and not p.name.startswith(".")
         ]
-        files = [
-            p for p in contents if p.is_file() and p.name not in IGNORE_FILES
-        ]
+        subdirs = [p for p in contents if p.is_dir()]
+        files = [p for p in contents if p.is_file()]
 
         if files:
             return current
