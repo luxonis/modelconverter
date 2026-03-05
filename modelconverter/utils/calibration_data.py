@@ -28,11 +28,18 @@ def read_img_dir(path: Path, max_images: int) -> list[Path]:
 
 
 def _find_content_root(path: Path) -> Path:
+    IGNORE_DIRS = {"__MACOSX"}
+    IGNORE_FILES = {".DS_Store"}
+
     current = path
     while True:
         contents = list(current.iterdir())
-        subdirs = [p for p in contents if p.is_dir()]
-        files = [p for p in contents if p.is_file()]
+        subdirs = [
+            p for p in contents if p.is_dir() and p.name not in IGNORE_DIRS
+        ]
+        files = [
+            p for p in contents if p.is_file() and p.name not in IGNORE_FILES
+        ]
 
         if files:
             return current
