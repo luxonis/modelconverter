@@ -1,0 +1,66 @@
+
+name: HIL tests
+on:
+  workflow_dispatch:
+    inputs:
+      distinct_id:
+        description: "Run identifier"
+        required: false
+      reservation_name:
+        required: false
+        description: "Reservation Name"
+        type: string
+      hold_reservation:
+        description: "Hold Testbed Reservation"
+        required: false
+        type: boolean
+      depthai_version:
+        description: "DepthAI version to test against (e.g., 3.3.0)"
+        required: true
+        type: string   
+      additional_options:
+        description: "Additional options:"
+        required: false
+        type: string
+
+jobs:
+  id:
+    name: Workflow ID Provider
+    runs-on: ubuntu-latest
+    steps:
+      - name: echo distinct ID ${{ github.event.inputs.distinct_id }}
+        run: echo ${{ github.event.inputs.distinct_id }}
+  BOM-test:
+    runs-on: ["self-hosted", "testbed-runner"]
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run tests
+        # yamllint disable rule:line-length
+        run: |
+          pip install hil-framework --upgrade \
+          --index-url "https://__token__:${{ secrets.HIL_FRAMEWORK_TOKEN }}@gitlab.luxonis.com/api/v4/projects/213/packages/pypi/simple"
+
+          if [[ -n "${{ github.event.inputs.reservation_name }}" ]]; then
+            RESERVATION_OPTION="--reservation-name ${{ github.event.inputs.reservation_name }}"
+          else
+            export RESERVATION_NAME="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#modelconverter"
+            RESERVATION_OPTION="--reservation-name $RESERVATION_NAME"
+          fi
+
+          if [[ "${{ github.event.inputs.hold_reservation }}" == 'true' ]]; then
+            HOLD_RESERVATION="--hold-reservation"
+          fi
+
+          if [[ -n "${{ github.event.inputs.additional_options }}" ]]; then
+            ADDITIONAL_OPTIONS="${{ github.event.inputs.additional_options }}"
+          fi
+
+          exec hil_runner \
+            --models "oak4_pro or oak4_d or oak4_s" \
+            $HOLD_RESERVATION \
+            --wait \
+            $ADDITIONAL_OPTIONS \
+            $RESERVATION_OPTION  \
+            --sync-workspace --rsync-args="--exclude=venv"\
+            --commands "cd /tmp/modelconverter &&  ./tests/test_benchmark/run_hil_tests.sh  ${{ secrets.HUBAI_API_KEY }} ${{ secrets.HIL_FRAMEWORK_TOKEN }} ${{ github.event.inputs.depthai_version }}"
