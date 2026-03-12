@@ -41,4 +41,4 @@ hostname=$(hil_camera -t "$HIL_TESTBED" -n test all info -j \
   | head -n1)
 
 # Run tests
-pytest tests/test_benchmark/ --device-ip "$hostname"
+pytest -s -v tests/test_benchmark/ --device-ip "$hostname"
