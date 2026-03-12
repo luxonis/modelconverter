@@ -53,7 +53,7 @@ jobs:
           fi
 
           exec hil_runner \
-            --platform rvc4 \
+            --models "oak4_pro or oak4_d or oak4_s" \
             $HOLD_RESERVATION \
             --wait \
             $ADDITIONAL_OPTIONS \
