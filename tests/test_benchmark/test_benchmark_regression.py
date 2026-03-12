@@ -61,6 +61,11 @@ def test_benchmark_fps(
 
     deviation_pct = ((actual_fps - expected_fps) / expected_fps) * 100
 
+    print(
+        f"Benchmark result for {model_slug}: "
+        f"actual={actual_fps:.2f} FPS, expected={expected_fps:.2f} FPS. "
+    )
+
     assert fps_min <= actual_fps <= fps_max, (
         f"FPS regression for {model_slug}: "
         f"actual={actual_fps:.2f}, expected={expected_fps:.2f} "
