@@ -11,6 +11,7 @@ fi
 # Export variables from input arguments
 export HUBAI_API_KEY="$1"
 export PAT_TOKEN="$2"
+export DEPTHAI_VERSION="$3"
 
 # Navigate to project directory
 cd /tmp/modelconverter
