@@ -23,7 +23,7 @@ source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
-pip install -r pytest
+pip install pytest
 
 pip install hil-framework --upgrade \
   --index-url "https://__token__:$PAT_TOKEN@gitlab.luxonis.com/api/v4/projects/213/packages/pypi/simple" \
