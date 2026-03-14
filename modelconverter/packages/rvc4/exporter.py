@@ -276,7 +276,7 @@ class RVC4Exporter(Exporter):
     def generate_io_encodings(self) -> Path:
         if self.custom_quantization_overrides is not None:
             encodings_dict = self.custom_quantization_overrides.model_dump(
-                mode="json"
+                mode="json", exclude_none=True
             )
         else:
             encodings_dict = {

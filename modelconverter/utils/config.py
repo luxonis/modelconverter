@@ -8,11 +8,17 @@ from loguru import logger
 from luxonis_ml.typing import BaseModelExtraForbid, PathType
 from luxonis_ml.utils import LuxonisConfig
 from onnx import TypeProto
-from pydantic import Field, PositiveInt, field_validator, model_validator
+from pydantic import (
+    Field,
+    PositiveInt,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from typing_extensions import Self
 
 from modelconverter.utils.calibration_data import download_calibration_data
-from modelconverter.utils.constants import MODELS_DIR
+from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
 from modelconverter.utils.filesystem_utils import resolve_path
 from modelconverter.utils.layout import make_default_layout
 from modelconverter.utils.metadata import Metadata, get_metadata
@@ -256,11 +262,20 @@ class RVC3Config(BlobBaseConfig):
 
 
 class QuantizationOverridesItem(BaseModelExtraForbid):
-    bitwidth: int
-    max: float
-    min: float
+    bitwidth: Annotated[int, Field(ge=4, le=32)] | None = None
+    is_symmetric: bool | None = None
+    dtype: Literal["int", "float"] | None = None
+    max: float | None = None
+    min: float | None = None
     offset: int | None = None
     scale: float | None = None
+
+    @field_serializer("is_symmetric", when_used="json")
+    @staticmethod
+    def serialize_is_symmetric(value: bool | None) -> str | None:
+        if value is None:
+            return None
+        return str(value)
 
 
 class QuantizationOverrides(BaseModelExtraForbid):
@@ -291,7 +306,7 @@ class RVC4Config(TargetConfig):
             return None
 
         if isinstance(value, str):
-            value_path = resolve_path(value, MODELS_DIR)
+            value_path = resolve_path(value, MISC_DIR)
             return QuantizationOverrides(**json.loads(value_path.read_text()))
 
         return QuantizationOverrides(**value)
