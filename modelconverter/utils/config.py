@@ -262,7 +262,7 @@ class RVC3Config(BlobBaseConfig):
 
 
 class QuantizationOverridesItem(BaseModelExtraForbid):
-    bitwidth: Annotated[int, Field(ge=4, le=32)] | None = None
+    bitwidth: Annotated[int, Literal[4, 8, 16, 32]] | None = None
     is_symmetric: bool | None = None
     dtype: Literal["int", "float"] | None = None
     max: float | None = None
@@ -280,7 +280,7 @@ class QuantizationOverridesItem(BaseModelExtraForbid):
 
 class QuantizationOverrides(BaseModelExtraForbid):
     activation_encodings: dict[str, list[QuantizationOverridesItem]]
-    parameter_encodings: dict[str, list[QuantizationOverridesItem]]
+    param_encodings: dict[str, list[QuantizationOverridesItem]]
 
 
 class RVC4Config(TargetConfig):
