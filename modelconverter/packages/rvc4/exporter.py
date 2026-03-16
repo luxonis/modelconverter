@@ -187,6 +187,7 @@ class RVC4Exporter(Exporter):
             args.append("--override_params")
         elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
             self._add_args(args, ["--act_bitwidth", "16"])
+        elif self.custom_quantization_overrides is not None:
             args.append("--override_params")
 
         start_time = time.time()
@@ -357,7 +358,14 @@ class RVC4Exporter(Exporter):
         elif self.quantization_mode in [
             QuantizationMode.INT8_16_MIX,
             QuantizationMode.INT8_16_MIX_ACC,
-        ]:
+        elif (
+            self.quantization_mode
+            in [
+                QuantizationMode.INT8_16_MIX,
+                QuantizationMode.INT8_16_MIX_ACC,
+            ]
+            or self.custom_quantization_overrides is not None
+        ):
             io_encodings_file = self.generate_io_encodings()
             self._add_args(
                 args,
