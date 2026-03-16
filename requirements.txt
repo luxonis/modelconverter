@@ -1,6 +1,6 @@
 Pillow
 luxonis-ml[data,nn_archive,s3,gcs]>=0.8.2
-cyclopts
+cyclopts==4.8.0
 onnx>=1.17.0,<1.19.0
 onnxruntime
 onnxsim
