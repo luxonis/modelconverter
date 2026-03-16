@@ -40,6 +40,7 @@ class RVC4Exporter(Exporter):
         super().__init__(config=config, output_dir=output_dir)
 
         rvc4_cfg = config.rvc4
+        self.encodings = rvc4_cfg.encodings
         self.snpe_onnx_to_dlc = rvc4_cfg.snpe_onnx_to_dlc_args
         self.snpe_dlc_quant = rvc4_cfg.snpe_dlc_quant_args
         self.snpe_dlc_graph_prepare = rvc4_cfg.snpe_dlc_graph_prepare_args
@@ -186,6 +187,7 @@ class RVC4Exporter(Exporter):
             args.append("--override_params")
         elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
             self._add_args(args, ["--act_bitwidth", "16"])
+        elif self.encodings is not None:
             args.append("--override_params")
 
         start_time = time.time()
@@ -273,20 +275,28 @@ class RVC4Exporter(Exporter):
         return self.input_list_path
 
     def generate_io_encodings(self) -> Path:
-        encodings_dict = {"activation_encodings": {}, "param_encodings": {}}
-        if not (list(self.inputs.keys()) and list(self.outputs.keys())):
-            logger.warning(
-                "Cannot generate I/O encodings as inputs or outputs are not defined. The resulting DLC may not be compatible with DAI."
+        if self.encodings is not None:
+            encodings_dict = self.encodings.model_dump(
+                mode="json", exclude_none=True
             )
-        for name in (
-            list(self.inputs.keys())
-            + list(self.outputs.keys())
-            + self.extra_quant_tensors
-        ):
-            encodings_dict["activation_encodings"][name] = [
-                {"bitwidth": 8, "dtype": "int"}
-            ]
-        encodings_path = self.intermediate_outputs_dir / "io_encodings.json"
+        else:
+            encodings_dict = {
+                "activation_encodings": {},
+                "param_encodings": {},
+            }
+            if not (list(self.inputs.keys()) and list(self.outputs.keys())):
+                logger.warning(
+                    "Cannot generate I/O encodings as inputs or outputs are not defined. The resulting DLC may not be compatible with DAI."
+                )
+            for name in (
+                list(self.inputs.keys())
+                + list(self.outputs.keys())
+                + self.extra_quant_tensors
+            ):
+                encodings_dict["activation_encodings"][name] = [
+                    {"bitwidth": 8, "dtype": "int"}
+                ]
+        encodings_path = self.intermediate_outputs_dir / "encodings.json"
         with open(encodings_path, "w") as encodings_file:
             json.dump(encodings_dict, encodings_file, indent=4)
         return encodings_path
@@ -345,10 +355,14 @@ class RVC4Exporter(Exporter):
 
         if self.quantization_mode == QuantizationMode.FP16_STD:
             self._add_args(args, ["--float_bitwidth", "16"])
-        elif self.quantization_mode in [
-            QuantizationMode.INT8_16_MIX,
-            QuantizationMode.INT8_16_MIX_ACC,
-        ]:
+        elif (
+            self.quantization_mode
+            in [
+                QuantizationMode.INT8_16_MIX,
+                QuantizationMode.INT8_16_MIX_ACC,
+            ]
+            or self.encodings is not None
+        ):
             io_encodings_file = self.generate_io_encodings()
             self._add_args(
                 args,

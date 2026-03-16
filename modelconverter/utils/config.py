@@ -1,24 +1,24 @@
+import json
 from itertools import chain
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
 import onnx
 from loguru import logger
-from luxonis_ml.typing import PathType
+from luxonis_ml.typing import BaseModelExtraForbid, PathType
 from luxonis_ml.utils import LuxonisConfig
 from onnx import TypeProto
 from pydantic import (
-    BaseModel,
-    ConfigDict,
     Field,
     PositiveInt,
+    field_serializer,
     field_validator,
     model_validator,
 )
 from typing_extensions import Self
 
 from modelconverter.utils.calibration_data import download_calibration_data
-from modelconverter.utils.constants import MODELS_DIR
+from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
 from modelconverter.utils.filesystem_utils import resolve_path
 from modelconverter.utils.layout import make_default_layout
 from modelconverter.utils.metadata import Metadata, get_metadata
@@ -40,11 +40,7 @@ NAMED_VALUES = {
 }
 
 
-class CustomBaseModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class LinkCalibrationConfig(CustomBaseModel):
+class LinkCalibrationConfig(BaseModelExtraForbid):
     stage: str
     output: str | None = None
     script: str | None = None
@@ -68,7 +64,7 @@ class LinkCalibrationConfig(CustomBaseModel):
         return script
 
 
-class ImageCalibrationConfig(CustomBaseModel):
+class ImageCalibrationConfig(BaseModelExtraForbid):
     path: Path
     max_images: int = -1
     resize_method: ResizeMethod = ResizeMethod.RESIZE
@@ -81,7 +77,7 @@ class ImageCalibrationConfig(CustomBaseModel):
         return download_calibration_data(str(value))
 
 
-class RandomCalibrationConfig(CustomBaseModel):
+class RandomCalibrationConfig(BaseModelExtraForbid):
     max_images: int = 20
     min_value: float = 0.0
     max_value: float = 255.0
@@ -90,7 +86,7 @@ class RandomCalibrationConfig(CustomBaseModel):
     data_type: DataType = DataType.FLOAT32
 
 
-class OutputConfig(CustomBaseModel):
+class OutputConfig(BaseModelExtraForbid):
     name: str
     shape: list[int] | None = None
     layout: str | None = None
@@ -123,7 +119,7 @@ class OutputConfig(CustomBaseModel):
         return self
 
 
-class EncodingConfig(CustomBaseModel):
+class EncodingConfig(BaseModelExtraForbid):
     from_: Annotated[
         Encoding, Field(alias="from", serialization_alias="from")
     ] = Encoding.RGB
@@ -225,7 +221,7 @@ class InputConfig(OutputConfig):
         return value
 
 
-class TargetConfig(CustomBaseModel):
+class TargetConfig(BaseModelExtraForbid):
     disable_calibration: bool = False
 
 
@@ -265,6 +261,28 @@ class RVC3Config(BlobBaseConfig):
     pot_target_device: PotDevice = PotDevice.VPU
 
 
+class QuantizationOverridesItem(BaseModelExtraForbid):
+    bitwidth: Annotated[int, Literal[4, 8, 16, 32]] | None = None
+    is_symmetric: bool | None = None
+    dtype: Literal["int", "float"] | None = None
+    max: float | None = None
+    min: float | None = None
+    offset: int | None = None
+    scale: float | None = None
+
+    @field_serializer("is_symmetric", when_used="json")
+    @staticmethod
+    def serialize_is_symmetric(value: bool | None) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+
+class Encodings(BaseModelExtraForbid):
+    activation_encodings: dict[str, list[QuantizationOverridesItem]]
+    param_encodings: dict[str, list[QuantizationOverridesItem]]
+
+
 class RVC4Config(TargetConfig):
     snpe_onnx_to_dlc_args: list[str] = []
     snpe_dlc_quant_args: list[str] = []
@@ -277,6 +295,37 @@ class RVC4Config(TargetConfig):
     htp_socs: list[
         Literal["sm8350", "sm8450", "sm8550", "sm8650", "qcs6490", "qcs8550"]
     ] = ["sm8550"]
+    encodings: Encodings | None = None
+
+    @model_validator(mode="after")
+    def validate_quantization_overrides(self) -> Self:
+        if "--quantization_overrides" in self.snpe_onnx_to_dlc_args:
+            if self.encodings:
+                raise ValueError(
+                    "Cannot specify both `--quantization_overrides`"
+                    "in `rvc4.snpe_onnx_to_dlc_args` and "
+                    "`rvc4.encodings` at the same time."
+                )
+            qo_index = self.snpe_onnx_to_dlc_args.index(
+                "--quantization_overrides"
+            )
+            self.snpe_onnx_to_dlc_args.pop(qo_index)
+            encodings_json = self.snpe_onnx_to_dlc_args.pop(qo_index)
+            with open(encodings_json) as f:
+                self.encodings = Encodings.model_validate_json(json.load(f))
+        return self
+
+    @field_validator("encodings", mode="before")
+    @staticmethod
+    def validate_encodings(value: Any) -> Encodings | None:
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            value_path = resolve_path(value, MISC_DIR)
+            return Encodings(**json.loads(value_path.read_text()))
+
+        return Encodings(**value)
 
     @model_validator(mode="after")
     def _validate_fp16(self) -> Self:
@@ -286,7 +335,7 @@ class RVC4Config(TargetConfig):
         return self
 
 
-class SingleStageConfig(CustomBaseModel):
+class SingleStageConfig(BaseModelExtraForbid):
     input_model: Path
     input_bin: Path | None = None
     input_file_type: InputFileType

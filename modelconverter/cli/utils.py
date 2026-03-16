@@ -72,7 +72,9 @@ def init_dirs() -> None:
 
 
 def get_configs(
-    path: str | None, opts: list[str] | dict[str, Any] | None = None
+    target: Target,
+    path: str | None,
+    opts: list[str] | dict[str, Any] | None = None,
 ) -> tuple[Config, NNArchiveConfig | None, str | None]:
     """Sets up the configuration.
 
@@ -99,7 +101,7 @@ def get_configs(
     if path is not None:
         path_ = resolve_path(path, MISC_DIR)
         if path_.is_dir() or is_nn_archive(path_):
-            return process_nn_archive(path_, overrides)
+            return process_nn_archive(target, path_, overrides)
     cfg = Config.get_config(path, overrides)
 
     main_stage_key = None

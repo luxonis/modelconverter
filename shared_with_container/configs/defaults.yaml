@@ -221,3 +221,12 @@ stages:
 
       # Pre-defined quantization modes for the RVC4 exporter. Pre-defined modes (except CUSTOM) will override any user-provided SNPE arguments via `snpe_onnx_to_dlc_args`, `snpe_dlc_quant_args`, and `snpe_dlc_graph_prepare_args`. The available quantization modes are: INT8_STANDARD, INT8_ACCURACY_FOCUSED, INT8_INT16_MIXED, FP16_STANDARD, and CUSTOM.
       quantization_mode: INT8_STANDARD
+
+      # Custom quantization overrides for the RVC4 exporter. The
+      # format is specified as a dictionary with two mandatory
+      # fields: `activation_encodings` and `param_encodings`.
+      # Each field is a list of dictionaries specifying the
+      # quantization encodings for the activations and parameters,
+      # respectively.
+      # The dictionaries in the lists must follow the AIMET specification.
+      encodings: ~

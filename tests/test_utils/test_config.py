@@ -68,6 +68,7 @@ DEFAULT_TARGET_CONFIGS = {
         "use_per_row_quantization": False,
         "quantization_mode": QuantizationMode.INT8_STD,
         "optimization_level": 2,
+        "encodings": None,
     },
     "hailo": {
         "force_onnx_names": True,
@@ -1146,7 +1147,7 @@ def test_output_nn_config_from_nn_archive(
             )
         shutil.copy(tar_path, nn_archive_path)
     config, archive_cfg, main_stage = process_nn_archive(
-        nn_archive_path, overrides=None
+        Target.RVC4, nn_archive_path, overrides=None
     )
     preprocessing = {}
     if nn_preprocess:
@@ -1334,7 +1335,9 @@ def test_encoding_nn_archive(
                 create_json(keys=keys, values=values), arcname="config.json"
             )
         shutil.copy(tar_path, nn_archive_path)
-    config, _, _ = process_nn_archive(nn_archive_path, overrides=None)
+    config, _, _ = process_nn_archive(
+        Target.RVC4, nn_archive_path, overrides=None
+    )
     assert config.get("stages.dummy_model.inputs.0.encoding") == expected
 
 
