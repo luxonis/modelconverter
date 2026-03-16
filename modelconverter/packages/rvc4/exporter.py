@@ -40,7 +40,7 @@ class RVC4Exporter(Exporter):
         super().__init__(config=config, output_dir=output_dir)
 
         rvc4_cfg = config.rvc4
-        self.custom_quantization_overrides = rvc4_cfg.quantization_overrides
+        self.encodings = rvc4_cfg.encodings
         self.snpe_onnx_to_dlc = rvc4_cfg.snpe_onnx_to_dlc_args
         self.snpe_dlc_quant = rvc4_cfg.snpe_dlc_quant_args
         self.snpe_dlc_graph_prepare = rvc4_cfg.snpe_dlc_graph_prepare_args
@@ -187,7 +187,7 @@ class RVC4Exporter(Exporter):
             args.append("--override_params")
         elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
             self._add_args(args, ["--act_bitwidth", "16"])
-        elif self.custom_quantization_overrides is not None:
+        elif self.encodings is not None:
             args.append("--override_params")
 
         start_time = time.time()
@@ -275,8 +275,8 @@ class RVC4Exporter(Exporter):
         return self.input_list_path
 
     def generate_io_encodings(self) -> Path:
-        if self.custom_quantization_overrides is not None:
-            encodings_dict = self.custom_quantization_overrides.model_dump(
+        if self.encodings is not None:
+            encodings_dict = self.encodings.model_dump(
                 mode="json", exclude_none=True
             )
         else:
@@ -355,16 +355,13 @@ class RVC4Exporter(Exporter):
 
         if self.quantization_mode == QuantizationMode.FP16_STD:
             self._add_args(args, ["--float_bitwidth", "16"])
-        elif self.quantization_mode in [
-            QuantizationMode.INT8_16_MIX,
-            QuantizationMode.INT8_16_MIX_ACC,
         elif (
             self.quantization_mode
             in [
                 QuantizationMode.INT8_16_MIX,
                 QuantizationMode.INT8_16_MIX_ACC,
             ]
-            or self.custom_quantization_overrides is not None
+            or self.encodings is not None
         ):
             io_encodings_file = self.generate_io_encodings()
             self._add_args(

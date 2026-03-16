@@ -68,7 +68,7 @@ DEFAULT_TARGET_CONFIGS = {
         "use_per_row_quantization": False,
         "quantization_mode": QuantizationMode.INT8_STD,
         "optimization_level": 2,
-        "quantization_overrides": None,
+        "encodings": None,
     },
     "hailo": {
         "force_onnx_names": True,

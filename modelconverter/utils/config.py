@@ -278,7 +278,7 @@ class QuantizationOverridesItem(BaseModelExtraForbid):
         return str(value)
 
 
-class QuantizationOverrides(BaseModelExtraForbid):
+class Encodings(BaseModelExtraForbid):
     activation_encodings: dict[str, list[QuantizationOverridesItem]]
     param_encodings: dict[str, list[QuantizationOverridesItem]]
 
@@ -295,21 +295,37 @@ class RVC4Config(TargetConfig):
     htp_socs: list[
         Literal["sm8350", "sm8450", "sm8550", "sm8650", "qcs6490", "qcs8550"]
     ] = ["sm8550"]
-    quantization_overrides: QuantizationOverrides | None = None
+    encodings: Encodings | None = None
 
-    @field_validator("quantization_overrides", mode="before")
+    @model_validator(mode="after")
+    def validate_quantization_overrides(self) -> Self:
+        if "--quantization_overrides" in self.snpe_onnx_to_dlc_args:
+            if self.encodings:
+                raise ValueError(
+                    "Cannot specify both `--quantization_overrides`"
+                    "in `rvc4.snpe_onnx_to_dlc_args` and "
+                    "`rvc4.encodings` at the same time."
+                )
+            qo_index = self.snpe_onnx_to_dlc_args.index(
+                "--quantization_overrides"
+            )
+            self.snpe_onnx_to_dlc_args.pop(qo_index)
+            encodings_json = self.snpe_onnx_to_dlc_args.pop(qo_index)
+            with open(encodings_json) as f:
+                self.encodings = Encodings.model_validate_json(json.load(f))
+        return self
+
+    @field_validator("encodings", mode="before")
     @staticmethod
-    def validate_quantization_overrides(
-        value: Any,
-    ) -> QuantizationOverrides | None:
+    def validate_encodings(value: Any) -> Encodings | None:
         if value is None:
             return None
 
         if isinstance(value, str):
             value_path = resolve_path(value, MISC_DIR)
-            return QuantizationOverrides(**json.loads(value_path.read_text()))
+            return Encodings(**json.loads(value_path.read_text()))
 
-        return QuantizationOverrides(**value)
+        return Encodings(**value)
 
     @model_validator(mode="after")
     def _validate_fp16(self) -> Self:

@@ -36,7 +36,7 @@ def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
 
 
 def process_nn_archive(
-    path: Path, overrides: dict[str, Any] | None
+    target: Target, path: Path, overrides: dict[str, Any] | None
 ) -> tuple[Config, NNArchiveConfig, str]:
     """Extracts the archive from tar and parses its config.
 
@@ -86,6 +86,15 @@ def process_nn_archive(
         "inputs": [],
         "outputs": [],
     }
+
+    if (
+        target is Target.RVC4
+        and (p := untar_path / "encondings.json").exists()
+    ):
+        logger.info("Using custom `encodings.json` from the NN Archive.")
+        main_stage_config["rvc4"] = {
+            "encodings": json.loads(p.read_text()),
+        }
 
     for inp in archive_config.model.inputs:
         reverse = inp.preprocessing.reverse_channels

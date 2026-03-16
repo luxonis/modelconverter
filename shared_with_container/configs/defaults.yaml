@@ -229,4 +229,4 @@ stages:
       # quantization encodings for the activations and parameters,
       # respectively.
       # The dictionaries in the lists must follow the AIMET specification.
-      quantization_overrides: ~
+      encodings: ~
