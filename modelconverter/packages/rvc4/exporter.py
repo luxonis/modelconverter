@@ -296,7 +296,7 @@ class RVC4Exporter(Exporter):
                 encodings_dict["activation_encodings"][name] = [
                     {"bitwidth": 8, "dtype": "int"}
                 ]
-        encodings_path = self.intermediate_outputs_dir / "io_encodings.json"
+        encodings_path = self.intermediate_outputs_dir / "encodings.json"
         with open(encodings_path, "w") as encodings_file:
             json.dump(encodings_dict, encodings_file, indent=4)
         return encodings_path
