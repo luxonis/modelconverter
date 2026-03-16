@@ -127,7 +127,7 @@ def convert(
 
     with catch_exceptions():
         init_dirs()
-        cfg, archive_cfg, _main_stage = get_configs(path, opts)
+        cfg, archive_cfg, _main_stage = get_configs(target, path, opts)
         main_stage = main_stage or _main_stage
         is_multistage = len(cfg.stages) > 1
         if is_multistage and main_stage is None:
@@ -264,7 +264,7 @@ def infer(
     if path is not None:
         config = path
     with catch_exceptions():
-        mult_cfg, _, _ = get_configs(str(config), opts)
+        mult_cfg, _, _ = get_configs(target, str(config), opts)
         cfg = mult_cfg.get_stage_config(stage)
         setup_logging(
             file="modelconverter.log", use_rich=mult_cfg.rich_logging
