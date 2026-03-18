@@ -34,7 +34,7 @@ jobs:
     name: Workflow ID Provider
     runs-on: ubuntu-latest
     steps:
-      - name: echo distinct ID $DISTINCT_ID
+      - name: echo distinct ID ${{ env.DISTINCT_ID }}
         run: echo $DISTINCT_ID
   BOM-test:
     runs-on: ["self-hosted", "testbed-runner"]
