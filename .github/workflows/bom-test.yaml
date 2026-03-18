@@ -23,13 +23,17 @@ on:
         required: false
         type: string
 
+env:
+  DISTINCT_ID: ${{ github.event.inputs.distinct_id }}
+  DEPTHAI_VERSION: ${{ github.event.inputs.depthai_version }}
+
 jobs:
   id:
     name: Workflow ID Provider
     runs-on: ubuntu-latest
     steps:
-      - name: echo distinct ID ${{ github.event.inputs.distinct_id }}
-        run: echo ${{ github.event.inputs.distinct_id }}
+      - name: echo distinct ID $DISTINCT_ID
+        run: echo $DISTINCT_ID
   BOM-test:
     runs-on: ["self-hosted", "testbed-runner"]
     steps:
@@ -56,6 +60,10 @@ jobs:
             ADDITIONAL_OPTIONS="${{ github.event.inputs.additional_options }}"
           fi
 
+          if [[ "$DEPTHAI_VERSION" =~ ^3\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
+            DEPTHAI_VERSION_CHECKED="$DEPTHAI_VERSION"
+          fi
+
           exec hil_runner \
             --models "oak4_pro or oak4_d or oak4_s" \
             $HOLD_RESERVATION \
@@ -63,4 +71,4 @@ jobs:
             $ADDITIONAL_OPTIONS \
             $RESERVATION_OPTION  \
             --sync-workspace --rsync-args="--exclude=venv"\
-            --commands "cd /tmp/modelconverter &&  ./tests/test_benchmark/run_hil_tests.sh  ${{ secrets.HUBAI_API_KEY }} ${{ secrets.HIL_FRAMEWORK_TOKEN }} ${{ github.event.inputs.depthai_version }}"
+            --commands "cd /tmp/modelconverter &&  ./tests/test_benchmark/run_hil_tests.sh  ${{ secrets.HUBAI_API_KEY }} ${{ secrets.HIL_FRAMEWORK_TOKEN }} $DEPTHAI_VERSION_CHECKED"
