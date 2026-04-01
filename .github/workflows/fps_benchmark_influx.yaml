@@ -1,0 +1,91 @@
+name: HIL FPS Benchmark Influx
+
+on:
+  workflow_dispatch:
+    inputs:
+      testbed:
+        description: "HIL testbed to run on"
+        required: true
+        type: string
+      depthai_version:
+        description: "DepthAI version to test against (e.g. 3.3.0)"
+        required: true
+        type: string
+      os_version:
+        description: "Optional camera OS version to install before the benchmark"
+        required: false
+        type: string
+      hold_reservation:
+        description: "Hold testbed reservation after the run"
+        required: false
+        type: boolean
+
+env:
+  TESTBED: ${{ github.event.inputs.testbed }}
+  DEPTHAI_VERSION: ${{ github.event.inputs.depthai_version }}
+  OS_VERSION: ${{ github.event.inputs.os_version }}
+  HIL_FRAMEWORK_TOKEN: ${{ secrets.HIL_FRAMEWORK_TOKEN }}
+  HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
+  HOLD_RESERVATION: ${{ github.event.inputs.hold_reservation }}
+  INFLUX_BUCKET: fps_metric
+
+jobs:
+  fps-benchmark:
+    runs-on: ["self-hosted", "testbed-runner"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run benchmark and push to Influx
+        run: |
+          set -euo pipefail
+
+          pip install hil-framework --upgrade \
+            --index-url "https://__token__:$HIL_FRAMEWORK_TOKEN@gitlab.luxonis.com/api/v4/projects/213/packages/pypi/simple"
+
+          export RESERVATION_NAME="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#fps-benchmark-influx"
+          RESERVATION_OPTION="--reservation-name $RESERVATION_NAME"
+
+          HOLD_RESERVATION_OPTION=""
+          if [[ "$HOLD_RESERVATION" == "true" ]]; then
+            HOLD_RESERVATION_OPTION="--hold-reservation"
+          fi
+
+          OS_VERSION_OPTION=""
+          if [[ -n "$OS_VERSION" ]]; then
+            OS_VERSION_OPTION="--os-version $OS_VERSION"
+          fi
+
+          if [[ "$DEPTHAI_VERSION" =~ ^3\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
+            DEPTHAI_VERSION_CHECKED="$DEPTHAI_VERSION"
+          else
+            echo "Invalid depthai version: $DEPTHAI_VERSION" >&2
+            exit 1
+          fi
+
+          : "${INFLUX_HOST:?INFLUX_HOST is required on the runner}"
+          : "${INFLUX_ORG:?INFLUX_ORG is required on the runner}"
+          : "${INFLUX_TOKEN:?INFLUX_TOKEN is required on the runner}"
+
+          : "${INFLUX_BUCKET:?INFLUX_BUCKET must be set by the workflow}"
+
+          REMOTE_CMD="export HIL_RUN_ID=\"$GITHUB_RUN_ID\" \
+            INFLUX_HOST=\"$INFLUX_HOST\" \
+            INFLUX_ORG=\"$INFLUX_ORG\" \
+            INFLUX_BUCKET=\"$INFLUX_BUCKET\" \
+            INFLUX_TOKEN=\"$INFLUX_TOKEN\" && \
+            cd /tmp/modelconverter && \
+            ./tests/test_benchmark/run_hil_tests.sh \
+              \"$HUBAI_API_KEY\" \
+              \"$HIL_FRAMEWORK_TOKEN\" \
+              \"$DEPTHAI_VERSION_CHECKED\" \
+              \"$TESTBED\""
+
+          exec hil_runner \
+            --testbed "$TESTBED" \
+            $HOLD_RESERVATION_OPTION \
+            --wait \
+            $OS_VERSION_OPTION \
+            $RESERVATION_OPTION \
+            --sync-workspace --rsync-args="--exclude=venv" \
+            --commands "$REMOTE_CMD"
