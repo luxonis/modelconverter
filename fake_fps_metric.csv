@@ -1,6 +1,6 @@
-#datatype measurement,tag,tag,tag,tag,tag,field,double,double,double,double,double,tag,dateTime:RFC3339
-#group false,false,false,false,false,false,false,false,false,false,false,false,false
-#default fps_benchmark,,,,,,,,,,,,
+#datatype measurement,tag,tag,tag,tag,tag,boolean,double,double,double,double,double,tag,dateTime:RFC3339
+#group false,false,false,false,false,false,false,false,false,false,false,false,false,false
+#default ,,,,,,,,,,,,,
 _measurement,model_slug,benchmark_target,run_id,status,testbed_name,success,actual_fps,expected_fps,tolerance_low,tolerance_high,deviation_pct,device_ip,_time
 fps_benchmark,luxonis/yolov6-nano:r2-coco-512x288,rvc4,manual-test-001,passed,testbed-a,true,830.23,750.00,0.10,0.30,10.70,10.12.142.57,2026-04-02T07:53:02Z
 fps_benchmark,luxonis/yolov8-instance-segmentation-nano:coco-512x288,rvc4,manual-test-001,passed,testbed-a,true,568.62,554.68,0.10,0.30,2.51,10.12.142.57,2026-04-02T07:53:30Z
