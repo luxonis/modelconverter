@@ -22,7 +22,7 @@ env:
   HIL_FRAMEWORK_TOKEN: ${{ secrets.HIL_FRAMEWORK_TOKEN }}
   HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
   HOLD_RESERVATION: ${{ github.event.inputs.hold_reservation }}
-  INFLUX_BUCKET: fps_metric
+  INFLUX_BUCKET: fps_metrics
 
 jobs:
   fps-benchmark:

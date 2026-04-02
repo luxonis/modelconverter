@@ -25,7 +25,7 @@ env:
   INFLUX_HOST: ${{ secrets.INFLUX_HOST }}
   INFLUX_ORG: ${{ secrets.INFLUX_ORG }}
   INFLUX_TOKEN: ${{ secrets.INFLUX_TOKEN }}
-  INFLUX_BUCKET: fps_metric
+  INFLUX_BUCKET: fps_metrics
 
 jobs:
   fps-benchmark:
