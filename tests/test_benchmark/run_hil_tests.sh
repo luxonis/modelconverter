@@ -3,8 +3,8 @@
 set -e  # Exit immediately if a command fails
 
 # Check if required arguments were provided
-if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ] || [ -z "$4" ]; then
-  echo "Usage: $0 <HUBAI_API_KEY> <PAT_TOKEN> <DAI_VERSION> <TESTBED_NAME>"
+if [ -z "${1:-}" ] || [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
+  echo "Usage: $0 <HUBAI_API_KEY> <PAT_TOKEN> <DAI_VERSION> [TESTBED_NAME]"
   exit 1
 fi
 
@@ -12,7 +12,7 @@ fi
 export HUBAI_API_KEY="$1"
 export PAT_TOKEN="$2"
 export DEPTHAI_VERSION="$3"
-export HIL_TESTBED_NAME="$4"
+export HIL_TESTBED_NAME="${4:-}"
 
 # Navigate to project directory
 cd /tmp/modelconverter
@@ -70,6 +70,11 @@ camera_os=$(
     | jq -r '.items[0].os // empty' 2>/dev/null \
     | head -n1
 )
+detected_testbed_name=$(
+  printf '%s' "$oakctl_output" \
+    | jq -r '.items[0].name // .items[0].hostname // .items[0].id // empty' 2>/dev/null \
+    | head -n1
+)
 runner_hostname=$(hostname 2>/dev/null || printf 'unknown')
 server_os=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]' || printf 'unknown')
 
@@ -93,6 +98,12 @@ if [ -z "$runner_hostname" ]; then
 fi
 if [ -z "$server_os" ]; then
   server_os="unknown"
+fi
+if [ -z "$HIL_TESTBED_NAME" ]; then
+  HIL_TESTBED_NAME="${detected_testbed_name:-}"
+fi
+if [ -z "$HIL_TESTBED_NAME" ]; then
+  HIL_TESTBED_NAME="unknown"
 fi
 
 # Run tests

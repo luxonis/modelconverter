@@ -3,10 +3,6 @@ name: HIL FPS Benchmark Influx
 on:
   workflow_dispatch:
     inputs:
-      testbed:
-        description: "HIL testbed to run on"
-        required: true
-        type: string
       depthai_version:
         description: "DepthAI version to test against (e.g. 3.3.0)"
         required: true
@@ -21,7 +17,6 @@ on:
         type: boolean
 
 env:
-  TESTBED: ${{ github.event.inputs.testbed }}
   DEPTHAI_VERSION: ${{ github.event.inputs.depthai_version }}
   OS_VERSION: ${{ github.event.inputs.os_version }}
   HIL_FRAMEWORK_TOKEN: ${{ secrets.HIL_FRAMEWORK_TOKEN }}
@@ -78,11 +73,10 @@ jobs:
             ./tests/test_benchmark/run_hil_tests.sh \
               \"$HUBAI_API_KEY\" \
               \"$HIL_FRAMEWORK_TOKEN\" \
-              \"$DEPTHAI_VERSION_CHECKED\" \
-              \"$TESTBED\""
+              \"$DEPTHAI_VERSION_CHECKED\""
 
           exec hil_runner \
-            --testbed "$TESTBED" \
+            --models "oak4_pro or oak4_d or oak4_s" \
             $HOLD_RESERVATION_OPTION \
             --wait \
             $OS_VERSION_OPTION \
