@@ -103,6 +103,9 @@ if [ -z "$HIL_TESTBED_NAME" ]; then
   HIL_TESTBED_NAME="${detected_testbed_name:-}"
 fi
 if [ -z "$HIL_TESTBED_NAME" ]; then
+  HIL_TESTBED_NAME="$(hostname 2>/dev/null || printf '')"
+fi
+if [ -z "$HIL_TESTBED_NAME" ]; then
   HIL_TESTBED_NAME="unknown"
 fi
 

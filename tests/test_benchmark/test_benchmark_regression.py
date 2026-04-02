@@ -32,6 +32,12 @@ def _escape_tag(value: str) -> str:
     )
 
 
+def _normalize_tag(value: str | None) -> str:
+    if value in (None, ""):
+        return "unknown"
+    return str(value)
+
+
 def _format_field(value: str | float | bool) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -73,24 +79,19 @@ def _write_fps_result_to_influx(
         "benchmark_target": benchmark_target,
         "run_id": benchmark_run_id,
         "status": "passed" if success else "failed",
+        "testbed_name": _normalize_tag(influx_metadata.get("testbed_name")),
+        "camera_mxid": _normalize_tag(influx_metadata.get("camera_mxid")),
+        "camera_os_version": _normalize_tag(
+            influx_metadata.get("camera_os_version")
+        ),
+        "camera_model": _normalize_tag(influx_metadata.get("camera_model")),
+        "camera_agent_version": _normalize_tag(
+            influx_metadata.get("camera_agent_version")
+        ),
+        "runner": _normalize_tag(influx_metadata.get("runner")),
+        "server_os": _normalize_tag(influx_metadata.get("server_os")),
+        "device_ip": _normalize_tag(device_ip),
     }
-    optional_tags = {
-        "testbed_name": influx_metadata.get("testbed_name"),
-        "camera_mxid": influx_metadata.get("camera_mxid"),
-        "camera_os_version": influx_metadata.get("camera_os_version"),
-        "camera_model": influx_metadata.get("camera_model"),
-        "camera_agent_version": influx_metadata.get("camera_agent_version"),
-        "runner": influx_metadata.get("runner"),
-        "server_os": influx_metadata.get("server_os"),
-        "device_ip": device_ip,
-    }
-    tags.update(
-        {
-            key: value
-            for key, value in optional_tags.items()
-            if value not in (None, "")
-        }
-    )
 
     fields = {
         "actual_fps": actual_fps,
