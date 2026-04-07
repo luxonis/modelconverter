@@ -61,6 +61,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Server OS for Influx metadata.",
     )
     parser.addoption(
+        "--depthai-version",
+        action="store",
+        default=None,
+        help="DepthAI version used for the benchmark run.",
+    )
+    parser.addoption(
         "--run-id",
         action="store",
         default=None,
@@ -117,6 +123,9 @@ def influx_metadata(request: pytest.FixtureRequest) -> dict[str, str | None]:
         or os.environ.get("HOSTNAME")
         or os.environ.get("USER"),
         "server_os": _option_or_env(request, "--server-os", "HIL_SERVER_OS"),
+        "depthai_version": _option_or_env(
+            request, "--depthai-version", "DEPTHAI_VERSION"
+        ),
     }
 
 

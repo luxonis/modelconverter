@@ -90,6 +90,9 @@ def _write_fps_result_to_influx(
         ),
         "runner": _normalize_tag(influx_metadata.get("runner")),
         "server_os": _normalize_tag(influx_metadata.get("server_os")),
+        "depthai_version": _normalize_tag(
+            influx_metadata.get("depthai_version")
+        ),
         "device_ip": _normalize_tag(device_ip),
     }
 
@@ -109,11 +112,16 @@ def _write_fps_result_to_influx(
         f"{key}={_format_field(value)}" for key, value in fields.items()
     )
     line = f"fps_benchmark,{tag_set} {field_set}"
+    print(f"Influx write debug: {line}")
 
     write_url = (
         f"{influx_url.rstrip('/')}/api/v2/write?"
         f"org={parse.quote(influx_org, safe='')}&"
         f"bucket={parse.quote(influx_bucket, safe='')}&precision=ns"
+    )
+    print(
+        "Influx request debug: "
+        f"url={write_url}, token={'<set>' if influx_token else '<unset>'}"
     )
     influx_request = request.Request(
         write_url,
