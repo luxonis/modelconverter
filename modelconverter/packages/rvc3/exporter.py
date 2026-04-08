@@ -106,7 +106,10 @@ class RVC3Exporter(RVC2Exporter):
                 data_type=DataType.UINT8,
                 transpose=False,
             )
-            cv2.imwrite(str(calibration_img_dir / file.name), img)
+            suffix = ".png" if file.suffix == ".npy" else file.suffix
+            cv2.imwrite(
+                str((calibration_img_dir / file.stem).with_suffix(suffix)), img
+            )
 
         config = {
             "model": {
