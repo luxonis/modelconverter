@@ -4,15 +4,24 @@ from pathlib import Path
 
 import numpy as np
 import onnx
-import onnx_graphsurgeon as gs
 import onnxruntime as ort
 from loguru import logger
 from onnx import TensorProto, checker, helper
 from onnxsim import simplify
 
 from modelconverter.utils.config import InputConfig, OutputConfig
+from modelconverter.utils.onnx_compatibility import (
+    ensure_onnx_helper_compatibility,
+    save_onnx_model,
+)
 
 from .exceptions import ONNXException
+
+ensure_onnx_helper_compatibility()
+
+# GraphSurgeon still imports helper conversion functions removed in ONNX 1.21.
+# Patch them back in before importing GraphSurgeon.
+import onnx_graphsurgeon as gs  # noqa: E402
 
 
 def get_opset_version(model: onnx.ModelProto) -> int:
@@ -284,15 +293,12 @@ def onnx_attach_normalization_to_inputs(
 
     graph.initializer.extend(new_initializers)
 
-    if model_data_path:
-        onnx.save(
-            model,
-            str(save_path),
-            save_as_external_data=True,
-            location=f"{save_path.name}_data",
-        )
-    else:
-        onnx.save(model, str(save_path))
+    save_onnx_model(
+        model,
+        save_path,
+        save_as_external_data=model_data_path is not None,
+        location=f"{save_path.name}_data",
+    )
 
     checker.check_model(str(save_path))
 
@@ -413,7 +419,7 @@ class ONNXModifier:
             with tempfile.NamedTemporaryFile(
                 delete=True, suffix=".onnx"
             ) as tmp_onnx_file:
-                onnx.save(
+                save_onnx_model(
                     optimized_onnx_model,
                     tmp_onnx_file.name,
                     save_as_external_data=True,
@@ -440,15 +446,13 @@ class ONNXModifier:
 
         self.onnx_model.ir_version = min(self.onnx_model.ir_version, 10)
 
-        if self.has_external_data:
-            onnx.save(
-                self.onnx_model,
-                str(self.output_path),
-                save_as_external_data=True,
-                location=f"{self.output_path.name}_data",
-            )
-        else:
-            onnx.save(self.onnx_model, self.output_path)
+        save_onnx_model(
+            self.onnx_model,
+            self.output_path,
+            save_as_external_data=self.has_external_data,
+            location=f"{self.output_path.name}_data",
+        )
+        onnx.checker.check_model(str(self.output_path))
 
     def add_outputs(self, output_names: list[str]) -> None:
         """Add output nodes to the ONNX model.
