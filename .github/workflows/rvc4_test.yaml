@@ -1,4 +1,4 @@
-name: HIL FPS Benchmark Influx
+name: HIL FPS Benchmark
 
 on:
   workflow_dispatch:
@@ -34,14 +34,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run benchmark and push to Influx
+      - name: Run benchmark
         run: |
           set -euo pipefail
 
           pip install hil-framework --upgrade \
             --index-url "https://__token__:$HIL_FRAMEWORK_TOKEN@gitlab.luxonis.com/api/v4/projects/213/packages/pypi/simple"
 
-          export RESERVATION_NAME="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#fps-benchmark-influx"
+          export RESERVATION_NAME="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#fps-benchmark"
           RESERVATION_OPTION="--reservation-name $RESERVATION_NAME"
 
           HOLD_RESERVATION_OPTION=""
