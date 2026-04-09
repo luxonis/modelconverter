@@ -33,6 +33,8 @@ from modelconverter.utils import (
     archive_from_model,
     docker_build,
     docker_exec,
+    get_default_target_version,
+    get_local_docker_image,
     in_docker,
     resolve_path,
     upload_to_remote,
@@ -630,9 +632,21 @@ def launcher(
     target = bound.arguments["target"]
 
     if dev:
-        docker_build(
-            target.value, bare_tag=tag, version=tool_version, image=image
-        )
+        version = tool_version or get_default_target_version(target.value)
+        # CI invokes multiple dev docker commands per job; reuse the first
+        # local build so later commands don't rebuild the same image again.
+        if not (
+            os.getenv("CI") == "true"
+            and get_local_docker_image(
+                target.value,
+                bare_tag=tag,
+                version=version,
+                image=image,
+            )
+        ):
+            docker_build(
+                target.value, bare_tag=tag, version=version, image=image
+            )
 
     docker_exec(
         target.value,

@@ -346,9 +346,26 @@ def get_docker_image(
 ) -> str:
     check_docker()
 
+    local_image = get_local_docker_image(target, bare_tag, version, image)
+    if local_image is not None:
+        return local_image
+
+    candidate_images = _get_candidate_docker_images(
+        target, bare_tag, version, image
+    )
+    return _get_or_build_docker_image(
+        target, bare_tag, version, candidate_images, image
+    )
+
+
+def _get_candidate_docker_images(
+    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+    bare_tag: str,
+    version: str,
+    image: str | None = None,
+) -> list[str]:
     tag_version = rvc4_tag_version(version) if target == "rvc4" else version
     tag = f"{tag_version}-{bare_tag}"
-    client = get_docker_client_from_active_context()
 
     if image is not None:
         image_repo, image_tag = parse_repository_tag(image)
@@ -368,6 +385,21 @@ def get_docker_image(
         if tag_version != version and image_tag is None:
             candidate_images.append(f"{image_repo}:{version}-{bare_tag}")
 
+    return candidate_images
+
+
+def get_local_docker_image(
+    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+    bare_tag: str,
+    version: str,
+    image: str | None = None,
+) -> str | None:
+    check_docker()
+
+    candidate_images = _get_candidate_docker_images(
+        target, bare_tag, version, image
+    )
+    client = get_docker_client_from_active_context()
     candidate_tags = set()
     for candidate in candidate_images:
         candidate_tags.add(candidate)
@@ -379,6 +411,17 @@ def get_docker_image(
         if tags:
             return next(iter(tags))
 
+    return None
+
+
+def _get_or_build_docker_image(
+    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+    bare_tag: str,
+    version: str,
+    candidate_images: list[str],
+    image: str | None = None,
+) -> str:
+    client = get_docker_client_from_active_context()
     for candidate in candidate_images:
         logger.warning(
             f"Image '{candidate}' not found locally, pulling "
