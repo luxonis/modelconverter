@@ -2,8 +2,6 @@
 
 set -e  # Exit immediately if a command fails
 
-COULD_NOT_OBTAIN="could_not_obtain"
-
 # Check if required arguments were provided
 if [ -z "${1:-}" ] || [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
   echo "Usage: $0 <HUBAI_API_KEY> <PAT_TOKEN> <DAI_VERSION>"
@@ -45,7 +43,8 @@ camera_output=$(
 )
 
 if [ -z "$camera_output" ]; then
-  echo "Warning: best-effort metadata lookup via camera info failed; using placeholder metadata for this run." >&2
+  echo "Error: failed to obtain camera metadata via camera info." >&2
+  exit 1
 fi
 
 device_hostname=$(
@@ -78,24 +77,31 @@ detected_testbed_name=$(
     | jq -r '.[0].name // empty' 2>/dev/null \
     | head -n1
 )
-runner_hostname=$(hostname 2>/dev/null || printf 'unknown')
-server_os=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]' || printf 'unknown')
 
+missing_metadata=()
 if [ -z "$device_hostname" ]; then
-  device_hostname="$COULD_NOT_OBTAIN"
+  missing_metadata+=("hostname")
 fi
 if [ -z "$camera_mxid" ]; then
-  camera_mxid="$COULD_NOT_OBTAIN"
+  missing_metadata+=("mxid")
 fi
 if [ -z "$camera_model" ]; then
-  camera_model="$COULD_NOT_OBTAIN"
+  missing_metadata+=("model")
 fi
 if [ -z "$camera_revision" ]; then
-  camera_revision="$COULD_NOT_OBTAIN"
+  missing_metadata+=("revision")
 fi
 if [ -z "$camera_os" ]; then
-  camera_os="$COULD_NOT_OBTAIN"
+  missing_metadata+=("os_version")
 fi
+
+if [ "${#missing_metadata[@]}" -ne 0 ]; then
+  echo "Error: camera metadata is incomplete; missing fields: ${missing_metadata[*]}" >&2
+  exit 1
+fi
+
+runner_hostname=$(hostname 2>/dev/null || printf 'unknown')
+server_os=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]' || printf 'unknown')
 if [ -z "$runner_hostname" ]; then
   runner_hostname="unknown"
 fi
@@ -108,10 +114,6 @@ fi
 if [ -z "$HIL_TESTBED" ]; then
   HIL_TESTBED="$(hostname 2>/dev/null || printf '')"
 fi
-if [ -z "$HIL_TESTBED" ]; then
-  HIL_TESTBED="$COULD_NOT_OBTAIN"
-fi
-
 # Run tests
 pytest_args=(
   -s
@@ -127,9 +129,7 @@ pytest_args=(
   --depthai-version "$DEPTHAI_VERSION"
 )
 
-if [ "$device_hostname" != "$COULD_NOT_OBTAIN" ]; then
-  pytest_args+=(--device-ip "$device_hostname")
-fi
+pytest_args+=(--device-ip "$device_hostname")
 
 echo "Influx metadata debug:"
 echo "  INFLUX_HOST=${INFLUX_HOST:-<unset>}"
