@@ -1,88 +1,40 @@
-name: HIL FPS Benchmark
+name: Test - RVC4
 
 on:
   workflow_dispatch:
-    inputs:
-      depthai_version:
-        description: "DepthAI version to test against (e.g. 3.3.0)"
-        required: true
-        type: string
-      os_version:
-        description: "Optional camera OS version to install before the benchmark"
-        required: false
-        type: string
-      hold_reservation:
-        description: "Hold testbed reservation after the run"
-        required: false
-        type: boolean
+  pull_request:
+    branches: [main]
+    paths:
+      - requirements.txt
+      - "modelconverter/__init__.py"
+      - "modelconverter/packages/rvc4/**"
+      - "modelconverter/packages/base_exporter.py"
+      - "modelconverter/packages/base_inferer.py"
+      - "tests/test_packages/test_rvc4.py"
+      - "docker/rvc4/Dockerfile"
+      - "docker/rvc4/entrypoint.sh"
+      - ".github/workflows/modelconverter_test.yaml"
+      - ".github/workflows/rvc4_test.yaml"
 
-env:
-  DEPTHAI_VERSION: ${{ github.event.inputs.depthai_version }}
-  OS_VERSION: ${{ github.event.inputs.os_version }}
-  HIL_FRAMEWORK_TOKEN: ${{ secrets.HIL_FRAMEWORK_TOKEN }}
-  HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
-  HOLD_RESERVATION: ${{ github.event.inputs.hold_reservation }}
-  INFLUX_HOST: ${{ secrets.INFLUX_HOST }}
-  INFLUX_ORG: ${{ secrets.INFLUX_ORG }}
-  INFLUX_TOKEN: ${{ secrets.INFLUX_TOKEN }}
-  INFLUX_BUCKET: fps_metrics
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  fps-benchmark:
-    runs-on: ["self-hosted", "testbed-runner"]
+  rvc4-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - "2.23.0"
+          - "2.24.0"
+          - "2.25.0"
+          - "2.26.2"
+          - "2.27.0"
+          - "2.32.6"
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run benchmark
-        run: |
-          set -euo pipefail
-
-          pip install hil-framework --upgrade \
-            --index-url "https://__token__:$HIL_FRAMEWORK_TOKEN@gitlab.luxonis.com/api/v4/projects/213/packages/pypi/simple"
-
-          export RESERVATION_NAME="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#fps-benchmark"
-          RESERVATION_OPTION="--reservation-name $RESERVATION_NAME"
-
-          HOLD_RESERVATION_OPTION=""
-          if [[ "$HOLD_RESERVATION" == "true" ]]; then
-            HOLD_RESERVATION_OPTION="--hold-reservation"
-          fi
-
-          OS_VERSION_OPTION=""
-          if [[ -n "$OS_VERSION" ]]; then
-            OS_VERSION_OPTION="--os-version $OS_VERSION"
-          fi
-
-          if [[ "$DEPTHAI_VERSION" =~ ^3\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
-            DEPTHAI_VERSION_CHECKED="$DEPTHAI_VERSION"
-          else
-            echo "Invalid depthai version: $DEPTHAI_VERSION" >&2
-            exit 1
-          fi
-
-          : "${INFLUX_HOST:?INFLUX_HOST is required on the runner}"
-          : "${INFLUX_ORG:?INFLUX_ORG is required on the runner}"
-          : "${INFLUX_TOKEN:?INFLUX_TOKEN is required on the runner}"
-
-          : "${INFLUX_BUCKET:?INFLUX_BUCKET must be set by the workflow}"
-
-          REMOTE_CMD="export HIL_RUN_ID=\"$GITHUB_RUN_ID\" \
-            INFLUX_HOST=\"$INFLUX_HOST\" \
-            INFLUX_ORG=\"$INFLUX_ORG\" \
-            INFLUX_BUCKET=\"$INFLUX_BUCKET\" \
-            INFLUX_TOKEN=\"$INFLUX_TOKEN\" && \
-            cd /tmp/modelconverter && \
-            ./tests/test_benchmark/run_hil_tests.sh \
-              \"$HUBAI_API_KEY\" \
-              \"$HIL_FRAMEWORK_TOKEN\" \
-              \"$DEPTHAI_VERSION_CHECKED\""
-
-          exec hil_runner \
-            --models "oak4_pro or oak4_d or oak4_s" \
-            $HOLD_RESERVATION_OPTION \
-            --wait \
-            $OS_VERSION_OPTION \
-            $RESERVATION_OPTION \
-            --sync-workspace --rsync-args="--exclude=venv" \
-            --commands "$REMOTE_CMD"
+    uses: ./.github/workflows/modelconverter_test.yaml
+    secrets: inherit
+    with:
+      package: rvc4
+      version: ${{ matrix.version }}
