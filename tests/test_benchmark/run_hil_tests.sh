@@ -91,9 +91,6 @@ fi
 if [ -z "$camera_model" ]; then
   camera_model="$COULD_NOT_OBTAIN"
 fi
-if [ -z "$camera_agent_version" ]; then
-  camera_agent_version="$COULD_NOT_OBTAIN"
-fi
 if [ -z "$camera_revision" ]; then
   camera_revision="$COULD_NOT_OBTAIN"
 fi
@@ -126,7 +123,6 @@ pytest_args=(
   --camera-os-version "$camera_os"
   --camera-model "$camera_model"
   --camera-revision "$camera_revision"
-  --camera-agent-version "$camera_agent_version"
   --runner "$runner_hostname"
   --server-os "$server_os"
   --depthai-version "$DEPTHAI_VERSION"
@@ -148,7 +144,6 @@ echo "  camera_mxid=${camera_mxid:-<empty>}"
 echo "  camera_os_version=${camera_os:-<empty>}"
 echo "  camera_model=${camera_model:-<empty>}"
 echo "  camera_revision=${camera_revision:-<empty>}"
-echo "  camera_agent_version=${camera_agent_version:-<empty>}"
 echo "  runner=${runner_hostname:-<empty>}"
 echo "  server_os=${server_os:-<empty>}"
 printf '  pytest_args:'

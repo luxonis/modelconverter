@@ -49,12 +49,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Camera revision for Influx metadata.",
     )
     parser.addoption(
-        "--camera-agent-version",
-        action="store",
-        default=None,
-        help="Camera agent version for Influx metadata.",
-    )
-    parser.addoption(
         "--runner",
         action="store",
         default=None,
@@ -123,9 +117,6 @@ def influx_metadata(request: pytest.FixtureRequest) -> dict[str, str | None]:
         ),
         "camera_revision": _option_or_env(
             request, "--camera-revision", "HIL_CAMERA_REVISION"
-        ),
-        "camera_agent_version": _option_or_env(
-            request, "--camera-agent-version", "HIL_CAMERA_AGENT_VERSION"
         ),
         "runner": _option_or_env(request, "--runner", "HIL_RUNNER")
         or os.environ.get("GITHUB_RUNNER_NAME")

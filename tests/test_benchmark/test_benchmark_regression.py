@@ -88,9 +88,6 @@ def _write_fps_result_to_influx(
         "camera_revision": _normalize_tag(
             influx_metadata.get("camera_revision")
         ),
-        "camera_agent_version": _normalize_tag(
-            influx_metadata.get("camera_agent_version")
-        ),
         "runner": _normalize_tag(influx_metadata.get("runner")),
         "server_os": _normalize_tag(influx_metadata.get("server_os")),
         "depthai_version": _normalize_tag(
