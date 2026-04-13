@@ -6,7 +6,7 @@ COULD_NOT_OBTAIN="could_not_obtain"
 
 # Check if required arguments were provided
 if [ -z "${1:-}" ] || [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
-  echo "Usage: $0 <HUBAI_API_KEY> <PAT_TOKEN> <DAI_VERSION> [TESTBED_NAME]"
+  echo "Usage: $0 <HUBAI_API_KEY> <PAT_TOKEN> <DAI_VERSION>"
   exit 1
 fi
 
@@ -14,7 +14,6 @@ fi
 export HUBAI_API_KEY="$1"
 export PAT_TOKEN="$2"
 export DEPTHAI_VERSION="$3"
-export HIL_TESTBED_NAME="${4:-}"
 
 # Navigate to project directory
 cd /tmp/modelconverter
@@ -42,7 +41,7 @@ pip install --upgrade \
 # lookup fails, keep the benchmark runnable and record explicit placeholder
 # values for the missing camera-derived metadata.
 camera_output=$(
-  camera -t "${HIL_TESTBED_NAME}" -n test all info -j 2>/dev/null || printf ''
+  camera -t "${HIL_TESTBED}" -n test all info -j 2>/dev/null || printf ''
 )
 
 if [ -z "$camera_output" ]; then
@@ -103,14 +102,14 @@ fi
 if [ -z "$server_os" ]; then
   server_os="unknown"
 fi
-if [ -z "$HIL_TESTBED_NAME" ]; then
-  HIL_TESTBED_NAME="${detected_testbed_name:-}"
+if [ -z "$HIL_TESTBED" ]; then
+  HIL_TESTBED="${detected_testbed_name:-}"
 fi
-if [ -z "$HIL_TESTBED_NAME" ]; then
-  HIL_TESTBED_NAME="$(hostname 2>/dev/null || printf '')"
+if [ -z "$HIL_TESTBED" ]; then
+  HIL_TESTBED="$(hostname 2>/dev/null || printf '')"
 fi
-if [ -z "$HIL_TESTBED_NAME" ]; then
-  HIL_TESTBED_NAME="$COULD_NOT_OBTAIN"
+if [ -z "$HIL_TESTBED" ]; then
+  HIL_TESTBED="$COULD_NOT_OBTAIN"
 fi
 
 # Run tests
@@ -118,7 +117,7 @@ pytest_args=(
   -s
   -v
   tests/test_benchmark/
-  --testbed-name "$HIL_TESTBED_NAME"
+  --testbed-name "$HIL_TESTBED"
   --camera-mxid "$camera_mxid"
   --camera-os-version "$camera_os"
   --camera-model "$camera_model"
@@ -138,7 +137,7 @@ echo "  INFLUX_ORG=${INFLUX_ORG:-<unset>}"
 echo "  INFLUX_BUCKET=${INFLUX_BUCKET:-<unset>}"
 echo "  INFLUX_TOKEN=$(if [ -n "${INFLUX_TOKEN:-}" ]; then printf '<set>'; else printf '<unset>'; fi)"
 echo "  DEPTHAI_VERSION=${DEPTHAI_VERSION:-<empty>}"
-echo "  HIL_TESTBED_NAME=${HIL_TESTBED_NAME:-<empty>}"
+echo "  HIL_TESTBED=${HIL_TESTBED:-<empty>}"
 echo "  device_ip=${device_hostname:-<empty>}"
 echo "  camera_mxid=${camera_mxid:-<empty>}"
 echo "  camera_os_version=${camera_os:-<empty>}"

@@ -104,7 +104,7 @@ def _option_or_env(
 def influx_metadata(request: pytest.FixtureRequest) -> dict[str, str | None]:
     return {
         "testbed_name": _option_or_env(
-            request, "--testbed-name", "HIL_TESTBED_NAME"
+            request, "--testbed-name", "HIL_TESTBED"
         ),
         "camera_mxid": _option_or_env(
             request, "--camera-mxid", "HIL_CAMERA_MXID"
