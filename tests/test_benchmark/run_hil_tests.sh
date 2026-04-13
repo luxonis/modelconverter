@@ -38,43 +38,45 @@ pip install --upgrade \
   --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local \
   "depthai==${DEPTHAI_VERSION}"
 
-# Cache device metadata once for the whole run using oakctl. If oakctl is not
-# available, keep the benchmark runnable and record explicit placeholder values
-# for the missing oakctl-derived metadata.
-oakctl_output=$(oakctl list --format json 2>/dev/null || printf '')
+# Cache device metadata once for the whole run using the HIL camera CLI. If the
+# lookup fails, keep the benchmark runnable and record explicit placeholder
+# values for the missing camera-derived metadata.
+camera_output=$(
+  camera -t "${HIL_TESTBED_NAME}" -n test all info -j 2>/dev/null || printf ''
+)
 
-if [ -z "$oakctl_output" ]; then
-  echo "Warning: best-effort metadata lookup via oakctl failed; using placeholder metadata for this run." >&2
+if [ -z "$camera_output" ]; then
+  echo "Warning: best-effort metadata lookup via camera info failed; using placeholder metadata for this run." >&2
 fi
 
 device_hostname=$(
-  printf '%s' "$oakctl_output" \
-    | jq -r '.items[0].ip_addresses[0] // empty' 2>/dev/null \
+  printf '%s' "$camera_output" \
+    | jq -r '.[0].hostname // empty' 2>/dev/null \
     | head -n1
 )
 camera_mxid=$(
-  printf '%s' "$oakctl_output" \
-    | jq -r '.items[0].serial_number // empty' 2>/dev/null \
+  printf '%s' "$camera_output" \
+    | jq -r '.[0].mxid // empty' 2>/dev/null \
     | head -n1
 )
 camera_model=$(
-  printf '%s' "$oakctl_output" \
-    | jq -r '.items[0].model // empty' 2>/dev/null \
+  printf '%s' "$camera_output" \
+    | jq -r '.[0].model // empty' 2>/dev/null \
     | head -n1
 )
-camera_agent_version=$(
-  printf '%s' "$oakctl_output" \
-    | jq -r '.items[0].agent_version // empty' 2>/dev/null \
+camera_revision=$(
+  printf '%s' "$camera_output" \
+    | jq -r '.[0].revision // empty' 2>/dev/null \
     | head -n1
 )
 camera_os=$(
-  printf '%s' "$oakctl_output" \
-    | jq -r '.items[0].os // empty' 2>/dev/null \
+  printf '%s' "$camera_output" \
+    | jq -r '.[0].os_version // empty' 2>/dev/null \
     | head -n1
 )
 detected_testbed_name=$(
-  printf '%s' "$oakctl_output" \
-    | jq -r '.items[0].name // .items[0].hostname // .items[0].id // empty' 2>/dev/null \
+  printf '%s' "$camera_output" \
+    | jq -r '.[0].name // empty' 2>/dev/null \
     | head -n1
 )
 runner_hostname=$(hostname 2>/dev/null || printf 'unknown')
@@ -91,6 +93,9 @@ if [ -z "$camera_model" ]; then
 fi
 if [ -z "$camera_agent_version" ]; then
   camera_agent_version="$COULD_NOT_OBTAIN"
+fi
+if [ -z "$camera_revision" ]; then
+  camera_revision="$COULD_NOT_OBTAIN"
 fi
 if [ -z "$camera_os" ]; then
   camera_os="$COULD_NOT_OBTAIN"
@@ -120,6 +125,7 @@ pytest_args=(
   --camera-mxid "$camera_mxid"
   --camera-os-version "$camera_os"
   --camera-model "$camera_model"
+  --camera-revision "$camera_revision"
   --camera-agent-version "$camera_agent_version"
   --runner "$runner_hostname"
   --server-os "$server_os"
@@ -141,6 +147,7 @@ echo "  device_ip=${device_hostname:-<empty>}"
 echo "  camera_mxid=${camera_mxid:-<empty>}"
 echo "  camera_os_version=${camera_os:-<empty>}"
 echo "  camera_model=${camera_model:-<empty>}"
+echo "  camera_revision=${camera_revision:-<empty>}"
 echo "  camera_agent_version=${camera_agent_version:-<empty>}"
 echo "  runner=${runner_hostname:-<empty>}"
 echo "  server_os=${server_os:-<empty>}"

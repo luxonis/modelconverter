@@ -43,6 +43,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Camera model for Influx metadata.",
     )
     parser.addoption(
+        "--camera-revision",
+        action="store",
+        default=None,
+        help="Camera revision for Influx metadata.",
+    )
+    parser.addoption(
         "--camera-agent-version",
         action="store",
         default=None,
@@ -114,6 +120,9 @@ def influx_metadata(request: pytest.FixtureRequest) -> dict[str, str | None]:
         ),
         "camera_model": _option_or_env(
             request, "--camera-model", "HIL_CAMERA_MODEL"
+        ),
+        "camera_revision": _option_or_env(
+            request, "--camera-revision", "HIL_CAMERA_REVISION"
         ),
         "camera_agent_version": _option_or_env(
             request, "--camera-agent-version", "HIL_CAMERA_AGENT_VERSION"

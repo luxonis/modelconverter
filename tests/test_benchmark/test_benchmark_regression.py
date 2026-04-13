@@ -85,6 +85,9 @@ def _write_fps_result_to_influx(
             influx_metadata.get("camera_os_version")
         ),
         "camera_model": _normalize_tag(influx_metadata.get("camera_model")),
+        "camera_revision": _normalize_tag(
+            influx_metadata.get("camera_revision")
+        ),
         "camera_agent_version": _normalize_tag(
             influx_metadata.get("camera_agent_version")
         ),
