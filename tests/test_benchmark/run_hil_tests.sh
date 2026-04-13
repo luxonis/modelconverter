@@ -47,34 +47,45 @@ if [ -z "$camera_output" ]; then
   exit 1
 fi
 
-device_hostname=$(
+rvc4_camera=$(
   printf '%s' "$camera_output" \
-    | jq -r '.[0].hostname // empty' 2>/dev/null \
+    | jq -r '.[] | select(.platform == "rvc4") | @json' 2>/dev/null \
+    | head -n1
+)
+
+if [ -z "$rvc4_camera" ]; then
+  echo "Error: no rvc4 camera found in camera metadata." >&2
+  exit 1
+fi
+
+device_hostname=$(
+  printf '%s' "$rvc4_camera" \
+    | jq -r '.hostname // empty' 2>/dev/null \
     | head -n1
 )
 camera_mxid=$(
-  printf '%s' "$camera_output" \
-    | jq -r '.[0].mxid // empty' 2>/dev/null \
+  printf '%s' "$rvc4_camera" \
+    | jq -r '.mxid // empty' 2>/dev/null \
     | head -n1
 )
 camera_model=$(
-  printf '%s' "$camera_output" \
-    | jq -r '.[0].model // empty' 2>/dev/null \
+  printf '%s' "$rvc4_camera" \
+    | jq -r '.model // empty' 2>/dev/null \
     | head -n1
 )
 camera_revision=$(
-  printf '%s' "$camera_output" \
-    | jq -r '.[0].revision // empty' 2>/dev/null \
+  printf '%s' "$rvc4_camera" \
+    | jq -r '.revision // empty' 2>/dev/null \
     | head -n1
 )
 camera_os=$(
-  printf '%s' "$camera_output" \
-    | jq -r '.[0].os_version // empty' 2>/dev/null \
+  printf '%s' "$rvc4_camera" \
+    | jq -r '.os_version // empty' 2>/dev/null \
     | head -n1
 )
 detected_testbed_name=$(
-  printf '%s' "$camera_output" \
-    | jq -r '.[0].name // empty' 2>/dev/null \
+  printf '%s' "$rvc4_camera" \
+    | jq -r '.name // empty' 2>/dev/null \
     | head -n1
 )
 
