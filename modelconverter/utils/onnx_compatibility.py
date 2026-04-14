@@ -3,7 +3,6 @@ from pathlib import Path
 import ml_dtypes
 import numpy as np
 import onnx
-from onnx.external_data_helper import convert_model_to_external_data
 
 
 def ensure_onnx_helper_compatibility() -> None:
@@ -51,13 +50,6 @@ def save_onnx_model(
         )
         if external_data_path.exists():
             external_data_path.unlink()
-        convert_model_to_external_data(
-            model,
-            all_tensors_to_one_file=True,
-            location=external_data_path.name,
-            size_threshold=0,
-            convert_attribute=False,
-        )
         onnx.save(
             model,
             str(output_path),
