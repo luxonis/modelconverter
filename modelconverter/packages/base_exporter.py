@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import onnx
 from loguru import logger
 
 from modelconverter.utils import (
@@ -20,6 +19,7 @@ from modelconverter.utils.config import (
     RandomCalibrationConfig,
     SingleStageConfig,
 )
+from modelconverter.utils.onnx_compatibility import save_onnx_model
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import InputFileType, Target
 
@@ -129,7 +129,13 @@ class Exporter(ABC):
             )
             return self.input_model
 
-        onnx_sim, check = simplify(str(self.input_model))
+        try:
+            onnx_sim, check = simplify(str(self.input_model))
+        except Exception as e:
+            logger.warning(
+                f"Failed to simplify ONNX: {e}. Proceeding without simplification."
+            )
+            return self.input_model
         if not check:
             logger.warning(
                 "Provided ONNX could not be simplified. "
@@ -141,15 +147,14 @@ class Exporter(ABC):
             self.input_model, "simplified.onnx"
         )
         logger.info(f"Saving simplified ONNX to {onnx_sim_path}")
-        if self.input_model.with_suffix(".onnx_data").exists():
-            onnx.save(
-                onnx_sim,
-                str(onnx_sim_path),
-                save_as_external_data=True,
-                location=f"{onnx_sim_path.name}_data",
-            )
-        else:
-            onnx.save(onnx_sim, str(onnx_sim_path))
+        save_onnx_model(
+            onnx_sim,
+            onnx_sim_path,
+            save_as_external_data=self.input_model.with_suffix(
+                ".onnx_data"
+            ).exists(),
+            location=f"{onnx_sim_path.name}_data",
+        )
         return onnx_sim_path
 
     @abstractmethod

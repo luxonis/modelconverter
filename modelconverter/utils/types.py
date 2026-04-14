@@ -20,6 +20,7 @@ class Encoding(Enum):
 
 
 class DataType(Enum):
+    BFLOAT16 = "bfloat16"
     FLOAT16 = "float16"
     FLOAT32 = "float32"
     FLOAT64 = "float64"
@@ -28,6 +29,7 @@ class DataType(Enum):
     INT16 = "int16"
     INT32 = "int32"
     INT64 = "int64"
+    UINT4 = "uint4"
     UINT8 = "uint8"
     UINT16 = "uint16"
     UINT32 = "uint32"
@@ -93,10 +95,13 @@ class DataType(Enum):
     @classmethod
     def from_onnx_dtype(cls, dtype: int) -> "DataType":
         dtype_map = {
+            TensorProto.BFLOAT16: "bfloat16",
             TensorProto.FLOAT16: "float16",
             TensorProto.FLOAT: "float32",
             TensorProto.DOUBLE: "float64",
+            TensorProto.INT4: "int4",
             TensorProto.UINT8: "uint8",
+            TensorProto.UINT4: "uint4",
             TensorProto.UINT16: "uint16",
             TensorProto.UINT32: "uint32",
             TensorProto.UINT64: "uint64",
@@ -172,13 +177,16 @@ class DataType(Enum):
 
     def as_numpy_dtype(self) -> np.dtype:
         return {
+            "bfloat16": np.float32,  # Preserve bfloat16 range better than float16.
             "float16": np.float16,
             "float32": np.float32,
             "float64": np.float64,
+            "int4": np.int8,  # NumPy has no 4-bit signed integer dtype.
             "int8": np.int8,
             "int16": np.int16,
             "int32": np.int32,
             "int64": np.int64,
+            "uint4": np.uint8,  # NumPy has no 4-bit unsigned integer dtype.
             "uint8": np.uint8,
             "uint16": np.uint16,
             "uint32": np.uint32,

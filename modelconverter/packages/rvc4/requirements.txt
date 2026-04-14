@@ -3,3 +3,4 @@ psutil
 numpy<2
 polars
 pytest # this is actually required by snpe packages
+onnx==1.18.0 # SNPE's ONNX importer fails with onnx==1.21.0 in CI.

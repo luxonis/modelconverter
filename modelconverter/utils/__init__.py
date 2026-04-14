@@ -7,7 +7,9 @@ from .docker_utils import (
     docker_exec,
     get_container_memory_available,
     get_container_memory_limit,
+    get_default_target_version,
     get_docker_image,
+    get_local_docker_image,
     in_docker,
 )
 from .environ import environ
@@ -64,8 +66,10 @@ __all__ = [
     "get_archive_input",
     "get_container_memory_available",
     "get_container_memory_limit",
+    "get_default_target_version",
     "get_docker_image",
     "get_extra_quant_tensors",
+    "get_local_docker_image",
     "get_metadata",
     "get_protocol",
     "guess_new_layout",

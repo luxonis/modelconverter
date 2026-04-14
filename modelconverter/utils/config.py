@@ -22,6 +22,7 @@ from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
 from modelconverter.utils.filesystem_utils import resolve_path
 from modelconverter.utils.layout import make_default_layout
 from modelconverter.utils.metadata import Metadata, get_metadata
+from modelconverter.utils.onnx_compatibility import save_onnx_model
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -641,14 +642,9 @@ def _get_onnx_node_info(
             f"Output value info for node '{node_name}' not found."
         )
 
-    shape = [
-        dim.dim_value for dim in output_value_info.type.tensor_type.shape.dim
-    ]
-    if any(dim == 0 for dim in shape):
-        raise ValueError(
-            "Dynamic shapes are not supported. "
-            f"Shape of node '{node_name}' is {shape}."
-        )
+    shape = _get_static_onnx_shape(
+        output_value_info.type.tensor_type, f"node '{node_name}'"
+    )
     data_type = output_value_info.type.tensor_type.elem_type
 
     return shape, DataType.from_onnx_dtype(data_type)
@@ -662,12 +658,7 @@ def _get_onnx_tensor_info(
     def extract_tensor_info(
         tensor_type: TypeProto.Tensor,
     ) -> tuple[list[int], DataType]:
-        shape = [dim.dim_value for dim in tensor_type.shape.dim]
-        if any(dim == 0 for dim in shape):
-            raise ValueError(
-                "Dynamic shapes are not supported. "
-                f"Shape of tensor '{tensor_name}' is {shape}."
-            )
+        shape = _get_static_onnx_shape(tensor_type, f"tensor '{tensor_name}'")
         return shape, DataType.from_onnx_dtype(tensor_type.elem_type)
 
     for tensor in chain(model.graph.input, model.graph.output):
@@ -685,6 +676,21 @@ def _get_onnx_tensor_info(
                 )
 
     raise NameError(f"Tensor '{tensor_name}' not found in the ONNX model.")
+
+
+def _get_static_onnx_shape(
+    tensor_type: TypeProto.Tensor, tensor_name: str
+) -> list[int]:
+    shape = []
+    for dim in tensor_type.shape.dim:
+        if dim.HasField("dim_value") and dim.dim_value > 0:
+            shape.append(dim.dim_value)
+        else:
+            raise ValueError(
+                "Dynamic shapes are not supported. "
+                f"Shape of {tensor_name} is {[d.dim_value for d in tensor_type.shape.dim]}."
+            )
+    return shape
 
 
 def _get_onnx_inter_info(
@@ -739,12 +745,9 @@ def generate_renamed_onnx(
             if output_name in rename_dict:
                 node.output[i] = rename_dict[output_name]
 
-    if model_data_path:
-        onnx.save(
-            model,
-            str(output_path),
-            save_as_external_data=True,
-            location=f"{output_path.name}_data",
-        )
-    else:
-        onnx.save(model, str(output_path))
+    save_onnx_model(
+        model,
+        output_path,
+        save_as_external_data=model_data_path is not None,
+        location=f"{output_path.name}_data",
+    )
