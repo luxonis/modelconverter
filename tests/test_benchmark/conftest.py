@@ -44,10 +44,6 @@ def influx_metadata(request: pytest.FixtureRequest) -> dict[str, str | None]:
         "camera_os_version": os.environ.get("HIL_CAMERA_OS_VERSION"),
         "camera_model": os.environ.get("HIL_CAMERA_MODEL"),
         "camera_revision": os.environ.get("HIL_CAMERA_REVISION"),
-        "runner": os.environ.get("HIL_RUNNER")
-        or os.environ.get("GITHUB_RUNNER_NAME")
-        or os.environ.get("HOSTNAME")
-        or os.environ.get("USER"),
         "server_os": os.environ.get("HIL_SERVER_OS"),
         "depthai_version": os.environ.get("DEPTHAI_VERSION"),
     }

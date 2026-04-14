@@ -1,12 +1,13 @@
 import json
-import os
 from pathlib import Path
-from urllib import error, parse, request
 
 import pytest
 
 from modelconverter.packages import get_benchmark
 from modelconverter.utils.types import Target
+from hil_framework.lib_testbed.db_source.FpsBenchmarkInflux import (
+    write_fps_benchmark_result,
+)
 
 TARGETS_FILE = Path(__file__).parent / "benchmark_targets.json"
 
@@ -21,124 +22,6 @@ def _model_id(slug: str) -> str:
     """Take out the `luxonis` and use the remainder of the slug to name
     the test."""
     return slug.rsplit("/", 1)[-1]
-
-
-def _escape_tag(value: str) -> str:
-    return (
-        value.replace("\\", "\\\\")
-        .replace(",", "\\,")
-        .replace(" ", "\\ ")
-        .replace("=", "\\=")
-    )
-
-
-def _normalize_tag(value: str | None) -> str:
-    if value in (None, ""):
-        return "unknown"
-    return str(value)
-
-
-def _format_field(value: str | float | bool) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int) and not isinstance(value, bool):
-        return f"{value}i"
-    if isinstance(value, float):
-        return repr(value)
-
-    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
-
-
-def _write_fps_result_to_influx(
-    *,
-    model_slug: str,
-    benchmark_target: str,
-    benchmark_run_id: str,
-    device_ip: str | None,
-    actual_fps: float,
-    expected_fps: float,
-    tolerance_low: float,
-    tolerance_high: float,
-    fps_min: float,
-    fps_max: float,
-    deviation_pct: float,
-    success: bool,
-    influx_metadata: dict[str, str | None],
-) -> None:
-    influx_url = os.environ.get("INFLUX_HOST")
-    influx_org = os.environ.get("INFLUX_ORG")
-    influx_bucket = os.environ.get("INFLUX_BUCKET")
-    influx_token = os.environ.get("INFLUX_TOKEN")
-
-    if not all([influx_url, influx_org, influx_bucket, influx_token]):
-        return
-
-    tags = {
-        "model_slug": model_slug,
-        "benchmark_target": benchmark_target,
-        "run_id": benchmark_run_id,
-        "status": "passed" if success else "failed",
-        "testbed_name": _normalize_tag(influx_metadata.get("testbed_name")),
-        "camera_mxid": _normalize_tag(influx_metadata.get("camera_mxid")),
-        "camera_os_version": _normalize_tag(
-            influx_metadata.get("camera_os_version")
-        ),
-        "camera_model": _normalize_tag(influx_metadata.get("camera_model")),
-        "camera_revision": _normalize_tag(
-            influx_metadata.get("camera_revision")
-        ),
-        "runner": _normalize_tag(influx_metadata.get("runner")),
-        "server_os": _normalize_tag(influx_metadata.get("server_os")),
-        "depthai_version": _normalize_tag(
-            influx_metadata.get("depthai_version")
-        ),
-        "device_ip": _normalize_tag(device_ip),
-    }
-
-    fields = {
-        "actual_fps": actual_fps,
-        "expected_fps": expected_fps,
-        "tolerance_low": tolerance_low,
-        "tolerance_high": tolerance_high,
-        "fps_min": fps_min,
-        "fps_max": fps_max,
-        "deviation_pct": deviation_pct,
-        "success": success,
-    }
-
-    tag_set = ",".join(f"{key}={_escape_tag(value)}" for key, value in tags.items())
-    field_set = ",".join(
-        f"{key}={_format_field(value)}" for key, value in fields.items()
-    )
-    line = f"fps_benchmark,{tag_set} {field_set}"
-    print(f"Influx write debug: {line}")
-
-    write_url = (
-        f"{influx_url.rstrip('/')}/api/v2/write?"
-        f"org={parse.quote(influx_org, safe='')}&"
-        f"bucket={parse.quote(influx_bucket, safe='')}&precision=ns"
-    )
-    print(
-        "Influx request debug: "
-        f"url={write_url}, token={'<set>' if influx_token else '<unset>'}"
-    )
-    influx_request = request.Request(
-        write_url,
-        data=line.encode(),
-        headers={
-            "Authorization": f"Token {influx_token}",
-            "Content-Type": "text/plain; charset=utf-8",
-            "Accept": "application/json",
-        },
-        method="POST",
-    )
-
-    try:
-        with request.urlopen(influx_request, timeout=5):
-            return
-    except (error.URLError, TimeoutError, OSError) as exc:
-        print(f"Failed to write benchmark result to InfluxDB: {exc}")
 
 
 @pytest.mark.parametrize(
@@ -189,7 +72,7 @@ def test_benchmark_fps(
         f"actual={actual_fps:.2f} FPS, expected={expected_fps:.2f} FPS. "
     )
 
-    _write_fps_result_to_influx(
+    write_fps_benchmark_result(
         model_slug=model_slug,
         benchmark_target=benchmark_target,
         benchmark_run_id=benchmark_run_id,
