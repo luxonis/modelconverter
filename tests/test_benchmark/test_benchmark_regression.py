@@ -1,13 +1,12 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from hil_framework.lib_testbed.db_source.InfluxClient import InfluxClient
 from modelconverter.packages import get_benchmark
 from modelconverter.utils.types import Target
-from hil_framework.lib_testbed.db_source.FpsBenchmarkInflux import (
-    write_fps_benchmark_result,
-)
 
 TARGETS_FILE = Path(__file__).parent / "benchmark_targets.json"
 
@@ -22,6 +21,130 @@ def _model_id(slug: str) -> str:
     """Take out the `luxonis` and use the remainder of the slug to name
     the test."""
     return slug.rsplit("/", 1)[-1]
+
+
+def _normalize_tag(value: Any) -> str:
+    if value in (None, ""):
+        return "unknown"
+    if hasattr(value, "value"):
+        return str(value.value)
+    return str(value)
+
+
+def _build_fps_benchmark_data(
+    *,
+    bucket: str,
+    token: str,
+    model_slug: str,
+    benchmark_target: str,
+    benchmark_run_id: str,
+    device_ip: str | None,
+    actual_fps: float,
+    expected_fps: float,
+    tolerance_low: float,
+    tolerance_high: float,
+    fps_min: float,
+    fps_max: float,
+    deviation_pct: float,
+    success: bool,
+    influx_metadata: dict[str, str | None],
+) -> dict[str, Any]:
+    return {
+        "name": "fps_benchmark",
+        "bucket": bucket,
+        "token": token,
+        "tags": [
+            {"name": "model_slug", "value": _normalize_tag(model_slug)},
+            {"name": "benchmark_target", "value": _normalize_tag(benchmark_target)},
+            {"name": "run_id", "value": _normalize_tag(benchmark_run_id)},
+            {"name": "status", "value": "passed" if success else "failed"},
+            {
+                "name": "testbed_name",
+                "value": _normalize_tag(influx_metadata.get("testbed_name")),
+            },
+            {
+                "name": "camera_mxid",
+                "value": _normalize_tag(influx_metadata.get("camera_mxid")),
+            },
+            {
+                "name": "camera_os_version",
+                "value": _normalize_tag(influx_metadata.get("camera_os_version")),
+            },
+            {
+                "name": "camera_model",
+                "value": _normalize_tag(influx_metadata.get("camera_model")),
+            },
+            {
+                "name": "camera_revision",
+                "value": _normalize_tag(influx_metadata.get("camera_revision")),
+            },
+            {
+                "name": "server_os",
+                "value": _normalize_tag(influx_metadata.get("server_os")),
+            },
+            {
+                "name": "depthai_version",
+                "value": _normalize_tag(influx_metadata.get("depthai_version")),
+            },
+            {"name": "device_ip", "value": _normalize_tag(device_ip)},
+        ],
+        "fields": [
+            {"name": "actual_fps", "value": actual_fps},
+            {"name": "expected_fps", "value": expected_fps},
+            {"name": "tolerance_low", "value": tolerance_low},
+            {"name": "tolerance_high", "value": tolerance_high},
+            {"name": "fps_min", "value": fps_min},
+            {"name": "fps_max", "value": fps_max},
+            {"name": "deviation_pct", "value": deviation_pct},
+            {"name": "success", "value": success},
+        ],
+    }
+
+
+def _write_fps_benchmark_result(
+    *,
+    bucket: str,
+    token: str,
+    model_slug: str,
+    benchmark_target: str,
+    benchmark_run_id: str,
+    device_ip: str | None,
+    actual_fps: float,
+    expected_fps: float,
+    tolerance_low: float,
+    tolerance_high: float,
+    fps_min: float,
+    fps_max: float,
+    deviation_pct: float,
+    success: bool,
+    influx_metadata: dict[str, str | None],
+) -> None:
+    benchmark_data = _build_fps_benchmark_data(
+        bucket=bucket,
+        token=token,
+        model_slug=model_slug,
+        benchmark_target=benchmark_target,
+        benchmark_run_id=benchmark_run_id,
+        device_ip=device_ip,
+        actual_fps=actual_fps,
+        expected_fps=expected_fps,
+        tolerance_low=tolerance_low,
+        tolerance_high=tolerance_high,
+        fps_min=fps_min,
+        fps_max=fps_max,
+        deviation_pct=deviation_pct,
+        success=success,
+        influx_metadata=influx_metadata,
+    )
+    client = InfluxClient(bucket, token=token)
+    print(
+        "Writing fps_benchmark point to InfluxDB: "
+        f"bucket={client.INFLUXDB_BUCKET}, org={client.INFLUXDB_ORG}"
+    )
+    try:
+        client.save_benchmark_data(benchmark_data)
+    finally:
+        client.close()
 
 
 @pytest.mark.parametrize(
@@ -74,7 +197,7 @@ def test_benchmark_fps(
         f"actual={actual_fps:.2f} FPS, expected={expected_fps:.2f} FPS. "
     )
 
-    write_fps_benchmark_result(
+    _write_fps_benchmark_result(
         bucket=influx_bucket,
         token=influx_token,
         model_slug=model_slug,
