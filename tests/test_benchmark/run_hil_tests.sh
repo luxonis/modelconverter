@@ -3,8 +3,8 @@
 set -e  # Exit immediately if a command fails
 
 # Check if required arguments were provided
-if [ -z "${1:-}" ] || [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
-  echo "Usage: $0 <HUBAI_API_KEY> <PAT_TOKEN> <DAI_VERSION>"
+if [ -z "${1:-}" ] || [ -z "${2:-}" ] || [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ]; then
+  echo "Usage: $0 <HUBAI_API_KEY> <PAT_TOKEN> <DAI_VERSION> <INFLUX_BUCKET> <INFLUX_TOKEN> [BENCHMARK_RUN_ID]"
   exit 1
 fi
 
@@ -12,6 +12,9 @@ fi
 export HUBAI_API_KEY="$1"
 export PAT_TOKEN="$2"
 export DEPTHAI_VERSION="$3"
+INFLUX_BUCKET="$4"
+INFLUX_TOKEN="$5"
+BENCHMARK_RUN_ID="${6:-}"
 
 # Navigate to project directory
 cd /tmp/modelconverter
@@ -119,46 +122,47 @@ fi
 if [ -z "$server_os" ]; then
   server_os="unknown"
 fi
-if [ -z "$HIL_TESTBED" ]; then
-  HIL_TESTBED="${detected_testbed_name:-}"
+testbed_name="${HIL_TESTBED:-}"
+if [ -z "$testbed_name" ]; then
+  testbed_name="${detected_testbed_name:-}"
 fi
-if [ -z "$HIL_TESTBED" ]; then
-  HIL_TESTBED="$(hostname 2>/dev/null || printf '')"
+if [ -z "$testbed_name" ]; then
+  testbed_name="$(hostname 2>/dev/null || printf '')"
 fi
-
-export HIL_TESTBED
-export HIL_CAMERA_MXID="$camera_mxid"
-export HIL_CAMERA_OS_VERSION="$camera_os"
-export HIL_CAMERA_MODEL="$camera_model"
-export HIL_CAMERA_REVISION="$camera_revision"
-export HIL_SERVER_OS="$server_os"
 
 # Run tests
 pytest_args=(
   -s
   -v
   tests/test_benchmark/
+  --influx-bucket "$INFLUX_BUCKET"
+  --influx-token "$INFLUX_TOKEN"
+  --depthai-version "$DEPTHAI_VERSION"
+  --testbed-name "$testbed_name"
+  --camera-mxid "$camera_mxid"
+  --camera-os-version "$camera_os"
+  --camera-model "$camera_model"
+  --camera-revision "$camera_revision"
+  --server-os "$server_os"
 )
 
 pytest_args+=(--device-ip "$device_hostname")
+if [ -n "$BENCHMARK_RUN_ID" ]; then
+  pytest_args+=(--benchmark-run-id "$BENCHMARK_RUN_ID")
+fi
 
 echo "Influx metadata debug:"
-echo "  INFLUX_HOST=${INFLUX_HOST:-<unset>}"
-echo "  INFLUX_ORG=${INFLUX_ORG:-<unset>}"
-echo "  INFLUX_BUCKET=${INFLUX_BUCKET:-<unset>}"
-echo "  INFLUX_TOKEN=$(if [ -n "${INFLUX_TOKEN:-}" ]; then printf '<set>'; else printf '<unset>'; fi)"
+echo "  INFLUX_BUCKET=${INFLUX_BUCKET:-<empty>}"
+echo "  INFLUX_TOKEN=$(if [ -n "${INFLUX_TOKEN:-}" ]; then printf '<set>'; else printf '<empty>'; fi)"
 echo "  DEPTHAI_VERSION=${DEPTHAI_VERSION:-<empty>}"
-echo "  HIL_TESTBED=${HIL_TESTBED:-<empty>}"
-echo "  HIL_CAMERA_MXID=${HIL_CAMERA_MXID:-<empty>}"
-echo "  HIL_CAMERA_OS_VERSION=${HIL_CAMERA_OS_VERSION:-<empty>}"
-echo "  HIL_CAMERA_MODEL=${HIL_CAMERA_MODEL:-<empty>}"
-echo "  HIL_CAMERA_REVISION=${HIL_CAMERA_REVISION:-<empty>}"
-echo "  HIL_SERVER_OS=${HIL_SERVER_OS:-<empty>}"
+echo "  benchmark_run_id=${BENCHMARK_RUN_ID:-<generated>}"
+echo "  HIL_TESTBED=${testbed_name:-<empty>}"
+echo "  HIL_CAMERA_MXID=${camera_mxid:-<empty>}"
+echo "  HIL_CAMERA_OS_VERSION=${camera_os:-<empty>}"
+echo "  HIL_CAMERA_MODEL=${camera_model:-<empty>}"
+echo "  HIL_CAMERA_REVISION=${camera_revision:-<empty>}"
+echo "  HIL_SERVER_OS=${server_os:-<empty>}"
 echo "  device_ip=${device_hostname:-<empty>}"
-echo "  camera_mxid=${camera_mxid:-<empty>}"
-echo "  camera_os_version=${camera_os:-<empty>}"
-echo "  camera_model=${camera_model:-<empty>}"
-echo "  camera_revision=${camera_revision:-<empty>}"
 echo "  runner=${runner_hostname:-<empty>}"
 echo "  server_os=${server_os:-<empty>}"
 printf '  pytest_args:'

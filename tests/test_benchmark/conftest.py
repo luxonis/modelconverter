@@ -16,6 +16,66 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default="rvc4",
         help="Target platform to benchmark (default: rvc4).",
     )
+    parser.addoption(
+        "--benchmark-run-id",
+        action="store",
+        default=None,
+        help="Benchmark run identifier to store in InfluxDB.",
+    )
+    parser.addoption(
+        "--influx-bucket",
+        action="store",
+        default=None,
+        help="InfluxDB bucket used for FPS benchmark writes.",
+    )
+    parser.addoption(
+        "--influx-token",
+        action="store",
+        default=None,
+        help="InfluxDB token used for FPS benchmark writes.",
+    )
+    parser.addoption(
+        "--depthai-version",
+        action="store",
+        default=None,
+        help="DepthAI version recorded in benchmark metadata.",
+    )
+    parser.addoption(
+        "--testbed-name",
+        action="store",
+        default=None,
+        help="Testbed name recorded in benchmark metadata.",
+    )
+    parser.addoption(
+        "--camera-mxid",
+        action="store",
+        default=None,
+        help="Camera MXID recorded in benchmark metadata.",
+    )
+    parser.addoption(
+        "--camera-os-version",
+        action="store",
+        default=None,
+        help="Camera OS version recorded in benchmark metadata.",
+    )
+    parser.addoption(
+        "--camera-model",
+        action="store",
+        default=None,
+        help="Camera model recorded in benchmark metadata.",
+    )
+    parser.addoption(
+        "--camera-revision",
+        action="store",
+        default=None,
+        help="Camera revision recorded in benchmark metadata.",
+    )
+    parser.addoption(
+        "--server-os",
+        action="store",
+        default=None,
+        help="Server OS recorded in benchmark metadata.",
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -39,19 +99,19 @@ def benchmark_target(request: pytest.FixtureRequest) -> str:
 @pytest.fixture(scope="session")
 def influx_metadata(request: pytest.FixtureRequest) -> dict[str, str | None]:
     return {
-        "testbed_name": os.environ.get("HIL_TESTBED"),
-        "camera_mxid": os.environ.get("HIL_CAMERA_MXID"),
-        "camera_os_version": os.environ.get("HIL_CAMERA_OS_VERSION"),
-        "camera_model": os.environ.get("HIL_CAMERA_MODEL"),
-        "camera_revision": os.environ.get("HIL_CAMERA_REVISION"),
-        "server_os": os.environ.get("HIL_SERVER_OS"),
-        "depthai_version": os.environ.get("DEPTHAI_VERSION"),
+        "testbed_name": request.config.getoption("--testbed-name"),
+        "camera_mxid": request.config.getoption("--camera-mxid"),
+        "camera_os_version": request.config.getoption("--camera-os-version"),
+        "camera_model": request.config.getoption("--camera-model"),
+        "camera_revision": request.config.getoption("--camera-revision"),
+        "server_os": request.config.getoption("--server-os"),
+        "depthai_version": request.config.getoption("--depthai-version"),
     }
 
 
 @pytest.fixture(scope="session")
 def benchmark_run_id(request: pytest.FixtureRequest) -> str:
-    configured_run_id = os.environ.get("HIL_RUN_ID")
+    configured_run_id = request.config.getoption("--benchmark-run-id")
     if configured_run_id:
         return configured_run_id
 
@@ -60,3 +120,13 @@ def benchmark_run_id(request: pytest.FixtureRequest) -> str:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"benchmark-{timestamp}-{uuid4().hex[:8]}"
+
+
+@pytest.fixture(scope="session")
+def influx_bucket(request: pytest.FixtureRequest) -> str | None:
+    return request.config.getoption("--influx-bucket")
+
+
+@pytest.fixture(scope="session")
+def influx_token(request: pytest.FixtureRequest) -> str | None:
+    return request.config.getoption("--influx-token")

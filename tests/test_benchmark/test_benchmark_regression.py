@@ -34,6 +34,8 @@ def test_benchmark_fps(
     device_ip: str | None,
     benchmark_target: str,
     benchmark_run_id: str,
+    influx_bucket: str | None,
+    influx_token: str | None,
     influx_metadata: dict[str, str | None],
 ) -> None:
     model_config = _targets_data[benchmark_target][model_slug]
@@ -73,6 +75,8 @@ def test_benchmark_fps(
     )
 
     write_fps_benchmark_result(
+        bucket=influx_bucket,
+        token=influx_token,
         model_slug=model_slug,
         benchmark_target=benchmark_target,
         benchmark_run_id=benchmark_run_id,

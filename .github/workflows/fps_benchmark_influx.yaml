@@ -58,22 +58,17 @@ jobs:
             exit 1
           fi
 
-          : "${INFLUX_HOST:?INFLUX_HOST is required on the runner}"
-          : "${INFLUX_ORG:?INFLUX_ORG is required on the runner}"
           : "${INFLUX_TOKEN:?INFLUX_TOKEN is required on the runner}"
-
           : "${INFLUX_BUCKET:?INFLUX_BUCKET must be set by the workflow}"
 
-          REMOTE_CMD="export HIL_RUN_ID=\"$GITHUB_RUN_ID\" \
-            INFLUX_HOST=\"$INFLUX_HOST\" \
-            INFLUX_ORG=\"$INFLUX_ORG\" \
-            INFLUX_BUCKET=\"$INFLUX_BUCKET\" \
-            INFLUX_TOKEN=\"$INFLUX_TOKEN\" && \
-            cd /tmp/modelconverter && \
+          REMOTE_CMD="cd /tmp/modelconverter && \
             ./tests/test_benchmark/run_hil_tests.sh \
               \"$HUBAI_API_KEY\" \
               \"$HIL_FRAMEWORK_TOKEN\" \
-              \"$DEPTHAI_VERSION_CHECKED\""
+              \"$DEPTHAI_VERSION_CHECKED\" \
+              \"$INFLUX_BUCKET\" \
+              \"$INFLUX_TOKEN\" \
+              \"$GITHUB_RUN_ID\""
 
           exec hil_runner \
             --models "oak4_pro or oak4_d or oak4_s" \
