@@ -3,8 +3,8 @@
 set -e  # Exit immediately if a command fails
 
 # Check if required arguments were provided
-if [ -z "${1:-}" ] || [ -z "${2:-}" ] || [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ]; then
-  echo "Usage: $0 <HUBAI_API_KEY> <PAT_TOKEN> <DAI_VERSION> <INFLUX_BUCKET> <INFLUX_TOKEN> [BENCHMARK_RUN_ID]"
+if [ -z "${1:-}" ] || [ -z "${2:-}" ] || [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+  echo "Usage: $0 <HUBAI_API_KEY> <PAT_TOKEN> <DAI_VERSION> <INFLUX_TOKEN> [BENCHMARK_RUN_ID]"
   exit 1
 fi
 
@@ -12,9 +12,8 @@ fi
 export HUBAI_API_KEY="$1"
 export PAT_TOKEN="$2"
 export DEPTHAI_VERSION="$3"
-INFLUX_BUCKET="$4"
-INFLUX_TOKEN="$5"
-BENCHMARK_RUN_ID="${6:-}"
+export INFLUX_TOKEN="$4"
+BENCHMARK_RUN_ID="${5:-}"
 
 # Navigate to project directory
 cd /tmp/modelconverter
@@ -135,8 +134,6 @@ pytest_args=(
   -s
   -v
   tests/test_benchmark/
-  --influx-bucket "$INFLUX_BUCKET"
-  --influx-token "$INFLUX_TOKEN"
   --depthai-version "$DEPTHAI_VERSION"
   --testbed-name "$testbed_name"
   --camera-mxid "$camera_mxid"
@@ -152,7 +149,7 @@ if [ -n "$BENCHMARK_RUN_ID" ]; then
 fi
 
 echo "Influx metadata debug:"
-echo "  INFLUX_BUCKET=${INFLUX_BUCKET:-<empty>}"
+echo "  INFLUX_BUCKET=fps_metrics"
 echo "  INFLUX_TOKEN=$(if [ -n "${INFLUX_TOKEN:-}" ]; then printf '<set>'; else printf '<empty>'; fi)"
 echo "  DEPTHAI_VERSION=${DEPTHAI_VERSION:-<empty>}"
 echo "  benchmark_run_id=${BENCHMARK_RUN_ID:-<generated>}"

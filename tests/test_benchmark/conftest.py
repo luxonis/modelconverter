@@ -2,6 +2,8 @@ import os
 
 import pytest
 
+INFLUX_BUCKET = "fps_metrics"
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
@@ -21,18 +23,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store",
         default=None,
         help="Benchmark run identifier to store in InfluxDB.",
-    )
-    parser.addoption(
-        "--influx-bucket",
-        action="store",
-        default=None,
-        help="InfluxDB bucket used for FPS benchmark writes.",
-    )
-    parser.addoption(
-        "--influx-token",
-        action="store",
-        default=None,
-        help="InfluxDB token used for FPS benchmark writes.",
     )
     parser.addoption(
         "--depthai-version",
@@ -123,10 +113,10 @@ def benchmark_run_id(request: pytest.FixtureRequest) -> str:
 
 
 @pytest.fixture(scope="session")
-def influx_bucket(request: pytest.FixtureRequest) -> str | None:
-    return request.config.getoption("--influx-bucket")
+def influx_bucket() -> str:
+    return INFLUX_BUCKET
 
 
 @pytest.fixture(scope="session")
-def influx_token(request: pytest.FixtureRequest) -> str | None:
-    return request.config.getoption("--influx-token")
+def influx_token() -> str | None:
+    return os.environ.get("INFLUX_TOKEN")
