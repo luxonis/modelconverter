@@ -52,7 +52,7 @@ jobs:
       - name: Run tests
         # yamllint disable rule:line-length
         run: |
-          python -m venv venv
+          python3 -m venv venv
           source venv/bin/activate
           git clone --recurse-submodules -b tjb_influx_pusher https://oauth2:$HIL_FRAMEWORK_TOKEN@gitlab.luxonis.com/luxonis/hil_lab/hil_framework.git
           pip install ./hil_framework/
