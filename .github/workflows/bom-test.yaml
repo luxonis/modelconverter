@@ -10,6 +10,10 @@ on:
         required: false
         description: "Reservation Name"
         type: string
+      os_version:
+        description: "Optional camera OS version to install before the benchmark"
+        required: false
+        type: string
       hold_reservation:
         description: "Hold Testbed Reservation"
         required: false
@@ -31,6 +35,7 @@ env:
   RESERVATION_NAME: ${{ github.event.inputs.reservation_name }}
   HOLD_RESERVATION: ${{ github.event.inputs.hold_reservation }}
   ADDITIONAL_OPTIONS: ${{ github.event.inputs.additional_options }}
+  INFLUX_BUCKET: fps_metrics
 
 jobs:
   id:
@@ -47,8 +52,10 @@ jobs:
       - name: Run tests
         # yamllint disable rule:line-length
         run: |
-          pip install hil-framework --upgrade \
-          --index-url "https://__token__:$HIL_FRAMEWORK_TOKEN@gitlab.luxonis.com/api/v4/projects/213/packages/pypi/simple"
+          python -m venv venv
+          source venv/bin/activate
+          git clone --recurse-submodules -b tjb_influx_pusher https://oauth2:$HIL_FRAMEWORK_TOKEN@gitlab.luxonis.com/luxonis/hil_lab/hil_framework.git
+          pip install ./hil_framework/
 
           if [[ -n "$RESERVATION_NAME" ]]; then
             RESERVATION_OPTION="--reservation-name $RESERVATION_NAME"
@@ -64,16 +71,30 @@ jobs:
           if [[ -n "$ADDITIONAL_OPTIONS" ]]; then
             ADDITIONAL_OPTIONS="$ADDITIONAL_OPTIONS"
           fi
+          OS_VERSION_OPTION=""
+          if [[ -n "$OS_VERSION" ]]; then
+            OS_VERSION_OPTION="--os-version $OS_VERSION"
+          fi
 
           if [[ "$DEPTHAI_VERSION" =~ ^3\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
             DEPTHAI_VERSION_CHECKED="$DEPTHAI_VERSION"
           fi
+          : "${INFLUX_TOKEN:?INFLUX_TOKEN is required on the runner}"
+          : "${INFLUX_BUCKET:?INFLUX_BUCKET must be set by the workflow}"
+
+          REMOTE_CMD="cd /tmp/modelconverter && \
+            ./tests/test_benchmark/run_hil_tests.sh \
+              \"$HUBAI_API_KEY\" \
+              \"$HIL_FRAMEWORK_TOKEN\" \
+              \"$DEPTHAI_VERSION_CHECKED\" \
+              \"$INFLUX_TOKEN\" \
+              \"$GITHUB_RUN_ID\""
 
           exec hil_runner \
             --models "oak4_pro or oak4_d or oak4_s" \
-            $HOLD_RESERVATION \
+            $HOLD_RESERVATION_OPTION \
             --wait \
-            $ADDITIONAL_OPTIONS \
-            $RESERVATION_OPTION  \
-            --sync-workspace --rsync-args="--exclude=venv"\
-            --commands "cd /tmp/modelconverter &&  ./tests/test_benchmark/run_hil_tests.sh  $HUBAI_API_KEY $HIL_FRAMEWORK_TOKEN $DEPTHAI_VERSION_CHECKED"
+            $OS_VERSION_OPTION \
+            $RESERVATION_OPTION \
+            --sync-workspace --rsync-args="--exclude=venv" \
+            --commands "$REMOTE_CMD"
