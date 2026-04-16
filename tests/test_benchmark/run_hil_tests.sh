@@ -28,6 +28,8 @@ source venv/bin/activate
 pip install -r requirements.txt
 pip install pytest
 
+rm -rf hil_framework
+
 git clone --recurse-submodules -b tjb_influx_pusher https://oauth2:$PAT_TOKEN@gitlab.luxonis.com/luxonis/hil_lab/hil_framework.git
 pip install ./hil_framework/
 
