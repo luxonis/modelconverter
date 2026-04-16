@@ -36,6 +36,7 @@ env:
   HOLD_RESERVATION: ${{ github.event.inputs.hold_reservation }}
   ADDITIONAL_OPTIONS: ${{ github.event.inputs.additional_options }}
   INFLUX_BUCKET: fps_metrics
+  INFLUX_TOKEN: ${{ secrets.INFLUX_TOKEN }}
 
 jobs:
   id:
