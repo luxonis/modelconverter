@@ -30,6 +30,7 @@ on:
 env:
   DISTINCT_ID: ${{ github.event.inputs.distinct_id }}
   DEPTHAI_VERSION: ${{ github.event.inputs.depthai_version }}
+  OS_VERSION: ${{ github.event.inputs.os_version }}
   HIL_FRAMEWORK_TOKEN: ${{ secrets.HIL_FRAMEWORK_TOKEN }}
   HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
   RESERVATION_NAME: ${{ github.event.inputs.reservation_name }}
