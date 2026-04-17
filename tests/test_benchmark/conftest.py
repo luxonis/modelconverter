@@ -9,12 +9,6 @@ INFLUX_BUCKET = "fps_metrics"
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
-        "--device-ip",
-        action="store",
-        default=None,
-        help="IP address of the target device.",
-    )
-    parser.addoption(
         "--benchmark-target",
         action="store",
         default="rvc4",
@@ -46,11 +40,6 @@ def pytest_configure(config: pytest.Config) -> None:
             "HUBAI_API_KEY environment variable is not set.",
             returncode=1,
         )
-
-
-@pytest.fixture
-def device_ip(request: pytest.FixtureRequest) -> str | None:
-    return request.config.getoption("--device-ip")
 
 
 @pytest.fixture

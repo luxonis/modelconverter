@@ -40,53 +40,9 @@ pip install --upgrade \
   --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local \
   "depthai==${DEPTHAI_VERSION}"
 
-# Resolve the benchmark device once for the whole run using the HIL camera CLI.
-camera_output=$(
-  camera -t "${HIL_TESTBED}" -n test all info -j 2>/dev/null || printf ''
-)
-
-if [ -z "$camera_output" ]; then
-  echo "Error: failed to obtain camera metadata via camera info." >&2
-  exit 1
-fi
-
-rvc4_camera=$(
-  printf '%s' "$camera_output" \
-    | jq -r '.[] | select(.platform == "rvc4") | @json' 2>/dev/null \
-    | head -n1
-)
-
-if [ -z "$rvc4_camera" ]; then
-  echo "Error: no rvc4 camera found in camera metadata." >&2
-  exit 1
-fi
-
-device_hostname=$(
-  printf '%s' "$rvc4_camera" \
-    | jq -r '.hostname // empty' 2>/dev/null \
-    | head -n1
-)
-detected_testbed_name=$(
-  printf '%s' "$rvc4_camera" \
-    | jq -r '.name // empty' 2>/dev/null \
-    | head -n1
-)
-
-if [ -z "$device_hostname" ]; then
-  echo "Error: camera metadata is incomplete; missing fields: hostname" >&2
-  exit 1
-fi
-
 runner_hostname=$(hostname 2>/dev/null || printf 'unknown')
 if [ -z "$runner_hostname" ]; then
   runner_hostname="unknown"
-fi
-testbed_name="${HIL_TESTBED:-}"
-if [ -z "$testbed_name" ]; then
-  testbed_name="${detected_testbed_name:-}"
-fi
-if [ -z "$testbed_name" ]; then
-  testbed_name="$(hostname 2>/dev/null || printf '')"
 fi
 
 # Run tests
@@ -97,10 +53,9 @@ pytest_args=(
   --depthai-version "$DEPTHAI_VERSION"
 )
 
-if [ -n "$testbed_name" ]; then
-  pytest_args+=(--testbed-name "$testbed_name")
+if [ -n "${HIL_TESTBED:-}" ]; then
+  pytest_args+=(--testbed-name "$HIL_TESTBED")
 fi
-pytest_args+=(--device-ip "$device_hostname")
 if [ -n "$BENCHMARK_RUN_ID" ]; then
   pytest_args+=(--benchmark-run-id "$BENCHMARK_RUN_ID")
 fi
@@ -110,8 +65,7 @@ echo "  INFLUX_BUCKET=fps_metrics"
 echo "  INFLUX_TOKEN=$(if [ -n "${INFLUX_TOKEN:-}" ]; then printf '<set>'; else printf '<empty>'; fi)"
 echo "  DEPTHAI_VERSION=${DEPTHAI_VERSION:-<empty>}"
 echo "  benchmark_run_id=${BENCHMARK_RUN_ID:-<generated>}"
-echo "  HIL_TESTBED=${testbed_name:-<empty>}"
-echo "  device_ip=${device_hostname:-<empty>}"
+echo "  HIL_TESTBED=${HIL_TESTBED:-<empty>}"
 echo "  runner=${runner_hostname:-<empty>}"
 printf '  pytest_args:'
 printf ' %q' "${pytest_args[@]}"

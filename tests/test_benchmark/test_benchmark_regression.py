@@ -31,7 +31,6 @@ def _build_fps_benchmark_data(
     model_slug: str,
     benchmark_target: str,
     benchmark_run_id: str,
-    device_ip: str | None,
     benchmark_camera: Any,
     testbed_name: str | None,
     depthai_version: str | None,
@@ -46,8 +45,10 @@ def _build_fps_benchmark_data(
 ) -> dict[str, Any]:
     camera_os_version = _get_camera_os_version(benchmark_camera)
     server_os = platform.system().strip().lower() or None
+    benchmark_device_ip = _get_benchmark_device_ip(benchmark_camera)
     _require_metadata(
         {
+            "device_ip": benchmark_device_ip,
             "camera_mxid": benchmark_camera.mxid,
             "camera_os_version": camera_os_version,
             "camera_model": benchmark_camera.model,
@@ -71,7 +72,7 @@ def _build_fps_benchmark_data(
             {"name": "camera_revision", "value": benchmark_camera.revision},
             {"name": "server_os", "value": server_os},
             {"name": "depthai_version", "value": depthai_version},
-            {"name": "device_ip", "value": device_ip},
+            {"name": "device_ip", "value": benchmark_device_ip},
         ],
         "fields": [
             {"name": "actual_fps", "value": actual_fps},
@@ -93,7 +94,6 @@ def _write_fps_benchmark_result(
     model_slug: str,
     benchmark_target: str,
     benchmark_run_id: str,
-    device_ip: str | None,
     benchmark_camera: Any,
     testbed_name: str | None,
     depthai_version: str | None,
@@ -112,7 +112,6 @@ def _write_fps_benchmark_result(
         model_slug=model_slug,
         benchmark_target=benchmark_target,
         benchmark_run_id=benchmark_run_id,
-        device_ip=device_ip,
         benchmark_camera=benchmark_camera,
         testbed_name=testbed_name,
         depthai_version=depthai_version,
@@ -149,6 +148,15 @@ def _get_camera_os_version(benchmark_camera: Any) -> str:
         ) from exc
 
 
+def _get_benchmark_device_ip(benchmark_camera: Any) -> str:
+    device_ip = getattr(benchmark_camera, "hostname", None)
+    if not device_ip:
+        raise RuntimeError(
+            f"Camera {benchmark_camera.name} does not expose a hostname."
+        )
+    return device_ip
+
+
 def _require_metadata(metadata: dict[str, Any]) -> None:
     missing_fields = [
         field_name
@@ -165,21 +173,7 @@ def _require_metadata(metadata: dict[str, Any]) -> None:
 def _select_benchmark_camera(
     hil_testbed: Any,
     benchmark_target: str,
-    device_ip: str | None,
 ) -> Any:
-    if device_ip:
-        device_matches = [
-            camera
-            for camera in hil_testbed.cameras
-            if getattr(camera, "hostname", None) == device_ip
-        ]
-        if len(device_matches) == 1:
-            return device_matches[0]
-        if len(device_matches) > 1:
-            raise RuntimeError(
-                f"Multiple cameras matched benchmark device IP {device_ip}."
-            )
-
     target_matches = [
         camera
         for camera in hil_testbed.cameras
@@ -211,7 +205,6 @@ def _select_benchmark_camera(
 )
 def test_benchmark_fps(
     model_slug: str,
-    device_ip: str | None,
     benchmark_target: str,
     benchmark_run_id: str,
     influx_bucket: str | None,
@@ -236,8 +229,12 @@ def test_benchmark_fps(
         "power_benchmark": False,
         "dsp_benchmark": False,
     }
-    if device_ip is not None:
-        configuration["device_ip"] = device_ip
+    benchmark_camera = _select_benchmark_camera(
+        hil_testbed=hil_testbed,
+        benchmark_target=benchmark_target,
+    )
+    benchmark_device_ip = _get_benchmark_device_ip(benchmark_camera)
+    configuration["device_ip"] = benchmark_device_ip
 
     result = bench.benchmark(configuration)
     actual_fps = result.fps
@@ -249,12 +246,6 @@ def test_benchmark_fps(
 
     deviation_pct = ((actual_fps - expected_fps) / expected_fps) * 100
     success = fps_min <= actual_fps <= fps_max
-    actual_device_ip = configuration.get("device_ip")
-    benchmark_camera = _select_benchmark_camera(
-        hil_testbed=hil_testbed,
-        benchmark_target=benchmark_target,
-        device_ip=actual_device_ip,
-    )
 
     print(
         f"Benchmark result for {model_slug}: "
@@ -267,7 +258,6 @@ def test_benchmark_fps(
         model_slug=model_slug,
         benchmark_target=benchmark_target,
         benchmark_run_id=benchmark_run_id,
-        device_ip=actual_device_ip,
         benchmark_camera=benchmark_camera,
         testbed_name=hil_testbed.config.name,
         depthai_version=depthai_version,
