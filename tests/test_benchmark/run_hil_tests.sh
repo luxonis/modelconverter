@@ -40,9 +40,7 @@ pip install --upgrade \
   --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local \
   "depthai==${DEPTHAI_VERSION}"
 
-# Cache device metadata once for the whole run using the HIL camera CLI. If the
-# lookup fails, keep the benchmark runnable and record explicit placeholder
-# values for the missing camera-derived metadata.
+# Resolve the benchmark device once for the whole run using the HIL camera CLI.
 camera_output=$(
   camera -t "${HIL_TESTBED}" -n test all info -j 2>/dev/null || printf ''
 )
@@ -68,61 +66,20 @@ device_hostname=$(
     | jq -r '.hostname // empty' 2>/dev/null \
     | head -n1
 )
-camera_mxid=$(
-  printf '%s' "$rvc4_camera" \
-    | jq -r '.mxid // empty' 2>/dev/null \
-    | head -n1
-)
-camera_model=$(
-  printf '%s' "$rvc4_camera" \
-    | jq -r '.model // empty' 2>/dev/null \
-    | head -n1
-)
-camera_revision=$(
-  printf '%s' "$rvc4_camera" \
-    | jq -r '.revision // empty' 2>/dev/null \
-    | head -n1
-)
-camera_os=$(
-  printf '%s' "$rvc4_camera" \
-    | jq -r '.os_version // empty' 2>/dev/null \
-    | head -n1
-)
 detected_testbed_name=$(
   printf '%s' "$rvc4_camera" \
     | jq -r '.name // empty' 2>/dev/null \
     | head -n1
 )
 
-missing_metadata=()
 if [ -z "$device_hostname" ]; then
-  missing_metadata+=("hostname")
-fi
-if [ -z "$camera_mxid" ]; then
-  missing_metadata+=("mxid")
-fi
-if [ -z "$camera_model" ]; then
-  missing_metadata+=("model")
-fi
-if [ -z "$camera_revision" ]; then
-  missing_metadata+=("revision")
-fi
-if [ -z "$camera_os" ]; then
-  missing_metadata+=("os_version")
-fi
-
-if [ "${#missing_metadata[@]}" -ne 0 ]; then
-  echo "Error: camera metadata is incomplete; missing fields: ${missing_metadata[*]}" >&2
+  echo "Error: camera metadata is incomplete; missing fields: hostname" >&2
   exit 1
 fi
 
 runner_hostname=$(hostname 2>/dev/null || printf 'unknown')
-server_os=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]' || printf 'unknown')
 if [ -z "$runner_hostname" ]; then
   runner_hostname="unknown"
-fi
-if [ -z "$server_os" ]; then
-  server_os="unknown"
 fi
 testbed_name="${HIL_TESTBED:-}"
 if [ -z "$testbed_name" ]; then
@@ -138,14 +95,11 @@ pytest_args=(
   -v
   tests/test_benchmark/
   --depthai-version "$DEPTHAI_VERSION"
-  --testbed-name "$testbed_name"
-  --camera-mxid "$camera_mxid"
-  --camera-os-version "$camera_os"
-  --camera-model "$camera_model"
-  --camera-revision "$camera_revision"
-  --server-os "$server_os"
 )
 
+if [ -n "$testbed_name" ]; then
+  pytest_args+=(--testbed-name "$testbed_name")
+fi
 pytest_args+=(--device-ip "$device_hostname")
 if [ -n "$BENCHMARK_RUN_ID" ]; then
   pytest_args+=(--benchmark-run-id "$BENCHMARK_RUN_ID")
@@ -157,14 +111,8 @@ echo "  INFLUX_TOKEN=$(if [ -n "${INFLUX_TOKEN:-}" ]; then printf '<set>'; else 
 echo "  DEPTHAI_VERSION=${DEPTHAI_VERSION:-<empty>}"
 echo "  benchmark_run_id=${BENCHMARK_RUN_ID:-<generated>}"
 echo "  HIL_TESTBED=${testbed_name:-<empty>}"
-echo "  HIL_CAMERA_MXID=${camera_mxid:-<empty>}"
-echo "  HIL_CAMERA_OS_VERSION=${camera_os:-<empty>}"
-echo "  HIL_CAMERA_MODEL=${camera_model:-<empty>}"
-echo "  HIL_CAMERA_REVISION=${camera_revision:-<empty>}"
-echo "  HIL_SERVER_OS=${server_os:-<empty>}"
 echo "  device_ip=${device_hostname:-<empty>}"
 echo "  runner=${runner_hostname:-<empty>}"
-echo "  server_os=${server_os:-<empty>}"
 printf '  pytest_args:'
 printf ' %q' "${pytest_args[@]}"
 printf '\n'
