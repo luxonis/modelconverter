@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from hil_framework.lib_testbed.config.Config import Config
 from hil_framework.lib_testbed.utils.Testbed import Testbed
 
 INFLUX_BUCKET = "fps_metrics"
@@ -77,7 +78,7 @@ def hil_testbed(testbed_name: str | None) -> Testbed:
             "HIL_TESTBED environment variable or --testbed-name must be set.",
             returncode=1,
         )
-    return Testbed(testbed_name)
+    return Testbed(Config(testbed_name))
 
 
 @pytest.fixture(scope="session")
