@@ -40,11 +40,6 @@ pip install --upgrade \
   --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local \
   "depthai==${DEPTHAI_VERSION}"
 
-runner_hostname=$(hostname 2>/dev/null || printf 'unknown')
-if [ -z "$runner_hostname" ]; then
-  runner_hostname="unknown"
-fi
-
 # Run tests
 pytest_args=(
   -s
@@ -66,7 +61,6 @@ echo "  INFLUX_TOKEN=$(if [ -n "${INFLUX_TOKEN:-}" ]; then printf '<set>'; else 
 echo "  DEPTHAI_VERSION=${DEPTHAI_VERSION:-<empty>}"
 echo "  benchmark_run_id=${BENCHMARK_RUN_ID:-<generated>}"
 echo "  HIL_TESTBED=${HIL_TESTBED:-<empty>}"
-echo "  runner=${runner_hostname:-<empty>}"
 printf '  pytest_args:'
 printf ' %q' "${pytest_args[@]}"
 printf '\n'
