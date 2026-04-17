@@ -23,14 +23,6 @@ def _model_id(slug: str) -> str:
     return slug.rsplit("/", 1)[-1]
 
 
-def _normalize_tag(value: Any) -> str:
-    if value in (None, ""):
-        return "unknown"
-    if hasattr(value, "value"):
-        return str(value.value)
-    return str(value)
-
-
 def _build_fps_benchmark_data(
     *,
     bucket: str,
@@ -54,39 +46,39 @@ def _build_fps_benchmark_data(
         "bucket": bucket,
         "token": token,
         "tags": [
-            {"name": "model_slug", "value": _normalize_tag(model_slug)},
-            {"name": "benchmark_target", "value": _normalize_tag(benchmark_target)},
-            {"name": "run_id", "value": _normalize_tag(benchmark_run_id)},
+            {"name": "model_slug", "value": model_slug},
+            {"name": "benchmark_target", "value": benchmark_target},
+            {"name": "run_id", "value": benchmark_run_id},
             {"name": "status", "value": "passed" if success else "failed"},
             {
                 "name": "testbed_name",
-                "value": _normalize_tag(influx_metadata.get("testbed_name")),
+                "value": influx_metadata.get("testbed_name"),
             },
             {
                 "name": "camera_mxid",
-                "value": _normalize_tag(influx_metadata.get("camera_mxid")),
+                "value": influx_metadata.get("camera_mxid"),
             },
             {
                 "name": "camera_os_version",
-                "value": _normalize_tag(influx_metadata.get("camera_os_version")),
+                "value": influx_metadata.get("camera_os_version"),
             },
             {
                 "name": "camera_model",
-                "value": _normalize_tag(influx_metadata.get("camera_model")),
+                "value": influx_metadata.get("camera_model"),
             },
             {
                 "name": "camera_revision",
-                "value": _normalize_tag(influx_metadata.get("camera_revision")),
+                "value": influx_metadata.get("camera_revision"),
             },
             {
                 "name": "server_os",
-                "value": _normalize_tag(influx_metadata.get("server_os")),
+                "value": influx_metadata.get("server_os"),
             },
             {
                 "name": "depthai_version",
-                "value": _normalize_tag(influx_metadata.get("depthai_version")),
+                "value": influx_metadata.get("depthai_version"),
             },
-            {"name": "device_ip", "value": _normalize_tag(device_ip)},
+            {"name": "device_ip", "value": device_ip},
         ],
         "fields": [
             {"name": "actual_fps", "value": actual_fps},
