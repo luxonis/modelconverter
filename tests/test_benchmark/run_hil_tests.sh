@@ -28,12 +28,9 @@ source venv/bin/activate
 pip install -r requirements.txt
 pip install pytest
 
-rm -rf hil_framework
-
-git clone --recurse-submodules -b tjb_influx_pusher https://oauth2:$PAT_TOKEN@gitlab.luxonis.com/luxonis/hil_lab/hil_framework.git
-pip install ./hil_framework/
-
-rm -rf hil_framework
+pip install hil-framework --upgrade \
+  --index-url "https://__token__:$PAT_TOKEN@gitlab.luxonis.com/api/v4/projects/213/packages/pypi/simple" \
+  > /dev/null
 
 pip install --upgrade \
   --extra-index-url "https://artifacts.luxonis.com/artifactory/luxonis-python-snapshot-local/" \
