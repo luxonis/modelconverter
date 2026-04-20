@@ -14,7 +14,7 @@ from PIL import Image
 
 from modelconverter.packages.base_analyze import Analyzer
 from modelconverter.packages.rvc4.benchmark import get_device_info
-from modelconverter.utils import AdbHandler, constants, subprocess_run
+from modelconverter.utils import constants, create_handler, subprocess_run
 
 
 class RVC4Analyzer(Analyzer):
@@ -27,7 +27,7 @@ class RVC4Analyzer(Analyzer):
     ):
         super().__init__(dlc_model_path, image_dirs)
         _, device_adb_id = get_device_info(device_ip, device_id)
-        self.adb = AdbHandler(device_adb_id)
+        self.handler = create_handler(device_ip, device_adb_id)
 
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
         input_matcher = self._prepare_input_matcher()
@@ -76,8 +76,8 @@ class RVC4Analyzer(Analyzer):
         self, input_matcher: dict[str, dict[str, str]], type: type = np.uint8
     ) -> dict[str, str]:
         logger.info("Preparing raw inputs for RVC4 analysis.")
-        self.adb.shell(f"rm -rf /data/modelconverter/{self.model_name}")
-        self.adb.shell(
+        self.handler.shell(f"rm -rf /data/modelconverter/{self.model_name}")
+        self.handler.shell(
             f"mkdir -p /data/modelconverter/{self.model_name}/inputs"
         )
 
@@ -109,7 +109,7 @@ class RVC4Analyzer(Analyzer):
 
                 with tempfile.NamedTemporaryFile() as f:
                     raw_image.tofile(f)
-                    self.adb.push(
+                    self.handler.push(
                         f.name,
                         f"/data/modelconverter/{self.model_name}/inputs/{input_name}_{img_name}.raw",
                     )
@@ -122,7 +122,7 @@ class RVC4Analyzer(Analyzer):
         with tempfile.NamedTemporaryFile() as f:
             f.write(input_list.encode())
             f.flush()
-            self.adb.push(
+            self.handler.push(
                 f.name,
                 f"/data/modelconverter/{self.model_name}/input_list.txt",
             )
@@ -321,14 +321,14 @@ class RVC4Analyzer(Analyzer):
     def _run_dlc(self, command: str) -> str:
         logger.info("Inferencing DLC model on device.")
         try:
-            self.adb.push(
+            self.handler.push(
                 str(self.dlc_model_path),
                 f"/data/modelconverter/{self.model_name}/{self.model_name}.dlc",
             )
-            self.adb.shell(
+            self.handler.shell(
                 f"rm -rf /data/modelconverter/{self.model_name}/output"
             )
-            self.adb.shell(
+            self.handler.shell(
                 f"cd /data/modelconverter/{self.model_name} && {command}"
             )
 
@@ -337,7 +337,7 @@ class RVC4Analyzer(Analyzer):
                 shutil.rmtree(target_dir / "output")
 
             target_dir.mkdir(parents=True, exist_ok=True)
-            self.adb.pull(
+            self.handler.pull(
                 f"/data/modelconverter/{self.model_name}/output",
                 f"{target_dir}/output",
             )
@@ -456,7 +456,7 @@ class RVC4Analyzer(Analyzer):
 
     # cleanup
     def _cleanup_dlc_outputs(self) -> None:
-        self.adb.shell(f"rm -rf /data/modelconverter/{self.model_name}")
+        self.handler.shell(f"rm -rf /data/modelconverter/{self.model_name}")
 
         output_dir = Path(
             f"{constants.OUTPUTS_DIR!s}/analysis/{self.model_name}/output"

@@ -1,5 +1,10 @@
 from .calibration_data import download_calibration_data
-from .device_handlers import AdbHandler, DeviceHandler, SSHHandler
+from .device_handlers import (
+    AdbHandler,
+    DeviceHandler,
+    SSHHandler,
+    create_handler,
+)
 from .device_monitors import MonitorDSP, MonitorPower
 from .docker_utils import (
     check_docker,
@@ -58,6 +63,7 @@ __all__ = [
     "SubprocessHandle",
     "archive_from_model",
     "check_docker",
+    "create_handler",
     "create_progress_handler",
     "docker_build",
     "docker_exec",

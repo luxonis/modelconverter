@@ -340,3 +340,16 @@ class AdbHandler(DeviceHandler):
         logger.info(f"Using device ID: {device_id}")
 
         return device_id
+
+
+def create_handler(
+    device_ip: str | None, device_adb_id: str | None
+) -> DeviceHandler:
+    try:
+        handler = AdbHandler(device_adb_id)
+    except Exception:
+        if device_ip is not None:
+            handler = SSHHandler(device_ip)
+        else:
+            raise
+    return handler

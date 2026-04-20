@@ -19,9 +19,9 @@ from modelconverter.packages.base_benchmark import (
     Configuration,
 )
 from modelconverter.utils import (
-    AdbHandler,
     MonitorDSP,
     MonitorPower,
+    create_handler,
     create_progress_handler,
     environ,
     subprocess_run,
@@ -118,7 +118,7 @@ class RVC4Benchmark(Benchmark):
     def _prepare_raw_inputs(self, num_images: int) -> None:
         input_sizes, data_types = self._get_input_sizes()
         input_list = ""
-        self.adb.shell(
+        self.handler.shell(
             f"mkdir -p /data/modelconverter/{self.model_name}/inputs"
         )
         for i in range(num_images):
@@ -138,7 +138,7 @@ class RVC4Benchmark(Benchmark):
                 )
                 with tempfile.NamedTemporaryFile() as f:
                     img.tofile(f)
-                    self.adb.push(
+                    self.handler.push(
                         f.name,
                         f"/data/modelconverter/{self.model_name}/inputs/{name}_{i}.raw",
                     )
@@ -148,7 +148,7 @@ class RVC4Benchmark(Benchmark):
 
         with tempfile.NamedTemporaryFile() as f:
             f.write(input_list.encode())
-            self.adb.push(
+            self.handler.push(
                 f.name,
                 f"/data/modelconverter/{self.model_name}/input_list.txt",
             )
@@ -260,18 +260,18 @@ class RVC4Benchmark(Benchmark):
             configuration.get("device_ip"), configuration.get("device_id")
         )
         if power_benchmark or dsp_benchmark or not dai_benchmark:
-            self.adb = AdbHandler(device_adb_id)
+            self.handler = create_handler(device_ip, device_adb_id)
 
         configuration["device_ip"] = device_ip
 
         self.power_monitor = None
         if power_benchmark:
-            self.power_monitor = MonitorPower(self.adb)
+            self.power_monitor = MonitorPower(self.handler)
             self.power_monitor.start()
 
         self.dsp_monitor = None
         if dsp_benchmark:
-            self.dsp_monitor = MonitorDSP(self.adb)
+            self.dsp_monitor = MonitorDSP(self.handler)
             self.dsp_monitor.start()
 
         try:
@@ -315,7 +315,7 @@ class RVC4Benchmark(Benchmark):
                 # so we don't delete the wrong directory
                 assert self.model_name
 
-                self.adb.shell(
+                self.handler.shell(
                     f"rm -rf /data/modelconverter/{self.model_name}"
                 )
 
@@ -353,13 +353,13 @@ class RVC4Benchmark(Benchmark):
                 "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
             )
 
-        self.adb.shell(f"mkdir -p /data/modelconverter/{self.model_name}")
-        self.adb.push(
+        self.handler.shell(f"mkdir -p /data/modelconverter/{self.model_name}")
+        self.handler.push(
             str(dlc_path), f"/data/modelconverter/{self.model_name}/model.dlc"
         )
         self._prepare_raw_inputs(num_images)
 
-        _, stdout, _ = self.adb.shell(
+        _, stdout, _ = self.handler.shell(
             # "source /data/modelconverter/source_me.sh && "
             "snpe-parallel-run "
             f"--container /data/modelconverter/{self.model_name}/model.dlc "
