@@ -20,8 +20,8 @@ from modelconverter.packages.base_benchmark import (
 )
 from modelconverter.utils import (
     AdbHandler,
-    AdbMonitorDSP,
-    AdbMonitorPower,
+    MonitorDSP,
+    MonitorPower,
     create_progress_handler,
     environ,
     subprocess_run,
@@ -266,12 +266,12 @@ class RVC4Benchmark(Benchmark):
 
         self.power_monitor = None
         if power_benchmark:
-            self.power_monitor = AdbMonitorPower(self.adb)
+            self.power_monitor = MonitorPower(self.adb)
             self.power_monitor.start()
 
         self.dsp_monitor = None
         if dsp_benchmark:
-            self.dsp_monitor = AdbMonitorDSP(self.adb)
+            self.dsp_monitor = MonitorDSP(self.adb)
             self.dsp_monitor.start()
 
         try:

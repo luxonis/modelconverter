@@ -1,6 +1,6 @@
-from .adb_handler import AdbHandler
-from .adb_monitor import AdbMonitorDSP, AdbMonitorPower
 from .calibration_data import download_calibration_data
+from .device_handlers import AdbHandler, DeviceHandler, SSHHandler
+from .device_monitors import MonitorDSP, MonitorPower
 from .docker_utils import (
     check_docker,
     docker_build,
@@ -46,12 +46,14 @@ from .subprocess import SubprocessHandle, subprocess_run
 
 __all__ = [
     "AdbHandler",
-    "AdbMonitorDSP",
-    "AdbMonitorPower",
+    "DeviceHandler",
     "Metadata",
     "ModelconverterException",
+    "MonitorDSP",
+    "MonitorPower",
     "ONNXModifier",
     "S3Exception",
+    "SSHHandler",
     "SubprocessException",
     "SubprocessHandle",
     "archive_from_model",
