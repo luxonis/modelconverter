@@ -10,6 +10,10 @@ on:
         required: false
         description: "Reservation Name"
         type: string
+      os_version:
+        description: "Optional camera OS version to install before the benchmark"
+        required: false
+        type: string
       hold_reservation:
         description: "Hold Testbed Reservation"
         required: false
@@ -26,11 +30,14 @@ on:
 env:
   DISTINCT_ID: ${{ github.event.inputs.distinct_id }}
   DEPTHAI_VERSION: ${{ github.event.inputs.depthai_version }}
+  OS_VERSION: ${{ github.event.inputs.os_version }}
   HIL_FRAMEWORK_TOKEN: ${{ secrets.HIL_FRAMEWORK_TOKEN }}
   HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
   RESERVATION_NAME: ${{ github.event.inputs.reservation_name }}
   HOLD_RESERVATION: ${{ github.event.inputs.hold_reservation }}
   ADDITIONAL_OPTIONS: ${{ github.event.inputs.additional_options }}
+  INFLUX_BUCKET: fps_metrics
+  INFLUX_TOKEN: ${{ secrets.INFLUX_TOKEN }}
 
 jobs:
   id:
@@ -64,16 +71,30 @@ jobs:
           if [[ -n "$ADDITIONAL_OPTIONS" ]]; then
             ADDITIONAL_OPTIONS="$ADDITIONAL_OPTIONS"
           fi
+          OS_VERSION_OPTION=""
+          if [[ -n "$OS_VERSION" ]]; then
+            OS_VERSION_OPTION="--os-version $OS_VERSION"
+          fi
 
           if [[ "$DEPTHAI_VERSION" =~ ^3\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
             DEPTHAI_VERSION_CHECKED="$DEPTHAI_VERSION"
           fi
+          : "${INFLUX_TOKEN:?INFLUX_TOKEN is required on the runner}"
+          : "${INFLUX_BUCKET:?INFLUX_BUCKET must be set by the workflow}"
+
+          REMOTE_CMD="cd /tmp/modelconverter && \
+            ./tests/test_benchmark/run_hil_tests.sh \
+              \"$HUBAI_API_KEY\" \
+              \"$HIL_FRAMEWORK_TOKEN\" \
+              \"$DEPTHAI_VERSION_CHECKED\" \
+              \"$INFLUX_TOKEN\" \
+              \"$GITHUB_RUN_ID\""
 
           exec hil_runner \
             --models "oak4_pro or oak4_d or oak4_s" \
-            $HOLD_RESERVATION \
+            $HOLD_RESERVATION_OPTION \
             --wait \
-            $ADDITIONAL_OPTIONS \
-            $RESERVATION_OPTION  \
-            --sync-workspace --rsync-args="--exclude=venv"\
-            --commands "cd /tmp/modelconverter &&  ./tests/test_benchmark/run_hil_tests.sh  $HUBAI_API_KEY $HIL_FRAMEWORK_TOKEN $DEPTHAI_VERSION_CHECKED"
+            $OS_VERSION_OPTION \
+            $RESERVATION_OPTION \
+            --sync-workspace --rsync-args="--exclude=venv" \
+            --commands "$REMOTE_CMD"
