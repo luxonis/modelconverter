@@ -1,28 +1,37 @@
 import re
 import subprocess
+from abc import ABC, abstractmethod
 
 from loguru import logger
 from luxonis_ml.typing import PathType
+from typing_extensions import override
 
 
-class AdbHandler:
-    def __init__(
-        self, device_id: str | None = None, silent: bool = True
-    ) -> None:
-        device_id = self._check_adb_connection(device_id)
-        self.device_args = ["-s", device_id] if device_id else []
-        self.silent = silent
+class DeviceHandler(ABC):
+    @abstractmethod
+    def shell(self, cmd: str, *, check: bool = False) -> tuple[int, str, str]:
+        pass
 
-    def _adb_run(self, *args, check: bool, **kwargs) -> tuple[int, str, str]:
-        subprocess.run(
-            ["adb", *map(str, self.device_args), "root"],
-            capture_output=True,
-            check=check,
-        )
-        if not self.silent:
-            logger.info(f"Executing adb command: {' '.join(map(str, args))}")
+    @abstractmethod
+    def pull(
+        self, src: PathType, dst: PathType, *, check: bool = False
+    ) -> tuple[int, str, str]:
+        pass
+
+    @abstractmethod
+    def push(
+        self, src: PathType, dst: PathType, *, check: bool = False
+    ) -> tuple[int, str, str]:
+        pass
+
+    def run(
+        self, *args, check: bool = False, silent: bool = False, **kwargs
+    ) -> tuple[int, str, str]:
+        args = list(map(str, args))
+        if not silent:
+            logger.info(f"{' '.join(args)}")
         result = subprocess.run(
-            ["adb", *self.device_args, *args],
+            args,
             **kwargs,
             capture_output=True,
             check=check,
@@ -30,31 +39,87 @@ class AdbHandler:
         stdout = result.stdout
         stderr = result.stderr
         assert result.returncode is not None
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"adb command {args[0]} failed with code {result.returncode}:\n"
-                f"args: {args}\n"
-                f"stdout:\n{stdout}\n"
-                f"stderr:\n{stderr}\n"
-            )
         return (
             result.returncode,
             stdout.decode(errors="ignore"),
             stderr.decode(errors="ignore"),
         )
 
-    def shell(self, cmd: str, *, check: bool = False) -> tuple[int, str, str]:
-        return self._adb_run("shell", cmd, check=check)
 
+class SSHHandler(DeviceHandler):
+    def __init__(self, ip: str, silent: bool = True) -> None:
+        self._address = f"root@{ip}"
+        self.silent = silent
+
+    @override
+    def shell(self, cmd: str, *, check: bool = False) -> tuple[int, str, str]:
+        return self.run(
+            "ssh",
+            self._address,
+            cmd,
+            check=check,
+            silent=self.silent,
+        )
+
+    @override
     def pull(
         self, src: PathType, dst: PathType, *, check: bool = False
     ) -> tuple[int, str, str]:
-        return self._adb_run("pull", src, dst, check=check)
+        return self.run(
+            "scp",
+            f"{self._address}:{src}",
+            dst,
+            check=check,
+            silent=self.silent,
+        )
 
+    @override
+    def push(
+        self, src: PathType, dst: PathType, *, check: bool = False
+    ) -> tuple[int, str, str]:
+        return self.run(
+            "scp",
+            src,
+            f"{self._address}:{dst}",
+            check=check,
+            silent=self.silent,
+        )
+
+
+class AdbHandler(DeviceHandler):
+    def __init__(
+        self, device_id: str | None = None, silent: bool = True
+    ) -> None:
+        device_id = self._check_adb_connection(device_id)
+        self._device_args = ["-s", device_id] if device_id else []
+        self.silent = silent
+
+    @override
+    def run(self, *args, check: bool, **kwargs) -> tuple[int, str, str]:
+        subprocess.run(
+            ["adb", *map(str, self._device_args), "root"],
+            capture_output=True,
+            check=check,
+        )
+        return super().run(
+            "adb", *self._device_args, *args, check=check, **kwargs
+        )
+
+    @override
+    def shell(self, cmd: str, *, check: bool = False) -> tuple[int, str, str]:
+        return self.run("shell", cmd, check=check)
+
+    @override
+    def pull(
+        self, src: PathType, dst: PathType, *, check: bool = False
+    ) -> tuple[int, str, str]:
+        return self.run("pull", src, dst, check=check)
+
+    @override
     def push(
         self, src: PathType, dst: PathType, check: bool = False
     ) -> tuple[int, str, str]:
-        return self._adb_run("push", src, dst, check=check)
+        return self.run("push", src, dst, check=check)
 
     def _check_adb_connection(self, device_id: str | None) -> str:
         result = subprocess.run(
