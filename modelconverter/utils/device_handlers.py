@@ -15,7 +15,7 @@ class DeviceHandler(ABC):
     """
 
     @abstractmethod
-    def shell(self, cmd: str, *, check: bool = False) -> tuple[int, str, str]:
+    def shell(self, cmd: str, *, check: bool = True) -> tuple[int, str, str]:
         """Execute a shell command on the target device.
 
         @param cmd: Shell command to execute on the device.
@@ -29,7 +29,7 @@ class DeviceHandler(ABC):
 
     @abstractmethod
     def pull(
-        self, src: PathType, dst: PathType, *, check: bool = False
+        self, src: PathType, dst: PathType, *, check: bool = True
     ) -> tuple[int, str, str]:
         """Copy a file or directory from the device to the local
         machine.
@@ -47,7 +47,7 @@ class DeviceHandler(ABC):
 
     @abstractmethod
     def push(
-        self, src: PathType, dst: PathType, *, check: bool = False
+        self, src: PathType, dst: PathType, *, check: bool = True
     ) -> tuple[int, str, str]:
         """Copy a file or directory from the local machine to the
         device.
@@ -64,7 +64,7 @@ class DeviceHandler(ABC):
         """
 
     def run(
-        self, *args, check: bool = False, silent: bool = False, **kwargs
+        self, *args, check: bool = False, silent: bool = True, **kwargs
     ) -> tuple[int, str, str]:
         """Run a subprocess command and return its result.
 
@@ -122,7 +122,7 @@ class SSHHandler(DeviceHandler):
         self.silent = silent
 
     @override
-    def shell(self, cmd: str, *, check: bool = False) -> tuple[int, str, str]:
+    def shell(self, cmd: str, *, check: bool = True) -> tuple[int, str, str]:
         """Execute a shell command on the remote device over SSH.
 
         @param cmd: Shell command to execute remotely.
@@ -145,7 +145,7 @@ class SSHHandler(DeviceHandler):
 
     @override
     def pull(
-        self, src: PathType, dst: PathType, *, check: bool = False
+        self, src: PathType, dst: PathType, *, check: bool = True
     ) -> tuple[int, str, str]:
         """Copy a file or directory from the remote device using SCP.
 
@@ -164,6 +164,7 @@ class SSHHandler(DeviceHandler):
         return self.run(
             "scp",
             f"{self._address}:{src}",
+            "-r",
             dst,
             check=check,
             silent=self.silent,
@@ -171,7 +172,7 @@ class SSHHandler(DeviceHandler):
 
     @override
     def push(
-        self, src: PathType, dst: PathType, *, check: bool = False
+        self, src: PathType, dst: PathType, *, check: bool = True
     ) -> tuple[int, str, str]:
         """Copy a file or directory to the remote device using SCP.
 
@@ -191,6 +192,7 @@ class SSHHandler(DeviceHandler):
             "scp",
             src,
             f"{self._address}:{dst}",
+            "-r",
             check=check,
             silent=self.silent,
         )
@@ -220,7 +222,7 @@ class AdbHandler(DeviceHandler):
         self.silent = silent
 
     @override
-    def run(self, *args, check: bool, **kwargs) -> tuple[int, str, str]:
+    def run(self, *args, check: bool = True, **kwargs) -> tuple[int, str, str]:
         """Run an ADB command after requesting root access.
 
         The method first invokes C{adb root} for the selected device and
@@ -249,7 +251,7 @@ class AdbHandler(DeviceHandler):
         )
 
     @override
-    def shell(self, cmd: str, *, check: bool = False) -> tuple[int, str, str]:
+    def shell(self, cmd: str, *, check: bool = True) -> tuple[int, str, str]:
         """Execute a shell command on the ADB-connected device.
 
         @param cmd: Shell command to execute on the device.
@@ -266,7 +268,7 @@ class AdbHandler(DeviceHandler):
 
     @override
     def pull(
-        self, src: PathType, dst: PathType, *, check: bool = False
+        self, src: PathType, dst: PathType, *, check: bool = True
     ) -> tuple[int, str, str]:
         """Copy a file or directory from the device using ADB.
 
@@ -286,7 +288,7 @@ class AdbHandler(DeviceHandler):
 
     @override
     def push(
-        self, src: PathType, dst: PathType, check: bool = False
+        self, src: PathType, dst: PathType, check: bool = True
     ) -> tuple[int, str, str]:
         """Copy a file or directory to the device using ADB.
 
