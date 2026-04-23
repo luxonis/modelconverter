@@ -509,11 +509,11 @@ class RVC4Benchmark(Benchmark):
         results: list[tuple[Configuration, BenchmarkResult]],
     ) -> list[str]:
         heads = []
-        if self.power_monitor:
+        if self.monitor:
             heads.append("power_sys (W)")
             heads.append("power_core (W)")
-        if self.dsp_monitor:
             heads.append("dsp (%)")
+            heads.append("memory (MB)")
         return heads
 
     def _extra_row_cells(
@@ -521,14 +521,16 @@ class RVC4Benchmark(Benchmark):
         configuration: Configuration,
         result: BenchmarkResult,
     ) -> Iterable[str]:
-        power_sys, power_core = result.power
-        dsp = result.dsp
+        power_sys = result.system_power_mean
+        power_core = result.processor_power_mean
+        dsp = result.dsp_mean
+        memory = result.memory_mean
 
-        if self.power_monitor:
+        if self.monitor:
             yield f"{power_sys:.2f}" if power_sys else "[orange3]N/A"
             yield f"{power_core:.2f}" if power_core else "[orange3]N/A"
-        if self.dsp_monitor:
             yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
+            yield f"{memory:.2f}" if memory else "[orange3]N/A"
 
 
 def device_id_to_adb_id(device_id: str) -> str:
