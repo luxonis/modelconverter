@@ -281,6 +281,8 @@ class DeviceMonitor:
         return (power0, power1)
 
     def read_dsp(self) -> float | None:
+        if not self.dsp_exists:
+            return None
         code, dsp, error = self.device_handler.shell(
             "bash /data/modelconverter/oak_dsp_util.sh", check=False
         )
