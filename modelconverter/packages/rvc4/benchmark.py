@@ -19,8 +19,7 @@ from modelconverter.packages.base_benchmark import (
     Configuration,
 )
 from modelconverter.utils import (
-    MonitorDSP,
-    MonitorPower,
+    DeviceMonitor,
     create_handler,
     create_progress_handler,
     environ,
@@ -264,15 +263,10 @@ class RVC4Benchmark(Benchmark):
 
         configuration["device_ip"] = device_ip
 
-        self.power_monitor = None
-        if power_benchmark:
-            self.power_monitor = MonitorPower(self.handler)
-            self.power_monitor.start()
-
-        self.dsp_monitor = None
-        if dsp_benchmark:
-            self.dsp_monitor = MonitorDSP(self.handler)
-            self.dsp_monitor.start()
+        self.monitor = None
+        if power_benchmark or dsp_benchmark:
+            self.monitor = DeviceMonitor(self.handler)
+            self.monitor.start()
 
         try:
             if dai_benchmark:
@@ -301,16 +295,20 @@ class RVC4Benchmark(Benchmark):
                 logger.info("Running SNPE benchmark over ADB")
                 result = self._benchmark_snpe(self.model_path, **configuration)
 
-            if self.power_monitor:
-                result = result._replace(power=self.power_monitor.get_stats())
-            if self.dsp_monitor:
-                result = result._replace(dsp=self.dsp_monitor.get_stats())
+            if self.monitor:
+                stats = self.monitor.get_stats()
+                result = result._replace(
+                    power=(
+                        stats.get("power_system"),
+                        stats.get("power_processor"),
+                    )
+                )
+                result = result._replace(dsp=stats.get("dsp"))
+
             return result
         finally:
-            if self.power_monitor:
-                self.power_monitor.stop()
-            if self.dsp_monitor:
-                self.dsp_monitor.stop(full_cleanup=True)
+            if self.monitor:
+                self.monitor.stop(full_cleanup=True)
             if not dai_benchmark:
                 # so we don't delete the wrong directory
                 assert self.model_name
