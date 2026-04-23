@@ -6,11 +6,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from loguru import logger
-from typing_extensions import override
 
-from modelconverter.utils import (
-    DeviceHandler,
-)
+from modelconverter.utils import DeviceHandler
 
 DSP_UTIL_SCRIPT_CONTENT = r"""SYS_MON_APP="/usr/bin/sysMonApp"
 SLEEP_TIME=1.0
@@ -92,18 +89,12 @@ echo "$dsp_util"
 
 
 @dataclass
-class BaseMonitor(ABC):
-    """Base class for simple threaded device monitors.
+class _BaseMonitor(ABC):
+    """Base class for simple threaded ADB monitors.
 
-    Subclasses implement C{_read()} to return a single sample value or
-    C{None}. The base class handles starting and stopping a background
+    Subclasses implement `_read()` to return a single sample value (or
+    None). The base class handles starting/stopping a background
     sampling thread and storing collected measurements.
-
-    @ivar device_handler: Handler used to communicate with the target
-        device.
-    @type device_handler: DeviceHandler
-    @ivar interval: Sampling interval in seconds.
-    @type interval: float
     """
 
     device_handler: DeviceHandler
@@ -114,13 +105,14 @@ class BaseMonitor(ABC):
     _thread: threading.Thread | None = field(default=None, init=False)
 
     @abstractmethod
-    def read(self) -> object | None:
+    def _read(self) -> object | None:
         """Perform a single sampling operation.
 
-        @return: A single measurement value, with the concrete type
-            defined by the subclass, or C{None} if the sample could not
-            be read.
-        @rtype: object | None
+        Returns
+        -------
+        object | None
+            A single measurement value (type defined by subclass), or None
+            if the sample could not be read.
         """
         ...
 
@@ -128,17 +120,19 @@ class BaseMonitor(ABC):
     def measurements(self) -> Sequence[object]:
         """Sequence of all successfully collected measurements.
 
-        @return: A list-like view of all values returned by C{_read()},
-            excluding C{None}. Empty if the monitor has not run or if
+        Returns
+        -------
+        Sequence[object]
+            A list-like view of all values that `_read()` returned
+            (excluding None). Empty if the monitor has not run or if
             all reads failed.
-        @rtype: Sequence[object]
         """
         return self._measurements or []
 
     def start(self) -> None:
         """Start the background sampling thread.
 
-        If the monitor is already running, this method does nothing.
+        If the monitor is already running, this is a no-op.
         """
         if self._running:
             return
@@ -160,7 +154,7 @@ class BaseMonitor(ABC):
         assert self._measurements is not None
         while self._running:
             try:
-                val = self.read()
+                val = self._read()
                 if val is not None:
                     self._measurements.append(val)
             except Exception:
@@ -168,27 +162,17 @@ class BaseMonitor(ABC):
             time.sleep(self.interval)
 
 
-class MonitorPower(BaseMonitor):
-    """Monitor device power consumption via a device handler.
+class MonitorPower(_BaseMonitor):
+    """Monitor device power consumption via ADB.
 
-    This monitor periodically reads power values from the hwmon
-    interfaces on the device, located at
-    C{/sys/class/hwmon/hwmonN/power1_input}, using the configured
-    C{device_handler}. Each sample is stored as a tuple C{(power0,
-    power1)} in watts.
+    This monitor periodically reads power values from the hwmon interfaces
+    on the device (`/sys/class/hwmon/hwmonN/power1_input`) using the provided
+    `adb_handler`. Each sample is stored as a tuple `(power0, power1)` in watts.
     """
 
     def __init__(
         self, device_handler: DeviceHandler, interval: float = 0.5
     ) -> None:
-        """Initialize the power monitor.
-
-        @param device_handler: Handler used to communicate with the
-            target device.
-        @type device_handler: DeviceHandler
-        @param interval: Sampling interval in seconds.
-        @type interval: float
-        """
         super().__init__(device_handler=device_handler, interval=interval)
         self.hwmon0_exists = self._check_hwmon("hwmon0")
         self.hwmon1_exists = self._check_hwmon("hwmon1")
@@ -197,15 +181,62 @@ class MonitorPower(BaseMonitor):
             self.idle_power_processor: float = 0.0
             self.set_idle_power()
 
-    @override
-    def read(self) -> tuple[float | None, float | None] | None:
+    def _check_hwmon(self, hwmon: str) -> bool:
+        """Check if a hwmon device exposes a `power1_input` file.
+
+        Parameters
+        ----------
+        hwmon : str
+            Name of the hwmon node (e.g. "hwmon0", "hwmon1").
+
+        Returns
+        -------
+        bool
+            True if the file exists, False otherwise.
+        """
+        try:
+            self.device_handler.shell(
+                f"ls /sys/class/hwmon/{hwmon}/power1_input"
+            )
+        except Exception:
+            logger.warning(
+                f"Hardware monitoring device {hwmon} missing. "
+                f"Proceeding without {hwmon} power monitoring."
+            )
+            return False
+        return True
+
+    def _read_hwmon(self, hwmon: str) -> float | None:
+        """Read instantaneous power from a single hwmon node.
+
+        Parameters
+        ----------
+        hwmon : str
+            Name of the hwmon node (e.g. "hwmon0").
+
+        Returns
+        -------
+        float | None
+            Power reading in watts, or None if the read fails.
+        """
+        try:
+            _, out, _ = self.device_handler.shell(
+                f"cat /sys/class/hwmon/{hwmon}/power1_input"
+            )
+            return int(out) / 1_000_000  # µW → W
+        except Exception:
+            logger.warning(f"Failed to read {hwmon} power value.")
+            return None
+
+    def _read(self) -> tuple[float | None, float | None] | None:
         """Read instantaneous power consumption from both hwmon devices.
 
-        @return: A tuple C{(power0, power1)} in watts, where each
-            element may be C{None} if the associated hwmon device is
-            missing or the read fails. Returns C{None} only if both
-            devices are unavailable.
-        @rtype: tuple[float | None, float | None] | None
+        Returns
+        -------
+        tuple[float | None, float | None] | None
+            A tuple `(power0, power1)` in watts, where each element may
+            be None if the associated hwmon device is missing or the read
+            fails. Returns None only if both devices are unavailable.
         """
         power0 = self._read_hwmon("hwmon0") if self.hwmon0_exists else None
         power1 = self._read_hwmon("hwmon1") if self.hwmon1_exists else None
@@ -217,10 +248,11 @@ class MonitorPower(BaseMonitor):
     def get_stats(self) -> tuple[float | None, float | None]:
         """Compute average power over all collected samples.
 
-        @return: A tuple C{(mean_power0, mean_power1)} in watts. Each
-            value is C{None} if no valid samples were collected for that
-            channel.
-        @rtype: tuple[float | None, float | None]
+        Returns
+        -------
+        tuple[float | None, float | None]
+            `(mean_power0, mean_power1)` in watts. Each value is None if no
+            valid samples were collected for that channel.
         """
         samples = [
             m
@@ -243,12 +275,6 @@ class MonitorPower(BaseMonitor):
         return mean_p0, mean_p1
 
     def set_idle_power(self) -> None:
-        """Measure and store baseline idle power consumption.
-
-        The method samples power for a short period, computes average
-        idle values for system and processor channels, and applies a 10
-        percent margin to both baselines.
-        """
         logger.info("Calculating idle power consumption...")
         self.start()
         time.sleep(5)
@@ -263,79 +289,63 @@ class MonitorPower(BaseMonitor):
             f"Idle power consumption: system={self.idle_power_system:.4f} W, processor={self.idle_power_processor:.4f} W"
         )
 
-    def _check_hwmon(self, hwmon: str) -> bool:
-        """Check whether a hwmon device exposes a C{power1_input} file.
 
-        @param hwmon: Name of the hwmon node, for example C{"hwmon0"} or
-            C{"hwmon1"}.
-        @type hwmon: str
-        @return: C{True} if the file exists, otherwise C{False}.
-        @rtype: bool
-        """
-        try:
-            self.device_handler.shell(
-                f"ls /sys/class/hwmon/{hwmon}/power1_input"
-            )
-        except Exception:
-            logger.warning(
-                f"Hardware monitoring device {hwmon} missing. "
-                f"Proceeding without {hwmon} power monitoring."
-            )
-            return False
-        return True
+class MonitorDSP(_BaseMonitor):
+    """Monitor DSP utilization via ADB helper script on the device.
 
-    def _read_hwmon(self, hwmon: str) -> float | None:
-        """Read instantaneous power from a single hwmon node.
-
-        @param hwmon: Name of the hwmon node, for example C{"hwmon0"}.
-        @type hwmon: str
-        @return: Power reading in watts, or C{None} if the read fails.
-        @rtype: float | None
-        """
-        try:
-            _, out, _ = self.device_handler.shell(
-                f"cat /sys/class/hwmon/{hwmon}/power1_input"
-            )
-            return int(out) / 1_000_000  # µW -> W
-        except Exception:
-            logger.warning(f"Failed to read {hwmon} power value.")
-            return None
-
-
-class MonitorDSP(BaseMonitor):
-    """Monitor DSP utilization via a helper script on the device.
-
-    This monitor periodically runs
-    C{/data/modelconverter/oak_dsp_util.sh}, or an equivalent utility,
-    using C{device_handler} and stores the reported DSP utilization as a
-    float in the range C{[0, 100]}.
+    This monitor periodically runs `/data/modelconverter/oak_dsp_util.sh` (or an
+    equivalent utility) via `adb_handler` and stores the reported DSP
+    utilization as a float in the range [0, 100].
     """
 
     def __init__(
         self, device_handler: DeviceHandler, interval: float = 0.5
     ) -> None:
-        """Initialize the DSP monitor.
-
-        @param device_handler: Handler used to communicate with the
-            target device.
-        @type device_handler: DeviceHandler
-        @param interval: Sampling interval in seconds.
-        @type interval: float
-        """
         super().__init__(device_handler=device_handler, interval=interval)
         self.dsp_exists = self._check_dsp()
         if self.dsp_exists:
             self.idle_dsp_utilization: float = 0.0
             self.set_idle_dsp()
 
-    @override
-    def read(self) -> float | None:
+    def _prepare_dsp_util_script(self) -> None:
+        """Create the DSP utility script directly on the device via
+        ADB."""
+        remote_script_path = "/data/modelconverter/oak_dsp_util.sh"
+        self.device_handler.shell("mkdir -p /data/modelconverter")
+
+        cmd = f"cat > {remote_script_path} <<'EOF'\n{DSP_UTIL_SCRIPT_CONTENT}\nEOF\n"
+        self.device_handler.shell(cmd)
+        self.device_handler.shell(f"chmod +x {remote_script_path}")
+
+    def _check_dsp(self) -> bool:
+        """Check if any supported DSP utility script exists on the
+        device.
+
+        Returns
+        -------
+        bool
+            True if a supported utility is present, False otherwise.
+        """
+        try:
+            self._prepare_dsp_util_script()
+            self.device_handler.shell(
+                "ls -d /data/modelconverter/oak_dsp_util.sh /usr/bin/sysMonApp"
+            )
+        except Exception:
+            logger.warning(
+                "No DSP utility script found under /usr/bin/sysMonApp. Consider updating the device OS. Proceeding without DSP monitoring."
+            )
+            return False
+        return True
+
+    def _read(self) -> float | None:
         """Read instantaneous DSP utilization from the device.
 
-        @return: DSP utilization as a percentage in the range C{[0,
-            100]}, or C{None} if the value cannot be read or the DSP
-            utility is unavailable.
-        @rtype: float | None
+        Returns
+        -------
+        float | None
+            DSP utilization as a percentage in the range [0, 100], or None
+            if the value cannot be read or the DSP utility is unavailable.
         """
         if not self.dsp_exists:
             return None
@@ -351,16 +361,9 @@ class MonitorDSP(BaseMonitor):
             logger.warning("Failed to read DSP value.")
             return None
 
-    @override
     def stop(self, full_cleanup: bool = False) -> None:
-        """Stop the monitor and optionally clean up temporary device
-        files.
-
-        @param full_cleanup: If C{True}, also remove the DSP utility
-            script from the device. Otherwise only temporary readout
-            files are removed.
-        @type full_cleanup: bool
-        """
+        """Stop the monitor and clean up temporary files on the
+        device."""
         super().stop()
         if self.dsp_exists:
             files_to_remove = [
@@ -381,9 +384,11 @@ class MonitorDSP(BaseMonitor):
     def get_stats(self) -> float | None:
         """Compute average DSP utilization over all collected samples.
 
-        @return: Mean DSP utilization in the range C{0-100}, or C{None}
-            if no valid samples were collected.
-        @rtype: float | None
+        Returns
+        -------
+        float | None
+            Mean DSP utilization (0-100). None if no valid samples were
+            collected.
         """
         dsp_vals = [
             dsp
@@ -394,11 +399,6 @@ class MonitorDSP(BaseMonitor):
         return statistics.fmean(dsp_vals) if dsp_vals else None
 
     def set_idle_dsp(self) -> None:
-        """Measure and store baseline idle DSP utilization.
-
-        The method samples DSP utilization for a short period, computes
-        the average idle utilization, and applies a 10 percent margin.
-        """
         logger.info("Calculating idle DSP utilization...")
         self.start()
         time.sleep(5)
@@ -407,32 +407,3 @@ class MonitorDSP(BaseMonitor):
         self.idle_dsp_utilization = self.get_stats() or 0.0
         self.idle_dsp_utilization *= 1.1  # add 10% margin
         logger.info(f"Idle DSP utilization: {self.idle_dsp_utilization:.4f}%")
-
-    def _prepare_dsp_util_script(self) -> None:
-        """Create the DSP utility script directly on the target
-        device."""
-        remote_script_path = "/data/modelconverter/oak_dsp_util.sh"
-        self.device_handler.shell("mkdir -p /data/modelconverter")
-
-        cmd = f"cat > {remote_script_path} <<'EOF'\n{DSP_UTIL_SCRIPT_CONTENT}\nEOF\n"
-        self.device_handler.shell(cmd)
-        self.device_handler.shell(f"chmod +x {remote_script_path}")
-
-    def _check_dsp(self) -> bool:
-        """Check whether any supported DSP utility script exists.
-
-        @return: C{True} if a supported utility is present, otherwise
-            C{False}.
-        @rtype: bool
-        """
-        try:
-            self._prepare_dsp_util_script()
-            self.device_handler.shell(
-                "ls -d /data/modelconverter/oak_dsp_util.sh /usr/bin/sysMonApp"
-            )
-        except Exception:
-            logger.warning(
-                "No DSP utility script found under /usr/bin/sysMonApp. Consider updating the device OS. Proceeding without DSP monitoring."
-            )
-            return False
-        return True
