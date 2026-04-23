@@ -11,6 +11,7 @@ from typing import Final, cast
 import depthai as dai
 import numpy as np
 import polars as pl
+from depthai import XLinkPlatform
 from loguru import logger
 
 from modelconverter.packages.base_benchmark import (
@@ -404,7 +405,12 @@ class RVC4Benchmark(Benchmark):
         if device_ip:
             device = dai.Device(dai.DeviceInfo(device_ip))
         else:
-            device = dai.Device()
+            for info in dai.Device.getAllAvailableDevices():
+                if info.platform == XLinkPlatform.X_LINK_RVC4:
+                    device = dai.Device(info)
+                    break
+            else:
+                raise RuntimeError("No RVC4 device found.")
 
         if device.getPlatform() != dai.Platform.RVC4:
             raise ValueError(
