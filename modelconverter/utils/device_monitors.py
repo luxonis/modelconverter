@@ -100,7 +100,9 @@ class DeviceMonitor:
         self.idle_power_system: float = 0.0
         self.idle_power_processor: float = 0.0
 
-        self._measurements = []
+        self._measurements: list[
+            tuple[float | None, float | None, float | None, float | None]
+        ] = []
         self._running = False
         self._thread = None
 
@@ -121,26 +123,62 @@ class DeviceMonitor:
     ) -> None:
         self.stop()
 
-    def read(self) -> tuple[float | None, float | None, float | None] | None:
+    def read(
+        self,
+    ) -> tuple[float | None, float | None, float | None, float | None] | None:
         system, proc = self.read_power()
         dsp = self.read_dsp()
-        return system, proc, dsp
+        ram = self.read_ram()
+        return system, proc, dsp, ram
+
+    def _calc_stats(self, values: list[float]) -> dict[str, float | None]:
+        if not values:
+            return {
+                "mean": None,
+                "median": None,
+                "peak": None,
+            }
+
+        return {
+            "mean": statistics.fmean(values),
+            "median": statistics.median(values),
+            "peak": max(values),
+        }
 
     def get_stats(self) -> dict:
         system = []
         proc = []
         dsp = []
-        for s, p, d in self._measurements:
+        ram = []
+
+        for s, p, d, r in self._measurements:
             if isinstance(s, (int, float)) and s > self.idle_power_system:
                 system.append(s)
             if isinstance(p, (int, float)) and p > self.idle_power_processor:
                 proc.append(p)
             if isinstance(d, (int, float)) and d > self.idle_dsp_utilization:
                 dsp.append(d)
+            if isinstance(r, (int, float)):
+                ram.append(r)
+
+        system_stats = self._calc_stats(system)
+        proc_stats = self._calc_stats(proc)
+        dsp_stats = self._calc_stats(dsp)
+        ram_stats = self._calc_stats(ram)
+
         return {
-            "power_system": statistics.fmean(system) if system else None,
-            "power_processor": statistics.fmean(proc) if proc else None,
-            "dsp": statistics.fmean(dsp) if dsp else None,
+            "power_system": system_stats["mean"],
+            "power_system_median": system_stats["median"],
+            "power_system_peak": system_stats["peak"],
+            "power_processor": proc_stats["mean"],
+            "power_processor_median": proc_stats["median"],
+            "power_processor_peak": proc_stats["peak"],
+            "dsp": dsp_stats["mean"],
+            "dsp_median": dsp_stats["median"],
+            "dsp_peak": dsp_stats["peak"],
+            "ram_used": ram_stats["mean"],
+            "ram_used_median": ram_stats["median"],
+            "ram_used_peak": ram_stats["peak"],
         }
 
     def start(self) -> None:
@@ -180,7 +218,6 @@ class DeviceMonitor:
 
     def loop(self) -> None:
         """Internal sampling loop executed in the background thread."""
-        assert self._measurements is not None
         while self._running:
             try:
                 val = self.read()
@@ -195,9 +232,36 @@ class DeviceMonitor:
             _, out, _ = self.device_handler.shell(
                 f"cat /sys/class/hwmon/{hwmon}/power1_input"
             )
-            return int(out) / 1_000_000  # µW → W
+            return int(out) / 1_000_000  # µW -> W
         except Exception:
             logger.warning(f"Failed to read {hwmon} power value.")
+            return None
+
+    def read_ram(self) -> float | None:
+        """Return used RAM in MiB."""
+        try:
+            _, out, _ = self.device_handler.shell("cat /proc/meminfo")
+            meminfo = {}
+
+            for line in out.splitlines():
+                parts = line.split(":", 1)
+                if len(parts) != 2:
+                    continue
+                key = parts[0].strip()
+                value_part = parts[1].strip().split()[0]
+                meminfo[key] = int(value_part)  # kB
+
+            mem_total = meminfo.get("MemTotal")
+            mem_available = meminfo.get("MemAvailable")
+
+            if mem_total is None or mem_available is None:
+                logger.warning("Failed to parse RAM info from /proc/meminfo.")
+                return None
+
+            used_kib = mem_total - mem_available
+            return used_kib / 1024  # KiB -> MiB
+        except Exception:
+            logger.warning("Failed to read RAM usage.")
             return None
 
     def check_hwmon(self, hwmon: str) -> bool:

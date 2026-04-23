@@ -297,13 +297,20 @@ class RVC4Benchmark(Benchmark):
 
             if self.monitor:
                 stats = self.monitor.get_stats()
-                result = result._replace(
-                    power=(
-                        stats.get("power_system"),
-                        stats.get("power_processor"),
-                    )
+                result.system_power_mean = stats.get("power_system")
+                result.system_power_median = stats.get("power_system_median")
+                result.system_power_peak = stats.get("power_system_peak")
+                result.processor_power_mean = stats.get("power_processor")
+                result.processor_power_median = stats.get(
+                    "power_processor_median"
                 )
-                result = result._replace(dsp=stats.get("dsp"))
+                result.processor_power_peak = stats.get("power_processor_peak")
+                result.dsp_mean = stats.get("dsp")
+                result.dsp_median = stats.get("dsp_median")
+                result.dsp_peak = stats.get("dsp_peak")
+                result.memory_mean = stats.get("ram_used")
+                result.memory_median = stats.get("ram_used_median")
+                result.memory_peak = stats.get("ram_used_peak")
 
             return result
         finally:

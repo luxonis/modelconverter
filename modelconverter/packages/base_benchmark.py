@@ -1,8 +1,9 @@
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, NamedTuple, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 import polars as pl
 from loguru import logger
@@ -10,14 +11,25 @@ from loguru import logger
 from modelconverter.utils import is_hubai_available, resolve_path
 
 
-class BenchmarkResult(NamedTuple):
+@dataclass
+class BenchmarkResult:
     """Benchmark result, tuple (FPS, latency in ms, system and processor
     power in W, dsp utilization)"""
 
     fps: float
     latency: float | Literal["N/A"]
-    power: tuple[float | None, float | None] = (None, None)
-    dsp: float | None = None
+    system_power_mean: float | None = None
+    system_power_median: float | None = None
+    system_power_peak: float | None = None
+    processor_power_mean: float | None = None
+    processor_power_median: float | None = None
+    processor_power_peak: float | None = None
+    dsp_mean: float | None = None
+    dsp_median: float | None = None
+    dsp_peak: float | None = None
+    memory_mean: float | None = None
+    memory_median: float | None = None
+    memory_peak: float | None = None
 
 
 Configuration: TypeAlias = dict[str, Any]
@@ -174,7 +186,7 @@ class Benchmark(ABC):
         assert results, "No results to save"
         df = pl.DataFrame(
             [
-                {**configuration, **result._asdict()}
+                configuration | result.__dict__
                 for configuration, result in results
             ]
         )
