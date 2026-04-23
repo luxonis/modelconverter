@@ -99,6 +99,7 @@ class DeviceMonitor:
         self.idle_dsp_utilization: float = 0.0
         self.idle_power_system: float = 0.0
         self.idle_power_processor: float = 0.0
+        self.idle_ram_used: float = 0.0
 
         self._measurements: list[
             tuple[float | None, float | None, float | None, float | None]
@@ -106,10 +107,7 @@ class DeviceMonitor:
         self._running = False
         self._thread = None
 
-        if self.hwmon0_exists and self.hwmon1_exists:
-            self.set_idle_power()
-        if self.dsp_exists:
-            self.set_idle_dsp()
+        self.set_idle_measurements()
 
     def __enter__(self) -> Self:
         self.start()
@@ -158,7 +156,7 @@ class DeviceMonitor:
                 proc.append(p)
             if isinstance(d, (int, float)) and d > self.idle_dsp_utilization:
                 dsp.append(d)
-            if isinstance(r, (int, float)):
+            if isinstance(r, (int, float)) and r > self.idle_ram_used:
                 ram.append(r)
 
         system_stats = self._calc_stats(system)
@@ -316,7 +314,7 @@ class DeviceMonitor:
         self.device_handler.shell(cmd)
         self.device_handler.shell(f"chmod +x {remote_script_path}")
 
-    def set_idle_power(self) -> None:
+    def set_idle_measurements(self) -> None:
         logger.info("Calculating idle power consumption...")
         self.start()
         time.sleep(5)
@@ -325,18 +323,14 @@ class DeviceMonitor:
         stats = self.get_stats()
         self.idle_power_system = stats["power_system"] or 0.0
         self.idle_power_processor = stats["power_processor"] or 0.0
-        self.idle_power_system *= 1.1  # add 10% margin
-        self.idle_power_processor *= 1.1  # add 10% margin
+        self.idle_ram_used = stats["ram_used"] or 0.0
+        self.idle_dsp_utilization = self.get_stats()["dsp"] or 0.0
+        self.idle_power_system *= 1.1
+        self.idle_power_processor *= 1.1
+        self.idle_dsp_utilization *= 1.1
         logger.info(
             f"Idle power consumption: system={self.idle_power_system:.4f} W, processor={self.idle_power_processor:.4f} W"
         )
 
-    def set_idle_dsp(self) -> None:
-        logger.info("Calculating idle DSP utilization...")
-        self.start()
-        time.sleep(5)
-        self.stop()
-
-        self.idle_dsp_utilization = self.get_stats()["dsp"] or 0.0
-        self.idle_dsp_utilization *= 1.1  # add 10% margin
         logger.info(f"Idle DSP utilization: {self.idle_dsp_utilization:.4f}%")
+        logger.info(f"Idle RAM used: {self.idle_ram_used:.2f} MiB")
