@@ -95,16 +95,18 @@ class DeviceMonitor:
         self.interval = interval
         self.hwmon0_exists = self.check_hwmon("hwmon0")
         self.hwmon1_exists = self.check_hwmon("hwmon1")
+        self.dsp_exists = self.check_dsp()
+        self.idle_dsp_utilization: float = 0.0
+        self.idle_power_system: float = 0.0
+        self.idle_power_processor: float = 0.0
+
         self._measurements = []
         self._running = False
         self._thread = None
+
         if self.hwmon0_exists and self.hwmon1_exists:
-            self.idle_power_system: float = 0.0
-            self.idle_power_processor: float = 0.0
             self.set_idle_power()
-        self.dsp_exists = self.check_dsp()
         if self.dsp_exists:
-            self.idle_dsp_utilization: float = 0.0
             self.set_idle_dsp()
 
     def __enter__(self) -> Self:
