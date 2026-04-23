@@ -3,8 +3,8 @@
 set -e  # Exit immediately if a command fails
 
 # Check if required arguments were provided
-if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
-  echo "Usage: $0 <HUBAI_API_KEY> <PAT_TOKEN> <DAI_VERSION>"
+if [ -z "${1:-}" ] || [ -z "${2:-}" ] || [ -z "${3:-}" ] || [ -z "${4:-}" ]; then
+  echo "Usage: $0 <HUBAI_API_KEY> <PAT_TOKEN> <DAI_VERSION> <INFLUX_TOKEN> [BENCHMARK_RUN_ID]"
   exit 1
 fi
 
@@ -12,6 +12,8 @@ fi
 export HUBAI_API_KEY="$1"
 export PAT_TOKEN="$2"
 export DEPTHAI_VERSION="$3"
+export INFLUX_TOKEN="$4"
+BENCHMARK_RUN_ID="${5:-}"
 
 # Navigate to project directory
 cd /tmp/modelconverter
@@ -35,10 +37,29 @@ pip install --upgrade \
   --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local \
   "depthai==${DEPTHAI_VERSION}"
 
-# Extract hostname of first rvc4 device
-hostname=$(hil_camera -t "$HIL_TESTBED" -n test all info -j \
-  | jq -r '.[] | select(.platform=="rvc4") | .hostname' \
-  | head -n1)
-
 # Run tests
-pytest -s -v tests/test_benchmark/ --device-ip "$hostname"
+pytest_args=(
+  -s
+  -v
+  tests/test_benchmark/
+  --depthai-version "$DEPTHAI_VERSION"
+)
+
+if [ -n "${HIL_TESTBED:-}" ]; then
+  pytest_args+=(--testbed-name "$HIL_TESTBED")
+fi
+if [ -n "$BENCHMARK_RUN_ID" ]; then
+  pytest_args+=(--benchmark-run-id "$BENCHMARK_RUN_ID")
+fi
+
+echo "Influx metadata debug:"
+echo "  INFLUX_BUCKET=fps_metrics"
+echo "  INFLUX_TOKEN=$(if [ -n "${INFLUX_TOKEN:-}" ]; then printf '<set>'; else printf '<empty>'; fi)"
+echo "  DEPTHAI_VERSION=${DEPTHAI_VERSION:-<empty>}"
+echo "  benchmark_run_id=${BENCHMARK_RUN_ID:-<generated>}"
+echo "  HIL_TESTBED=${HIL_TESTBED:-<empty>}"
+printf '  pytest_args:'
+printf ' %q' "${pytest_args[@]}"
+printf '\n'
+
+pytest "${pytest_args[@]}"
