@@ -30,6 +30,9 @@ class BenchmarkResult:
     memory_mean: float | None = None
     memory_median: float | None = None
     memory_peak: float | None = None
+    cpu_mean: float | None = None
+    cpu_median: float | None = None
+    cpu_peak: float | None = None
 
 
 Configuration: TypeAlias = dict[str, Any]

@@ -311,6 +311,9 @@ class RVC4Benchmark(Benchmark):
                 result.memory_mean = stats.get("ram_used")
                 result.memory_median = stats.get("ram_used_median")
                 result.memory_peak = stats.get("ram_used_peak")
+                result.cpu_mean = stats.get("cpu")
+                result.cpu_median = stats.get("cpu_median")
+                result.cpu_peak = stats.get("cpu_peak")
 
             return result
         finally:
@@ -514,6 +517,7 @@ class RVC4Benchmark(Benchmark):
             heads.append("power_core (W)")
             heads.append("dsp (%)")
             heads.append("memory (MB)")
+            heads.append("cpu (%)")
         return heads
 
     def _extra_row_cells(
@@ -525,12 +529,14 @@ class RVC4Benchmark(Benchmark):
         power_core = result.processor_power_mean
         dsp = result.dsp_mean
         memory = result.memory_mean
+        cpu = result.cpu_mean
 
         if self.monitor:
             yield f"{power_sys:.2f}" if power_sys else "[orange3]N/A"
             yield f"{power_core:.2f}" if power_core else "[orange3]N/A"
             yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
             yield f"{memory:.2f}" if memory else "[orange3]N/A"
+            yield f"{cpu:.2f}" if cpu else "[orange3]N/A"
 
 
 def device_id_to_adb_id(device_id: str) -> str:

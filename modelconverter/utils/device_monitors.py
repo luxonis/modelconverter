@@ -100,12 +100,22 @@ class DeviceMonitor:
         self.idle_power_system: float = 0.0
         self.idle_power_processor: float = 0.0
         self.idle_ram_used: float = 0.0
+        self.idle_cpu_utilization: float = 0.0
 
         self._measurements: list[
-            tuple[float | None, float | None, float | None, float | None]
+            tuple[
+                float | None,  # system power
+                float | None,  # processor power
+                float | None,  # dsp
+                float | None,  # ram
+                float | None,  # cpu
+            ]
         ] = []
         self._running = False
         self._thread = None
+
+        # Previous /proc/stat snapshot for CPU utilization calculation
+        self._prev_cpu_times: tuple[int, int] | None = None
 
         self.set_idle_measurements()
 
@@ -123,11 +133,21 @@ class DeviceMonitor:
 
     def read(
         self,
-    ) -> tuple[float | None, float | None, float | None, float | None] | None:
+    ) -> (
+        tuple[
+            float | None,
+            float | None,
+            float | None,
+            float | None,
+            float | None,
+        ]
+        | None
+    ):
         system, proc = self.read_power()
         dsp = self.read_dsp()
         ram = self.read_ram()
-        return system, proc, dsp, ram
+        cpu = self.read_cpu()
+        return system, proc, dsp, ram, cpu
 
     def _calc_stats(self, values: list[float]) -> dict[str, float | None]:
         if not values:
@@ -148,8 +168,9 @@ class DeviceMonitor:
         proc = []
         dsp = []
         ram = []
+        cpu = []
 
-        for s, p, d, r in self._measurements:
+        for s, p, d, r, c in self._measurements:
             if isinstance(s, (int, float)) and s > self.idle_power_system:
                 system.append(s)
             if isinstance(p, (int, float)) and p > self.idle_power_processor:
@@ -158,11 +179,14 @@ class DeviceMonitor:
                 dsp.append(d)
             if isinstance(r, (int, float)) and r > self.idle_ram_used:
                 ram.append(r)
+            if isinstance(c, (int, float)) and c > self.idle_cpu_utilization:
+                cpu.append(c)
 
         system_stats = self._calc_stats(system)
         proc_stats = self._calc_stats(proc)
         dsp_stats = self._calc_stats(dsp)
         ram_stats = self._calc_stats(ram)
+        cpu_stats = self._calc_stats(cpu)
 
         return {
             "power_system": system_stats["mean"],
@@ -177,6 +201,9 @@ class DeviceMonitor:
             "ram_used": ram_stats["mean"],
             "ram_used_median": ram_stats["median"],
             "ram_used_peak": ram_stats["peak"],
+            "cpu": cpu_stats["mean"],
+            "cpu_median": cpu_stats["median"],
+            "cpu_peak": cpu_stats["peak"],
         }
 
     def start(self) -> None:
@@ -188,6 +215,7 @@ class DeviceMonitor:
             return
         time.sleep(1)  # Small delay to avoid overlapping ADB commands
         self._measurements = []
+        self._prev_cpu_times = None
         self._running = True
         self._thread = threading.Thread(target=self.loop, daemon=True)
         self._thread.start()
@@ -262,6 +290,50 @@ class DeviceMonitor:
             logger.warning("Failed to read RAM usage.")
             return None
 
+    def read_cpu(self) -> float | None:
+        """Return total CPU utilization in percent based on /proc/stat
+        deltas.
+
+        The first call returns None because a previous sample is needed.
+        """
+        try:
+            _, out, _ = self.device_handler.shell("cat /proc/stat")
+            first_line = out.splitlines()[0].strip()
+            parts = first_line.split()
+
+            if not parts or parts[0] != "cpu" or len(parts) < 5:
+                logger.warning("Failed to parse CPU info from /proc/stat.")
+                return None
+
+            values = [int(v) for v in parts[1:]]
+            total = sum(values)
+
+            # Linux aggregate idle time = idle + iowait
+            idle = values[3]
+            if len(values) > 4:
+                idle += values[4]
+
+            current = (total, idle)
+
+            if self._prev_cpu_times is None:
+                self._prev_cpu_times = current
+                return None
+
+            prev_total, prev_idle = self._prev_cpu_times
+            self._prev_cpu_times = current
+
+            delta_total = total - prev_total
+            delta_idle = idle - prev_idle
+
+            if delta_total <= 0:
+                return None
+
+            utilization = 100.0 * (1.0 - (delta_idle / delta_total))
+            return max(0.0, min(100.0, utilization))
+        except Exception:
+            logger.warning("Failed to read CPU usage.")
+            return None
+
     def check_hwmon(self, hwmon: str) -> bool:
         try:
             self.device_handler.shell(
@@ -326,13 +398,17 @@ class DeviceMonitor:
         self.idle_power_system = stats["power_system"] or 0.0
         self.idle_power_processor = stats["power_processor"] or 0.0
         self.idle_ram_used = stats["ram_used"] or 0.0
-        self.idle_dsp_utilization = self.get_stats()["dsp"] or 0.0
+        self.idle_dsp_utilization = stats["dsp"] or 0.0
+        self.idle_cpu_utilization = stats["cpu"] or 0.0
+
         self.idle_power_system *= 1.1
         self.idle_power_processor *= 1.1
         self.idle_dsp_utilization *= 1.1
+        self.idle_cpu_utilization *= 1.1
+
         logger.info(
             f"Idle power consumption: system={self.idle_power_system:.4f} W, processor={self.idle_power_processor:.4f} W"
         )
-
         logger.info(f"Idle DSP utilization: {self.idle_dsp_utilization:.4f}%")
+        logger.info(f"Idle CPU utilization: {self.idle_cpu_utilization:.4f}%")
         logger.info(f"Idle RAM used: {self.idle_ram_used:.2f} MiB")
