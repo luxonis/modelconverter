@@ -372,7 +372,7 @@ class DeviceMonitor:
                 "ls -d /data/modelconverter/oak_dsp_util.sh /usr/bin/sysMonApp"
             )
         except Exception:
-            logger.warning(
+            logger.exception(
                 "No DSP utility script found under /usr/bin/sysMonApp. Consider updating the device OS. Proceeding without DSP monitoring."
             )
             return False
