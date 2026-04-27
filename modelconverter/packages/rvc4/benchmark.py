@@ -50,6 +50,8 @@ DLC_TO_DAI_DATA_TYPE: Final[dict[str, dai.TensorInfo.DataType]] = {
     "Float_64": dai.TensorInfo.DataType.FP64,
     "Int_8": dai.TensorInfo.DataType.I8,
     "Int_32": dai.TensorInfo.DataType.INT,
+    # DAI does not currently expose a 16-bit fixed-point/int tensor type.
+    # Until it does, keep uFxp_16 on the closest supported 16-bit path.
     "uFxp_16": dai.TensorInfo.DataType.FP16,
     "uFxp_8": dai.TensorInfo.DataType.U8F,
 }
@@ -125,28 +127,24 @@ class RVC4Benchmark(Benchmark):
         return sizes, data_types
 
     def _prepare_raw_inputs(self, num_images: int) -> None:
-        input_sizes, data_types = self._get_input_sizes()
+        input_sizes, dlc_data_types = self._get_input_sizes()
+        data_types = self._map_dlc_data_types(dlc_data_types)
         input_list = ""
         self.adb.shell(
             f"mkdir -p /data/modelconverter/{self.model_name}/inputs"
         )
         for i in range(num_images):
             for name, size in input_sizes.items():
-                if data_types[name] == "Float_32":
-                    numpy_type = np.float32
-                elif data_types[name] in ["uFxp_16", "Float_16"]:
-                    numpy_type = np.float16
-                elif data_types[name] == "uFxp_8":
-                    numpy_type = np.uint8
-                else:
+                if name not in data_types:
                     raise ValueError(
-                        f"Unsupported data type {data_types[name]} for input {name}."
+                        f"Unsupported data type {dlc_data_types[name]} for input {name}."
                     )
-                img = cast(np.ndarray, np.random.rand(*size)).astype(
-                    numpy_type
+                input_data = cast(
+                    np.ndarray,
+                    self._create_random_input(size, data_types[name]),
                 )
                 with tempfile.NamedTemporaryFile() as f:
-                    img.tofile(f)
+                    input_data.tofile(f)
                     self.adb.push(
                         f.name,
                         f"/data/modelconverter/{self.model_name}/inputs/{name}_{i}.raw",
@@ -161,6 +159,24 @@ class RVC4Benchmark(Benchmark):
                 f.name,
                 f"/data/modelconverter/{self.model_name}/input_list.txt",
             )
+
+    @staticmethod
+    def _map_dlc_data_types(
+        data_types: dict[str, str],
+    ) -> dict[str, dai.TensorInfo.DataType]:
+        """Map DLC input data types to DepthAI tensor types."""
+        unsupported_types = sorted(
+            set(data_types.values()) - set(DLC_TO_DAI_DATA_TYPE)
+        )
+        if unsupported_types:
+            raise ValueError(
+                f"Unsupported data types {unsupported_types}. Expected one of: {sorted(DLC_TO_DAI_DATA_TYPE)}."
+            )
+
+        return {
+            name: DLC_TO_DAI_DATA_TYPE[data_type]
+            for name, data_type in data_types.items()
+        }
 
     def _get_data_types_from_dlc(
         self, model_path: str | Path | None = None
@@ -187,18 +203,7 @@ class RVC4Benchmark(Benchmark):
         else:
             raise ValueError("Expected .dlc, or .tar.xz model format.")
 
-        unsupported_types = sorted(
-            set(data_types.values()) - set(DLC_TO_DAI_DATA_TYPE)
-        )
-        if unsupported_types:
-            raise ValueError(
-                f"Unsupported data types {unsupported_types}. Expected one of: {sorted(DLC_TO_DAI_DATA_TYPE)}."
-            )
-
-        return {
-            name: DLC_TO_DAI_DATA_TYPE[data_type]
-            for name, data_type in data_types.items()
-        }
+        return self._map_dlc_data_types(data_types)
 
     @staticmethod
     def _create_random_input(
@@ -211,13 +216,13 @@ class RVC4Benchmark(Benchmark):
         if data_type == dai.TensorInfo.DataType.FP64:
             return np.random.rand(*input_size).astype(np.float64)
         if data_type == dai.TensorInfo.DataType.I8:
-            return np.random.randint(-128, 127, size=input_size, dtype=np.int8)
+            return np.random.randint(-128, 128, size=input_size, dtype=np.int8)
         if data_type == dai.TensorInfo.DataType.INT:
             # INT inputs are often token/index tensors; zero keeps synthetic
             # benchmark inputs in a safe range.
             return np.zeros(input_size, dtype=np.int32)
         if data_type == dai.TensorInfo.DataType.U8F:
-            return np.random.randint(0, 255, size=input_size, dtype=np.uint8)
+            return np.random.randint(0, 256, size=input_size, dtype=np.uint8)
 
         raise ValueError(f"Unsupported DAI data type {data_type}.")
 
