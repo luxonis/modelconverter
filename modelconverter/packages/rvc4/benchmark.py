@@ -4,9 +4,9 @@ import re
 import shutil
 import tempfile
 from collections.abc import Iterable
-from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, cast
+from typing import Final
 
 import depthai as dai
 import numpy as np
@@ -45,6 +45,26 @@ RUNTIMES: dict[str, str] = {
     "cpu": "use_cpu",
 }
 
+DLC_TO_DAI_DATA_TYPE: Final[dict[str, dai.TensorInfo.DataType]] = {
+    "Float_32": dai.TensorInfo.DataType.FP32,
+    "Float_16": dai.TensorInfo.DataType.FP16,
+    "Float_64": dai.TensorInfo.DataType.FP64,
+    "Int_8": dai.TensorInfo.DataType.I8,
+    "Int_32": dai.TensorInfo.DataType.INT,
+    # DAI does not currently expose a 16-bit fixed-point/int tensor type.
+    # Until it does, keep uFxp_16 on the closest supported 16-bit path.
+    "uFxp_16": dai.TensorInfo.DataType.FP16,
+    "uFxp_8": dai.TensorInfo.DataType.U8F,
+}
+
+
+@dataclass(frozen=True)
+class InputSpec:
+    name: str
+    shape: list[int]
+    dlc_dtype: str
+    dai_dtype: dai.TensorInfo.DataType
+
 
 class RVC4Benchmark(Benchmark):
     @property
@@ -80,15 +100,29 @@ class RVC4Benchmark(Benchmark):
             for threads in [1, 2]
         ]
 
-    def _get_input_sizes(
+    def _get_dlc_input_specs(
         self, model_path: str | Path | None = None
-    ) -> tuple[dict[str, list[int]], dict[str, str]]:
+    ) -> list[InputSpec]:
+        """Retrieve normalized input specs from a DLC or NNArchive."""
+        model_path = self.model_path if model_path is None else model_path
+
+        if str(model_path).endswith(".tar.xz"):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                shutil.unpack_archive(model_path, tmp_dir)
+                dlc_files = list(Path(tmp_dir).rglob("*.dlc"))
+                if not dlc_files:
+                    raise ValueError("No .dlc file found in the archive.")
+                return self._get_dlc_input_specs(dlc_files[0])
+
+        if not str(model_path).endswith(".dlc"):
+            raise ValueError("Expected .dlc, or .tar.xz model format.")
+
         csv_path = Path("info.csv")
         subprocess_run(
             [
                 "snpe-dlc-info",
                 "-i",
-                self.model_path if model_path is None else model_path,
+                model_path,
                 "-s",
                 csv_path,
             ],
@@ -110,40 +144,41 @@ class RVC4Benchmark(Benchmark):
         )
 
         rows = df.rows(named=True)
-        sizes = {row["Input Name"]: row["Dimensions"] for row in rows}
-        data_types = {row["Input Name"]: row["Type"] for row in rows}
+        data_types = [str(row["Type"]) for row in rows]
+        unsupported_types = sorted(set(data_types) - set(DLC_TO_DAI_DATA_TYPE))
+        if unsupported_types:
+            raise ValueError(
+                f"Unsupported data types {unsupported_types}. Expected one of: {sorted(DLC_TO_DAI_DATA_TYPE)}."
+            )
 
-        return sizes, data_types
+        return [
+            InputSpec(
+                name=str(row["Input Name"]),
+                shape=list(row["Dimensions"]),
+                dlc_dtype=str(row["Type"]),
+                dai_dtype=DLC_TO_DAI_DATA_TYPE[str(row["Type"])],
+            )
+            for row in rows
+        ]
 
-    def _prepare_raw_inputs(self, num_images: int) -> None:
-        input_sizes, data_types = self._get_input_sizes()
+    def _prepare_raw_inputs(
+        self, input_specs: list[InputSpec], num_images: int
+    ) -> None:
         input_list = ""
         self.handler.shell(
             f"mkdir -p /data/modelconverter/{self.model_name}/inputs"
         )
         for i in range(num_images):
-            for name, size in input_sizes.items():
-                if data_types[name] == "Float_32":
-                    numpy_type = np.float32
-                elif data_types[name] in ["uFxp_16", "Float_16"]:
-                    numpy_type = np.float16
-                elif data_types[name] == "uFxp_8":
-                    numpy_type = np.uint8
-                else:
-                    raise ValueError(
-                        f"Unsupported data type {data_types[name]} for input {name}."
-                    )
-                img = cast(np.ndarray, np.random.rand(*size)).astype(
-                    numpy_type
-                )
+            for spec in input_specs:
+                input_data = self._create_random_input(spec)
                 with tempfile.NamedTemporaryFile() as f:
-                    img.tofile(f)
+                    input_data.tofile(f)
                     self.handler.push(
                         f.name,
-                        f"/data/modelconverter/{self.model_name}/inputs/{name}_{i}.raw",
+                        f"/data/modelconverter/{self.model_name}/inputs/{spec.name}_{i}.raw",
                     )
 
-                input_list += f"{name}:=/data/modelconverter/{self.model_name}/inputs/{name}_{i}.raw "
+                input_list += f"{spec.name}:=/data/modelconverter/{self.model_name}/inputs/{spec.name}_{i}.raw "
             input_list += "\n"
 
         with tempfile.NamedTemporaryFile() as f:
@@ -153,103 +188,26 @@ class RVC4Benchmark(Benchmark):
                 f"/data/modelconverter/{self.model_name}/input_list.txt",
             )
 
-    def _get_data_type_from_dlc(self) -> dai.TensorInfo.DataType:
-        """Retrieve the data type of the dlc model info.
+    @staticmethod
+    def _create_random_input(
+        spec: InputSpec,
+    ) -> np.ndarray:
+        if spec.dai_dtype == dai.TensorInfo.DataType.FP32:
+            return np.random.rand(*spec.shape).astype(np.float32)
+        if spec.dai_dtype == dai.TensorInfo.DataType.FP16:
+            return np.random.rand(*spec.shape).astype(np.float16)
+        if spec.dai_dtype == dai.TensorInfo.DataType.FP64:
+            return np.random.rand(*spec.shape).astype(np.float64)
+        if spec.dai_dtype == dai.TensorInfo.DataType.I8:
+            return np.random.randint(-128, 128, size=spec.shape, dtype=np.int8)
+        if spec.dai_dtype == dai.TensorInfo.DataType.INT:
+            # INT inputs are often token/index tensors; zero keeps synthetic
+            # benchmark inputs in a safe range.
+            return np.zeros(spec.shape, dtype=np.int32)
+        if spec.dai_dtype == dai.TensorInfo.DataType.U8F:
+            return np.random.randint(0, 256, size=spec.shape, dtype=np.uint8)
 
-        If the model is in NNArchive format, decompress it and then
-        retrieve the data type.
-        """
-
-        if str(self.model_path).endswith(".dlc"):
-            _, data_types = self._get_input_sizes()
-        elif str(self.model_path).endswith(".tar.xz"):
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                shutil.unpack_archive(self.model_path, tmp_dir)
-
-                dlc_files = list(Path(tmp_dir).rglob("*.dlc"))
-                if not dlc_files:
-                    raise ValueError("No .dlc file found in the archive.")
-                dlc_path = dlc_files[0]
-
-                _, data_types = self._get_input_sizes(dlc_path)
-        else:
-            raise ValueError("Expected .dlc, or .tar.xz model format.")
-
-        model_input = next(iter(data_types.values()))
-        if model_input == "Float_32":
-            return dai.TensorInfo.DataType.FP32
-        if model_input in ["uFxp_16", "Float_16"]:
-            return dai.TensorInfo.DataType.FP16
-        if model_input == "uFxp_8":
-            return dai.TensorInfo.DataType.U8F
-        raise ValueError(
-            f"Unsupported data type {model_input}. Expected Float_32, Float_16, or uFxp_8."
-        )
-
-    def _get_data_type(self) -> dai.TensorInfo.DataType:
-        """Retrieve the data type of the model inputs. If the model is
-        not a HubAI model, it defaults to dai.TensorInfo.DataType.U8F
-        (INT8).
-
-        @return: The data type of the model inputs.
-        @rtype: dai.TensorInfo.DataType
-        """
-        from modelconverter.cli import Request, slug_to_id
-
-        if not isinstance(
-            self.model_path, str
-        ) or not self.HUB_MODEL_PATTERN.match(self.model_path):
-            return self._get_data_type_from_dlc()
-
-        model_id = slug_to_id(self.model_name, "models")
-        model_variant = self.model_path.split(":")[1]
-
-        model_variants = []
-        for is_public in [True, False]:
-            with suppress(Exception):
-                model_variants += Request.get(
-                    "modelVersions/",
-                    params={"model_id": model_id, "is_public": is_public},
-                )
-
-        model_version_id = None
-        for version in model_variants:
-            if version["variant_slug"] == model_variant:
-                model_version_id = version["id"]
-                break
-
-        if not model_version_id:
-            return dai.TensorInfo.DataType.U8F
-
-        model_instances = []
-        for is_public in [True, False]:
-            with suppress(Exception):
-                model_instances += Request.get(
-                    "modelInstances/",
-                    params={
-                        "model_id": model_id,
-                        "model_version_id": model_version_id,
-                        "is_public": is_public,
-                    },
-                )
-
-        model_precision_type = "INT8"
-        for instance in model_instances:
-            if instance["platforms"] == ["RVC4"] and (
-                self.model_instance is None
-                or instance["hash_short"] == self.model_instance
-            ):
-                model_precision_type = instance.get(
-                    "model_precision_type", "INT8"
-                )
-                break
-
-        if model_precision_type == "FP16":
-            return dai.TensorInfo.DataType.FP16
-        if model_precision_type == "FP32":
-            return dai.TensorInfo.DataType.FP32
-
-        return dai.TensorInfo.DataType.U8F
+        raise ValueError(f"Unsupported DAI data type {spec.dai_dtype}.")
 
     def benchmark(self, configuration: Configuration) -> BenchmarkResult:
         dai_benchmark = configuration.get("dai_benchmark")
@@ -345,7 +303,6 @@ class RVC4Benchmark(Benchmark):
             dlc_path = next(tmp_dir.rglob(dlc_model_name), None)
             if not dlc_path:
                 raise ValueError("Could not find model.dlc in the archive.")
-            self.model_path = dlc_path
         elif str(model_path).endswith(".dlc"):
             dlc_path = model_path
         else:
@@ -353,11 +310,12 @@ class RVC4Benchmark(Benchmark):
                 "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
             )
 
+        input_specs = self._get_dlc_input_specs(dlc_path)
         self.handler.shell(f"mkdir -p /data/modelconverter/{self.model_name}")
         self.handler.push(
             str(dlc_path), f"/data/modelconverter/{self.model_name}/model.dlc"
         )
-        self._prepare_raw_inputs(num_images)
+        self._prepare_raw_inputs(input_specs, num_images)
 
         _, stdout, _ = self.handler.shell(
             # "source /data/modelconverter/source_me.sh && "
@@ -408,15 +366,17 @@ class RVC4Benchmark(Benchmark):
         )
 
         if isinstance(model_path, str):
-            modelPath = dai.getModelFromZoo(
-                dai.NNModelDescription(
-                    model_path,
-                    platform=device.getPlatformAsString(),
-                ),
-                apiKey=environ.HUBAI_API_KEY or "",
+            modelPath = Path(
+                dai.getModelFromZoo(
+                    dai.NNModelDescription(
+                        model_path,
+                        platform=device.getPlatformAsString(),
+                    ),
+                    apiKey=environ.HUBAI_API_KEY or "",
+                )
             )
         elif str(model_path).endswith(".tar.xz"):
-            modelPath = str(model_path)
+            modelPath = Path(model_path)
         elif str(model_path).endswith(".dlc"):
             raise ValueError(
                 "DLC model format is not currently supported for dai-benchmark. Please use SNPE for DLC models."
@@ -426,19 +386,15 @@ class RVC4Benchmark(Benchmark):
                 "Unsupported model format. Supported formats: .tar.xz, or HubAI model slug."
             )
 
-        inputSizes = []
-        inputNames = []
+        input_specs: list[InputSpec] = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            modelArhive = dai.NNArchive(modelPath)  # type: ignore[arg-type]
-            for input in modelArhive.getConfig().model.inputs:
-                inputSizes.append(input.shape)
-                inputNames.append(input.name)
+            model_archive = dai.NNArchive(modelPath)  # type: ignore[arg-type]
+            input_specs = self._get_dlc_input_specs(modelPath)
 
-        data_type = self._get_data_type()
         inputData = dai.NNData()
-        for name, inputSize in zip(inputNames, inputSizes, strict=True):
-            img = np.random.randint(0, 255, inputSize, np.uint8)
-            inputData.addTensor(name, img, dataType=data_type)
+        for spec in input_specs:
+            input_data = self._create_random_input(spec)
+            inputData.addTensor(spec.name, input_data, dataType=spec.dai_dtype)
 
         with dai.Pipeline(device) as pipeline:
             benchmarkOut = pipeline.create(dai.node.BenchmarkOut)
@@ -449,7 +405,7 @@ class RVC4Benchmark(Benchmark):
             if isinstance(model_path, str) or str(model_path).endswith(
                 ".tar.xz"
             ):
-                neuralNetwork.setNNArchive(modelArhive)
+                neuralNetwork.setNNArchive(model_archive)
 
             neuralNetwork.setBackendProperties(
                 {
