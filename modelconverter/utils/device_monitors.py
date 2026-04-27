@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from loguru import logger
 
-from modelconverter.utils.adb_handler import AdbHandler
+from modelconverter.utils import DeviceHandler
 
 DSP_UTIL_SCRIPT_CONTENT = r"""SYS_MON_APP="/usr/bin/sysMonApp"
 SLEEP_TIME=1.0
@@ -89,7 +89,7 @@ echo "$dsp_util"
 
 
 @dataclass
-class _BaseAdbMonitor(ABC):
+class _BaseMonitor(ABC):
     """Base class for simple threaded ADB monitors.
 
     Subclasses implement `_read()` to return a single sample value (or
@@ -97,7 +97,7 @@ class _BaseAdbMonitor(ABC):
     sampling thread and storing collected measurements.
     """
 
-    adb_handler: AdbHandler
+    device_handler: DeviceHandler
     interval: float = 0.5
 
     _measurements: list[object] | None = field(default=None, init=False)
@@ -162,7 +162,7 @@ class _BaseAdbMonitor(ABC):
             time.sleep(self.interval)
 
 
-class AdbMonitorPower(_BaseAdbMonitor):
+class MonitorPower(_BaseMonitor):
     """Monitor device power consumption via ADB.
 
     This monitor periodically reads power values from the hwmon interfaces
@@ -170,8 +170,10 @@ class AdbMonitorPower(_BaseAdbMonitor):
     `adb_handler`. Each sample is stored as a tuple `(power0, power1)` in watts.
     """
 
-    def __init__(self, adb_handler: AdbHandler, interval: float = 0.5) -> None:
-        super().__init__(adb_handler=adb_handler, interval=interval)
+    def __init__(
+        self, device_handler: DeviceHandler, interval: float = 0.5
+    ) -> None:
+        super().__init__(device_handler=device_handler, interval=interval)
         self.hwmon0_exists = self._check_hwmon("hwmon0")
         self.hwmon1_exists = self._check_hwmon("hwmon1")
         if self.hwmon0_exists and self.hwmon1_exists:
@@ -193,7 +195,9 @@ class AdbMonitorPower(_BaseAdbMonitor):
             True if the file exists, False otherwise.
         """
         try:
-            self.adb_handler.shell(f"ls /sys/class/hwmon/{hwmon}/power1_input")
+            self.device_handler.shell(
+                f"ls /sys/class/hwmon/{hwmon}/power1_input"
+            )
         except Exception:
             logger.warning(
                 f"Hardware monitoring device {hwmon} missing. "
@@ -216,7 +220,7 @@ class AdbMonitorPower(_BaseAdbMonitor):
             Power reading in watts, or None if the read fails.
         """
         try:
-            _, out, _ = self.adb_handler.shell(
+            _, out, _ = self.device_handler.shell(
                 f"cat /sys/class/hwmon/{hwmon}/power1_input"
             )
             return int(out) / 1_000_000  # µW → W
@@ -286,7 +290,7 @@ class AdbMonitorPower(_BaseAdbMonitor):
         )
 
 
-class AdbMonitorDSP(_BaseAdbMonitor):
+class MonitorDSP(_BaseMonitor):
     """Monitor DSP utilization via ADB helper script on the device.
 
     This monitor periodically runs `/data/modelconverter/oak_dsp_util.sh` (or an
@@ -294,8 +298,10 @@ class AdbMonitorDSP(_BaseAdbMonitor):
     utilization as a float in the range [0, 100].
     """
 
-    def __init__(self, adb_handler: AdbHandler, interval: float = 0.5) -> None:
-        super().__init__(adb_handler=adb_handler, interval=interval)
+    def __init__(
+        self, device_handler: DeviceHandler, interval: float = 0.5
+    ) -> None:
+        super().__init__(device_handler=device_handler, interval=interval)
         self.dsp_exists = self._check_dsp()
         if self.dsp_exists:
             self.idle_dsp_utilization: float = 0.0
@@ -305,11 +311,11 @@ class AdbMonitorDSP(_BaseAdbMonitor):
         """Create the DSP utility script directly on the device via
         ADB."""
         remote_script_path = "/data/modelconverter/oak_dsp_util.sh"
-        self.adb_handler.shell("mkdir -p /data/modelconverter")
+        self.device_handler.shell("mkdir -p /data/modelconverter")
 
         cmd = f"cat > {remote_script_path} <<'EOF'\n{DSP_UTIL_SCRIPT_CONTENT}\nEOF\n"
-        self.adb_handler.shell(cmd)
-        self.adb_handler.shell(f"chmod +x {remote_script_path}")
+        self.device_handler.shell(cmd)
+        self.device_handler.shell(f"chmod +x {remote_script_path}")
 
     def _check_dsp(self) -> bool:
         """Check if any supported DSP utility script exists on the
@@ -322,7 +328,7 @@ class AdbMonitorDSP(_BaseAdbMonitor):
         """
         try:
             self._prepare_dsp_util_script()
-            self.adb_handler.shell(
+            self.device_handler.shell(
                 "ls -d /data/modelconverter/oak_dsp_util.sh /usr/bin/sysMonApp"
             )
         except Exception:
@@ -345,7 +351,7 @@ class AdbMonitorDSP(_BaseAdbMonitor):
             return None
 
         try:
-            _, dsp, error = self.adb_handler.shell(
+            _, dsp, error = self.device_handler.shell(
                 "bash /data/modelconverter/oak_dsp_util.sh"
             )
             if "Maximum frequency is zero" in error:
@@ -369,7 +375,7 @@ class AdbMonitorDSP(_BaseAdbMonitor):
             if full_cleanup:
                 files_to_remove.append("/data/modelconverter/oak_dsp_util.sh")
 
-            returncode, _, _ = self.adb_handler.shell(
+            returncode, _, _ = self.device_handler.shell(
                 f"rm -f {' '.join(files_to_remove)}"
             )
             if returncode != 0:
