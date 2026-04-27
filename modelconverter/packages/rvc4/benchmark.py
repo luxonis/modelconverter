@@ -161,8 +161,9 @@ class RVC4Benchmark(Benchmark):
             for row in rows
         ]
 
-    def _prepare_raw_inputs(self, num_images: int) -> None:
-        input_specs = self._get_dlc_input_specs()
+    def _prepare_raw_inputs(
+        self, input_specs: list[InputSpec], num_images: int
+    ) -> None:
         input_list = ""
         self.handler.shell(
             f"mkdir -p /data/modelconverter/{self.model_name}/inputs"
@@ -302,7 +303,6 @@ class RVC4Benchmark(Benchmark):
             dlc_path = next(tmp_dir.rglob(dlc_model_name), None)
             if not dlc_path:
                 raise ValueError("Could not find model.dlc in the archive.")
-            self.model_path = dlc_path
         elif str(model_path).endswith(".dlc"):
             dlc_path = model_path
         else:
@@ -310,11 +310,12 @@ class RVC4Benchmark(Benchmark):
                 "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
             )
 
+        input_specs = self._get_dlc_input_specs(dlc_path)
         self.handler.shell(f"mkdir -p /data/modelconverter/{self.model_name}")
         self.handler.push(
             str(dlc_path), f"/data/modelconverter/{self.model_name}/model.dlc"
         )
-        self._prepare_raw_inputs(num_images)
+        self._prepare_raw_inputs(input_specs, num_images)
 
         _, stdout, _ = self.handler.shell(
             # "source /data/modelconverter/source_me.sh && "
