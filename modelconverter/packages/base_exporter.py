@@ -230,16 +230,16 @@ class Exporter(ABC):
                     len(arr.shape) in {3, 4} and arr.shape[0] == 1
                 ):
                     layout = inp.layout
-                    if arr.shape[0] == 1:
+                    if arr.shape[0] == 1 and len(arr.shape) > 2:
                         arr = arr.squeeze(0)
                         if layout is not None:
                             layout = layout[1:]
 
                     if layout is not None and "C" in layout:
                         channel_dim = layout.index("C")
-                        if channel_dim == 0:
+                        if channel_dim == 0 and len(arr.shape) == 3:
                             arr = arr.transpose(1, 2, 0)
-                    elif arr.shape[0] in [1, 3]:
+                    elif arr.shape[0] in {1, 3}:  # type: ignore
                         arr = arr.transpose(1, 2, 0)
                     cv2.imwrite(str(dest / f"{i}.png"), arr)
                 else:
