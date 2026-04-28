@@ -5,6 +5,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
+import cv2
 import numpy as np
 from loguru import logger
 
@@ -225,7 +226,24 @@ class Exporter(ABC):
                 arr = np.clip(arr, calib.min_value, calib.max_value)
 
                 arr = arr.astype(calib.data_type.as_numpy_dtype())
-                np.save(dest / f"{i}.npy", arr)
+                if len(arr.shape) in {2, 3} or (
+                    len(arr.shape) in {3, 4} and arr.shape[0] == 1
+                ):
+                    layout = inp.layout
+                    if arr.shape[0] == 1:
+                        arr = arr.squeeze(0)
+                        if layout is not None:
+                            layout = layout[1:]
+
+                    if layout is not None and "C" in layout:
+                        channel_dim = layout.index("C")
+                        if channel_dim == 0:
+                            arr = arr.transpose(1, 2, 0)
+                    elif arr.shape[0] in [1, 3]:
+                        arr = arr.transpose(1, 2, 0)
+                    cv2.imwrite(str(dest / f"{i}.png"), arr)
+                else:
+                    np.save(dest / f"{i}.npy", arr)
 
             self.inputs[name].calibration = ImageCalibrationConfig(path=dest)
 
