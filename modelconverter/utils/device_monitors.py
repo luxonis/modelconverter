@@ -411,6 +411,6 @@ class DeviceMonitor:
         logger.info(
             f"Idle power consumption: system={self.idle_power_system:.4f} W, processor={self.idle_power_processor:.4f} W"
         )
-        logger.info(f"Idle DSP utilization: {self.idle_dsp_utilization:.4f}%")
-        logger.info(f"Idle CPU utilization: {self.idle_cpu_utilization:.4f}%")
+        logger.info(f"Idle DSP utilization: {self.idle_dsp_utilization:.4f} %")
+        logger.info(f"Idle CPU utilization: {self.idle_cpu_utilization:.4f} %")
         logger.info(f"Idle RAM used: {self.idle_ram_used:.2f} MiB")
