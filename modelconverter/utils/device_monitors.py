@@ -138,7 +138,7 @@ class DeviceMonitor:
         float | None,
         float | None,
         float | None,
-        float | None
+        float | None,
     ]:
         system, proc = self.read_power()
         dsp = self.read_dsp()
@@ -360,7 +360,11 @@ class DeviceMonitor:
         elif code != 0:
             logger.warning("Failed to read DSP value.")
             return None
-        return float(dsp)
+        try:
+            return float(dsp)
+        except ValueError:
+            logger.warning(f"Failed to parse DSP utilization value: {dsp}")
+            return None
 
     def check_dsp(self) -> bool:
         try:
