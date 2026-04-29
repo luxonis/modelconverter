@@ -522,7 +522,7 @@ class RVC4Benchmark(Benchmark):
             heads.append("power_sys (W)")
             heads.append("power_core (W)")
             heads.append("dsp (%)")
-            heads.append("memory (MB)")
+            heads.append("memory (MiB)")
             heads.append("cpu (%)")
         return heads
 
