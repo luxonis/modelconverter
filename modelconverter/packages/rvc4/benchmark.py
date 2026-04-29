@@ -233,8 +233,7 @@ class RVC4Benchmark(Benchmark):
                     "dai_benchmark",
                     "num_images",
                     "device_id",
-                    "power_benchmark",
-                    "dsp_benchmark",
+                    "device_monitor",
                 ]:
                     configuration.pop(key)
                 result = self._benchmark_dai(self.model_path, **configuration)
@@ -247,8 +246,7 @@ class RVC4Benchmark(Benchmark):
                     "benchmark_time",
                     "device_ip",
                     "device_id",
-                    "power_benchmark",
-                    "dsp_benchmark",
+                    "device_monitor",
                 ]:
                     configuration.pop(key, None)
                 logger.info("Running SNPE benchmark over ADB")

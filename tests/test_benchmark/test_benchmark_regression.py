@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from hil_framework.lib_testbed.db_source.InfluxClient import InfluxClient
+
 from modelconverter.packages import get_benchmark
 from modelconverter.utils.types import Target
 
@@ -226,8 +226,7 @@ def test_benchmark_fps(
     bench = get_benchmark(target_enum, model_slug)
     configuration = {
         **bench.default_configuration,
-        "power_benchmark": False,
-        "dsp_benchmark": False,
+        "device_monitor": False,
     }
     benchmark_camera = _select_benchmark_camera(
         hil_testbed=hil_testbed,
