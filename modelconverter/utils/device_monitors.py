@@ -406,6 +406,7 @@ class DeviceMonitor:
         self.idle_power_processor *= 1.1
         self.idle_dsp_utilization *= 1.1
         self.idle_cpu_utilization *= 1.1
+        self.idle_ram_used *= 1.1
 
         logger.info(
             f"Idle power consumption: system={self.idle_power_system:.4f} W, processor={self.idle_power_processor:.4f} W"
