@@ -90,6 +90,7 @@ class RVC4Benchmark(Benchmark):
             "num_messages": 50,
             "device_ip": None,
             "device_id": None,
+            "device_monitor": True,
         }
 
     @property
@@ -211,19 +212,18 @@ class RVC4Benchmark(Benchmark):
 
     def benchmark(self, configuration: Configuration) -> BenchmarkResult:
         dai_benchmark = configuration.get("dai_benchmark")
-        power_benchmark = configuration.get("power_benchmark")
-        dsp_benchmark = configuration.get("dsp_benchmark")
+        device_monitor = configuration.get("device_monitor")
 
         device_ip, device_adb_id = get_device_info(
             configuration.get("device_ip"), configuration.get("device_id")
         )
-        if power_benchmark or dsp_benchmark or not dai_benchmark:
+        if device_monitor or not dai_benchmark:
             self.handler = create_handler(device_ip, device_adb_id)
 
         configuration["device_ip"] = device_ip
 
         self.monitor = None
-        if power_benchmark or dsp_benchmark:
+        if device_monitor:
             self.monitor = DeviceMonitor(self.handler)
             self.monitor.start()
 
