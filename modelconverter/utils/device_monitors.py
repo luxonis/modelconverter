@@ -133,16 +133,13 @@ class DeviceMonitor:
 
     def read(
         self,
-    ) -> (
-        tuple[
-            float | None,
-            float | None,
-            float | None,
-            float | None,
-            float | None,
-        ]
-        | None
-    ):
+    ) -> tuple[
+        float | None,
+        float | None,
+        float | None,
+        float | None,
+        float | None
+    ]:
         system, proc = self.read_power()
         dsp = self.read_dsp()
         ram = self.read_ram()
