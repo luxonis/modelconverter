@@ -1,2 +1,3 @@
 polars
 plotly
+depthai~=3.0

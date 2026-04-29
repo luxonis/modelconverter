@@ -133,8 +133,12 @@ class RVC4Analyzer(Analyzer):
         return dlc_matcher
 
     def _add_outputs_to_all_layers(self, onnx_file_path: str) -> Path:
-        if Path(onnx_file_path.replace(".onnx", "-all-layers.onnx")).exists():
-            Path(onnx_file_path.replace(".onnx", "-all-layers.onnx")).unlink()
+        onnx_path = Path(onnx_file_path)
+        all_output_path = onnx_path.with_name(
+            f"{onnx_path.stem}-all-layers{onnx_path.suffix}"
+        )
+        if all_output_path.exists():
+            all_output_path.unlink()
 
         model = onnx.load(onnx_file_path)
         onnx.checker.check_model(model)
@@ -152,10 +156,10 @@ class RVC4Analyzer(Analyzer):
 
         for output in orig_graph_output:
             graph.output.append(output)
-        all_output_name = onnx_file_path.replace(".onnx", "-all-layers.onnx")
-        onnx.save(model, all_output_name)
+        all_output_path.parent.mkdir(parents=True, exist_ok=True)
+        onnx.save(model, all_output_path)
 
-        return Path(all_output_name)
+        return all_output_path
 
     def transpose_to_match(
         self, src: np.ndarray, target_shape: tuple[int, ...]
@@ -397,7 +401,7 @@ class RVC4Analyzer(Analyzer):
 
         logger.info("Running DLC model to analyze layer cycles.")
         output_dir = self._run_dlc(
-            f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_tf8"
+            f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_auto"
         )
 
         csv_path = Path(output_dir + "/layer_stats.csv")
