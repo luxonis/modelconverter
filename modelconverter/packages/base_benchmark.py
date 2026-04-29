@@ -13,8 +13,7 @@ from modelconverter.utils import is_hubai_available, resolve_path
 
 @dataclass
 class BenchmarkResult:
-    """Benchmark result, tuple (FPS, latency in ms, system and processor
-    power in W, dsp utilization)"""
+    """Represents the result of a benchmark run, including performance metrics and optional power consumption data."""
 
     fps: float
     latency: float | Literal["N/A"]
