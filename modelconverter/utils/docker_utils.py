@@ -6,6 +6,7 @@ import sys
 import tempfile
 import zipfile
 from contextlib import suppress
+from enum import Enum
 from pathlib import Path
 from typing import Literal
 from urllib.error import HTTPError, URLError
@@ -308,12 +309,53 @@ def _download_file(
 # We cannot simply call `docker pull` in a subprocess because
 # it interactively asks for login credentials if the image is private.
 def pull_image(client: docker.DockerClient, image: str) -> str:
+
+    class SizeUnit(Enum):
+        B = 0
+        KB = 1
+        MB = 2
+        GB = 3
+        TB = 4
+        PB = 5
+
+    BASE = 1024
+
+    def human_readable_size(
+        num_bytes: int, ndigits: int = 2
+    ) -> tuple[float, SizeUnit]:
+        if num_bytes < 0:
+            raise ValueError("num_bytes must be non-negative")
+
+        value = float(num_bytes)
+        unit_index = 0
+
+        while value >= BASE and unit_index < len(SizeUnit) - 1:
+            value /= BASE
+            unit_index += 1
+
+        return round(value, ndigits), SizeUnit(unit_index)
+
+    def convert_to_unit(num_bytes: int, unit: SizeUnit) -> float:
+        if num_bytes < 0:
+            raise ValueError("num_bytes must be non-negative")
+
+        return num_bytes / (BASE**unit.value)
+
+    def convert_and_round(
+        num_bytes: int, unit: SizeUnit, ndigits: int = 2
+    ) -> float:
+        value = convert_to_unit(num_bytes, unit)
+        return round(value, ndigits)
+
     repository, tag = parse_repository_tag(image)
 
     with Progress(
-        TextColumn("[progress.description]{task.description}"),
+        TextColumn("{task.description}:"),
         BarColumn(),
         TaskProgressColumn(),
+        TextColumn(
+            "{task.fields[completed_h]} / {task.fields[total_h]} {task.fields[unit]}"
+        ),
     ) as progress:
         bars = {}
         for log in client.api.pull(repository, tag=tag, stream=True):
@@ -322,19 +364,22 @@ def pull_image(client: docker.DockerClient, image: str) -> str:
             if status in {"Downloading", "Extracting"}:
                 id = log["id"]
                 detail = log["progressDetail"]
+                completed = detail.get("current", 0)
+                total: int = detail.get("total", 0)
+                total_h, unit = human_readable_size(total)
+                completed_h = convert_and_round(completed, unit)
+                kwargs = {
+                    "description": f"{id} [{status}]",
+                    "completed": completed,
+                    "completed_h": completed_h,
+                    "total": total,
+                    "total_h": total_h,
+                    "unit": unit.name,
+                }
                 if id not in bars:
-                    bars[id] = progress.add_task(
-                        f"{id} [{status}]:",
-                        completed=detail["current"],
-                        total=detail["total"],
-                    )
+                    bars[id] = progress.add_task(**kwargs)
                 else:
-                    progress.update(
-                        bars[id],
-                        completed=detail["current"],
-                        total=detail["total"],
-                        description=f"{id} [{status}]:",
-                    )
+                    progress.update(bars[id], **kwargs)
     return image
 
 
