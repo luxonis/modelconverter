@@ -5,7 +5,7 @@ from .device_handlers import (
     SSHHandler,
     create_handler,
 )
-from .device_monitors import MonitorDSP, MonitorPower
+from .device_monitors import DeviceMonitor
 from .docker_utils import (
     check_docker,
     docker_build,
@@ -52,10 +52,9 @@ from .subprocess import SubprocessHandle, subprocess_run
 __all__ = [
     "AdbHandler",
     "DeviceHandler",
+    "DeviceMonitor",
     "Metadata",
     "ModelconverterException",
-    "MonitorDSP",
-    "MonitorPower",
     "ONNXModifier",
     "S3Exception",
     "SSHHandler",

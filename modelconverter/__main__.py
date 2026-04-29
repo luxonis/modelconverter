@@ -334,8 +334,7 @@ def benchmark(
     device_ip: Annotated[str | None, Parameter(group="RVC4")] = None,
     device_id: Annotated[str | None, Parameter(group="RVC4")] = None,
     dai_benchmark: Annotated[bool, Parameter(group="RVC4")] = True,
-    power_benchmark: Annotated[bool, Parameter(group="RVC4")] = False,
-    dsp_benchmark: Annotated[bool, Parameter(group="RVC4")] = False,
+    device_monitor: Annotated[bool, Parameter(group="RVC4")] = True,
 ) -> None:
     """Runs benchmark on the specified target platform.
 
@@ -374,10 +373,8 @@ def benchmark(
         The unique ID of the device to run the benchmark on. Interchangeable with device_ip. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
     dai_benchmark : bool
         Whether to run the benchmark using the DAI V3. If False the SNPE tools are used.
-    power_benchmark : bool
-        Whether to run power consumption measurements.
-    dsp_benchmark : bool
-        Whether to run DSP utilization measurements.
+    device_monitor : bool
+        Whether to monitor the device performance during benchmarking and include it in the results. Only relevant for RVC4 target.
     """
 
     if target in {Target.RVC2, Target.RVC4}:
@@ -395,8 +392,7 @@ def benchmark(
                 "dai_benchmark": dai_benchmark,
                 "device_ip": device_ip,
                 "device_id": device_id,
-                "power_benchmark": power_benchmark,
-                "dsp_benchmark": dsp_benchmark,
+                "device_monitor": device_monitor,
             }
     elif target is Target.RVC3:
         kwargs = {
