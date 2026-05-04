@@ -187,6 +187,7 @@ class RVC4Exporter(Exporter):
             args.append("--override_params")
         elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
             self._add_args(args, ["--act_bitwidth", "16"])
+            args.append("--override_params")
         elif self.encodings is not None:
             args.append("--override_params")
 
