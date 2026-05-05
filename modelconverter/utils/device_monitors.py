@@ -437,3 +437,5 @@ class DeviceMonitor:
         logger.info(f"Idle DSP utilization: {self.idle_dsp_utilization:.4f} %")
         logger.info(f"Idle CPU utilization: {self.idle_cpu_utilization:.4f} %")
         logger.info(f"Idle RAM used: {self.idle_ram_used:.2f} MiB")
+
+        self._measurements = []
