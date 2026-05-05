@@ -4,6 +4,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import Iterable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -398,15 +399,19 @@ class RVC4Benchmark(Benchmark):
                 "Unsupported model format. Supported formats: .tar.xz, or HubAI model slug."
             )
 
-        input_specs: list[InputSpec] = []
+        inputSizes = []
+        inputNames = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            model_archive = dai.NNArchive(modelPath)  # type: ignore[arg-type]
-            input_specs = self._get_dlc_input_specs(modelPath)
+            model_archive = dai.NNArchive(modelPath)
+            for input in model_archive.getConfig().model.inputs:
+                inputSizes.append(input.shape)
+                inputNames.append(input.name)
 
+        data_type = self._get_dai_data_type()
         inputData = dai.NNData()
-        for spec in input_specs:
-            input_data = self._create_random_input(spec)
-            inputData.addTensor(spec.name, input_data, dataType=spec.dai_dtype)
+        for name, inputSize in zip(inputNames, inputSizes, strict=True):
+            img = np.random.randint(0, 255, inputSize, np.uint8)
+            inputData.addTensor(name, img, dataType=data_type)
 
         with dai.Pipeline(device) as pipeline:
             benchmarkOut = pipeline.create(dai.node.BenchmarkOut)
@@ -497,6 +502,37 @@ class RVC4Benchmark(Benchmark):
             yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
             yield f"{memory:.2f}" if memory else "[orange3]N/A"
             yield f"{cpu:.2f}" if cpu else "[orange3]N/A"
+
+    def _get_dai_data_type(self) -> dai.TensorInfo.DataType:
+        """Retrieve the data type of the model inputs. If the model is
+        not a HubAI model, it defaults to dai.TensorInfo.DataType.U8F
+        (INT8).
+
+        @return: The data type of the model inputs.
+        @rtype: dai.TensorInfo.DataType
+        """
+        from modelconverter.cli import Request, slug_to_id
+
+        assert isinstance(self.model_path, str)
+        model_id = slug_to_id(self.model_name, "models")
+        model_variant = self.model_path.split(":")[1]
+
+        model_variants = []
+        for is_public in [True, False]:
+            with suppress(Exception):
+                model_variants += Request.get(
+                    "modelVersions/",
+                    params={"model_id": model_id, "is_public": is_public},
+                )
+
+        model_version_id = None
+        for version in model_variants:
+            if version["variant_slug"] == model_variant:
+                model_version_id = version["id"]
+                break
+
+        if not model_version_id:
+            return dai.TensorInfo.DataType.U8F
 
 
 def device_id_to_adb_id(device_id: str) -> str:
