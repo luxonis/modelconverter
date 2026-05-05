@@ -121,6 +121,16 @@ class DeviceMonitor:
         self.set_idle_measurements()
 
     @property
+    def idle_measurements(self) -> Measurement:
+        return Measurement(
+            power_system=self.idle_power_system,
+            power_processor=self.idle_power_processor,
+            dsp_utilization=self.idle_dsp_utilization,
+            ram_used=self.idle_ram_used,
+            cpu_utilization=self.idle_cpu_utilization,
+        )
+
+    @property
     def measurements(self) -> dict[str, list[float]]:
         return {
             "power_system": [
