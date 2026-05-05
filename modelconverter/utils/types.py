@@ -1,10 +1,14 @@
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from onnx.onnx_pb import TensorProto
 
 __all__ = ["DataType", "Encoding", "PotDevice", "ResizeMethod", "Target"]
+
+if TYPE_CHECKING:
+    import depthai as dai
 
 
 class Layout(Enum):
@@ -66,6 +70,22 @@ class DataType(Enum):
         if dtype not in tensor_types:
             raise ValueError(f"Unsupported TensorFlow data type: `{dtype}`")
         return cls(tensor_types[dtype])
+
+    @classmethod
+    def from_dai_dtype(cls, dtype: "dai.TensorInfo.DataType") -> "DataType":
+        import depthai as dai
+
+        dtype_map = {
+            dai.TensorInfo.DataType.FP16: "float16",
+            dai.TensorInfo.DataType.FP32: "float32",
+            dai.TensorInfo.DataType.FP64: "float64",
+            dai.TensorInfo.DataType.I8: "int8",
+            dai.TensorInfo.DataType.INT: "int32",
+            dai.TensorInfo.DataType.U8F: "ufxp8",
+        }
+        if dtype not in dtype_map:
+            raise ValueError(f"Unsupported DepthAI data type: `{dtype}`")
+        return cls(dtype_map[dtype])
 
     @classmethod
     def from_dlc_dtype(cls, dtype: str) -> "DataType":
@@ -174,6 +194,18 @@ class DataType(Enum):
         if dtype not in dtype_map:
             raise ValueError(f"Unsupported IR runtime data type: `{dtype}`")
         return cls(dtype_map[dtype])
+
+    def as_dai_dtype(self) -> "dai.TensorInfo.DataType":
+        import depthai as dai
+
+        return {
+            "float16": dai.TensorInfo.DataType.FP16,
+            "float32": dai.TensorInfo.DataType.FP32,
+            "float64": dai.TensorInfo.DataType.FP64,
+            "int8": dai.TensorInfo.DataType.I8,
+            "int32": dai.TensorInfo.DataType.INT,
+            "uint8": dai.TensorInfo.DataType.U8F,
+        }[self.value]
 
     def as_numpy_dtype(self) -> np.dtype:
         return {
