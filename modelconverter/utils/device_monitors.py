@@ -2,6 +2,7 @@ import statistics
 import threading
 import time
 import types
+from typing import NamedTuple
 
 from loguru import logger
 from typing_extensions import Self
@@ -87,6 +88,14 @@ echo "$dsp_util"
 """
 
 
+class Measurement(NamedTuple):
+    power_system: float | None
+    power_processor: float | None
+    dsp_utilization: float | None
+    ram_used: float | None
+    cpu_utilization: float | None
+
+
 class DeviceMonitor:
     def __init__(
         self, device_handler: DeviceHandler, interval: float = 0.5
@@ -102,15 +111,7 @@ class DeviceMonitor:
         self.idle_ram_used: float = 0.0
         self.idle_cpu_utilization: float = 0.0
 
-        self._measurements: list[
-            tuple[
-                float | None,  # system power
-                float | None,  # processor power
-                float | None,  # dsp
-                float | None,  # ram
-                float | None,  # cpu
-            ]
-        ] = []
+        self._measurements: list[Measurement] = []
         self._running = False
         self._thread = None
 
@@ -118,6 +119,36 @@ class DeviceMonitor:
         self._prev_cpu_times: tuple[int, int] | None = None
 
         self.set_idle_measurements()
+
+    @property
+    def measurements(self) -> dict[str, list[float]]:
+        return {
+            "power_system": [
+                m.power_system
+                for m in self._measurements
+                if m.power_system is not None
+            ],
+            "power_processor": [
+                m.power_processor
+                for m in self._measurements
+                if m.power_processor is not None
+            ],
+            "dsp_utilization": [
+                m.dsp_utilization
+                for m in self._measurements
+                if m.dsp_utilization is not None
+            ],
+            "ram_used": [
+                m.ram_used
+                for m in self._measurements
+                if m.ram_used is not None
+            ],
+            "cpu_utilization": [
+                m.cpu_utilization
+                for m in self._measurements
+                if m.cpu_utilization is not None
+            ],
+        }
 
     def __enter__(self) -> Self:
         self.start()
@@ -131,20 +162,12 @@ class DeviceMonitor:
     ) -> None:
         self.stop()
 
-    def read(
-        self,
-    ) -> tuple[
-        float | None,
-        float | None,
-        float | None,
-        float | None,
-        float | None,
-    ]:
+    def read(self) -> Measurement:
         system, proc = self.read_power()
         dsp = self.read_dsp()
         ram = self.read_ram()
         cpu = self.read_cpu()
-        return system, proc, dsp, ram, cpu
+        return Measurement(system, proc, dsp, ram, cpu)
 
     def _calc_stats(self, values: list[float]) -> dict[str, float | None]:
         if not values:
