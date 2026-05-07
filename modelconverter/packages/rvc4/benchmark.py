@@ -454,9 +454,9 @@ class RVC4Benchmark(Benchmark):
         cfg = archive.getConfig()
         return [
             InputSpec(
-                input.name,
-                input.shape,
-                DataType(input.dtype.name.lower()),
+                name=input.name,
+                shape=input.shape,
+                data_type=DataType(input.dtype.name.lower()),
             )
             for input in cfg.model.inputs
         ]
