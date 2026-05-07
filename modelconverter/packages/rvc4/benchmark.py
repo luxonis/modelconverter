@@ -4,7 +4,6 @@ import re
 import shutil
 import tempfile
 from collections.abc import Iterable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -19,6 +18,7 @@ from modelconverter.packages.base_benchmark import (
     Configuration,
 )
 from modelconverter.utils import (
+    DataType,
     MonitorDSP,
     MonitorPower,
     create_handler,
@@ -26,6 +26,7 @@ from modelconverter.utils import (
     environ,
     subprocess_run,
 )
+from modelconverter.utils.config import OutputConfig as InputSpec
 
 PROFILES: Final[list[str]] = [
     "low_balanced",
@@ -44,26 +45,6 @@ RUNTIMES: dict[str, str] = {
     "dsp": "use_dsp",
     "cpu": "use_cpu",
 }
-
-DLC_TO_DAI_DATA_TYPE: Final[dict[str, dai.TensorInfo.DataType]] = {
-    "Float_32": dai.TensorInfo.DataType.FP32,
-    "Float_16": dai.TensorInfo.DataType.FP16,
-    "Float_64": dai.TensorInfo.DataType.FP64,
-    "Int_8": dai.TensorInfo.DataType.I8,
-    "Int_32": dai.TensorInfo.DataType.INT,
-    # DAI does not currently expose a 16-bit fixed-point/int tensor type.
-    # Until it does, keep uFxp_16 on the closest supported 16-bit path.
-    "uFxp_16": dai.TensorInfo.DataType.FP16,
-    "uFxp_8": dai.TensorInfo.DataType.U8F,
-}
-
-
-@dataclass(frozen=True)
-class InputSpec:
-    name: str
-    shape: list[int]
-    dlc_dtype: str
-    dai_dtype: dai.TensorInfo.DataType
 
 
 class RVC4Benchmark(Benchmark):
@@ -144,19 +125,12 @@ class RVC4Benchmark(Benchmark):
         )
 
         rows = df.rows(named=True)
-        data_types = [str(row["Type"]) for row in rows]
-        unsupported_types = sorted(set(data_types) - set(DLC_TO_DAI_DATA_TYPE))
-        if unsupported_types:
-            raise ValueError(
-                f"Unsupported data types {unsupported_types}. Expected one of: {sorted(DLC_TO_DAI_DATA_TYPE)}."
-            )
 
         return [
             InputSpec(
                 name=str(row["Input Name"]),
                 shape=list(row["Dimensions"]),
-                dlc_dtype=str(row["Type"]),
-                dai_dtype=DLC_TO_DAI_DATA_TYPE[str(row["Type"])],
+                data_type=DataType.from_dlc_dtype(str(row["Type"])),
             )
             for row in rows
         ]
@@ -189,25 +163,17 @@ class RVC4Benchmark(Benchmark):
             )
 
     @staticmethod
-    def _create_random_input(
-        spec: InputSpec,
-    ) -> np.ndarray:
-        if spec.dai_dtype == dai.TensorInfo.DataType.FP32:
-            return np.random.rand(*spec.shape).astype(np.float32)
-        if spec.dai_dtype == dai.TensorInfo.DataType.FP16:
-            return np.random.rand(*spec.shape).astype(np.float16)
-        if spec.dai_dtype == dai.TensorInfo.DataType.FP64:
-            return np.random.rand(*spec.shape).astype(np.float64)
-        if spec.dai_dtype == dai.TensorInfo.DataType.I8:
-            return np.random.randint(-128, 128, size=spec.shape, dtype=np.int8)
-        if spec.dai_dtype == dai.TensorInfo.DataType.INT:
-            # INT inputs are often token/index tensors; zero keeps synthetic
-            # benchmark inputs in a safe range.
+    def _create_random_input(spec: InputSpec) -> np.ndarray:
+        if spec.data_type is DataType.INT32:
             return np.zeros(spec.shape, dtype=np.int32)
-        if spec.dai_dtype == dai.TensorInfo.DataType.U8F:
+        if spec.data_type == DataType.INT8:
+            return np.random.randint(-128, 128, size=spec.shape, dtype=np.int8)
+        if spec.data_type == DataType.UFXP8:
             return np.random.randint(0, 256, size=spec.shape, dtype=np.uint8)
 
-        raise ValueError(f"Unsupported DAI data type {spec.dai_dtype}.")
+        return np.random.rand(*spec.shape).astype(
+            spec.data_type.as_numpy_dtype()
+        )
 
     def benchmark(self, configuration: Configuration) -> BenchmarkResult:
         dai_benchmark = configuration.get("dai_benchmark")
@@ -389,12 +355,14 @@ class RVC4Benchmark(Benchmark):
         input_specs: list[InputSpec] = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
             model_archive = dai.NNArchive(modelPath)  # type: ignore[arg-type]
-            input_specs = self._get_dlc_input_specs(modelPath)
+            input_specs = self._get_archive_input_specs(model_archive)
 
         inputData = dai.NNData()
         for spec in input_specs:
             input_data = self._create_random_input(spec)
-            inputData.addTensor(spec.name, input_data, dataType=spec.dai_dtype)
+            inputData.addTensor(
+                spec.name, input_data, dataType=spec.data_type.as_dai_dtype()
+            )
 
         with dai.Pipeline(device) as pipeline:
             benchmarkOut = pipeline.create(dai.node.BenchmarkOut)
@@ -480,6 +448,18 @@ class RVC4Benchmark(Benchmark):
             yield f"{power_core:.2f}" if power_core else "[orange3]N/A"
         if self.dsp_monitor:
             yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
+
+    @staticmethod
+    def _get_archive_input_specs(archive: dai.NNArchive) -> list[InputSpec]:
+        cfg = archive.getConfig()
+        return [
+            InputSpec(
+                input.name,
+                input.shape,
+                DataType(input.dtype.name.lower()),
+            )
+            for input in cfg.model.inputs
+        ]
 
 
 def device_id_to_adb_id(device_id: str) -> str:
