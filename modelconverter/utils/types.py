@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from onnx.onnx_pb import TensorProto
@@ -198,47 +198,56 @@ class DataType(Enum):
     def as_dai_dtype(self) -> "dai.TensorInfo.DataType":
         import depthai as dai
 
-        return {
-            "float16": dai.TensorInfo.DataType.FP16,
-            "float32": dai.TensorInfo.DataType.FP32,
-            "float64": dai.TensorInfo.DataType.FP64,
-            "int8": dai.TensorInfo.DataType.I8,
-            "int32": dai.TensorInfo.DataType.INT,
-            "uint8": dai.TensorInfo.DataType.U8F,
-        }[self.value]
+        return self._transform(
+            {
+                "float16": dai.TensorInfo.DataType.FP16,
+                "float32": dai.TensorInfo.DataType.FP32,
+                "float64": dai.TensorInfo.DataType.FP64,
+                "int8": dai.TensorInfo.DataType.I8,
+                "int32": dai.TensorInfo.DataType.INT,
+                "uint8": dai.TensorInfo.DataType.U8F,
+            },
+            "DepthAI",
+        )
 
     def as_numpy_dtype(self) -> np.dtype:
-        return {
-            "bfloat16": np.float32,  # Preserve bfloat16 range better than float16.
-            "float16": np.float16,
-            "float32": np.float32,
-            "float64": np.float64,
-            "int4": np.int8,  # NumPy has no 4-bit signed integer dtype.
-            "int8": np.int8,
-            "int16": np.int16,
-            "int32": np.int32,
-            "int64": np.int64,
-            "uint4": np.uint8,  # NumPy has no 4-bit unsigned integer dtype.
-            "uint8": np.uint8,
-            "uint16": np.uint16,
-            "uint32": np.uint32,
-            "uint64": np.uint64,
-        }[self.value]
+        return self._transform(
+            {
+                "bfloat16": np.float32,  # Preserve bfloat16 range better than float16.
+                "float16": np.float16,
+                "float32": np.float32,
+                "float64": np.float64,
+                "int4": np.int8,  # NumPy has no 4-bit signed integer dtype.
+                "int8": np.int8,
+                "int16": np.int16,
+                "int32": np.int32,
+                "int64": np.int64,
+                "uint4": np.uint8,  # NumPy has no 4-bit unsigned integer dtype.
+                "uint8": np.uint8,
+                "uint16": np.uint16,
+                "uint32": np.uint32,
+                "uint64": np.uint64,
+            },
+            "numpy",
+        )
 
     def as_openvino_dtype(self) -> str:
-        return {
-            "float16": "f16",
-            "float32": "f32",
-            "float64": "f64",
-            "int8": "i8",
-            "int16": "i16",
-            "int32": "i32",
-            "int64": "i64",
-            "uint8": "u8",
-            "uint16": "u16",
-            "uint32": "u32",
-            "uint64": "u64",
-        }[self.value]
+        return self._transform(
+            {
+                "float16": "f16",
+                "float32": "f32",
+                "float64": "f64",
+                "int8": "i8",
+                "int16": "i16",
+                "int32": "i32",
+                "int64": "i64",
+                "uint8": "u8",
+                "uint16": "u16",
+                "uint32": "u32",
+                "uint64": "u64",
+            },
+            "OpenVINO",
+        )
 
     def as_snpe_dtype(self) -> str:
         return self.value
@@ -249,6 +258,13 @@ class DataType(Enum):
         if self.value.startswith("fxp"):
             return self.value.replace("fxp", "int")
         return self.value
+
+    def _transform(self, mapping: dict[str, Any], desc: str) -> Any:
+        if self.value not in mapping:
+            raise ValueError(
+                f"`{self.value}` cannot be transformed to {desc} data type"
+            )
+        return mapping[self.value]
 
 
 class ResizeMethod(Enum):

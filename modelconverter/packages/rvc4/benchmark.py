@@ -4,8 +4,6 @@ import re
 import shutil
 import tempfile
 from collections.abc import Iterable
-from contextlib import suppress
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -21,13 +19,14 @@ from modelconverter.packages.base_benchmark import (
     Configuration,
 )
 from modelconverter.utils import (
+    DataType,
     DeviceMonitor,
     create_handler,
     create_progress_handler,
     environ,
     subprocess_run,
 )
-from modelconverter.utils.types import DataType
+from modelconverter.utils.config import OutputConfig as InputSpec
 
 PROFILES: Final[list[str]] = [
     "low_balanced",
@@ -46,13 +45,6 @@ RUNTIMES: dict[str, str] = {
     "dsp": "use_dsp",
     "cpu": "use_cpu",
 }
-
-
-@dataclass(frozen=True)
-class InputSpec:
-    name: str
-    shape: list[int]
-    data_type: DataType
 
 
 class RVC4Benchmark(Benchmark):
@@ -88,19 +80,6 @@ class RVC4Benchmark(Benchmark):
             {"profile": profile, "num_threads": threads}
             for profile in PROFILES
             for threads in [1, 2]
-        ]
-
-    def _get_archive_input_specs(
-        self, archive: dai.NNArchive
-    ) -> list[InputSpec]:
-        cfg = archive.getConfig()
-        return [
-            InputSpec(
-                input.name,
-                input.shape,
-                DataType(input.dtype.name.lower()),
-            )
-            for input in cfg.model.inputs
         ]
 
     def _get_dlc_input_specs(
@@ -185,9 +164,7 @@ class RVC4Benchmark(Benchmark):
             )
 
     @staticmethod
-    def _create_random_input(
-        spec: InputSpec,
-    ) -> np.ndarray:
+    def _create_random_input(spec: InputSpec) -> np.ndarray:
         if spec.data_type is DataType.INT32:
             return np.zeros(spec.shape, dtype=np.int32)
         if spec.data_type == DataType.INT8:
@@ -387,6 +364,7 @@ class RVC4Benchmark(Benchmark):
                 "Unsupported model format. Supported formats: .tar.xz, or HubAI model slug."
             )
 
+        input_specs: list[InputSpec] = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
             model_archive = dai.NNArchive(modelPath)
             input_specs = self._get_archive_input_specs(model_archive)
@@ -487,6 +465,18 @@ class RVC4Benchmark(Benchmark):
             yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
             yield f"{memory:.2f}" if memory else "[orange3]N/A"
             yield f"{cpu:.2f}" if cpu else "[orange3]N/A"
+
+    @staticmethod
+    def _get_archive_input_specs(archive: dai.NNArchive) -> list[InputSpec]:
+        cfg = archive.getConfig()
+        return [
+            InputSpec(
+                name=input.name,
+                shape=input.shape,
+                data_type=DataType(input.dtype.name.lower()),
+            )
+            for input in cfg.model.inputs
+        ]
 
 
 def device_id_to_adb_id(device_id: str) -> str:
