@@ -355,7 +355,10 @@ class RVC4Benchmark(Benchmark):
         input_specs: list[InputSpec] = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
             model_archive = dai.NNArchive(modelPath)  # type: ignore[arg-type]
-            input_specs = self._get_archive_input_specs(model_archive)
+            if shutil.which("snpe-dlc-info") is not None:
+                input_specs = self._get_dlc_input_specs(modelPath)
+            else:
+                input_specs = self._get_archive_input_specs(model_archive)
 
         inputData = dai.NNData()
         for spec in input_specs:
