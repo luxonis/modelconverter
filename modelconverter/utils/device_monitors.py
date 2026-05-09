@@ -68,7 +68,6 @@ class DeviceMonitor:
         exc_tb: types.TracebackType | None,
     ) -> None:
         self.stop()
-        self.reset()
 
     def read(self) -> Measurement:
         return Measurement(
@@ -111,8 +110,7 @@ class DeviceMonitor:
         if self._running:
             return
         time.sleep(1)  # Small delay to avoid overlapping ADB commands
-        self._measurements = []
-        self._prev_cpu_times = None
+        self.reset()
         self._running = True
         self._thread = threading.Thread(target=self.loop, daemon=True)
         self._thread.start()
