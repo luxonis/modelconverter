@@ -21,6 +21,19 @@ class Measurement(NamedTuple):
     cpu_utilization: float | None = None
     temp: float | None = None
 
+    @classmethod
+    def zero(cls) -> Self:
+        return cls(
+            power_system=0.0,
+            power_processor=0.0,
+            processor_frequency=0.0,
+            dsp_utilization=0.0,
+            dsp_frequency=0.0,
+            ram_used=0.0,
+            cpu_utilization=0.0,
+            temp=0.0,
+        )
+
 
 class DeviceMonitor:
     def __init__(
@@ -36,15 +49,13 @@ class DeviceMonitor:
         self.dsp_exists = self.check_dsp()
         self.model = model
 
-        self.idle_measurements = Measurement()
+        self.idle_measurements = Measurement.zero()
         self._measurements: list[Measurement] = []
         self._running = False
         self._thread = None
 
         # Previous /proc/stat snapshot for CPU utilization calculation
         self._prev_cpu_times: tuple[int, int] | None = None
-
-        self.set_idle_measurements()
 
     @property
     def measurements(self) -> dict[str, list[float]]:
@@ -110,6 +121,7 @@ class DeviceMonitor:
         if self._running:
             return
         time.sleep(1)  # Small delay to avoid overlapping ADB commands
+        self.set_idle_measurements()
         self.reset()
         self._running = True
         self._thread = threading.Thread(target=self.loop, daemon=True)
@@ -366,9 +378,8 @@ class DeviceMonitor:
 
     def set_idle_measurements(self) -> None:
         logger.info("Calculating idle power consumption...")
-        self.start()
-        time.sleep(10)
-        self.stop()
+        with self:
+            time.sleep(10)
 
         stats = self.get_stats()
         self._idle_measurements = Measurement(
@@ -377,8 +388,6 @@ class DeviceMonitor:
 
         for field, value in self._idle_measurements._asdict().items():
             logger.info(f"Idle {field.replace('_', ' ')}: {value:.4f}")
-
-        self._measurements = []
 
     def _calc_stats(self, values: list[float]) -> dict[str, float | None]:
         if not values:
