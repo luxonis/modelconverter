@@ -113,7 +113,7 @@ class DeviceMonitor:
 
         return result
 
-    def start(self) -> None:
+    def start(self, set_idle: bool = True) -> None:
         """Start the background sampling thread.
 
         If the monitor is already running, this is a no-op.
@@ -121,7 +121,8 @@ class DeviceMonitor:
         if self._running:
             return
         time.sleep(1)  # Small delay to avoid overlapping ADB commands
-        self.set_idle_measurements()
+        if set_idle:
+            self.set_idle_measurements()
         self.reset()
         self._running = True
         self._thread = threading.Thread(target=self.loop, daemon=True)
@@ -378,7 +379,7 @@ class DeviceMonitor:
 
     def set_idle_measurements(self) -> None:
         logger.info("Calculating idle power consumption...")
-        self.start()
+        self.start(set_idle=False)
         time.sleep(10)
         self.stop()
 
