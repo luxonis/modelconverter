@@ -1,116 +1,42 @@
+import re
 import statistics
 import threading
 import time
 import types
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 from loguru import logger
 from typing_extensions import Self
 
 from modelconverter.utils import DeviceHandler
 
-DSP_UTIL_SCRIPT_CONTENT = r"""SYS_MON_APP="/usr/bin/sysMonApp"
-SLEEP_TIME=1.0
-
-$SYS_MON_APP getPowerStats --clear 1 --q6 cdsp >/dev/null 2>&1
-
-$SYS_MON_APP getPowerStats --q6 cdsp >/data/modelconverter/dsp_read1_full 2>/dev/null
-
-grep '^[[:space:]]*[0-9]*\.[0-9]*[[:space:]]*[0-9]*\.[0-9]*' \
-    /data/modelconverter/dsp_read1_full > /data/modelconverter/dsp_read1
-
-sleep $SLEEP_TIME
-
-$SYS_MON_APP getPowerStats --q6 cdsp > /data/modelconverter/dsp_read2_full 2>/dev/null
-
-grep '^[[:space:]]*[0-9]*\.[0-9]*[[:space:]]*[0-9]*\.[0-9]*' \
-    /data/modelconverter/dsp_read2_full > /data/modelconverter/dsp_read2
-
-dsp_util=$(
-awk -v interval=$SLEEP_TIME '
-    FILENAME == ARGV[1] && FNR > 1 {
-        gsub(/^[[:blank:]]+/, "", $0);
-        if (NF >= 2) {
-            freq = $1;
-            active1[freq] = $2;
-            all_freqs[freq] = 1;
-        }
-    }
-    FILENAME == ARGV[2] && FNR > 1 {
-        gsub(/^[[:blank:]]+/, "", $0);
-        if (NF >= 2) {
-            freq = $1;
-            active2[freq] = $2;
-            all_freqs[freq] = 1;
-        }
-    }
-    END {
-        sum_delta = 0;
-        max_freq = 0;
-        delete deltas;
-        for (freq in all_freqs) {
-            f = freq + 0;
-            if (f > max_freq) max_freq = f;
-            a1 = (freq in active1) ? active1[freq] + 0 : 0;
-            a2 = (freq in active2) ? active2[freq] + 0 : 0;
-            delta = a2 - a1;
-            if (delta < 0) {
-                delta = 0;
-            }
-            deltas[freq] = delta;
-            sum_delta += delta;
-        }
-
-        scale_factor = 1;
-        if (sum_delta > interval) {
-            scale_factor = interval / sum_delta;
-        }
-
-        sum_cycles = 0;
-        for (freq in all_freqs) {
-            f = freq + 0;
-            adjusted_delta = deltas[freq] * scale_factor;
-            sum_cycles += f * adjusted_delta;
-        }
-
-        if (max_freq == 0) {
-            print "Error: Maximum frequency is zero." > "/dev/stderr";
-            exit 1;
-        }
-
-        utilization = (sum_cycles / (max_freq * interval)) * 100;
-        print utilization
-    }
-    ' /data/modelconverter/dsp_read1 /data/modelconverter/dsp_read2
-)
-
-echo "$dsp_util"
-"""
-
 
 class Measurement(NamedTuple):
-    power_system: float | None
-    power_processor: float | None
-    dsp_utilization: float | None
-    ram_used: float | None
-    cpu_utilization: float | None
+    power_system: float | None = None
+    power_processor: float | None = None
+    processor_frequency: float | None = None
+    dsp_utilization: float | None = None
+    dsp_frequency: float | None = None
+    ram_used: float | None = None
+    cpu_utilization: float | None = None
+    temp: float | None = None
 
 
 class DeviceMonitor:
     def __init__(
-        self, device_handler: DeviceHandler, interval: float = 0.5
+        self,
+        device_handler: DeviceHandler,
+        interval: float = 0.5,
+        model: Literal["4d", "4s", "4lite"] | None = "4lite",
     ) -> None:
         self.device_handler = device_handler
         self.interval = interval
         self.hwmon0_exists = self.check_hwmon("hwmon0")
         self.hwmon1_exists = self.check_hwmon("hwmon1")
         self.dsp_exists = self.check_dsp()
-        self.idle_dsp_utilization: float = 0.0
-        self.idle_power_system: float = 0.0
-        self.idle_power_processor: float = 0.0
-        self.idle_ram_used: float = 0.0
-        self.idle_cpu_utilization: float = 0.0
+        self.model = model
 
+        self.idle_measurements = Measurement()
         self._measurements: list[Measurement] = []
         self._running = False
         self._thread = None
@@ -121,43 +47,14 @@ class DeviceMonitor:
         self.set_idle_measurements()
 
     @property
-    def idle_measurements(self) -> Measurement:
-        return Measurement(
-            power_system=self.idle_power_system,
-            power_processor=self.idle_power_processor,
-            dsp_utilization=self.idle_dsp_utilization,
-            ram_used=self.idle_ram_used,
-            cpu_utilization=self.idle_cpu_utilization,
-        )
-
-    @property
     def measurements(self) -> dict[str, list[float]]:
         return {
-            "power_system": [
-                m.power_system
+            key: [
+                value
                 for m in self._measurements
-                if m.power_system is not None
-            ],
-            "power_processor": [
-                m.power_processor
-                for m in self._measurements
-                if m.power_processor is not None
-            ],
-            "dsp_utilization": [
-                m.dsp_utilization
-                for m in self._measurements
-                if m.dsp_utilization is not None
-            ],
-            "ram_used": [
-                m.ram_used
-                for m in self._measurements
-                if m.ram_used is not None
-            ],
-            "cpu_utilization": [
-                m.cpu_utilization
-                for m in self._measurements
-                if m.cpu_utilization is not None
-            ],
+                if (value := getattr(m, key, None)) is not None
+            ]
+            for key in Measurement._fields
         }
 
     def __enter__(self) -> Self:
@@ -171,70 +68,40 @@ class DeviceMonitor:
         exc_tb: types.TracebackType | None,
     ) -> None:
         self.stop()
+        self.reset()
 
     def read(self) -> Measurement:
-        system, proc = self.read_power()
-        dsp = self.read_dsp()
-        ram = self.read_ram()
-        cpu = self.read_cpu()
-        return Measurement(system, proc, dsp, ram, cpu)
+        return Measurement(
+            *self.read_power(),
+            self.read_processor_frequency(),
+            *self.read_dsp(),
+            self.read_ram(),
+            self.read_cpu(),
+            self.read_temp(),
+        )
 
-    def _calc_stats(self, values: list[float]) -> dict[str, float | None]:
-        if not values:
-            return {
-                "mean": None,
-                "median": None,
-                "peak": None,
-            }
+    def get_stats(self) -> dict[str, float | None]:
+        from collections import defaultdict
 
-        return {
-            "mean": statistics.fmean(values),
-            "median": statistics.median(values),
-            "peak": max(values),
-        }
+        values = defaultdict(list)
 
-    def get_stats(self) -> dict:
-        system = []
-        proc = []
-        dsp = []
-        ram = []
-        cpu = []
+        for measurement in self._measurements:
+            for field, value in measurement._asdict().items():
+                idle = getattr(self.idle_measurements, field)
 
-        for s, p, d, r, c in self._measurements:
-            if isinstance(s, (int, float)) and s > self.idle_power_system:
-                system.append(s)
-            if isinstance(p, (int, float)) and p > self.idle_power_processor:
-                proc.append(p)
-            if isinstance(d, (int, float)) and d > self.idle_dsp_utilization:
-                dsp.append(d)
-            if isinstance(r, (int, float)) and r > self.idle_ram_used:
-                ram.append(r)
-            if isinstance(c, (int, float)) and c > self.idle_cpu_utilization:
-                cpu.append(c)
+                if isinstance(value, (int, float)) and value > idle:
+                    values[field].append(value)
 
-        system_stats = self._calc_stats(system)
-        proc_stats = self._calc_stats(proc)
-        dsp_stats = self._calc_stats(dsp)
-        ram_stats = self._calc_stats(ram)
-        cpu_stats = self._calc_stats(cpu)
+        result = {}
 
-        return {
-            "power_system": system_stats["mean"],
-            "power_system_median": system_stats["median"],
-            "power_system_peak": system_stats["peak"],
-            "power_processor": proc_stats["mean"],
-            "power_processor_median": proc_stats["median"],
-            "power_processor_peak": proc_stats["peak"],
-            "dsp": dsp_stats["mean"],
-            "dsp_median": dsp_stats["median"],
-            "dsp_peak": dsp_stats["peak"],
-            "ram_used": ram_stats["mean"],
-            "ram_used_median": ram_stats["median"],
-            "ram_used_peak": ram_stats["peak"],
-            "cpu": cpu_stats["mean"],
-            "cpu_median": cpu_stats["median"],
-            "cpu_peak": cpu_stats["peak"],
-        }
+        for field, vals in values.items():
+            stats = self._calc_stats(vals)
+
+            result[field] = stats["mean"]
+            result[f"{field}_median"] = stats["median"]
+            result[f"{field}_peak"] = stats["peak"]
+
+        return result
 
     def start(self) -> None:
         """Start the background sampling thread.
@@ -250,27 +117,16 @@ class DeviceMonitor:
         self._thread = threading.Thread(target=self.loop, daemon=True)
         self._thread.start()
 
-    def stop(self, full_cleanup: bool = False) -> None:
+    def reset(self) -> None:
+        self._measurements = []
+        self._prev_cpu_times = None
+
+    def stop(self) -> None:
         """Stop the background sampling thread and wait for it to
         finish."""
         self._running = False
         if self._thread is not None:
             self._thread.join()
-        if self.dsp_exists:
-            files_to_remove = [
-                "/data/modelconverter/dsp_read1",
-                "/data/modelconverter/dsp_read2",
-                "/data/modelconverter/dsp_read1_full",
-                "/data/modelconverter/dsp_read2_full",
-            ]
-            if full_cleanup:
-                files_to_remove.append("/data/modelconverter/oak_dsp_util.sh")
-
-            returncode, _, _ = self.device_handler.shell(
-                f"rm -f {' '.join(files_to_remove)}", check=False
-            )
-            if returncode != 0:
-                logger.warning("Failed to cleanup DSP monitor tmp files")
 
     def loop(self) -> None:
         """Internal sampling loop executed in the background thread."""
@@ -283,7 +139,23 @@ class DeviceMonitor:
                 logger.error("Monitor read failed")
             time.sleep(self.interval)
 
+    def read_temp(self) -> float | None:
+        zone = 93 if self.model == "4d" else 92
+
+        try:
+            _, out, _ = self.device_handler.shell(
+                f"cat /sys/class/thermal/thermal_zone{zone}/temp"
+            )
+            return int(out) / 1000  # m°C -> °C
+        except Exception:
+            logger.warning("Failed to read temperature value.")
+            return None
+
     def read_hwmon(self, hwmon: str) -> float | None:
+        if hwmon == "hwmon0" and not self.hwmon0_exists:
+            return None
+        if hwmon == "hwmon1" and not self.hwmon1_exists:
+            return None
         try:
             _, out, _ = self.device_handler.shell(
                 f"cat /sys/class/hwmon/{hwmon}/power1_input"
@@ -291,6 +163,16 @@ class DeviceMonitor:
             return int(out) / 1_000_000  # µW -> W
         except Exception:
             logger.warning(f"Failed to read {hwmon} power value.")
+            return None
+
+    def read_processor_frequency(self) -> float | None:
+        try:
+            _, out, _ = self.device_handler.shell(
+                "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
+            )
+            return int(out) / 1000  # kHz -> MHz
+        except Exception:
+            logger.warning("Failed to read processor frequency.")
             return None
 
     def read_ram(self) -> float | None:
@@ -364,6 +246,98 @@ class DeviceMonitor:
             logger.warning("Failed to read CPU usage.")
             return None
 
+    def read_dsp(
+        self,
+    ) -> tuple[float | None, float | None]:
+
+        SYS_MON_APP = "/usr/bin/sysMonApp"
+        SLEEP_TIME = 1.0
+
+        def parse_freq_file(text: str) -> dict[float, float]:
+            """
+            Extract lines like: <float> <float>
+            Returns: {freq: value}
+            """
+            data = {}
+            pattern = re.compile(r"^\s*([0-9]*\.[0-9]+)\s+([0-9]*\.[0-9]+)")
+
+            for line in text.splitlines()[1:]:  # skip header
+                match = pattern.match(line)
+                if match:
+                    freq = float(match.group(1))
+                    value = float(match.group(2))
+                    data[freq] = value
+
+            return data
+
+        def compute_utilization_and_freq(
+            active1: dict[float, float],
+            active2: dict[float, float],
+            interval: float,
+        ) -> tuple[float, float]:
+            all_freqs = set(active1) | set(active2)
+
+            deltas = {}
+            sum_delta = 0
+            max_freq = 0
+
+            for freq in all_freqs:
+                max_freq = max(max_freq, freq)
+
+                a1 = active1.get(freq, 0)
+                a2 = active2.get(freq, 0)
+
+                delta = max(0, a2 - a1)
+                deltas[freq] = delta
+                sum_delta += delta
+
+            # Normalize (same as AWK)
+            scale_factor = 1.0
+            if sum_delta > interval:
+                scale_factor = interval / sum_delta
+
+            sum_cycles = 0
+            adjusted_total_time = 0
+
+            for freq, delta in deltas.items():
+                adjusted = delta * scale_factor
+                sum_cycles += freq * adjusted
+                adjusted_total_time += adjusted
+
+            if max_freq == 0 or interval == 0:
+                raise ValueError("Invalid data")
+
+            utilization = (sum_cycles / (max_freq * interval)) * 100
+
+            avg_freq = (
+                sum_cycles / adjusted_total_time
+                if adjusted_total_time > 0
+                else 0
+            )
+            return utilization, avg_freq
+
+        self.device_handler.shell(
+            f"{SYS_MON_APP} getPowerStats --clear 1 --q6 cdsp"
+        )
+
+        _, out1, _ = self.device_handler.shell(
+            f"{SYS_MON_APP} getPowerStats --q6 cdsp"
+        )
+        data1 = parse_freq_file(out1)
+
+        time.sleep(SLEEP_TIME)
+
+        _, out2, _ = self.device_handler.shell(
+            f"{SYS_MON_APP} getPowerStats --q6 cdsp"
+        )
+        data2 = parse_freq_file(out2)
+
+        try:
+            return compute_utilization_and_freq(data1, data2, SLEEP_TIME)
+        except Exception as e:
+            logger.warning(f"Failed to compute DSP utilization: {e}")
+            return None, None
+
     def check_hwmon(self, hwmon: str) -> bool:
         try:
             self.device_handler.shell(
@@ -378,33 +352,13 @@ class DeviceMonitor:
         return True
 
     def read_power(self) -> tuple[float | None, float | None]:
-        power0 = self.read_hwmon("hwmon0") if self.hwmon0_exists else None
-        power1 = self.read_hwmon("hwmon1") if self.hwmon1_exists else None
-        return (power0, power1)
-
-    def read_dsp(self) -> float | None:
-        if not self.dsp_exists:
-            return None
-        code, dsp, error = self.device_handler.shell(
-            "bash /data/modelconverter/oak_dsp_util.sh", check=False
-        )
-        if "Maximum frequency is zero" in error:
-            dsp = 0
-        elif code != 0:
-            logger.warning("Failed to read DSP value.")
-            return None
-        try:
-            return float(dsp)
-        except ValueError:
-            logger.warning(f"Failed to parse DSP utilization value: {dsp}")
-            return None
+        system = self.read_hwmon("hwmon0")
+        proc = self.read_hwmon("hwmon1")
+        return system, proc
 
     def check_dsp(self) -> bool:
         try:
-            self.prepare_dsp_util_script()
-            self.device_handler.shell(
-                "ls -d /data/modelconverter/oak_dsp_util.sh /usr/bin/sysMonApp"
-            )
+            self.device_handler.shell("ls -d /usr/bin/sysMonApp")
         except Exception:
             logger.exception(
                 "No DSP utility script found under /usr/bin/sysMonApp. Consider updating the device OS. Proceeding without DSP monitoring."
@@ -412,40 +366,32 @@ class DeviceMonitor:
             return False
         return True
 
-    def prepare_dsp_util_script(self) -> None:
-        """Create the DSP utility script directly on the device via
-        ADB."""
-        remote_script_path = "/data/modelconverter/oak_dsp_util.sh"
-        self.device_handler.shell("mkdir -p /data/modelconverter")
-
-        cmd = f"cat > {remote_script_path} <<'EOF'\n{DSP_UTIL_SCRIPT_CONTENT}\nEOF\n"
-        self.device_handler.shell(cmd)
-        self.device_handler.shell(f"chmod +x {remote_script_path}")
-
     def set_idle_measurements(self) -> None:
         logger.info("Calculating idle power consumption...")
         self.start()
-        time.sleep(5)
+        time.sleep(10)
         self.stop()
 
         stats = self.get_stats()
-        self.idle_power_system = stats["power_system"] or 0.0
-        self.idle_power_processor = stats["power_processor"] or 0.0
-        self.idle_ram_used = stats["ram_used"] or 0.0
-        self.idle_dsp_utilization = stats["dsp"] or 0.0
-        self.idle_cpu_utilization = stats["cpu"] or 0.0
-
-        self.idle_power_system *= 1.1
-        self.idle_power_processor *= 1.1
-        self.idle_dsp_utilization *= 1.1
-        self.idle_cpu_utilization *= 1.1
-        self.idle_ram_used *= 1.1
-
-        logger.info(
-            f"Idle power consumption: system={self.idle_power_system:.4f} W, processor={self.idle_power_processor:.4f} W"
+        self._idle_measurements = Measurement(
+            *[stats.get(field) or 0.0 for field in Measurement._fields]
         )
-        logger.info(f"Idle DSP utilization: {self.idle_dsp_utilization:.4f} %")
-        logger.info(f"Idle CPU utilization: {self.idle_cpu_utilization:.4f} %")
-        logger.info(f"Idle RAM used: {self.idle_ram_used:.2f} MiB")
+
+        for field, value in self._idle_measurements._asdict().items():
+            logger.info(f"Idle {field.replace('_', ' ')}: {value:.4f}")
 
         self._measurements = []
+
+    def _calc_stats(self, values: list[float]) -> dict[str, float | None]:
+        if not values:
+            return {
+                "mean": None,
+                "median": None,
+                "peak": None,
+            }
+
+        return {
+            "mean": statistics.fmean(values),
+            "median": statistics.median(values),
+            "peak": max(values),
+        }
