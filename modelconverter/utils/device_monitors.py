@@ -105,9 +105,8 @@ class DeviceMonitor:
 
         for measurement in self._measurements:
             for field, value in measurement._asdict().items():
-                idle = getattr(self.idle_measurements, field)
 
-                if isinstance(value, (int, float)) and value > idle:
+                if isinstance(value, (int, float)):
                     values[field].append(value)
 
         result = {}
