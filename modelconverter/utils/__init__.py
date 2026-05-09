@@ -48,9 +48,11 @@ from .onnx_tools import (
 )
 from .progress_handler import create_progress_handler
 from .subprocess import SubprocessHandle, subprocess_run
+from .types import DataType
 
 __all__ = [
     "AdbHandler",
+    "DataType",
     "DeviceHandler",
     "DeviceMonitor",
     "Metadata",
