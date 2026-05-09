@@ -19,7 +19,11 @@ class Measurement(NamedTuple):
     dsp_frequency: float | None = None
     ram_used: float | None = None
     cpu_utilization: float | None = None
-    temp: float | None = None
+    temp_zone92: float | None = None
+    temp_zone93: float | None = None
+    temp_zone94: float | None = None
+    temp_zone95: float | None = None
+    temp_zone96: float | None = None
 
     @classmethod
     def zero(cls) -> Self:
@@ -31,7 +35,11 @@ class Measurement(NamedTuple):
             dsp_frequency=0.0,
             ram_used=0.0,
             cpu_utilization=0.0,
-            temp=0.0,
+            temp_zone92=0.0,
+            temp_zone93=0.0,
+            temp_zone94=0.0,
+            temp_zone95=0.0,
+            temp_zone96=0.0,
         )
 
 
@@ -40,7 +48,7 @@ class DeviceMonitor:
         self,
         device_handler: DeviceHandler,
         interval: float = 0.5,
-        model: Literal["4d", "4s", "4lite"] | None = "4lite",
+        model: Literal["4d", "4s", "4lite"] = "4lite",
     ) -> None:
         self.device_handler = device_handler
         self.interval = interval
@@ -87,7 +95,7 @@ class DeviceMonitor:
             *self.read_dsp(),
             self.read_ram(),
             self.read_cpu(),
-            self.read_temp(),
+            **self.read_temp(),
         )
 
     def get_stats(self) -> dict[str, float | None]:
@@ -150,9 +158,12 @@ class DeviceMonitor:
                 logger.error("Monitor read failed")
             time.sleep(self.interval)
 
-    def read_temp(self) -> float | None:
-        zone = 93 if self.model == "4d" else 92
+    def read_temp(self) -> dict[str, float | None]:
+        return {
+            f"temp_zone{zone}": self._read_temp(zone) for zone in range(92, 97)
+        }
 
+    def _read_temp(self, zone: int) -> float | None:
         try:
             _, out, _ = self.device_handler.shell(
                 f"cat /sys/class/thermal/thermal_zone{zone}/temp"
