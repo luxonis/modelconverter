@@ -384,11 +384,11 @@ class DeviceMonitor:
         self.stop()
 
         stats = self.get_stats()
-        self._idle_measurements = Measurement(
+        self.idle_measurements = Measurement(
             *[stats.get(field) or 0.0 for field in Measurement._fields]
         )
 
-        for field, value in self._idle_measurements._asdict().items():
+        for field, value in self.idle_measurements._asdict().items():
             logger.info(f"Idle {field.replace('_', ' ')}: {value:.4f}")
 
     def _calc_stats(self, values: list[float]) -> dict[str, float | None]:
