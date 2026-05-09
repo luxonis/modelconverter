@@ -378,8 +378,9 @@ class DeviceMonitor:
 
     def set_idle_measurements(self) -> None:
         logger.info("Calculating idle power consumption...")
-        with self:
-            time.sleep(10)
+        self.start()
+        time.sleep(10)
+        self.stop()
 
         stats = self.get_stats()
         self._idle_measurements = Measurement(
