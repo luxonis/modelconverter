@@ -153,7 +153,7 @@ class DeviceMonitor:
                 if val is not None:
                     self._measurements.append(val)
             except Exception:
-                logger.error("Monitor read failed")
+                logger.exception("Monitor read failed")
             time.sleep(self.interval)
 
     def read_temp(self) -> dict[str, float | None]:
