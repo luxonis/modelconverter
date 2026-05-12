@@ -24,6 +24,7 @@ class Measurement(NamedTuple):
     temp_zone94: float | None = None
     temp_zone95: float | None = None
     temp_zone96: float | None = None
+    temp_avg: float | None = None
 
     @classmethod
     def zero(cls) -> Self:
