@@ -105,7 +105,6 @@ class DeviceMonitor:
 
         for measurement in self._measurements:
             for field, value in measurement._asdict().items():
-
                 if isinstance(value, (int, float)):
                     values[field].append(value)
 
@@ -158,9 +157,16 @@ class DeviceMonitor:
             time.sleep(self.interval)
 
     def read_temp(self) -> dict[str, float | None]:
-        return {
+        temps = {
             f"temp_zone{zone}": self._read_temp(zone) for zone in range(92, 97)
         }
+        temps["temp_avg"] = (
+            sum(values := [t for t in temps.values() if t is not None])
+            / len(values)
+            if any(t is not None for t in temps.values())
+            else None
+        )
+        return temps
 
     def _read_temp(self, zone: int) -> float | None:
         try:
