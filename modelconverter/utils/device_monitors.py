@@ -315,17 +315,19 @@ class DeviceMonitor:
 
     def check_dsp(self) -> bool:
         try:
-            self.device_handler.shell(f"ls -d {self.DSP_SYS_MON_APP}")
+            self.device_handler.shell(
+                f"{self.DSP_SYS_MON_APP} getPowerStats --q6 cdsp --clear 1"
+            )
         except Exception:
             logger.exception(
                 "No DSP utility script found under /usr/bin/sysMonApp. Consider updating the device OS. Proceeding without DSP monitoring."
             )
             return False
         return True
+
     def get_idle_measurements(self, t: float = 5) -> dict[str, float | None]:
         with self:
             time.sleep(t)
         return {
             f"idle_{key}": value for key, value in self.get_stats().items()
         }
-
