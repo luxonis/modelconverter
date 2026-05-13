@@ -121,10 +121,14 @@ class DeviceMonitor:
             _, out, _ = self.device_handler.shell(
                 f"cat /sys/class/thermal/thermal_zone{zone}/temp"
             )
-            return int(out) / 1000  # m°C -> °C
+            temp = int(out) / 1000  # m°C -> °C
+            if temp < 0:
+                return None
         except Exception:
             logger.warning("Failed to read temperature value.")
             return None
+        else:
+            return temp
 
     def _read_hwmon(self, hwmon: str) -> float | None:
         if hwmon == "hwmon0" and not self.hwmon0_exists:
