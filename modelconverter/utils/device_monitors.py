@@ -116,7 +116,7 @@ class DeviceMonitor:
         for field, vals in values.items():
             stats = self._calc_stats(vals)
 
-            if "dsp_freq_" in field:
+            if "dsp_freq_" in field or "power_collapse" in field:
                 result[field] = stats["sum"]
             else:
                 result[field] = stats["mean"]
@@ -382,7 +382,6 @@ class DeviceMonitor:
 
         if self.verbose:
             for field, value in self.idle_measurements._asdict().items():
-                if ""
                 logger.info(f"Idle {field.replace('_', ' ')}: {value:.4f}")
 
     def _calc_stats(self, values: list[float]) -> dict[str, float | None]:
