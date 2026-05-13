@@ -20,7 +20,7 @@ class Measurement(NamedTuple):
     ram_used: float | None = None
     cpu_utilization: float | None = None
     dsp_utilization: float | None = None
-    dsp_frequency: float | None = None
+    dsp_avg_frequency: float | None = None
     dsp_freq_460_80: float | None = None
     dsp_freq_576_00: float | None = None
     dsp_freq_787_20: float | None = None
@@ -333,7 +333,7 @@ class DeviceMonitor:
         else:
             return {
                 "dsp_utilization": util,
-                "dsp_frequency": avg_freq,
+                "dsp_avg_frequency": avg_freq,
                 "dsp_power_collapse": power_collapse,
             } | {
                 f"dsp_freq_{freq.replace('.', '_')}": value
