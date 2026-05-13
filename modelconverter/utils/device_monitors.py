@@ -116,7 +116,10 @@ class DeviceMonitor:
         for field, vals in values.items():
             stats = self._calc_stats(vals)
 
-            result[field] = stats["mean"]
+            if "dsp_freq_" in field:
+                result[field] = stats["sum"]
+            else:
+                result[field] = stats["mean"]
             result[f"{field}_median"] = stats["median"]
             result[f"{field}_peak"] = stats["peak"]
 
@@ -379,6 +382,7 @@ class DeviceMonitor:
 
         if self.verbose:
             for field, value in self.idle_measurements._asdict().items():
+                if ""
                 logger.info(f"Idle {field.replace('_', ' ')}: {value:.4f}")
 
     def _calc_stats(self, values: list[float]) -> dict[str, float | None]:
@@ -387,10 +391,12 @@ class DeviceMonitor:
                 "mean": None,
                 "median": None,
                 "peak": None,
+                "sum": None,
             }
 
         return {
             "mean": statistics.fmean(values),
             "median": statistics.median(values),
             "peak": max(values),
+            "sum": sum(values),
         }
