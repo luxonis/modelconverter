@@ -24,6 +24,7 @@ class Measurement(NamedTuple):
     temp_zone94: float | None = None
     temp_zone95: float | None = None
     temp_zone96: float | None = None
+    temp_avg: float | None = None
 
     @classmethod
     def zero(cls) -> Self:
@@ -157,7 +158,7 @@ class DeviceMonitor:
                 if val is not None:
                     self._measurements.append(val)
             except Exception:
-                logger.error("Monitor read failed")
+                logger.exception("Monitor read failed")
             time.sleep(self.interval)
 
     def read_temp(self) -> dict[str, float | None]:
