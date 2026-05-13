@@ -280,7 +280,7 @@ class DeviceMonitor:
 
         def parse_freq_file(
             text: str,
-        ) -> tuple[dict[str, float], float | None]:
+        ) -> tuple[dict[str, float], float | None, float | None]:
             """
             Extract lines like: <float> <float>
             Returns: {freq: value}
@@ -289,6 +289,7 @@ class DeviceMonitor:
             pattern = re.compile(r"^\s*([0-9]*\.[0-9]+)\s+([0-9]*\.[0-9]+)")
 
             power_collapse = None
+            total_time = None
             for line in text.splitlines()[1:]:  # skip header
                 match = pattern.match(line)
                 if match:
@@ -297,12 +298,14 @@ class DeviceMonitor:
                     data[freq] = value
                 if "power collapse" in line.lower():
                     with suppress(Exception):
-                        value = float(line.split()[-1])
-                        power_collapse = value
+                        power_collapse = float(line.split()[-1])
+                if "total time" in line.lower():
+                    with suppress(Exception):
+                        total_time = float(line.split()[-1])
 
             if power_collapse is None:
                 logger.warning("Failed to parse DSP power collapse value.")
-            return data, power_collapse
+            return data, power_collapse, total_time
 
         try:
             _, out, _ = self.device_handler.shell(
@@ -311,11 +314,11 @@ class DeviceMonitor:
             self.device_handler.shell(
                 f"{self.DSP_SYS_MON_APP} getPowerStats --clear 1 --q6 cdsp"
             )
-            hist, power_collapse = parse_freq_file(out)
-            total_s = sum(hist.values())
+            hist, power_collapse, total_time = parse_freq_file(out)
+            total_time = total_time or sum(hist.values())
             avg_freq = (
                 sum(float(freq) * value for freq, value in hist.items())
-                / total_s
+                / total_time
             )
             util = (avg_freq / max(float(freq) for freq in hist)) * 100
 
