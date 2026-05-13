@@ -3,43 +3,13 @@ import statistics
 import threading
 import time
 import types
-from collections.abc import Mapping
 from contextlib import suppress
-from typing import Final, Literal, NamedTuple
+from typing import Final, Literal
 
 from loguru import logger
 from typing_extensions import Self
 
 from modelconverter.utils import DeviceHandler
-
-
-class Measurement(NamedTuple):
-    power_system: float | None = None
-    power_processor: float | None = None
-    processor_frequency: float | None = None
-    ram_used: float | None = None
-    cpu_utilization: float | None = None
-    dsp_utilization: float | None = None
-    dsp_avg_frequency: float | None = None
-    dsp_freq_460_80: float | None = None
-    dsp_freq_576_00: float | None = None
-    dsp_freq_787_20: float | None = None
-    dsp_freq_960_00: float | None = None
-    dsp_freq_1171_20: float | None = None
-    dsp_freq_1305_60: float | None = None
-    dsp_freq_1401_60: float | None = None
-    dsp_freq_1478_40: float | None = None
-    dsp_power_collapse: float | None = None
-    temp_zone92: float | None = None
-    temp_zone93: float | None = None
-    temp_zone94: float | None = None
-    temp_zone95: float | None = None
-    temp_zone96: float | None = None
-    temp_avg: float | None = None
-
-    @classmethod
-    def zero(cls) -> Self:
-        return cls(**dict.fromkeys(cls._fields, 0.0))
 
 
 class DeviceMonitor:
@@ -50,7 +20,6 @@ class DeviceMonitor:
         device_handler: DeviceHandler,
         interval: float = 0.5,
         model: Literal["4d", "4s", "4lite"] = "4lite",
-        verbose: bool = True,
     ) -> None:
         self.device_handler = device_handler
         self.interval = interval
@@ -58,26 +27,13 @@ class DeviceMonitor:
         self.hwmon1_exists = self.check_hwmon("hwmon1")
         self.dsp_exists = self.check_dsp()
         self.model = model
-        self.verbose = verbose
 
-        self.idle_measurements = Measurement.zero()
-        self._measurements: list[Measurement] = []
+        self.measurements: dict[str, list[float]] = {}
         self._running = False
         self._thread = None
 
         # Previous /proc/stat snapshot for CPU utilization calculation
         self._prev_cpu_times: tuple[int, int] | None = None
-
-    @property
-    def measurements(self) -> dict[str, list[float]]:
-        return {
-            key: [
-                value
-                for m in self._measurements
-                if (value := getattr(m, key, None)) is not None
-            ]
-            for key in Measurement._fields
-        }
 
     def __enter__(self) -> Self:
         self.start()
@@ -91,41 +47,27 @@ class DeviceMonitor:
     ) -> None:
         self.stop()
 
-    def read(self) -> Measurement:
-        return Measurement(
-            *self.read_power(),
-            self.read_processor_frequency(),
-            self.read_ram(),
-            self.read_cpu(),
-            **self.read_dsp(),
-            **self.read_temp(),
+    def read(self) -> dict[str, float | None]:
+        return (
+            self.read_power()
+            | self.read_ram()
+            | self.read_cpu()
+            | self.read_dsp()
+            | self.read_temp()
         )
 
     def get_stats(self) -> dict[str, float | None]:
-        from collections import defaultdict
+        stats = {}
 
-        values = defaultdict(list)
-
-        for measurement in self._measurements:
-            for field, value in measurement._asdict().items():
-                if isinstance(value, (int, float)):
-                    values[field].append(value)
-
-        result = {}
-
-        for field, vals in values.items():
-            stats = self._calc_stats(vals)
-
-            if "dsp_freq_" in field or "power_collapse" in field:
-                result[field] = stats["sum"]
+        for key, values in self.measurements.items():
+            if "dsp_freq_" in key or "power_collapse" in key:
+                stats[key] = sum(values)
             else:
-                result[field] = stats["mean"]
-            result[f"{field}_median"] = stats["median"]
-            result[f"{field}_peak"] = stats["peak"]
+                stats[key] = statistics.fmean(values) if values else None
 
-        return result
+        return stats
 
-    def start(self, set_idle: bool = True) -> None:
+    def start(self) -> None:
         """Start the background sampling thread.
 
         If the monitor is already running, this is a no-op.
@@ -133,15 +75,13 @@ class DeviceMonitor:
         if self._running:
             return
         time.sleep(1)  # Small delay to avoid overlapping ADB commands
-        if set_idle:
-            self.set_idle_measurements()
         self.reset()
         self._running = True
         self._thread = threading.Thread(target=self.loop, daemon=True)
         self._thread.start()
 
     def reset(self) -> None:
-        self._measurements = []
+        self.measurements = {}
         self._prev_cpu_times = None
 
     def stop(self) -> None:
@@ -156,10 +96,12 @@ class DeviceMonitor:
         while self._running:
             try:
                 val = self.read()
-                if val is not None:
-                    self._measurements.append(val)
-            except Exception:
+                for key, value in val.items():
+                    if value is not None:
+                        self.measurements.setdefault(key, []).append(value)
+            except Exception as e:
                 logger.exception("Monitor read failed")
+                logger.debug(f"Monitor read error details: {e}")
             time.sleep(self.interval)
 
     def read_temp(self) -> dict[str, float | None]:
@@ -184,7 +126,7 @@ class DeviceMonitor:
             logger.warning("Failed to read temperature value.")
             return None
 
-    def read_hwmon(self, hwmon: str) -> float | None:
+    def _read_hwmon(self, hwmon: str) -> float | None:
         if hwmon == "hwmon0" and not self.hwmon0_exists:
             return None
         if hwmon == "hwmon1" and not self.hwmon1_exists:
@@ -198,17 +140,18 @@ class DeviceMonitor:
             logger.warning(f"Failed to read {hwmon} power value.")
             return None
 
-    def read_processor_frequency(self) -> float | None:
+    def read_cpu_frequency(self) -> float | None:
         try:
             _, out, _ = self.device_handler.shell(
                 "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
             )
             return int(out) / 1000  # kHz -> MHz
-        except Exception:
+        except Exception as e:
             logger.warning("Failed to read processor frequency.")
+            logger.debug(f"Processor frequency read error details: {e}")
             return None
 
-    def read_ram(self) -> float | None:
+    def read_ram(self) -> dict[str, float | None]:
         """Return used RAM in MiB."""
         try:
             _, out, _ = self.device_handler.shell("cat /proc/meminfo")
@@ -227,15 +170,16 @@ class DeviceMonitor:
 
             if mem_total is None or mem_available is None:
                 logger.warning("Failed to parse RAM info from /proc/meminfo.")
-                return None
+                return {"ram_used": None}
 
             used_kib = mem_total - mem_available
-            return used_kib / 1024  # KiB -> MiB
-        except Exception:
+            return {"ram_used": used_kib / 1024}
+        except Exception as e:
             logger.warning("Failed to read RAM usage.")
-            return None
+            logger.debug(f"RAM read error details: {e}")
+            return {"ram_used": None}
 
-    def read_cpu(self) -> float | None:
+    def read_cpu_utilization(self) -> float | None:
         """Return total CPU utilization in percent based on /proc/stat
         deltas.
 
@@ -275,11 +219,18 @@ class DeviceMonitor:
 
             utilization = 100.0 * (1.0 - (delta_idle / delta_total))
             return max(0.0, min(100.0, utilization))
-        except Exception:
+        except Exception as e:
             logger.warning("Failed to read CPU usage.")
+            logger.debug(f"CPU read error details: {e}")
             return None
 
-    def read_dsp(self) -> Mapping[str, float]:
+    def read_cpu(self) -> dict[str, float | None]:
+        return {
+            "cpu_frequency": self.read_cpu_frequency(),
+            "cpu_utilization": self.read_cpu_utilization(),
+        }
+
+    def read_dsp(self) -> dict[str, float]:
 
         def parse_freq_file(
             text: str,
@@ -354,10 +305,13 @@ class DeviceMonitor:
             return False
         return True
 
-    def read_power(self) -> tuple[float | None, float | None]:
-        system = self.read_hwmon("hwmon0")
-        proc = self.read_hwmon("hwmon1")
-        return system, proc
+    def read_power(self) -> dict[str, float | None]:
+        system = self._read_hwmon("hwmon0")
+        proc = self._read_hwmon("hwmon1")
+        return {
+            "power_system": system,
+            "power_processor": proc,
+        }
 
     def check_dsp(self) -> bool:
         try:
@@ -368,34 +322,10 @@ class DeviceMonitor:
             )
             return False
         return True
-
-    def set_idle_measurements(self) -> None:
-        logger.info("Calculating idle power consumption...")
-        self.start(set_idle=False)
-        time.sleep(10)
-        self.stop()
-
-        stats = self.get_stats()
-        self.idle_measurements = Measurement(
-            *[stats.get(field) or 0.0 for field in Measurement._fields]
-        )
-
-        if self.verbose:
-            for field, value in self.idle_measurements._asdict().items():
-                logger.info(f"Idle {field.replace('_', ' ')}: {value:.4f}")
-
-    def _calc_stats(self, values: list[float]) -> dict[str, float | None]:
-        if not values:
-            return {
-                "mean": None,
-                "median": None,
-                "peak": None,
-                "sum": None,
-            }
-
+    def get_idle_measurements(self, t: float = 5) -> dict[str, float | None]:
+        with self:
+            time.sleep(t)
         return {
-            "mean": statistics.fmean(values),
-            "median": statistics.median(values),
-            "peak": max(values),
-            "sum": sum(values),
+            f"idle_{key}": value for key, value in self.get_stats().items()
         }
+
