@@ -3,6 +3,8 @@ import statistics
 import threading
 import time
 import types
+from collections.abc import Mapping
+from contextlib import suppress
 from typing import Final, Literal, NamedTuple
 
 from loguru import logger
@@ -15,10 +17,19 @@ class Measurement(NamedTuple):
     power_system: float | None = None
     power_processor: float | None = None
     processor_frequency: float | None = None
-    dsp_utilization: float | None = None
-    dsp_frequency: float | None = None
     ram_used: float | None = None
     cpu_utilization: float | None = None
+    dsp_utilization: float | None = None
+    dsp_frequency: float | None = None
+    dsp_freq_460_80: float | None = None
+    dsp_freq_576_00: float | None = None
+    dsp_freq_787_20: float | None = None
+    dsp_freq_960_00: float | None = None
+    dsp_freq_1171_20: float | None = None
+    dsp_freq_1305_60: float | None = None
+    dsp_freq_1401_60: float | None = None
+    dsp_freq_1478_40: float | None = None
+    dsp_power_collapse: float | None = None
     temp_zone92: float | None = None
     temp_zone93: float | None = None
     temp_zone94: float | None = None
@@ -28,20 +39,7 @@ class Measurement(NamedTuple):
 
     @classmethod
     def zero(cls) -> Self:
-        return cls(
-            power_system=0.0,
-            power_processor=0.0,
-            processor_frequency=0.0,
-            dsp_utilization=0.0,
-            dsp_frequency=0.0,
-            ram_used=0.0,
-            cpu_utilization=0.0,
-            temp_zone92=0.0,
-            temp_zone93=0.0,
-            temp_zone94=0.0,
-            temp_zone95=0.0,
-            temp_zone96=0.0,
-        )
+        return cls(**dict.fromkeys(cls._fields, 0.0))
 
 
 class DeviceMonitor:
@@ -97,9 +95,9 @@ class DeviceMonitor:
         return Measurement(
             *self.read_power(),
             self.read_processor_frequency(),
-            *self.read_dsp(),
             self.read_ram(),
             self.read_cpu(),
+            **self.read_dsp(),
             **self.read_temp(),
         )
 
@@ -278,11 +276,11 @@ class DeviceMonitor:
             logger.warning("Failed to read CPU usage.")
             return None
 
-    def read_dsp(
-        self,
-    ) -> tuple[float | None, float | None]:
+    def read_dsp(self) -> Mapping[str, float]:
 
-        def parse_freq_file(text: str) -> dict[float, float]:
+        def parse_freq_file(
+            text: str,
+        ) -> tuple[dict[str, float], float | None]:
             """
             Extract lines like: <float> <float>
             Returns: {freq: value}
@@ -290,14 +288,21 @@ class DeviceMonitor:
             data = {}
             pattern = re.compile(r"^\s*([0-9]*\.[0-9]+)\s+([0-9]*\.[0-9]+)")
 
+            power_collapse = None
             for line in text.splitlines()[1:]:  # skip header
                 match = pattern.match(line)
                 if match:
-                    freq = float(match.group(1))
+                    freq = match.group(1)
                     value = float(match.group(2))
                     data[freq] = value
+                if "power collapse" in line.lower():
+                    with suppress(Exception):
+                        value = float(line.split()[-1])
+                        power_collapse = value
 
-            return data
+            if power_collapse is None:
+                logger.warning("Failed to parse DSP power collapse value.")
+            return data, power_collapse
 
         try:
             _, out, _ = self.device_handler.shell(
@@ -306,7 +311,7 @@ class DeviceMonitor:
             self.device_handler.shell(
                 f"{self.DSP_SYS_MON_APP} getPowerStats --clear 1 --q6 cdsp"
             )
-            hist = parse_freq_file(out)
+            hist, power_collapse = parse_freq_file(out)
             total_s = sum(hist.values())
             avg_freq = (
                 sum(float(freq) * value for freq, value in hist.items())
@@ -317,10 +322,17 @@ class DeviceMonitor:
         except Exception as e:
             logger.warning("Failed to read DSP stats.")
             logger.debug(f"DSP read error details: {e}")
-            return None, None
+            return {}
 
         else:
-            return util, avg_freq
+            return {
+                "dsp_utilization": util,
+                "dsp_frequency": avg_freq,
+                "dsp_power_collapse": power_collapse,
+            } | {
+                f"dsp_freq_{freq.replace('.', '_')}": value
+                for freq, value in hist.items()
+            }
 
     def check_hwmon(self, hwmon: str) -> bool:
         try:
