@@ -3,7 +3,7 @@ import statistics
 import threading
 import time
 import types
-from typing import Literal, NamedTuple
+from typing import Final, Literal, NamedTuple
 
 from loguru import logger
 from typing_extensions import Self
@@ -44,11 +44,14 @@ class Measurement(NamedTuple):
 
 
 class DeviceMonitor:
+    DSP_SYS_MON_APP: Final[str] = "/usr/bin/sysMonApp"
+
     def __init__(
         self,
         device_handler: DeviceHandler,
         interval: float = 0.5,
         model: Literal["4d", "4s", "4lite"] = "4lite",
+        verbose: bool = True,
     ) -> None:
         self.device_handler = device_handler
         self.interval = interval
@@ -56,6 +59,7 @@ class DeviceMonitor:
         self.hwmon1_exists = self.check_hwmon("hwmon1")
         self.dsp_exists = self.check_dsp()
         self.model = model
+        self.verbose = verbose
 
         self.idle_measurements = Measurement.zero()
         self._measurements: list[Measurement] = []
@@ -277,9 +281,6 @@ class DeviceMonitor:
         self,
     ) -> tuple[float | None, float | None]:
 
-        SYS_MON_APP = "/usr/bin/sysMonApp"
-        SLEEP_TIME = 1.0
-
         def parse_freq_file(text: str) -> dict[float, float]:
             """
             Extract lines like: <float> <float>
@@ -297,84 +298,40 @@ class DeviceMonitor:
 
             return data
 
-        def compute_utilization_and_freq(
-            active1: dict[float, float],
-            active2: dict[float, float],
-            interval: float,
-        ) -> tuple[float, float]:
-            all_freqs = set(active1) | set(active2)
-
-            deltas = {}
-            sum_delta = 0
-            max_freq = 0
-
-            for freq in all_freqs:
-                max_freq = max(max_freq, freq)
-
-                a1 = active1.get(freq, 0)
-                a2 = active2.get(freq, 0)
-
-                delta = max(0, a2 - a1)
-                deltas[freq] = delta
-                sum_delta += delta
-
-            # Normalize (same as AWK)
-            scale_factor = 1.0
-            if sum_delta > interval:
-                scale_factor = interval / sum_delta
-
-            sum_cycles = 0
-            adjusted_total_time = 0
-
-            for freq, delta in deltas.items():
-                adjusted = delta * scale_factor
-                sum_cycles += freq * adjusted
-                adjusted_total_time += adjusted
-
-            if max_freq == 0 or interval == 0:
-                raise ValueError("Invalid data")
-
-            utilization = (sum_cycles / (max_freq * interval)) * 100
-
-            avg_freq = (
-                sum_cycles / adjusted_total_time
-                if adjusted_total_time > 0
-                else 0
-            )
-            return utilization, avg_freq
-
-        self.device_handler.shell(
-            f"{SYS_MON_APP} getPowerStats --clear 1 --q6 cdsp"
-        )
-
-        _, out1, _ = self.device_handler.shell(
-            f"{SYS_MON_APP} getPowerStats --q6 cdsp"
-        )
-        data1 = parse_freq_file(out1)
-
-        time.sleep(SLEEP_TIME)
-
-        _, out2, _ = self.device_handler.shell(
-            f"{SYS_MON_APP} getPowerStats --q6 cdsp"
-        )
-        data2 = parse_freq_file(out2)
-
         try:
-            return compute_utilization_and_freq(data1, data2, SLEEP_TIME)
+            _, out, _ = self.device_handler.shell(
+                f"{self.DSP_SYS_MON_APP} getPowerStats --q6 cdsp"
+            )
+            self.device_handler.shell(
+                f"{self.DSP_SYS_MON_APP} getPowerStats --clear 1 --q6 cdsp"
+            )
+            hist = parse_freq_file(out)
+            total_s = sum(hist.values())
+            avg_freq = (
+                sum(float(freq) * value for freq, value in hist.items())
+                / total_s
+            )
+            util = (avg_freq / max(float(freq) for freq in hist)) * 100
+
         except Exception as e:
-            logger.warning(f"Failed to compute DSP utilization: {e}")
+            logger.warning("Failed to read DSP stats.")
+            logger.debug(f"DSP read error details: {e}")
             return None, None
+
+        else:
+            return util, avg_freq
 
     def check_hwmon(self, hwmon: str) -> bool:
         try:
             self.device_handler.shell(
                 f"ls /sys/class/hwmon/{hwmon}/power1_input"
             )
-        except Exception:
+        except Exception as e:
             logger.warning(
                 f"Hardware monitoring device {hwmon} missing. "
                 f"Proceeding without {hwmon} power monitoring."
             )
+            logger.debug(f"{hwmon} check error details: {e}")
             return False
         return True
 
@@ -385,7 +342,7 @@ class DeviceMonitor:
 
     def check_dsp(self) -> bool:
         try:
-            self.device_handler.shell("ls -d /usr/bin/sysMonApp")
+            self.device_handler.shell(f"ls -d {self.DSP_SYS_MON_APP}")
         except Exception:
             logger.exception(
                 "No DSP utility script found under /usr/bin/sysMonApp. Consider updating the device OS. Proceeding without DSP monitoring."
@@ -404,8 +361,9 @@ class DeviceMonitor:
             *[stats.get(field) or 0.0 for field in Measurement._fields]
         )
 
-        for field, value in self.idle_measurements._asdict().items():
-            logger.info(f"Idle {field.replace('_', ' ')}: {value:.4f}")
+        if self.verbose:
+            for field, value in self.idle_measurements._asdict().items():
+                logger.info(f"Idle {field.replace('_', ' ')}: {value:.4f}")
 
     def _calc_stats(self, values: list[float]) -> dict[str, float | None]:
         if not values:
