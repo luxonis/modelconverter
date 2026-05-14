@@ -206,6 +206,12 @@ class DataType(Enum):
                 "int8": dai.TensorInfo.DataType.I8,
                 "int32": dai.TensorInfo.DataType.INT,
                 "uint8": dai.TensorInfo.DataType.U8F,
+                "ufxp8": dai.TensorInfo.DataType.U8F,
+                # DAI does not currently expose a 16-bit
+                # fixed-point/int tensor type.
+                # Until it does, keep uFxp_16 on the closest
+                # supported 16-bit path.
+                "ufxp16": dai.TensorInfo.DataType.FP16,
             },
             "DepthAI",
         )
@@ -227,6 +233,16 @@ class DataType(Enum):
                 "uint16": np.uint16,
                 "uint32": np.uint32,
                 "uint64": np.uint64,
+                "boolean": np.bool_,
+                "string": np.str_,
+                "ufxp8": np.uint8,  # No fixed-point dtype in NumPy, so use uint8 as a placeholder.
+                "ufxp16": np.uint16,
+                "ufxp32": np.uint32,
+                "ufxp64": np.uint64,
+                "fxp8": np.int8,
+                "fxp16": np.int16,
+                "fxp32": np.int32,
+                "fxp64": np.int64,
             },
             "numpy",
         )

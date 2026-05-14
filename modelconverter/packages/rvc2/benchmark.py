@@ -1,13 +1,10 @@
 from pathlib import Path
+from typing import Any
 
 import depthai as dai
 import numpy as np
 
-from modelconverter.packages.base_benchmark import (
-    Benchmark,
-    BenchmarkResult,
-    Configuration,
-)
+from modelconverter.packages.base_benchmark import Benchmark, Configuration
 from modelconverter.utils import create_progress_handler, environ
 
 
@@ -31,7 +28,7 @@ class RVC2Benchmark(Benchmark):
     def all_configurations(self) -> list[Configuration]:
         return [{"num_threads": i} for i in [1, 2, 3]]
 
-    def benchmark(self, configuration: Configuration) -> BenchmarkResult:
+    def benchmark(self, configuration: Configuration) -> dict[str, Any]:
         return self._benchmark(self.model_path, **configuration)
 
     @staticmethod
@@ -41,7 +38,7 @@ class RVC2Benchmark(Benchmark):
         num_messages: int,
         num_threads: int,
         benchmark_time: int,
-    ) -> BenchmarkResult:
+    ) -> dict[str, Any]:
         device = dai.Device()
         if device.getPlatform() != dai.Platform.RVC2:
             raise ValueError(
@@ -138,4 +135,7 @@ class RVC2Benchmark(Benchmark):
                     on_tick()
 
             # Currently, the latency measurement is not supported on RVC2 by the depthai library.
-            return BenchmarkResult(float(np.mean(fps_list)), "N/A")
+            return {
+                "fps": float(np.mean(fps_list)),
+                "latency": "N/A",
+            }

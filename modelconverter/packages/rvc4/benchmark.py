@@ -5,7 +5,7 @@ import shutil
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 import depthai as dai
 import numpy as np
@@ -13,11 +13,7 @@ import polars as pl
 from depthai import XLinkPlatform
 from loguru import logger
 
-from modelconverter.packages.base_benchmark import (
-    Benchmark,
-    BenchmarkResult,
-    Configuration,
-)
+from modelconverter.packages.base_benchmark import Benchmark, Configuration
 from modelconverter.utils import (
     DataType,
     DeviceMonitor,
@@ -166,6 +162,8 @@ class RVC4Benchmark(Benchmark):
     @staticmethod
     def _create_random_input(spec: InputSpec) -> np.ndarray:
         if spec.data_type is DataType.INT32:
+            # INT inputs are often token/index tensors;
+            # zero keeps synthetic benchmark inputs in a safe range.
             return np.zeros(spec.shape, dtype=np.int32)
         if spec.data_type == DataType.INT8:
             return np.random.randint(-128, 128, size=spec.shape, dtype=np.int8)
@@ -176,7 +174,7 @@ class RVC4Benchmark(Benchmark):
             spec.data_type.as_numpy_dtype()
         )
 
-    def benchmark(self, configuration: Configuration) -> BenchmarkResult:
+    def benchmark(self, configuration: Configuration) -> dict[str, Any]:
         dai_benchmark = configuration.get("dai_benchmark")
         device_monitor = configuration.get("device_monitor")
 
@@ -219,25 +217,7 @@ class RVC4Benchmark(Benchmark):
                 result = self._benchmark_snpe(self.model_path, **configuration)
 
             if self.monitor:
-                stats = self.monitor.get_stats()
-                result.system_power_mean = stats.get("power_system")
-                result.system_power_median = stats.get("power_system_median")
-                result.system_power_peak = stats.get("power_system_peak")
-                result.processor_power_mean = stats.get("power_processor")
-                result.processor_power_median = stats.get(
-                    "power_processor_median"
-                )
-                result.processor_power_peak = stats.get("power_processor_peak")
-                result.dsp_mean = stats.get("dsp")
-                result.dsp_median = stats.get("dsp_median")
-                result.dsp_peak = stats.get("dsp_peak")
-                result.memory_mean = stats.get("ram_used")
-                result.memory_median = stats.get("ram_used_median")
-                result.memory_peak = stats.get("ram_used_peak")
-                result.cpu_mean = stats.get("cpu")
-                result.cpu_median = stats.get("cpu_median")
-                result.cpu_peak = stats.get("cpu_peak")
-
+                result |= self.monitor.get_stats()
             return result
         finally:
             if self.monitor:
@@ -256,7 +236,7 @@ class RVC4Benchmark(Benchmark):
         num_images: int,
         profile: str,
         runtime: str,
-    ) -> BenchmarkResult:
+    ) -> dict[str, Any]:
         runtime = RUNTIMES.get(runtime, "use_dsp")
 
         if isinstance(model_path, str):
@@ -311,7 +291,7 @@ class RVC4Benchmark(Benchmark):
                 f"stdout:\n{stdout}"
             )
         fps = float(match.group(1))
-        return BenchmarkResult(fps=fps, latency="N/A")
+        return {"fps": fps, "latency": "N/A"}
 
     def _benchmark_dai(
         self,
@@ -323,7 +303,7 @@ class RVC4Benchmark(Benchmark):
         num_messages: int,
         benchmark_time: int,
         device_ip: str | None = None,
-    ) -> BenchmarkResult:
+    ) -> dict[str, Any]:
         if device_ip:
             device = dai.Device(dai.DeviceInfo(device_ip))
         else:
@@ -366,8 +346,11 @@ class RVC4Benchmark(Benchmark):
 
         input_specs: list[InputSpec] = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            model_archive = dai.NNArchive(modelPath)
-            input_specs = self._get_archive_input_specs(model_archive)
+            model_archive = dai.NNArchive(modelPath)  # type: ignore[arg-type]
+            if shutil.which("snpe-dlc-info") is not None:
+                input_specs = self._get_dlc_input_specs(modelPath)
+            else:
+                input_specs = self._get_archive_input_specs(model_archive)
 
         inputData = dai.NNData()
         for spec in input_specs:
@@ -433,11 +416,16 @@ class RVC4Benchmark(Benchmark):
                     on_tick()
 
             # Currently, the latency measurement is only supported on RVC4 when using ImgFrame as the input to the BenchmarkOut which we don't do here.
-            return BenchmarkResult(float(np.mean(fps_list)), "N/A")
+            return {
+                "fps": float(np.mean(fps_list)),
+                "latency": float(np.mean(avg_latency_list))
+                if avg_latency_list
+                else "N/A",
+            }
 
     def _extra_header(
         self,
-        results: list[tuple[Configuration, BenchmarkResult]],
+        results: list[tuple[Configuration, dict[str, Any]]],
     ) -> list[str]:
         heads = []
         if self.monitor:
@@ -451,13 +439,13 @@ class RVC4Benchmark(Benchmark):
     def _extra_row_cells(
         self,
         configuration: Configuration,
-        result: BenchmarkResult,
+        result: dict[str, Any],
     ) -> Iterable[str]:
-        power_sys = result.system_power_mean
-        power_core = result.processor_power_mean
-        dsp = result.dsp_mean
-        memory = result.memory_mean
-        cpu = result.cpu_mean
+        power_sys = result.get("power_system")
+        power_core = result.get("power_processor")
+        dsp = result.get("dsp_utilization")
+        memory = result.get("ram_used")
+        cpu = result.get("cpu_utilization")
 
         if self.monitor:
             yield f"{power_sys:.2f}" if power_sys else "[orange3]N/A"

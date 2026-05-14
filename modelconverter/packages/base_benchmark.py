@@ -10,30 +10,6 @@ from loguru import logger
 
 from modelconverter.utils import is_hubai_available, resolve_path
 
-
-@dataclass
-class BenchmarkResult:
-    """Represents the result of a benchmark run, including performance metrics and optional power consumption data."""
-
-    fps: float
-    latency: float | Literal["N/A"]
-    system_power_mean: float | None = None
-    system_power_median: float | None = None
-    system_power_peak: float | None = None
-    processor_power_mean: float | None = None
-    processor_power_median: float | None = None
-    processor_power_peak: float | None = None
-    dsp_mean: float | None = None
-    dsp_median: float | None = None
-    dsp_peak: float | None = None
-    memory_mean: float | None = None
-    memory_median: float | None = None
-    memory_peak: float | None = None
-    cpu_mean: float | None = None
-    cpu_median: float | None = None
-    cpu_peak: float | None = None
-
-
 Configuration: TypeAlias = dict[str, Any]
 
 
@@ -82,7 +58,7 @@ class Benchmark(ABC):
         ]
 
     @abstractmethod
-    def benchmark(self, configuration: Configuration) -> BenchmarkResult:
+    def benchmark(self, configuration: Configuration) -> dict[str, Any]:
         pass
 
     @property
@@ -96,7 +72,7 @@ class Benchmark(ABC):
         pass
 
     def print_results(
-        self, results: list[tuple[Configuration, BenchmarkResult]]
+        self, results: list[tuple[Configuration, dict[str, Any]]]
     ) -> None:
         assert results, "No results to print"
 
@@ -124,7 +100,7 @@ class Benchmark(ABC):
 
     def _base_header(
         self,
-        results: list[tuple[Configuration, BenchmarkResult]],
+        results: list[tuple[Configuration, dict[str, Any]]],
     ) -> list[str]:
         """Shared header cells."""
         return [*results[0][0].keys(), "fps", "latency (ms)"]
@@ -132,7 +108,7 @@ class Benchmark(ABC):
     def _base_row_cells(
         self,
         configuration: Configuration,
-        result: BenchmarkResult,
+        result: dict[str, Any],
     ) -> Iterable[str]:
         """Shared row cells for each result (configuration + fps +
         latency)."""
@@ -140,33 +116,27 @@ class Benchmark(ABC):
         for x in configuration.values():
             yield f"[magenta]{x}"
 
-        # fps
-        fps_color = (
-            "yellow"
-            if 5 < result.fps < 15
-            else "red"
-            if result.fps < 5
-            else "green"
-        )
-        yield f"[{fps_color}]{result.fps:.2f}"
+        fps = result["fps"]
+        fps_color = "yellow" if 5 < fps < 15 else "red" if fps < 5 else "green"
+        yield f"[{fps_color}]{fps:.2f}"
 
-        # latency
-        if isinstance(result.latency, str):
+        latency = result.get("latency", "N/A")
+        if isinstance(latency, str):
             latency_color = "orange3"
-            yield f"[{latency_color}]{result.latency}"
+            yield f"[{latency_color}]{latency}"
         else:
             latency_color = (
                 "yellow"
-                if 50 < result.latency < 100
+                if 50 < latency < 100
                 else "red"
-                if result.latency > 100
+                if latency > 100
                 else "green"
             )
-            yield f"[{latency_color}]{result.latency:.5f}"
+            yield f"[{latency_color}]{latency:.5f}"
 
     def _extra_header(
         self,
-        results: list[tuple[Configuration, BenchmarkResult]],
+        results: list[tuple[Configuration, dict[str, Any]]],
     ) -> list[str]:
         """Columns to append after the base header (default: none)."""
         return []
@@ -174,7 +144,7 @@ class Benchmark(ABC):
     def _extra_row_cells(
         self,
         configuration: Configuration,
-        result: BenchmarkResult,
+        result: dict[str, Any],
     ) -> Iterable[str]:
         """Extra cells to append after the base row cells (default:
 
@@ -183,14 +153,11 @@ class Benchmark(ABC):
         return []
 
     def save_results(
-        self, results: list[tuple[Configuration, BenchmarkResult]]
+        self, results: list[tuple[Configuration, dict[str, Any]]]
     ) -> None:
         assert results, "No results to save"
         df = pl.DataFrame(
-            [
-                configuration | result.__dict__
-                for configuration, result in results
-            ]
+            [configuration | result for configuration, result in results]
         )
 
         # Split nested power list into two CSV-friendly columns
@@ -221,7 +188,7 @@ class Benchmark(ABC):
                 for config in self.all_configurations  # add only kwarg keys that are not already there to not overwrite
             ]
 
-        results: list[tuple[Configuration, BenchmarkResult]] = [
+        results: list[tuple[Configuration, dict[str, Any]]] = [
             (configuration, self.benchmark(configuration))
             for configuration in configurations
         ]
