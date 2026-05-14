@@ -165,6 +165,8 @@ class RVC4Benchmark(Benchmark):
     @staticmethod
     def _create_random_input(spec: InputSpec) -> np.ndarray:
         if spec.data_type is DataType.INT32:
+            # INT inputs are often token/index tensors;
+            # zero keeps synthetic benchmark inputs in a safe range.
             return np.zeros(spec.shape, dtype=np.int32)
         if spec.data_type == DataType.INT8:
             return np.random.randint(-128, 128, size=spec.shape, dtype=np.int8)

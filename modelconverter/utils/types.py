@@ -207,6 +207,11 @@ class DataType(Enum):
                 "int32": dai.TensorInfo.DataType.INT,
                 "uint8": dai.TensorInfo.DataType.U8F,
                 "ufxp8": dai.TensorInfo.DataType.U8F,
+                # DAI does not currently expose a 16-bit
+                # fixed-point/int tensor type.
+                # Until it does, keep uFxp_16 on the closest
+                # supported 16-bit path.
+                "ufxp16": dai.TensorInfo.DataType.FP16,
             },
             "DepthAI",
         )
