@@ -87,7 +87,7 @@ def convert(
     *,
     path: str | None = None,
     output_dir: str | None = None,
-    to: Literal["native", "nn_archive"] = "native",
+    to: Literal["native", "nn_archive"] = "nn_archive",
     main_stage: str | None = None,
     archive_preprocess: bool = False,
 ) -> None:
