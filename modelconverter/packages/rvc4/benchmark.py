@@ -5,18 +5,14 @@ import shutil
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 import depthai as dai
 import numpy as np
 import polars as pl
 from loguru import logger
 
-from modelconverter.packages.base_benchmark import (
-    Benchmark,
-    BenchmarkResult,
-    Configuration,
-)
+from modelconverter.packages.base_benchmark import Benchmark, Configuration
 from modelconverter.utils import (
     DataType,
     MonitorDSP,
@@ -177,7 +173,7 @@ class RVC4Benchmark(Benchmark):
             spec.data_type.as_numpy_dtype()
         )
 
-    def benchmark(self, configuration: Configuration) -> BenchmarkResult:
+    def benchmark(self, configuration: Configuration) -> dict[str, Any]:
         dai_benchmark = configuration.get("dai_benchmark")
         power_benchmark = configuration.get("power_benchmark")
         dsp_benchmark = configuration.get("dsp_benchmark")
@@ -228,9 +224,9 @@ class RVC4Benchmark(Benchmark):
                 result = self._benchmark_snpe(self.model_path, **configuration)
 
             if self.power_monitor:
-                result = result._replace(power=self.power_monitor.get_stats())
+                result["power"] = self.power_monitor.get_stats()
             if self.dsp_monitor:
-                result = result._replace(dsp=self.dsp_monitor.get_stats())
+                result["dsp"] = self.dsp_monitor.get_stats()
             return result
         finally:
             if self.power_monitor:
@@ -251,7 +247,7 @@ class RVC4Benchmark(Benchmark):
         num_images: int,
         profile: str,
         runtime: str,
-    ) -> BenchmarkResult:
+    ) -> dict[str, Any]:
         runtime = RUNTIMES.get(runtime, "use_dsp")
 
         if isinstance(model_path, str):
@@ -306,7 +302,7 @@ class RVC4Benchmark(Benchmark):
                 f"stdout:\n{stdout}"
             )
         fps = float(match.group(1))
-        return BenchmarkResult(fps=fps, latency="N/A")
+        return {"fps": fps, "latency": "N/A"}
 
     def _benchmark_dai(
         self,
@@ -318,7 +314,7 @@ class RVC4Benchmark(Benchmark):
         num_messages: int,
         benchmark_time: int,
         device_ip: str | None = None,
-    ) -> BenchmarkResult:
+    ) -> dict[str, Any]:
         if device_ip:
             device = dai.Device(dai.DeviceInfo(device_ip))
         else:
@@ -426,11 +422,16 @@ class RVC4Benchmark(Benchmark):
                     on_tick()
 
             # Currently, the latency measurement is only supported on RVC4 when using ImgFrame as the input to the BenchmarkOut which we don't do here.
-            return BenchmarkResult(float(np.mean(fps_list)), "N/A")
+            return {
+                "fps": float(np.mean(fps_list)),
+                "latency": float(np.mean(avg_latency_list))
+                if avg_latency_list
+                else "N/A",
+            }
 
     def _extra_header(
         self,
-        results: list[tuple[Configuration, BenchmarkResult]],
+        results: list[tuple[Configuration, dict[str, Any]]],
     ) -> list[str]:
         heads = []
         if self.power_monitor:
@@ -443,10 +444,10 @@ class RVC4Benchmark(Benchmark):
     def _extra_row_cells(
         self,
         configuration: Configuration,
-        result: BenchmarkResult,
+        result: dict[str, Any],
     ) -> Iterable[str]:
-        power_sys, power_core = result.power
-        dsp = result.dsp
+        power_sys, power_core = result.get("power", (None, None))
+        dsp = result.get("dsp")
 
         if self.power_monitor:
             yield f"{power_sys:.2f}" if power_sys else "[orange3]N/A"

@@ -1,16 +1,13 @@
 import sys
 from datetime import datetime, timezone
 from statistics import median
+from typing import Any
 
 from loguru import logger
 from openvino.inference_engine.ie_api import IECore, StatusCode
 from rich.progress import track
 
-from modelconverter.packages.base_benchmark import (
-    Benchmark,
-    BenchmarkResult,
-    Configuration,
-)
+from modelconverter.packages.base_benchmark import Benchmark, Configuration
 
 
 class RVC3Benchmark(Benchmark):
@@ -25,11 +22,11 @@ class RVC3Benchmark(Benchmark):
     def all_configurations(self) -> list[Configuration]:
         return [{"requests": i} for i in range(1, 6)]
 
-    def benchmark(self, configuration: Configuration) -> BenchmarkResult:
+    def benchmark(self, configuration: Configuration) -> dict[str, Any]:
         return self._benchmark(str(self.model_path), **configuration)
 
     @staticmethod
-    def _benchmark(model_path: str, requests: int) -> BenchmarkResult:
+    def _benchmark(model_path: str, requests: int) -> dict[str, Any]:
         ie = IECore()
         exe_network = ie.load_network(
             model_path,
@@ -79,4 +76,4 @@ class RVC3Benchmark(Benchmark):
         times.sort()
         latency = median(times)
         fps = i / total_duration_sec
-        return BenchmarkResult(fps, latency)
+        return {"fps": fps, "latency": latency}
