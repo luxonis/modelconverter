@@ -463,26 +463,19 @@ class RVC4Benchmark(Benchmark):
             archive_precision: DataType | None,
             hubai_precision: DataType | None = None,
         ) -> DataType:
-            match hubai_precision, archive_precision, dtype:
-                case (
-                    DataType.INT8 | None,
-                    DataType.INT8 | None,
-                    DataType.INT8 | DataType.FLOAT32,
-                ):
+            if hubai_precision is not None:
+                return hubai_precision
+            match archive_precision, dtype:
+                case DataType.INT8 | None, DataType.INT8 | DataType.FLOAT32:
                     return DataType.INT8
                 case (
-                    DataType.FLOAT16 | None,
                     DataType.FLOAT16 | None,
                     DataType.FLOAT16 | DataType.FLOAT32,
                 ):
                     return DataType.FLOAT16
-                case (
-                    DataType.FLOAT32 | None,
-                    DataType.FLOAT32 | None,
-                    DataType.FLOAT32,
-                ):
+                case DataType.FLOAT32 | None, DataType.FLOAT32:
                     return DataType.FLOAT32
-                case _, _, DataType.INT32:
+                case _, DataType.INT32:
                     return DataType.INT32
 
         cfg = archive.getConfig()
