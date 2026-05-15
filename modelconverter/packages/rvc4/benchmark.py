@@ -4,6 +4,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import Iterable
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Final, Literal
 
@@ -454,22 +455,34 @@ class RVC4Benchmark(Benchmark):
             yield f"{memory:.2f}" if memory else "[orange3]N/A"
             yield f"{cpu:.2f}" if cpu else "[orange3]N/A"
 
-    @staticmethod
-    def _get_archive_input_specs(archive: dai.NNArchive) -> list[InputSpec]:
+    def _get_archive_input_specs(
+        self, archive: dai.NNArchive
+    ) -> list[InputSpec]:
         def guess_dtype(
-            dtype: DataType, precision: DataType | None
+            dtype: DataType,
+            archive_precision: DataType | None,
+            hubai_precision: DataType | None = None,
         ) -> DataType:
-            match precision, dtype:
-                case DataType.INT8 | None, DataType.INT8 | DataType.FLOAT32:
+            match hubai_precision, archive_precision, dtype:
+                case (
+                    DataType.INT8 | None,
+                    DataType.INT8 | None,
+                    DataType.INT8 | DataType.FLOAT32,
+                ):
                     return DataType.INT8
                 case (
+                    DataType.FLOAT16 | None,
                     DataType.FLOAT16 | None,
                     DataType.FLOAT16 | DataType.FLOAT32,
                 ):
                     return DataType.FLOAT16
-                case DataType.FLOAT32 | None, DataType.FLOAT32:
+                case (
+                    DataType.FLOAT32 | None,
+                    DataType.FLOAT32 | None,
+                    DataType.FLOAT32,
+                ):
                     return DataType.FLOAT32
-                case _, DataType.INT32:
+                case _, _, DataType.INT32:
                     return DataType.INT32
 
         cfg = archive.getConfig()
@@ -479,15 +492,83 @@ class RVC4Benchmark(Benchmark):
                 shape=input.shape,
                 data_type=guess_dtype(
                     DataType(input.dtype.name.lower()),
-                    precision=DataType(
+                    archive_precision=DataType(
                         cfg.model.metadata.precision.name.lower()
                     )
                     if cfg.model.metadata.precision
+                    else None,
+                    hubai_precision=self._get_hubai_type()
+                    if self.HUB_MODEL_PATTERN.match(str(self.model_path))
                     else None,
                 ),
             )
             for input in cfg.model.inputs
         ]
+
+    def _get_hubai_type(self) -> DataType:
+        """Retrieve the data type of the model inputs. If the model is
+        not a HubAI model, it defaults to dai.TensorInfo.DataType.U8F
+        (INT8).
+
+        @return: The data type of the model inputs.
+        @rtype: dai.TensorInfo.DataType
+        """
+        from modelconverter.cli import Request, slug_to_id
+
+        if not isinstance(
+            self.model_path, str
+        ) or not self.HUB_MODEL_PATTERN.match(self.model_path):
+            return self._get_data_type_from_dlc()
+
+        model_id = slug_to_id(self.model_name, "models")
+        model_variant = self.model_path.split(":")[1]
+
+        model_variants = []
+        for is_public in [True, False]:
+            with suppress(Exception):
+                model_variants += Request.get(
+                    "modelVersions/",
+                    params={"model_id": model_id, "is_public": is_public},
+                )
+
+        model_version_id = None
+        for version in model_variants:
+            if version["variant_slug"] == model_variant:
+                model_version_id = version["id"]
+                break
+
+        if not model_version_id:
+            return dai.TensorInfo.DataType.U8F
+
+        model_instances = []
+        for is_public in [True, False]:
+            with suppress(Exception):
+                model_instances += Request.get(
+                    "modelInstances/",
+                    params={
+                        "model_id": model_id,
+                        "model_version_id": model_version_id,
+                        "is_public": is_public,
+                    },
+                )
+
+        model_precision_type = "INT8"
+        for instance in model_instances:
+            if instance["platforms"] == ["RVC4"] and (
+                self.model_instance is None
+                or instance["hash_short"] == self.model_instance
+            ):
+                model_precision_type = instance.get(
+                    "model_precision_type", "INT8"
+                )
+                break
+
+        if model_precision_type == "FP16":
+            return DataType.FLOAT16
+        if model_precision_type == "FP32":
+            return DataType.FLOAT32
+
+        return DataType.INT8
 
 
 def device_id_to_adb_id(device_id: str) -> str:
