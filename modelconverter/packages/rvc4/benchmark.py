@@ -188,8 +188,10 @@ class RVC4Benchmark(Benchmark):
         configuration["device_ip"] = device_ip
 
         self.monitor = None
+        idle_measurements = {}
         if device_monitor:
             self.monitor = DeviceMonitor(self.handler)
+            idle_measurements = self.monitor.get_idle_measurements()
             self.monitor.start()
 
         try:
@@ -219,6 +221,7 @@ class RVC4Benchmark(Benchmark):
 
             if self.monitor:
                 result |= self.monitor.get_stats()
+                result |= idle_measurements
             return result
         finally:
             if self.monitor:
