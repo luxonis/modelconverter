@@ -221,7 +221,7 @@ class RVC4Benchmark(Benchmark):
             return result
         finally:
             if self.monitor:
-                self.monitor.stop(full_cleanup=True)
+                self.monitor.stop()
             if not dai_benchmark:
                 # so we don't delete the wrong directory
                 assert self.model_name
