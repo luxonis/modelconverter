@@ -461,16 +461,16 @@ class RVC4Benchmark(Benchmark):
         ) -> DataType:
             match precision, dtype:
                 case DataType.INT8 | None, DataType.INT8 | DataType.FLOAT32:
-                    return dai.TensorInfo.DataType.I8
+                    return DataType.INT8
                 case (
                     DataType.FLOAT16 | None,
                     DataType.FLOAT16 | DataType.FLOAT32,
                 ):
-                    return dai.TensorInfo.DataType.FP16
+                    return DataType.FLOAT16
                 case DataType.FLOAT32 | None, DataType.FLOAT32:
-                    return dai.TensorInfo.DataType.FP32
+                    return DataType.FLOAT32
                 case _, DataType.INT32:
-                    return dai.TensorInfo.DataType.INT
+                    return DataType.INT32
 
         cfg = archive.getConfig()
         return [
