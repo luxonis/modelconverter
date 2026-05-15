@@ -480,7 +480,7 @@ modelconverter convert rvc2 input_model models/yolov6n.onnx \
 ## Multi-Stage Conversion
 
 The converter supports multi-stage conversion. This means conversion of multiple
-models where the output of one model is the input to another model. For mulit-stage
+models where the output of one model is the input to another model. For multi-stage
 conversion you must specify the `stages` section in the config file, see [defaults.yaml](shared_with_container/configs/defaults.yaml)
 and [multistage.yaml](shared_with_container/configs/multistage.yaml) for reference.
 
