@@ -466,6 +466,8 @@ class RVC4Benchmark(Benchmark):
             archive_precision: DataType | None,
             hubai_precision: DataType | None = None,
         ) -> DataType:
+            if dtype is DataType.INT32:
+                return DataType.INT32
             if hubai_precision is not None:
                 return hubai_precision
             match archive_precision, dtype:
