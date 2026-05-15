@@ -1,10 +1,14 @@
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from onnx.onnx_pb import TensorProto
 
 __all__ = ["DataType", "Encoding", "PotDevice", "ResizeMethod", "Target"]
+
+if TYPE_CHECKING:
+    import depthai as dai
 
 
 class Layout(Enum):
@@ -66,6 +70,22 @@ class DataType(Enum):
         if dtype not in tensor_types:
             raise ValueError(f"Unsupported TensorFlow data type: `{dtype}`")
         return cls(tensor_types[dtype])
+
+    @classmethod
+    def from_dai_dtype(cls, dtype: "dai.TensorInfo.DataType") -> "DataType":
+        import depthai as dai
+
+        dtype_map = {
+            dai.TensorInfo.DataType.FP16: "float16",
+            dai.TensorInfo.DataType.FP32: "float32",
+            dai.TensorInfo.DataType.FP64: "float64",
+            dai.TensorInfo.DataType.I8: "int8",
+            dai.TensorInfo.DataType.INT: "int32",
+            dai.TensorInfo.DataType.U8F: "ufxp8",
+        }
+        if dtype not in dtype_map:
+            raise ValueError(f"Unsupported DepthAI data type: `{dtype}`")
+        return cls(dtype_map[dtype])
 
     @classmethod
     def from_dlc_dtype(cls, dtype: str) -> "DataType":
@@ -175,38 +195,75 @@ class DataType(Enum):
             raise ValueError(f"Unsupported IR runtime data type: `{dtype}`")
         return cls(dtype_map[dtype])
 
+    def as_dai_dtype(self) -> "dai.TensorInfo.DataType":
+        import depthai as dai
+
+        return self._transform(
+            {
+                "float16": dai.TensorInfo.DataType.FP16,
+                "float32": dai.TensorInfo.DataType.FP32,
+                "float64": dai.TensorInfo.DataType.FP64,
+                "int8": dai.TensorInfo.DataType.I8,
+                "int32": dai.TensorInfo.DataType.INT,
+                "uint8": dai.TensorInfo.DataType.U8F,
+                "ufxp8": dai.TensorInfo.DataType.U8F,
+                # DAI does not currently expose a 16-bit
+                # fixed-point/int tensor type.
+                # Until it does, keep uFxp_16 on the closest
+                # supported 16-bit path.
+                "ufxp16": dai.TensorInfo.DataType.FP16,
+            },
+            "DepthAI",
+        )
+
     def as_numpy_dtype(self) -> np.dtype:
-        return {
-            "bfloat16": np.float32,  # Preserve bfloat16 range better than float16.
-            "float16": np.float16,
-            "float32": np.float32,
-            "float64": np.float64,
-            "int4": np.int8,  # NumPy has no 4-bit signed integer dtype.
-            "int8": np.int8,
-            "int16": np.int16,
-            "int32": np.int32,
-            "int64": np.int64,
-            "uint4": np.uint8,  # NumPy has no 4-bit unsigned integer dtype.
-            "uint8": np.uint8,
-            "uint16": np.uint16,
-            "uint32": np.uint32,
-            "uint64": np.uint64,
-        }[self.value]
+        return self._transform(
+            {
+                "bfloat16": np.float32,  # Preserve bfloat16 range better than float16.
+                "float16": np.float16,
+                "float32": np.float32,
+                "float64": np.float64,
+                "int4": np.int8,  # NumPy has no 4-bit signed integer dtype.
+                "int8": np.int8,
+                "int16": np.int16,
+                "int32": np.int32,
+                "int64": np.int64,
+                "uint4": np.uint8,  # NumPy has no 4-bit unsigned integer dtype.
+                "uint8": np.uint8,
+                "uint16": np.uint16,
+                "uint32": np.uint32,
+                "uint64": np.uint64,
+                "boolean": np.bool_,
+                "string": np.str_,
+                "ufxp8": np.uint8,  # No fixed-point dtype in NumPy, so use uint8 as a placeholder.
+                "ufxp16": np.uint16,
+                "ufxp32": np.uint32,
+                "ufxp64": np.uint64,
+                "fxp8": np.int8,
+                "fxp16": np.int16,
+                "fxp32": np.int32,
+                "fxp64": np.int64,
+            },
+            "numpy",
+        )
 
     def as_openvino_dtype(self) -> str:
-        return {
-            "float16": "f16",
-            "float32": "f32",
-            "float64": "f64",
-            "int8": "i8",
-            "int16": "i16",
-            "int32": "i32",
-            "int64": "i64",
-            "uint8": "u8",
-            "uint16": "u16",
-            "uint32": "u32",
-            "uint64": "u64",
-        }[self.value]
+        return self._transform(
+            {
+                "float16": "f16",
+                "float32": "f32",
+                "float64": "f64",
+                "int8": "i8",
+                "int16": "i16",
+                "int32": "i32",
+                "int64": "i64",
+                "uint8": "u8",
+                "uint16": "u16",
+                "uint32": "u32",
+                "uint64": "u64",
+            },
+            "OpenVINO",
+        )
 
     def as_snpe_dtype(self) -> str:
         return self.value
@@ -217,6 +274,13 @@ class DataType(Enum):
         if self.value.startswith("fxp"):
             return self.value.replace("fxp", "int")
         return self.value
+
+    def _transform(self, mapping: dict[str, Any], desc: str) -> Any:
+        if self.value not in mapping:
+            raise ValueError(
+                f"`{self.value}` cannot be transformed to {desc} data type"
+            )
+        return mapping[self.value]
 
 
 class ResizeMethod(Enum):
