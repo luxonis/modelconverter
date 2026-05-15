@@ -625,8 +625,7 @@ optionally saves the results to a `.csv` file.
 > [!IMPORTANT]
 > **ADB Connection Requirements for RVC4**: The device must be connected and accessible using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb) in the following cases:
 >
-> - When `--power-benchmark` is enabled (requires ADB connection to calculate power consumption)
-> - When `--dsp-benchmark` is enabled (requires ADB connection to calculate DSP utilization)
+> - When `--device-monitor` is enabled (requires ADB or SSH connection to the device calculate power consumption)
 > - When benchmarking is conducted using the SNPE tools (by setting `--dai-benchmark` to `False`, default is `True`)
 
 ## [RVC4] DLC model analysis
