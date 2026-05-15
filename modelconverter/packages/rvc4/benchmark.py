@@ -482,6 +482,11 @@ class RVC4Benchmark(Benchmark):
                     return DataType.FLOAT32
                 case _, DataType.INT32:
                     return DataType.INT32
+            raise ValueError(
+                f"Could not guess data type for input with dtype {dtype}, "
+                f"archive precision {archive_precision}, "
+                f"and HubAI precision {hubai_precision}."
+            )
 
         cfg = archive.getConfig()
         return [
