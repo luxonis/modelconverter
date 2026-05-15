@@ -502,13 +502,6 @@ class RVC4Benchmark(Benchmark):
         ]
 
     def _get_hubai_type(self) -> DataType:
-        """Retrieve the data type of the model inputs. If the model is
-        not a HubAI model, it defaults to dai.TensorInfo.DataType.U8F
-        (INT8).
-
-        @return: The data type of the model inputs.
-        @rtype: dai.TensorInfo.DataType
-        """
         from modelconverter.cli import Request, slug_to_id
 
         if not isinstance(
