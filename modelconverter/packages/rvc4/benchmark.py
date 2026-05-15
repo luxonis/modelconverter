@@ -5,7 +5,7 @@ import shutil
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 import depthai as dai
 import numpy as np
@@ -456,12 +456,35 @@ class RVC4Benchmark(Benchmark):
 
     @staticmethod
     def _get_archive_input_specs(archive: dai.NNArchive) -> list[InputSpec]:
+        def guess_dtype(
+            dtype: DataType, precision: DataType | None
+        ) -> DataType:
+            match precision, dtype:
+                case DataType.INT8 | None, DataType.INT8 | DataType.FLOAT32:
+                    return dai.TensorInfo.DataType.I8
+                case (
+                    DataType.FLOAT16 | None,
+                    DataType.FLOAT16 | DataType.FLOAT32,
+                ):
+                    return dai.TensorInfo.DataType.FP16
+                case DataType.FLOAT32 | None, DataType.FLOAT32:
+                    return dai.TensorInfo.DataType.FP32
+                case _, DataType.INT32:
+                    return dai.TensorInfo.DataType.INT
+
         cfg = archive.getConfig()
         return [
             InputSpec(
                 name=input.name,
                 shape=input.shape,
-                data_type=DataType(input.dtype.name.lower()),
+                data_type=guess_dtype(
+                    DataType(input.dtype.name.lower()),
+                    precision=DataType(
+                        cfg.model.metadata.precision.name.lower()
+                    )
+                    if cfg.model.metadata.precision
+                    else None,
+                ),
             )
             for input in cfg.model.inputs
         ]
