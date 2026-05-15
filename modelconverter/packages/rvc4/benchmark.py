@@ -466,18 +466,6 @@ class RVC4Benchmark(Benchmark):
             for input in cfg.model.inputs
         ]
 
-    @staticmethod
-    def _get_archive_input_specs(archive: dai.NNArchive) -> list[InputSpec]:
-        cfg = archive.getConfig()
-        return [
-            InputSpec(
-                name=input.name,
-                shape=input.shape,
-                data_type=DataType(input.dtype.name.lower()),
-            )
-            for input in cfg.model.inputs
-        ]
-
 
 def device_id_to_adb_id(device_id: str) -> str:
     if device_id.isdigit():
