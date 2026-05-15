@@ -529,7 +529,7 @@ class RVC4Benchmark(Benchmark):
                 break
 
         if not model_version_id:
-            return dai.TensorInfo.DataType.U8F
+            return DataType.INT8
 
         model_instances = []
         for is_public in [True, False]:
