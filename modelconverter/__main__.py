@@ -301,7 +301,7 @@ def shell(
     os.execle("/bin/bash", *args, os.environ)
 
 
-@app.meta.command(group=device_commands)
+@app.command(group=device_commands)
 def benchmark(
     target: Target,
     /,
@@ -401,7 +401,7 @@ def benchmark(
     get_benchmark(target, model_path).run(full=full, save=save, **kwargs)
 
 
-@app.meta.command(group=device_commands)
+@app.command(group=device_commands)
 def analyze(
     *,
     device_ip: str | None = None,
@@ -657,4 +657,8 @@ def launcher(
 
 
 if __name__ == "__main__":
-    app.meta()
+    if "benchmark" in sys.argv or "analyze" in sys.argv:
+        app._meta = None
+        app()
+    else:
+        app.meta()
