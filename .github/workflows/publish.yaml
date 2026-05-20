@@ -100,7 +100,8 @@ jobs:
 
       - name: Check private package conditions
         run: |
-          if [ "${PACKAGE}" = "rvc4" ] && [ "${VERSION}" = "2.23.0" ]; then
+          if [ "${PACKAGE}" = "rvc4" ];
+          then
             echo "PRIVATE_PACKAGE=true" >> $GITHUB_ENV
           else
             echo "PRIVATE_PACKAGE=" >> $GITHUB_ENV
