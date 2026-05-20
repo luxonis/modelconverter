@@ -122,7 +122,11 @@ jobs:
           docker tag "${LOCAL_NAME}" "${GHCR_NAME}"
           docker push "${GHCR_NAME}"
           if [ "${VERSION}" = "${DEFAULT}" ]; then
-            GHCR_LATEST_NAME="ghcr.io/${NAME}:latest"
+            if [ "${PRIVATE_PACKAGE}" ]; then
+              GHCR_LATEST_NAME="ghcr.io/${NAME}-private:latest"
+            else
+              GHCR_LATEST_NAME="ghcr.io/${NAME}:latest"
+            fi
             docker tag "${LOCAL_NAME}" "${GHCR_LATEST_NAME}"
             docker push "${GHCR_LATEST_NAME}"
           fi
@@ -148,7 +152,11 @@ jobs:
           docker tag "${LOCAL_NAME}" "${GAR_NAME}"
           docker push "${GAR_NAME}"
           if [ "${VERSION}" = "${DEFAULT}" ]; then
-            GAR_LATEST_NAME="${GAR_STEM}/internal/${STEM}:latest"
+            if [ "${PRIVATE_PACKAGE}" ]; then
+              GAR_LATEST_NAME="${GAR_STEM}/internal/${STEM}-private:latest"
+            else
+              GAR_LATEST_NAME="${GAR_STEM}/internal/${STEM}:latest"
+            fi
             docker tag "${LOCAL_NAME}" "${GAR_LATEST_NAME}"
             docker push "${GAR_LATEST_NAME}"
           fi
