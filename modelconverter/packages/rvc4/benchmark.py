@@ -456,13 +456,30 @@ class RVC4Benchmark(Benchmark):
             yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
 
     @staticmethod
+    def _get_archive_input_data_type(input_cfg: Any) -> DataType:
+        """Recover the tensor dtype needed for direct DAI benchmark input feeds."""
+        data_type = DataType(input_cfg.dtype.name.lower())
+
+        # NNArchive config intentionally normalizes fixed-point tensor types
+        # (for example ufxp8 -> uint8). That works for archive metadata, but
+        # RVC4 direct NNData feeds need the on-device tensor dtype.
+        input_type = getattr(input_cfg, "input_type", None)
+        if getattr(input_type, "name", None) == "IMAGE":
+            if data_type is DataType.UINT8:
+                return DataType.UFXP8
+            if data_type is DataType.UINT16:
+                return DataType.UFXP16
+
+        return data_type
+
+    @staticmethod
     def _get_archive_input_specs(archive: dai.NNArchive) -> list[InputSpec]:
         cfg = archive.getConfig()
         return [
             InputSpec(
                 name=input.name,
                 shape=input.shape,
-                data_type=DataType(input.dtype.name.lower()),
+                data_type=RVC4Benchmark._get_archive_input_data_type(input),
             )
             for input in cfg.model.inputs
         ]
