@@ -14,7 +14,6 @@ from loguru import logger
 
 from modelconverter.packages.base_benchmark import Benchmark, Configuration
 from modelconverter.utils import (
-    DataType,
     MonitorDSP,
     MonitorPower,
     create_handler,
@@ -23,6 +22,7 @@ from modelconverter.utils import (
     subprocess_run,
 )
 from modelconverter.utils.config import OutputConfig as InputSpec
+from modelconverter.utils.types import DataType
 
 PROFILES: Final[list[str]] = [
     "low_balanced",
