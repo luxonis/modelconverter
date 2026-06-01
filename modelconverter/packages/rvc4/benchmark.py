@@ -526,21 +526,19 @@ class RVC4Benchmark(Benchmark):
                     )
                     if cfg.model.metadata.precision
                     else None,
-                    hubai_precision=self._get_hubai_type()
-                    if self.HUB_MODEL_PATTERN.match(str(self.model_path))
-                    else None,
+                    hubai_precision=self._get_hubai_type(),
                 ),
             )
             for input in cfg.model.inputs
         ]
 
-    def _get_hubai_type(self) -> DataType:
+    def _get_hubai_type(self) -> DataType | None:
         from modelconverter.cli import Request, slug_to_id
 
         if not isinstance(
             self.model_path, str
         ) or not self.HUB_MODEL_PATTERN.match(self.model_path):
-            return self._get_data_type_from_dlc()
+            return None
 
         model_id = slug_to_id(self.model_name, "models")
         model_variant = self.model_path.split(":")[1]
