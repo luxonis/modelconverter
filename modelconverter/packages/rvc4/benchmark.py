@@ -516,11 +516,11 @@ class RVC4Benchmark(Benchmark):
         cfg = archive.getConfig()
         return [
             InputSpec(
-                name=input.name,
-                shape=input.shape,
+                name=inp.name,
+                shape=inp.shape,
                 data_type=guess_dtype(
-                    input.name,
-                    DataType(input.dtype.name.lower()),
+                    inp.name,
+                    DataType(inp.dtype.name.lower()),
                     archive_precision=DataType(
                         cfg.model.metadata.precision.name.lower()
                     )
@@ -529,7 +529,7 @@ class RVC4Benchmark(Benchmark):
                     hubai_precision=self._get_hubai_type(),
                 ),
             )
-            for input in cfg.model.inputs
+            for inp in cfg.model.inputs
         ]
 
     def _get_hubai_type(self) -> DataType | None:
