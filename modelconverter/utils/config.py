@@ -263,13 +263,30 @@ class RVC3Config(BlobBaseConfig):
 
 
 class QuantizationOverridesItem(BaseModelExtraForbid):
-    bitwidth: Annotated[int, Literal[4, 8, 16, 32]] | None = None
+    bitwidth: Literal[4, 8, 16, 32] | None = None
     is_symmetric: bool | None = None
     dtype: Literal["int", "float"] | None = None
     max: float | None = None
     min: float | None = None
     offset: int | None = None
     scale: float | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_qairt_keys(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        data = dict(data)
+        if "bitwidth" not in data and "bw" in data:
+            data["bitwidth"] = data["bw"]
+        data.pop("bw", None)
+
+        dtype = data.get("dtype")
+        if isinstance(dtype, str):
+            data["dtype"] = dtype.lower()
+
+        return data
 
     @field_serializer("is_symmetric", when_used="json")
     @staticmethod
@@ -280,8 +297,49 @@ class QuantizationOverridesItem(BaseModelExtraForbid):
 
 
 class Encodings(BaseModelExtraForbid):
+    version: str | None = Field(default=None, exclude=True)
     activation_encodings: dict[str, list[QuantizationOverridesItem]]
     param_encodings: dict[str, list[QuantizationOverridesItem]]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_encoding_groups(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        data = dict(data)
+        for key in ["activation_encodings", "param_encodings"]:
+            if key in data:
+                data[key] = cls._normalize_encoding_group(data[key])
+        return data
+
+    @staticmethod
+    def _normalize_encoding_group(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                name: entries if isinstance(entries, list) else [entries]
+                for name, entries in value.items()
+            }
+
+        if not isinstance(value, list):
+            return value
+
+        converted: dict[str, list[dict[str, Any]]] = {}
+        for item in value:
+            if not isinstance(item, dict):
+                raise TypeError(
+                    "Quantization override entries must be dictionaries."
+                )
+
+            item = dict(item)
+            name = item.pop("name", None)
+            if not isinstance(name, str) or not name:
+                raise ValueError(
+                    "List-form quantization override entries must contain "
+                    "a non-empty string `name` field."
+                )
+            converted.setdefault(name, []).append(item)
+        return converted
 
 
 class RVC4Config(TargetConfig):
@@ -313,7 +371,7 @@ class RVC4Config(TargetConfig):
             self.snpe_onnx_to_dlc_args.pop(qo_index)
             encodings_json = self.snpe_onnx_to_dlc_args.pop(qo_index)
             with open(encodings_json) as f:
-                self.encodings = Encodings.model_validate_json(json.load(f))
+                self.encodings = Encodings.model_validate_json(f.read())
         return self
 
     @field_validator("encodings", mode="before")
@@ -322,11 +380,14 @@ class RVC4Config(TargetConfig):
         if value is None:
             return None
 
+        if isinstance(value, Encodings):
+            return value
+
         if isinstance(value, str):
             value_path = resolve_path(value, MISC_DIR)
-            return Encodings(**json.loads(value_path.read_text()))
+            return Encodings.model_validate_json(value_path.read_text())
 
-        return Encodings(**value)
+        return Encodings.model_validate(value)
 
     @model_validator(mode="after")
     def _validate_fp16(self) -> Self:
