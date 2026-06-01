@@ -6,7 +6,7 @@ import tempfile
 from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final
 
 import depthai as dai
 import numpy as np
@@ -23,7 +23,12 @@ from modelconverter.utils import (
     environ,
     subprocess_run,
 )
-from modelconverter.utils.config import OutputConfig as InputSpec
+from modelconverter.utils.config import OutputConfig
+
+
+class InputSpec(OutputConfig):
+    shape: list[int]  # type: ignore
+
 
 PROFILES: Final[list[str]] = [
     "low_balanced",
@@ -468,31 +473,46 @@ class RVC4Benchmark(Benchmark):
         self, archive: dai.NNArchive
     ) -> list[InputSpec]:
         def guess_dtype(
-            dtype: DataType,
+            name: str,
+            input_precision: DataType,
             archive_precision: DataType | None,
             hubai_precision: DataType | None = None,
         ) -> DataType:
-            if dtype is DataType.INT32:
-                return DataType.INT32
-            if hubai_precision is not None:
-                return hubai_precision
-            match archive_precision, dtype:
-                case DataType.INT8 | None, DataType.INT8 | DataType.FLOAT32:
-                    return DataType.INT8
-                case (
-                    DataType.FLOAT16 | None,
-                    DataType.FLOAT16 | DataType.FLOAT32,
-                ):
-                    return DataType.FLOAT16
-                case DataType.FLOAT32 | None, DataType.FLOAT32:
-                    return DataType.FLOAT32
-                case _, DataType.INT32:
-                    return DataType.INT32
-            raise ValueError(
-                f"Could not guess data type for input with dtype {dtype}, "
-                f"archive precision {archive_precision}, "
-                f"and HubAI precision {hubai_precision}."
+            logger.info(f"Resolving correct type for input {name}")
+            logger.info(f"model.inputs.{name}.dtype = {input_precision}")
+            logger.info(f"model.metadata.precision = {archive_precision}")
+            if hubai_precision is not ...:
+                logger.info(f"HubAI is reporting {hubai_precision}")
+
+            dtype = None
+
+            # e.g. for inputs representing indices
+            if input_precision is DataType.INT32:
+                dtype = DataType.INT32
+            elif hubai_precision is not None:
+                dtype = hubai_precision
+            else:
+                match archive_precision, input_precision:
+                    case (
+                        DataType.INT8 | None,
+                        DataType.INT8 | DataType.FLOAT32,
+                    ):
+                        return DataType.INT8
+                    case (
+                        DataType.FLOAT16 | None,
+                        DataType.FLOAT16 | DataType.FLOAT32,
+                    ):
+                        return DataType.FLOAT16
+                    case DataType.FLOAT32 | None, DataType.FLOAT32:
+                        return DataType.FLOAT32
+                    case _, DataType.INT32:
+                        return DataType.INT32
+            if dtype is None:
+                raise ValueError("Unable to resolve the type combination")
+            logger.info(
+                f"Resolved the type of '{name}' to be '{dtype.name.upper()}'"
             )
+            return dtype
 
         cfg = archive.getConfig()
         return [
@@ -500,6 +520,7 @@ class RVC4Benchmark(Benchmark):
                 name=input.name,
                 shape=input.shape,
                 data_type=guess_dtype(
+                    input.name,
                     DataType(input.dtype.name.lower()),
                     archive_precision=DataType(
                         cfg.model.metadata.precision.name.lower()
