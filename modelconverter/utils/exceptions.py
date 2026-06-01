@@ -16,10 +16,6 @@ class ONNXException(ModelconverterException):
     pass
 
 
-class SubprocessException(ModelconverterException):
-    pass
-
-
 def exit_with(exception: BaseException, code: int = 1) -> NoReturn:
     logger.exception(exception)
     sys.exit(code)

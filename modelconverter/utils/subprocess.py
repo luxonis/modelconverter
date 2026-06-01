@@ -13,8 +13,6 @@ import psutil
 from loguru import logger
 from typing_extensions import Self
 
-from .exceptions import SubprocessException
-
 
 class SubprocessResult(subprocess.CompletedProcess):
     """Extension of subprocess.CompletedProcess that also carries peak
@@ -164,7 +162,7 @@ class SubprocessHandle:
 
     def __enter__(self) -> Self:
         if shutil.which(self.cmd_name) is None:
-            raise SubprocessException(
+            raise subprocess.SubprocessError(
                 f"Command `{self.cmd_name}` not found. Ensure it is in PATH."
             )
 
@@ -267,7 +265,7 @@ class SubprocessHandle:
         if not self.silent:
             log_message(info_string)
         if res.returncode != 0:
-            raise SubprocessException(info_string)
+            raise subprocess.SubprocessError(info_string)
         return res
 
 
