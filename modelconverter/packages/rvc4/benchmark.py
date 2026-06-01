@@ -477,41 +477,47 @@ class RVC4Benchmark(Benchmark):
             archive_precision: DataType | None,
             hubai_precision: DataType | None = None,
         ) -> DataType:
-            logger.info(f"Resolving correct type for input {name}")
+            logger.info(f"Resolving correct type for input '{name}'")
             logger.info(f"model.inputs.{name}.dtype = {input_precision}")
             logger.info(f"model.metadata.precision = {archive_precision}")
-            if hubai_precision is not ...:
+            if hubai_precision is not None:
                 logger.info(f"HubAI is reporting {hubai_precision}")
 
-            dtype = None
+            result = None
 
             # e.g. for inputs representing indices
-            if input_precision is DataType.INT32:
-                dtype = DataType.INT32
+            if input_precision not in {
+                DataType.INT8,
+                DataType.FLOAT16,
+                DataType.FLOAT32,
+            }:
+                result = input_precision
+                logger.info("Using the model.inputs value")
             elif hubai_precision is not None:
-                dtype = hubai_precision
+                logger.info("Using the HubAI value")
+                result = hubai_precision
             else:
                 match archive_precision, input_precision:
                     case (
                         DataType.INT8 | None,
                         DataType.INT8 | DataType.FLOAT32,
                     ):
-                        return DataType.INT8
+                        result = DataType.INT8
                     case (
                         DataType.FLOAT16 | None,
                         DataType.FLOAT16 | DataType.FLOAT32,
                     ):
-                        return DataType.FLOAT16
+                        result = DataType.FLOAT16
                     case DataType.FLOAT32 | None, DataType.FLOAT32:
-                        return DataType.FLOAT32
-                    case _, DataType.INT32:
-                        return DataType.INT32
-            if dtype is None:
+                        result = DataType.FLOAT32
+                    case _:
+                        result = input_precision
+            if result is None:
                 raise ValueError("Unable to resolve the type combination")
             logger.info(
-                f"Resolved the type of '{name}' to be '{dtype.name.upper()}'"
+                f"Resolved the type of '{name}' to be '{result.name.upper()}'"
             )
-            return dtype
+            return result
 
         cfg = archive.getConfig()
         return [
