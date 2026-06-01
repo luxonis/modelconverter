@@ -10,13 +10,13 @@ from typing import Any, Final
 import depthai as dai
 import numpy as np
 import polars as pl
+from depthai import XLinkPlatform
 from loguru import logger
 
 from modelconverter.packages.base_benchmark import Benchmark, Configuration
 from modelconverter.utils import (
     DataType,
-    MonitorDSP,
-    MonitorPower,
+    DeviceMonitor,
     create_handler,
     create_progress_handler,
     environ,
@@ -67,6 +67,7 @@ class RVC4Benchmark(Benchmark):
             "num_messages": 50,
             "device_ip": None,
             "device_id": None,
+            "device_monitor": True,
         }
 
     @property
@@ -175,26 +176,22 @@ class RVC4Benchmark(Benchmark):
 
     def benchmark(self, configuration: Configuration) -> dict[str, Any]:
         dai_benchmark = configuration.get("dai_benchmark")
-        power_benchmark = configuration.get("power_benchmark")
-        dsp_benchmark = configuration.get("dsp_benchmark")
+        device_monitor = configuration.get("device_monitor")
 
         device_ip, device_adb_id = get_device_info(
             configuration.get("device_ip"), configuration.get("device_id")
         )
-        if power_benchmark or dsp_benchmark or not dai_benchmark:
+        if device_monitor or not dai_benchmark:
             self.handler = create_handler(device_ip, device_adb_id)
 
         configuration["device_ip"] = device_ip
 
-        self.power_monitor = None
-        if power_benchmark:
-            self.power_monitor = MonitorPower(self.handler)
-            self.power_monitor.start()
-
-        self.dsp_monitor = None
-        if dsp_benchmark:
-            self.dsp_monitor = MonitorDSP(self.handler)
-            self.dsp_monitor.start()
+        self.monitor = None
+        idle_measurements = {}
+        if device_monitor:
+            self.monitor = DeviceMonitor(self.handler)
+            idle_measurements = self.monitor.get_idle_measurements()
+            self.monitor.start()
 
         try:
             if dai_benchmark:
@@ -202,8 +199,7 @@ class RVC4Benchmark(Benchmark):
                     "dai_benchmark",
                     "num_images",
                     "device_id",
-                    "power_benchmark",
-                    "dsp_benchmark",
+                    "device_monitor",
                 ]:
                     configuration.pop(key)
                 result = self._benchmark_dai(self.model_path, **configuration)
@@ -216,23 +212,19 @@ class RVC4Benchmark(Benchmark):
                     "benchmark_time",
                     "device_ip",
                     "device_id",
-                    "power_benchmark",
-                    "dsp_benchmark",
+                    "device_monitor",
                 ]:
                     configuration.pop(key, None)
                 logger.info("Running SNPE benchmark over ADB")
                 result = self._benchmark_snpe(self.model_path, **configuration)
 
-            if self.power_monitor:
-                result["power"] = self.power_monitor.get_stats()
-            if self.dsp_monitor:
-                result["dsp"] = self.dsp_monitor.get_stats()
+            if self.monitor:
+                result |= self.monitor.get_stats()
+                result |= idle_measurements
             return result
         finally:
-            if self.power_monitor:
-                self.power_monitor.stop()
-            if self.dsp_monitor:
-                self.dsp_monitor.stop(full_cleanup=True)
+            if self.monitor:
+                self.monitor.stop()
             if not dai_benchmark:
                 # so we don't delete the wrong directory
                 assert self.model_name
@@ -318,7 +310,12 @@ class RVC4Benchmark(Benchmark):
         if device_ip:
             device = dai.Device(dai.DeviceInfo(device_ip))
         else:
-            device = dai.Device()
+            for info in dai.Device.getAllAvailableDevices():
+                if info.platform == XLinkPlatform.X_LINK_RVC4:
+                    device = dai.Device(info)
+                    break
+            else:
+                raise RuntimeError("No RVC4 device found.")
 
         if device.getPlatform() != dai.Platform.RVC4:
             raise ValueError(
@@ -434,11 +431,12 @@ class RVC4Benchmark(Benchmark):
         results: list[tuple[Configuration, dict[str, Any]]],
     ) -> list[str]:
         heads = []
-        if self.power_monitor:
+        if self.monitor:
             heads.append("power_sys (W)")
             heads.append("power_core (W)")
-        if self.dsp_monitor:
             heads.append("dsp (%)")
+            heads.append("memory (MiB)")
+            heads.append("cpu (%)")
         return heads
 
     def _extra_row_cells(
@@ -446,14 +444,18 @@ class RVC4Benchmark(Benchmark):
         configuration: Configuration,
         result: dict[str, Any],
     ) -> Iterable[str]:
-        power_sys, power_core = result.get("power", (None, None))
-        dsp = result.get("dsp")
+        power_sys = result.get("power_system")
+        power_core = result.get("power_processor")
+        dsp = result.get("dsp_utilization")
+        memory = result.get("ram_used")
+        cpu = result.get("cpu_utilization")
 
-        if self.power_monitor:
+        if self.monitor:
             yield f"{power_sys:.2f}" if power_sys else "[orange3]N/A"
             yield f"{power_core:.2f}" if power_core else "[orange3]N/A"
-        if self.dsp_monitor:
             yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
+            yield f"{memory:.2f}" if memory else "[orange3]N/A"
+            yield f"{cpu:.2f}" if cpu else "[orange3]N/A"
 
     @staticmethod
     def _get_archive_input_specs(archive: dai.NNArchive) -> list[InputSpec]:
@@ -474,6 +476,15 @@ def device_id_to_adb_id(device_id: str) -> str:
     return device_id.encode("ascii").hex()
 
 
+def adb_id_to_device_id(adb_id: str) -> str:
+    try:
+        int_id = int(adb_id, 16)
+        return str(int_id)
+    except ValueError:
+        bytes_id = bytes.fromhex(adb_id)
+        return bytes_id.decode("ascii")
+
+
 def get_device_info(
     device_ip: str | None, device_id: str | None
 ) -> tuple[str | None, str | None]:
@@ -481,13 +492,18 @@ def get_device_info(
         return None, None
 
     if device_id:
+        if device_id.isdecimal():
+            adb_id = device_id_to_adb_id(device_id)
+        else:
+            adb_id = device_id
+            device_id = adb_id_to_device_id(adb_id)
         for info in dai.Device.getAllAvailableDevices():
             if device_id == info.getDeviceId():
                 if device_ip and device_ip != info.name:
                     logger.warning(
                         f"Both device_id and device_ip provided, but they refer to different devices. Using device with device_id: {device_id} and device_ip: {info.name}."
                     )
-                return info.name, device_id_to_adb_id(device_id)
+                return info.name, adb_id
     if device_ip:
         with dai.Device(device_ip) as device:
             inferred_device_id = device.getDeviceId()

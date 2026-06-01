@@ -623,11 +623,12 @@ optionally saves the results to a `.csv` file.
 > By default, the benchmarking uses `--benchmark-time` (20 seconds) which takes precedence over `--repetitions`. To use `--repetitions` instead, you must explicitly set `--benchmark-time` to a negative value (e.g., `--benchmark-time -1`).
 
 > [!IMPORTANT]
-> **ADB Connection Requirements for RVC4**: The device must be connected and accessible using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb) in the following cases:
+> **Device Connection Requirements for RVC4**: The device must be connected and accessible either using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb) or via SSH for the benchmarking to work in the following cases:
 >
-> - When `--power-benchmark` is enabled (requires ADB connection to calculate power consumption)
-> - When `--dsp-benchmark` is enabled (requires ADB connection to calculate DSP utilization)
+> - When `--device-monitor` is enabled (requires ADB or SSH connection to the device calculate power consumption)
 > - When benchmarking is conducted using the SNPE tools (by setting `--dai-benchmark` to `False`, default is `True`)
+>
+> The tool can find the correct device automatically but you can also specify it with the `--device-id` flag.
 
 ## [RVC4] DLC model analysis
 

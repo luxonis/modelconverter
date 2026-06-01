@@ -5,7 +5,7 @@ from .device_handlers import (
     SSHHandler,
     create_handler,
 )
-from .device_monitors import MonitorDSP, MonitorPower
+from .device_monitors import DeviceMonitor
 from .docker_utils import (
     check_docker,
     docker_build,
@@ -48,14 +48,15 @@ from .onnx_tools import (
 )
 from .progress_handler import create_progress_handler
 from .subprocess import SubprocessHandle, subprocess_run
+from .types import DataType
 
 __all__ = [
     "AdbHandler",
+    "DataType",
     "DeviceHandler",
+    "DeviceMonitor",
     "Metadata",
     "ModelconverterException",
-    "MonitorDSP",
-    "MonitorPower",
     "ONNXModifier",
     "S3Exception",
     "SSHHandler",
