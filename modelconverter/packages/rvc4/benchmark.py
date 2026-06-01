@@ -544,7 +544,7 @@ class RVC4Benchmark(Benchmark):
         model_variant = self.model_path.split(":")[1]
 
         model_variants = []
-        for is_public in [True, False]:
+        for is_public in [True, False, None]:
             with suppress(Exception):
                 model_variants += Request.get(
                     "modelVersions/",
@@ -572,23 +572,18 @@ class RVC4Benchmark(Benchmark):
                     },
                 )
 
-        model_precision_type = "INT8"
+        model_precision_type = None
         for instance in model_instances:
             if instance["platforms"] == ["RVC4"] and (
                 self.model_instance is None
                 or instance["hash_short"] == self.model_instance
             ):
-                model_precision_type = instance.get(
-                    "model_precision_type", "INT8"
-                )
+                model_precision_type = instance.get("model_precision_type")
                 break
 
-        if model_precision_type == "FP16":
-            return DataType.FLOAT16
-        if model_precision_type == "FP32":
-            return DataType.FLOAT32
-
-        return DataType.INT8
+        if model_precision_type is not None:
+            return DataType.from_hubai_dtype(model_precision_type)
+        return None
 
 
 def device_id_to_adb_id(device_id: str) -> str:
