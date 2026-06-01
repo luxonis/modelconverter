@@ -357,15 +357,14 @@ class RVC4Benchmark(Benchmark):
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
             model_archive = dai.NNArchive(modelPath)
             try:
-                logger.info("Trying to get input specs from the archive...")
-                input_specs = self._get_archive_input_specs(model_archive)
+                logger.info("Trying to get input specs from the DLC file...")
+                input_specs = self._get_dlc_input_specs(modelPath)
             except Exception as e:
                 logger.warning(
-                    f"Failed to read input specs from the archive "
-                    f"with error: {e}. Falling back to snpe-dlc-info. "
-                    "This requires `snpe-dlc-info` to be installed and in PATH."
+                    f"Failed to read input specs from the DLC "
+                    f"with error: {e}. Reading from the archive."
                 )
-                input_specs = self._get_dlc_input_specs(modelPath)
+                input_specs = self._get_archive_input_specs(model_archive)
 
         inputData = dai.NNData()
         for spec in input_specs:
