@@ -248,14 +248,18 @@ class RVC4Benchmark(Benchmark):
     ) -> dict[str, Any]:
         runtime = RUNTIMES.get(runtime, "use_dsp")
 
-        if isinstance(model_path, str):
-            model_archive = dai.getModelFromZoo(
-                dai.NNModelDescription(
-                    model_path,
-                    platform=dai.Platform.RVC4.name,
-                ),
-                apiKey=environ.HUBAI_API_KEY or "",
-            )
+        if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
+            if isinstance(model_path, str):
+                model_archive = dai.getModelFromZoo(
+                    dai.NNModelDescription(
+                        model_path,
+                        platform=dai.Platform.RVC4.name,
+                    ),
+                    apiKey=environ.HUBAI_API_KEY or "",
+                )
+            else:
+                model_archive = model_path
+
             tmp_dir = Path(model_archive).parent / "tmp"
             shutil.unpack_archive(model_archive, tmp_dir)
 
@@ -265,22 +269,26 @@ class RVC4Benchmark(Benchmark):
             dlc_path = next(tmp_dir.rglob(dlc_model_name), None)
             if not dlc_path:
                 raise ValueError("Could not find model.dlc in the archive.")
+            try:
+                input_specs = self._get_dlc_input_specs(dlc_path)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to read input specs from the DLC "
+                    f"with error: {e}. Reading from the archive."
+                )
+                input_specs = self._get_archive_input_specs(
+                    dai.NNArchive(model_archive)
+                )
+
         elif str(model_path).endswith(".dlc"):
             dlc_path = model_path
-        elif str(model_path).endswith(".tar.xz"):
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                shutil.unpack_archive(model_path, tmp_dir)
-                dlc_files = list(Path(tmp_dir).rglob("*.dlc"))
-                if not dlc_files:
-                    raise ValueError("No .dlc file found in the archive.")
-                dlc_path = dlc_files[0]
+            input_specs = self._get_dlc_input_specs(dlc_path)
 
         else:
             raise ValueError(
                 "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
             )
 
-        input_specs = self._get_dlc_input_specs(dlc_path)
         self.handler.shell(f"mkdir -p /data/modelconverter/{self.model_name}")
         self.handler.push(
             str(dlc_path), f"/data/modelconverter/{self.model_name}/model.dlc"
