@@ -605,14 +605,19 @@ For usage instructions, see `modelconverter benchmark --help`.
 **Example:**
 
 ```bash
-modelconverter benchmark rvc4 --model-path <path_to_model.xml>
+modelconverter benchmark rvc4 --model-path <path>
 ```
 
 The command prints a table with the benchmark results to the console and
 optionally saves the results to a `.csv` file.
 
 > [!IMPORTANT]
-> **Device Connection Requirements**: The benchmaring module expects the device to be connected and accessible either from `depthai`, using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb) or via SSH.
+> **Device Connection Requirements for RVC4**: The device must be connected and accessible either using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb) or via SSH for the benchmarking to work in the following cases:
+>
+> - When `--device-monitor` is enabled (this is the default behavior)
+> - When benchmarking is conducted using the SNPE tools (by setting `--dai-benchmark` to `False`, default is `True`)
+>
+> The tool can find the correct device automatically but you can also specify it with the `--device-id` flag in case of multiple connected devices.
 
 > [!NOTE]
 > For **RVC2** and **RVC4**: The `--model-path` can be a path to a local .blob file, an NN Archive file (.tar.xz), or a name of a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai). To access models from different teams in Luxonis HubAI, remember to update the HUBAI_API_KEY environment variable respectively.
@@ -624,7 +629,6 @@ optionally saves the results to a `.csv` file.
 > - `--repetitions`: Number of iterations to perform (default: 10)
 >
 > By default, the benchmarking uses `--benchmark-time` (20 seconds) which takes precedence over `--repetitions`. To use `--repetitions` instead, you must explicitly set `--benchmark-time` to a negative value (e.g., `--benchmark-time -1`).
-
 
 ## [RVC4] DLC model analysis
 

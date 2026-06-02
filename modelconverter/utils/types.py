@@ -88,6 +88,18 @@ class DataType(Enum):
         return cls(dtype_map[dtype])
 
     @classmethod
+    def from_hubai_dtype(cls, dtype: str) -> "DataType":
+        dtype_map = {
+            "INT8": "int8",
+            "INT32": "int32",
+            "FP16": "float16",
+            "FP32": "float32",
+        }
+        if dtype not in dtype_map:
+            raise ValueError(f"Unsupported HubAI data type: `{dtype}`")
+        return cls(dtype_map[dtype])
+
+    @classmethod
     def from_dlc_dtype(cls, dtype: str) -> "DataType":
         dtype_map = {
             "Float_16": "float16",

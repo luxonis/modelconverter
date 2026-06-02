@@ -6,7 +6,7 @@ import tempfile
 from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final
 
 import depthai as dai
 import numpy as np
@@ -23,7 +23,12 @@ from modelconverter.utils import (
     environ,
     subprocess_run,
 )
-from modelconverter.utils.config import OutputConfig as InputSpec
+from modelconverter.utils.config import OutputConfig
+
+
+class InputSpec(OutputConfig):
+    shape: list[int]  # type: ignore
+
 
 PROFILES: Final[list[str]] = [
     "low_balanced",
@@ -243,14 +248,18 @@ class RVC4Benchmark(Benchmark):
     ) -> dict[str, Any]:
         runtime = RUNTIMES.get(runtime, "use_dsp")
 
-        if isinstance(model_path, str):
-            model_archive = dai.getModelFromZoo(
-                dai.NNModelDescription(
-                    model_path,
-                    platform=dai.Platform.RVC4.name,
-                ),
-                apiKey=environ.HUBAI_API_KEY or "",
-            )
+        if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
+            if isinstance(model_path, str):
+                model_archive = dai.getModelFromZoo(
+                    dai.NNModelDescription(
+                        model_path,
+                        platform=dai.Platform.RVC4.name,
+                    ),
+                    apiKey=environ.HUBAI_API_KEY or "",
+                )
+            else:
+                model_archive = model_path
+
             tmp_dir = Path(model_archive).parent / "tmp"
             shutil.unpack_archive(model_archive, tmp_dir)
 
@@ -260,14 +269,26 @@ class RVC4Benchmark(Benchmark):
             dlc_path = next(tmp_dir.rglob(dlc_model_name), None)
             if not dlc_path:
                 raise ValueError("Could not find model.dlc in the archive.")
+            try:
+                input_specs = self._get_dlc_input_specs(dlc_path)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to read input specs from the DLC "
+                    f"with error: {e}. Reading from the archive."
+                )
+                input_specs = self._get_archive_input_specs(
+                    dai.NNArchive(model_archive)
+                )
+
         elif str(model_path).endswith(".dlc"):
             dlc_path = model_path
+            input_specs = self._get_dlc_input_specs(dlc_path)
+
         else:
             raise ValueError(
                 "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
             )
 
-        input_specs = self._get_dlc_input_specs(dlc_path)
         self.handler.shell(f"mkdir -p /data/modelconverter/{self.model_name}")
         self.handler.push(
             str(dlc_path), f"/data/modelconverter/{self.model_name}/model.dlc"
@@ -280,9 +301,6 @@ class RVC4Benchmark(Benchmark):
             f"--container /data/modelconverter/{self.model_name}/model.dlc "
             f"--input_list /data/modelconverter/{self.model_name}/input_list.txt "
             f"--output_dir /data/modelconverter/{self.model_name}/outputs "
-            f"--perf_profile {profile} "
-            "--cpu_fallback true "
-            f"--{runtime} "
             f"--perf_profile {profile} "
             "--cpu_fallback true "
             f"--{runtime}"
@@ -352,15 +370,14 @@ class RVC4Benchmark(Benchmark):
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
             model_archive = dai.NNArchive(modelPath)
             try:
-                logger.info("Trying to get input specs from the archive...")
-                input_specs = self._get_archive_input_specs(model_archive)
+                logger.info("Trying to get input specs from the DLC file...")
+                input_specs = self._get_dlc_input_specs(modelPath)
             except Exception as e:
                 logger.warning(
-                    f"Failed to read input specs from the archive "
-                    f"with error: {e}. Falling back to snpe-dlc-info. "
-                    "This requires `snpe-dlc-info` to be installed and in PATH."
+                    f"Failed to read input specs from the DLC "
+                    f"with error: {e}. Reading from the archive."
                 )
-                input_specs = self._get_dlc_input_specs(modelPath)
+                input_specs = self._get_archive_input_specs(model_archive)
 
         inputData = dai.NNData()
         for spec in input_specs:
@@ -468,65 +485,85 @@ class RVC4Benchmark(Benchmark):
         self, archive: dai.NNArchive
     ) -> list[InputSpec]:
         def guess_dtype(
-            dtype: DataType,
+            name: str,
+            input_precision: DataType,
             archive_precision: DataType | None,
             hubai_precision: DataType | None = None,
         ) -> DataType:
-            if dtype is DataType.INT32:
-                return DataType.INT32
+            logger.info(f"Resolving correct type for input '{name}'")
+            logger.info(f"model.inputs.{name}.dtype = {input_precision}")
+            logger.info(f"model.metadata.precision = {archive_precision}")
             if hubai_precision is not None:
-                return hubai_precision
-            match archive_precision, dtype:
-                case DataType.INT8 | None, DataType.INT8 | DataType.FLOAT32:
-                    return DataType.INT8
-                case (
-                    DataType.FLOAT16 | None,
-                    DataType.FLOAT16 | DataType.FLOAT32,
-                ):
-                    return DataType.FLOAT16
-                case DataType.FLOAT32 | None, DataType.FLOAT32:
-                    return DataType.FLOAT32
-                case _, DataType.INT32:
-                    return DataType.INT32
-            raise ValueError(
-                f"Could not guess data type for input with dtype {dtype}, "
-                f"archive precision {archive_precision}, "
-                f"and HubAI precision {hubai_precision}."
+                logger.info(f"HubAI is reporting {hubai_precision}")
+
+            result = None
+
+            # e.g. for inputs representing indices
+            if input_precision not in {
+                DataType.INT8,
+                DataType.FLOAT16,
+                DataType.FLOAT32,
+            }:
+                result = input_precision
+                logger.info("Using the model.inputs value")
+            elif hubai_precision is not None:
+                logger.info("Using the HubAI value")
+                result = hubai_precision
+            else:
+                match archive_precision, input_precision:
+                    case (
+                        DataType.INT8 | None,
+                        DataType.INT8 | DataType.FLOAT32,
+                    ):
+                        result = DataType.INT8
+                    case (
+                        DataType.FLOAT16 | None,
+                        DataType.FLOAT16 | DataType.FLOAT32,
+                    ):
+                        result = DataType.FLOAT16
+                    case DataType.FLOAT32 | None, DataType.FLOAT32:
+                        result = DataType.FLOAT32
+                    case _:
+                        result = input_precision
+            if result is None:
+                raise ValueError("Unable to resolve the type combination")
+            logger.info(
+                f"Resolved the type of '{name}' to be '{result.name.upper()}'"
             )
+            return result
 
         cfg = archive.getConfig()
         return [
             InputSpec(
-                name=input.name,
-                shape=input.shape,
+                name=inp.name,
+                shape=inp.shape,
                 data_type=guess_dtype(
-                    DataType(input.dtype.name.lower()),
+                    inp.name,
+                    DataType(inp.dtype.name.lower()),
                     archive_precision=DataType(
                         cfg.model.metadata.precision.name.lower()
                     )
                     if cfg.model.metadata.precision
                     else None,
-                    hubai_precision=self._get_hubai_type()
-                    if self.HUB_MODEL_PATTERN.match(str(self.model_path))
-                    else None,
+                    hubai_precision=self._get_hubai_type(),
                 ),
             )
-            for input in cfg.model.inputs
+            for inp in cfg.model.inputs
         ]
 
-    def _get_hubai_type(self) -> DataType:
+    def _get_hubai_type(self) -> DataType | None:
         from modelconverter.cli import Request, slug_to_id
 
         if not isinstance(
             self.model_path, str
         ) or not self.HUB_MODEL_PATTERN.match(self.model_path):
-            return self._get_data_type_from_dlc()
+            return None
 
         model_id = slug_to_id(self.model_name, "models")
         model_variant = self.model_path.split(":")[1]
 
         model_variants = []
-        for is_public in [True, False]:
+        for is_public in [True, False, None]:
             with suppress(Exception):
                 model_variants += Request.get(
                     "modelVersions/",
@@ -554,23 +591,18 @@ class RVC4Benchmark(Benchmark):
                     },
                 )
 
-        model_precision_type = "INT8"
+        model_precision_type = None
         for instance in model_instances:
             if instance["platforms"] == ["RVC4"] and (
                 self.model_instance is None
                 or instance["hash_short"] == self.model_instance
             ):
-                model_precision_type = instance.get(
-                    "model_precision_type", "INT8"
-                )
+                model_precision_type = instance.get("model_precision_type")
                 break
 
-        if model_precision_type == "FP16":
-            return DataType.FLOAT16
-        if model_precision_type == "FP32":
-            return DataType.FLOAT32
-
-        return DataType.INT8
+        if model_precision_type is not None:
+            return DataType.from_hubai_dtype(model_precision_type)
+        return None
 
 
 def device_id_to_adb_id(device_id: str) -> str:
