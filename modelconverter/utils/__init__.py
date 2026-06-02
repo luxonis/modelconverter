@@ -21,7 +21,6 @@ from .environ import environ
 from .exceptions import (
     ModelconverterException,
     S3Exception,
-    SubprocessException,
     exit_with,
 )
 from .filesystem_utils import (
@@ -60,7 +59,6 @@ __all__ = [
     "ONNXModifier",
     "S3Exception",
     "SSHHandler",
-    "SubprocessException",
     "SubprocessHandle",
     "archive_from_model",
     "check_docker",

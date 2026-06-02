@@ -4,6 +4,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import Iterable
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Final
 
@@ -22,7 +23,12 @@ from modelconverter.utils import (
     environ,
     subprocess_run,
 )
-from modelconverter.utils.config import OutputConfig as InputSpec
+from modelconverter.utils.config import OutputConfig
+
+
+class InputSpec(OutputConfig):
+    shape: list[int]  # type: ignore
+
 
 PROFILES: Final[list[str]] = [
     "low_balanced",
@@ -242,14 +248,18 @@ class RVC4Benchmark(Benchmark):
     ) -> dict[str, Any]:
         runtime = RUNTIMES.get(runtime, "use_dsp")
 
-        if isinstance(model_path, str):
-            model_archive = dai.getModelFromZoo(
-                dai.NNModelDescription(
-                    model_path,
-                    platform=dai.Platform.RVC4.name,
-                ),
-                apiKey=environ.HUBAI_API_KEY or "",
-            )
+        if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
+            if isinstance(model_path, str):
+                model_archive = dai.getModelFromZoo(
+                    dai.NNModelDescription(
+                        model_path,
+                        platform=dai.Platform.RVC4.name,
+                    ),
+                    apiKey=environ.HUBAI_API_KEY or "",
+                )
+            else:
+                model_archive = model_path
+
             tmp_dir = Path(model_archive).parent / "tmp"
             shutil.unpack_archive(model_archive, tmp_dir)
 
@@ -259,14 +269,26 @@ class RVC4Benchmark(Benchmark):
             dlc_path = next(tmp_dir.rglob(dlc_model_name), None)
             if not dlc_path:
                 raise ValueError("Could not find model.dlc in the archive.")
+            try:
+                input_specs = self._get_dlc_input_specs(dlc_path)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to read input specs from the DLC "
+                    f"with error: {e}. Reading from the archive."
+                )
+                input_specs = self._get_archive_input_specs(
+                    dai.NNArchive(model_archive)
+                )
+
         elif str(model_path).endswith(".dlc"):
             dlc_path = model_path
+            input_specs = self._get_dlc_input_specs(dlc_path)
+
         else:
             raise ValueError(
                 "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
             )
 
-        input_specs = self._get_dlc_input_specs(dlc_path)
         self.handler.shell(f"mkdir -p /data/modelconverter/{self.model_name}")
         self.handler.push(
             str(dlc_path), f"/data/modelconverter/{self.model_name}/model.dlc"
@@ -279,9 +301,6 @@ class RVC4Benchmark(Benchmark):
             f"--container /data/modelconverter/{self.model_name}/model.dlc "
             f"--input_list /data/modelconverter/{self.model_name}/input_list.txt "
             f"--output_dir /data/modelconverter/{self.model_name}/outputs "
-            f"--perf_profile {profile} "
-            "--cpu_fallback true "
-            f"--{runtime} "
             f"--perf_profile {profile} "
             "--cpu_fallback true "
             f"--{runtime}"
@@ -349,10 +368,15 @@ class RVC4Benchmark(Benchmark):
 
         input_specs: list[InputSpec] = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            model_archive = dai.NNArchive(modelPath)  # type: ignore[arg-type]
-            if shutil.which("snpe-dlc-info") is not None:
+            model_archive = dai.NNArchive(modelPath)
+            try:
+                logger.info("Trying to get input specs from the DLC file...")
                 input_specs = self._get_dlc_input_specs(modelPath)
-            else:
+            except Exception as e:
+                logger.warning(
+                    f"Failed to read input specs from the DLC "
+                    f"with error: {e}. Reading from the archive."
+                )
                 input_specs = self._get_archive_input_specs(model_archive)
 
         inputData = dai.NNData()
@@ -457,17 +481,128 @@ class RVC4Benchmark(Benchmark):
             yield f"{memory:.2f}" if memory else "[orange3]N/A"
             yield f"{cpu:.2f}" if cpu else "[orange3]N/A"
 
-    @staticmethod
-    def _get_archive_input_specs(archive: dai.NNArchive) -> list[InputSpec]:
+    def _get_archive_input_specs(
+        self, archive: dai.NNArchive
+    ) -> list[InputSpec]:
+        def guess_dtype(
+            name: str,
+            input_precision: DataType,
+            archive_precision: DataType | None,
+            hubai_precision: DataType | None = None,
+        ) -> DataType:
+            logger.info(f"Resolving correct type for input '{name}'")
+            logger.info(f"model.inputs.{name}.dtype = {input_precision}")
+            logger.info(f"model.metadata.precision = {archive_precision}")
+            if hubai_precision is not None:
+                logger.info(f"HubAI is reporting {hubai_precision}")
+
+            result = None
+
+            # e.g. for inputs representing indices
+            if input_precision not in {
+                DataType.INT8,
+                DataType.FLOAT16,
+                DataType.FLOAT32,
+            }:
+                result = input_precision
+                logger.info("Using the model.inputs value")
+            elif hubai_precision is not None:
+                logger.info("Using the HubAI value")
+                result = hubai_precision
+            else:
+                match archive_precision, input_precision:
+                    case (
+                        DataType.INT8 | None,
+                        DataType.INT8 | DataType.FLOAT32,
+                    ):
+                        result = DataType.INT8
+                    case (
+                        DataType.FLOAT16 | None,
+                        DataType.FLOAT16 | DataType.FLOAT32,
+                    ):
+                        result = DataType.FLOAT16
+                    case DataType.FLOAT32 | None, DataType.FLOAT32:
+                        result = DataType.FLOAT32
+                    case _:
+                        result = input_precision
+            if result is None:
+                raise ValueError("Unable to resolve the type combination")
+            logger.info(
+                f"Resolved the type of '{name}' to be '{result.name.upper()}'"
+            )
+            return result
+
         cfg = archive.getConfig()
         return [
             InputSpec(
-                name=input.name,
-                shape=input.shape,
-                data_type=DataType(input.dtype.name.lower()),
+                name=inp.name,
+                shape=inp.shape,
+                data_type=guess_dtype(
+                    inp.name,
+                    DataType(inp.dtype.name.lower()),
+                    archive_precision=DataType(
+                        cfg.model.metadata.precision.name.lower()
+                    )
+                    if cfg.model.metadata.precision
+                    else None,
+                    hubai_precision=self._get_hubai_type(),
+                ),
             )
-            for input in cfg.model.inputs
+            for inp in cfg.model.inputs
         ]
+
+    def _get_hubai_type(self) -> DataType | None:
+        from modelconverter.cli import Request, slug_to_id
+
+        if not isinstance(
+            self.model_path, str
+        ) or not self.HUB_MODEL_PATTERN.match(self.model_path):
+            return None
+
+        model_id = slug_to_id(self.model_name, "models")
+        model_variant = self.model_path.split(":")[1]
+
+        model_variants = []
+        for is_public in [True, False, None]:
+            with suppress(Exception):
+                model_variants += Request.get(
+                    "modelVersions/",
+                    params={"model_id": model_id, "is_public": is_public},
+                )
+
+        model_version_id = None
+        for version in model_variants:
+            if version["variant_slug"] == model_variant:
+                model_version_id = version["id"]
+                break
+
+        if not model_version_id:
+            return DataType.INT8
+
+        model_instances = []
+        for is_public in [True, False]:
+            with suppress(Exception):
+                model_instances += Request.get(
+                    "modelInstances/",
+                    params={
+                        "model_id": model_id,
+                        "model_version_id": model_version_id,
+                        "is_public": is_public,
+                    },
+                )
+
+        model_precision_type = None
+        for instance in model_instances:
+            if instance["platforms"] == ["RVC4"] and (
+                self.model_instance is None
+                or instance["hash_short"] == self.model_instance
+            ):
+                model_precision_type = instance.get("model_precision_type")
+                break
+
+        if model_precision_type is not None:
+            return DataType.from_hubai_dtype(model_precision_type)
+        return None
 
 
 def device_id_to_adb_id(device_id: str) -> str:
