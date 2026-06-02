@@ -1,10 +1,12 @@
 ARG VERSION=2025.04
+ARG DALI_VERSION=1.49.0
 
 FROM hailo_ai_sw_suite_${VERSION//./-}:1
 
 USER root
 
 ARG VERSION
+ARG DALI_VERSION
 
 ENV VERSION=${VERSION//./-}
 ENV IN_DOCKER=
@@ -20,10 +22,32 @@ RUN <<EOF
 
     pip install --upgrade pip --no-cache-dir
     pip install -r requirements.txt --no-cache-dir
-    pip install -U --extra-index-url \
-        https://developer.download.nvidia.com/compute/redist \
-        --no-cache-dir --use-pep517 --no-build-isolation \
-        -r requirements-hailo.txt
+    python - <<PY
+from urllib.request import urlretrieve
+
+version = "${DALI_VERSION}"
+base_url = "https://developer.download.nvidia.com/compute/redist"
+artifacts = [
+    (
+        f"{base_url}/nvidia-dali-cuda120/"
+        f"nvidia_dali_cuda120-{version}-py3-none-manylinux2014_x86_64.whl",
+        f"/tmp/nvidia_dali_cuda120-{version}-py3-none-manylinux2014_x86_64.whl",
+    ),
+    (
+        f"{base_url}/nvidia-dali-tf-plugin-cuda120/"
+        f"nvidia_dali_tf_plugin_cuda120-{version}.tar.gz",
+        f"/tmp/nvidia_dali_tf_plugin_cuda120-{version}.tar.gz",
+    ),
+]
+
+for url, dest in artifacts:
+    urlretrieve(url, dest)
+PY
+    pip install --no-cache-dir --no-deps \
+        "/tmp/nvidia_dali_cuda120-${DALI_VERSION}-py3-none-manylinux2014_x86_64.whl"
+    PIP_USE_PEP517=0 pip install --no-cache-dir --no-deps \
+        "/tmp/nvidia_dali_tf_plugin_cuda120-${DALI_VERSION}.tar.gz"
+    pip install --no-cache-dir -r requirements-hailo.txt
 
 EOF
 
