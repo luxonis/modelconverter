@@ -656,9 +656,13 @@ def launcher(
     )
 
 
-if __name__ == "__main__":
+def main():
     if "benchmark" in sys.argv or "analyze" in sys.argv:
         app._meta = None
         app()
     else:
         app.meta()
+
+
+if __name__ == "__main__":
+    main()

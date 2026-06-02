@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 [project.scripts]
-modelconverter = "modelconverter.__main__:app.meta"
+modelconverter = "modelconverter.__main__:main"
 
 [project.urls]
 repository = "https://github.com/luxonis/modelconverter"
