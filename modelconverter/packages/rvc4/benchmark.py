@@ -267,6 +267,14 @@ class RVC4Benchmark(Benchmark):
                 raise ValueError("Could not find model.dlc in the archive.")
         elif str(model_path).endswith(".dlc"):
             dlc_path = model_path
+        elif str(model_path).endswith(".tar.xz"):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                shutil.unpack_archive(model_path, tmp_dir)
+                dlc_files = list(Path(tmp_dir).rglob("*.dlc"))
+                if not dlc_files:
+                    raise ValueError("No .dlc file found in the archive.")
+                dlc_path = dlc_files[0]
+
         else:
             raise ValueError(
                 "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
