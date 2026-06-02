@@ -20,7 +20,10 @@ RUN <<EOF
 
     set -e
 
-    pip install --upgrade pip --no-cache-dir
+    # pip 26 ignores the non-PEP517 install path we need for the DALI TF
+    # plugin archive and falls back to an isolated build that crashes on
+    # missing pkg_resources.
+    pip install --no-cache-dir "pip==25.0.1"
     pip install -r requirements.txt --no-cache-dir
     python - <<PY
 from urllib.request import urlretrieve
