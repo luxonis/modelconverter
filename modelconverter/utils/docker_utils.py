@@ -22,9 +22,14 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 import docker
 from modelconverter import __version__
+from modelconverter.utils.constants import (
+    RUNTIME_CACHE_SUFFIX,
+    RUNTIME_HOME_SUFFIX,
+)
 
-_CONTAINER_USER_HOME = "/app/shared_with_container/misc/runtime-home"
-_CONTAINER_USER_CACHE = "/app/shared_with_container/misc/runtime-cache"
+_CONTAINER_MISC_DIR = "/app/shared_with_container/misc"
+_CONTAINER_USER_HOME = f"{_CONTAINER_MISC_DIR}/{RUNTIME_HOME_SUFFIX}"
+_CONTAINER_USER_CACHE = f"{_CONTAINER_MISC_DIR}/{RUNTIME_CACHE_SUFFIX}"
 
 
 def get_docker_client_from_active_context() -> docker.DockerClient:

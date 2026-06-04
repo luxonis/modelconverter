@@ -24,6 +24,8 @@ from modelconverter.utils.constants import (
     MISC_DIR,
     MODELS_DIR,
     OUTPUTS_DIR,
+    RUNTIME_CACHE_SUFFIX,
+    RUNTIME_HOME_SUFFIX,
     SHARED_DIR,
 )
 from modelconverter.utils.hub_requests import Request
@@ -72,8 +74,8 @@ def init_dirs() -> None:
         MISC_DIR,
         # Some tools run inside the container as the host UID and still
         # expect writable HOME/XDG cache locations.
-        MISC_DIR / "runtime-home",
-        MISC_DIR / "runtime-cache",
+        MISC_DIR / RUNTIME_HOME_SUFFIX,
+        MISC_DIR / RUNTIME_CACHE_SUFFIX,
         CONFIGS_DIR,
         MODELS_DIR,
         OUTPUTS_DIR,
