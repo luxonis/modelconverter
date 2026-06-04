@@ -623,6 +623,7 @@ def launcher(
     if in_docker():
         return command(*bound.args, **bound.kwargs)
 
+    init_dirs()
     tag = "dev" if dev else "latest"
 
     target = bound.arguments["target"]

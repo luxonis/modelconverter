@@ -23,6 +23,9 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 import docker
 from modelconverter import __version__
 
+_CONTAINER_USER_HOME = "/app/shared_with_container/misc/runtime-home"
+_CONTAINER_USER_CACHE = "/app/shared_with_container/misc/runtime-cache"
+
 
 def get_docker_client_from_active_context() -> docker.DockerClient:
     ctx_name = subprocess.check_output(
@@ -73,6 +76,7 @@ def generate_compose_config(
     memory: str | None = None,
     cpus: float | None = None,
 ) -> str:
+    user_spec = _get_current_user_spec()
     config = {
         "services": {
             "modelconverter": {
@@ -104,6 +108,14 @@ def generate_compose_config(
             }
         },
     }
+    if user_spec is not None:
+        config["services"]["modelconverter"]["user"] = user_spec
+        config["services"]["modelconverter"]["environment"].update(
+            {
+                "HOME": _CONTAINER_USER_HOME,
+                "XDG_CACHE_HOME": _CONTAINER_USER_CACHE,
+            }
+        )
     limits = {}
     if memory is not None:
         limits["memory"] = memory
@@ -119,6 +131,14 @@ def generate_compose_config(
         config["services"]["modelconverter"]["runtime"] = "nvidia"
 
     return yaml.dump(config)
+
+
+def _get_current_user_spec() -> str | None:
+    getuid = getattr(os, "getuid", None)
+    getgid = getattr(os, "getgid", None)
+    if not callable(getuid) or not callable(getgid):
+        return None
+    return f"{getuid()}:{getgid()}"
 
 
 def in_docker() -> bool:
