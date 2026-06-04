@@ -24,6 +24,9 @@ from modelconverter.utils.constants import (
     MISC_DIR,
     MODELS_DIR,
     OUTPUTS_DIR,
+    RUNTIME_CACHE_SUFFIX,
+    RUNTIME_HOME_SUFFIX,
+    SHARED_DIR,
 )
 from modelconverter.utils.hub_requests import Request
 from modelconverter.utils.types import DataType, Encoding, Target
@@ -66,7 +69,18 @@ def get_output_dir_name(
 
 
 def init_dirs() -> None:
-    for p in [CONFIGS_DIR, MODELS_DIR, OUTPUTS_DIR, CALIBRATION_DIR]:
+    for p in [
+        SHARED_DIR,
+        MISC_DIR,
+        # Some tools run inside the container as the host UID and still
+        # expect writable HOME/XDG cache locations.
+        MISC_DIR / RUNTIME_HOME_SUFFIX,
+        MISC_DIR / RUNTIME_CACHE_SUFFIX,
+        CONFIGS_DIR,
+        MODELS_DIR,
+        OUTPUTS_DIR,
+        CALIBRATION_DIR,
+    ]:
         logger.debug(f"Creating {p}")
         p.mkdir(parents=True, exist_ok=True)
 
