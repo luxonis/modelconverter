@@ -326,6 +326,45 @@ class RVC4Benchmark(Benchmark):
         benchmark_time: int,
         device_ip: str | None = None,
     ) -> dict[str, Any]:
+        if isinstance(model_path, str):
+            modelPath = Path(
+                dai.getModelFromZoo(
+                    dai.NNModelDescription(
+                        model_path,
+                        platform=dai.Platform.RVC4.name,
+                    ),
+                    apiKey=environ.HUBAI_API_KEY or "",
+                )
+            )
+        elif str(model_path).endswith(".tar.xz"):
+            modelPath = Path(model_path)
+        elif str(model_path).endswith(".dlc"):
+            raise ValueError(
+                "DLC model format is not currently supported for dai-benchmark. Please use SNPE for DLC models."
+            )
+        else:
+            raise ValueError(
+                "Unsupported model format. Supported formats: .tar.xz, or HubAI model slug."
+            )
+
+        model_archive = dai.NNArchive(modelPath)
+        try:
+            logger.info("Trying to get input specs from the DLC file...")
+            input_specs = self._get_dlc_input_specs(modelPath)
+        except Exception as e:
+            logger.warning(
+                f"Failed to read input specs from the DLC "
+                f"with error: {e}. Reading from the archive."
+            )
+            input_specs = self._get_archive_input_specs(model_archive)
+
+        inputData = dai.NNData()
+        for spec in input_specs:
+            input_data = self._create_random_input(spec)
+            inputData.addTensor(
+                spec.name, input_data, dataType=spec.data_type.as_dai_dtype()
+            )
+
         if device_ip:
             device = dai.Device(dai.DeviceInfo(device_ip))
         else:
@@ -345,57 +384,13 @@ class RVC4Benchmark(Benchmark):
             f"Using {device.getPlatformAsString()} device on IP {device.getDeviceInfo().name}."
         )
 
-        if isinstance(model_path, str):
-            modelPath = Path(
-                dai.getModelFromZoo(
-                    dai.NNModelDescription(
-                        model_path,
-                        platform=device.getPlatformAsString(),
-                    ),
-                    apiKey=environ.HUBAI_API_KEY or "",
-                )
-            )
-        elif str(model_path).endswith(".tar.xz"):
-            modelPath = Path(model_path)
-        elif str(model_path).endswith(".dlc"):
-            raise ValueError(
-                "DLC model format is not currently supported for dai-benchmark. Please use SNPE for DLC models."
-            )
-        else:
-            raise ValueError(
-                "Unsupported model format. Supported formats: .tar.xz, or HubAI model slug."
-            )
-
-        input_specs: list[InputSpec] = []
-        if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            model_archive = dai.NNArchive(modelPath)
-            try:
-                logger.info("Trying to get input specs from the DLC file...")
-                input_specs = self._get_dlc_input_specs(modelPath)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to read input specs from the DLC "
-                    f"with error: {e}. Reading from the archive."
-                )
-                input_specs = self._get_archive_input_specs(model_archive)
-
-        inputData = dai.NNData()
-        for spec in input_specs:
-            input_data = self._create_random_input(spec)
-            inputData.addTensor(
-                spec.name, input_data, dataType=spec.data_type.as_dai_dtype()
-            )
-
         with dai.Pipeline(device) as pipeline:
             benchmarkOut = pipeline.create(dai.node.BenchmarkOut)
             benchmarkOut.setRunOnHost(False)
             benchmarkOut.setFps(-1)
 
             neuralNetwork = pipeline.create(dai.node.NeuralNetwork)
-            if isinstance(model_path, str) or str(model_path).endswith(
-                ".tar.xz"
-            ):
-                neuralNetwork.setNNArchive(model_archive)
+            neuralNetwork.setNNArchive(model_archive)
 
             neuralNetwork.setBackendProperties(
                 {
