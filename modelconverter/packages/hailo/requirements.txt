@@ -1,5 +1,6 @@
-nvidia-dali-cuda120==1.49.0
-nvidia-dali-tf-plugin-cuda120==1.49.0
+# DALI is installed from local archives in docker/hailo/Dockerfile because
+# pip currently corrupts the tf-plugin archive when downloading it by name
+# from NVIDIA's index.
 protobuf==3.20.3
 matplotlib==3.10.6
 pyparsing==2.4.7
