@@ -326,6 +326,45 @@ class RVC4Benchmark(Benchmark):
         benchmark_time: int,
         device_ip: str | None = None,
     ) -> dict[str, Any]:
+        if isinstance(model_path, str):
+            resolved_model_path = Path(
+                dai.getModelFromZoo(
+                    dai.NNModelDescription(
+                        model_path,
+                        platform=dai.Platform.RVC4.name,
+                    ),
+                    apiKey=environ.HUBAI_API_KEY or "",
+                )
+            )
+        elif str(model_path).endswith(".tar.xz"):
+            resolved_model_path = Path(model_path)
+        elif str(model_path).endswith(".dlc"):
+            raise ValueError(
+                "DLC model format is not currently supported for dai-benchmark. Please use SNPE for DLC models."
+            )
+        else:
+            raise ValueError(
+                "Unsupported model format. Supported formats: .tar.xz, or HubAI model slug."
+            )
+
+        model_archive = dai.NNArchive(resolved_model_path)
+        try:
+            logger.info("Trying to get input specs from the DLC file...")
+            input_specs = self._get_dlc_input_specs(resolved_model_path)
+        except Exception as e:
+            logger.warning(
+                f"Failed to read input specs from the DLC "
+                f"with error: {e}. Reading from the archive."
+            )
+            input_specs = self._get_archive_input_specs(model_archive)
+
+        input_data_packet = dai.NNData()
+        for spec in input_specs:
+            input_data = self._create_random_input(spec)
+            input_data_packet.addTensor(
+                spec.name, input_data, dataType=spec.data_type.as_dai_dtype()
+            )
+
         if device_ip:
             device = dai.Device(dai.DeviceInfo(device_ip))
         else:
@@ -345,80 +384,36 @@ class RVC4Benchmark(Benchmark):
             f"Using {device.getPlatformAsString()} device on IP {device.getDeviceInfo().name}."
         )
 
-        if isinstance(model_path, str):
-            modelPath = Path(
-                dai.getModelFromZoo(
-                    dai.NNModelDescription(
-                        model_path,
-                        platform=device.getPlatformAsString(),
-                    ),
-                    apiKey=environ.HUBAI_API_KEY or "",
-                )
-            )
-        elif str(model_path).endswith(".tar.xz"):
-            modelPath = Path(model_path)
-        elif str(model_path).endswith(".dlc"):
-            raise ValueError(
-                "DLC model format is not currently supported for dai-benchmark. Please use SNPE for DLC models."
-            )
-        else:
-            raise ValueError(
-                "Unsupported model format. Supported formats: .tar.xz, or HubAI model slug."
-            )
-
-        input_specs: list[InputSpec] = []
-        if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            model_archive = dai.NNArchive(modelPath)
-            try:
-                logger.info("Trying to get input specs from the DLC file...")
-                input_specs = self._get_dlc_input_specs(modelPath)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to read input specs from the DLC "
-                    f"with error: {e}. Reading from the archive."
-                )
-                input_specs = self._get_archive_input_specs(model_archive)
-
-        inputData = dai.NNData()
-        for spec in input_specs:
-            input_data = self._create_random_input(spec)
-            inputData.addTensor(
-                spec.name, input_data, dataType=spec.data_type.as_dai_dtype()
-            )
-
         with dai.Pipeline(device) as pipeline:
-            benchmarkOut = pipeline.create(dai.node.BenchmarkOut)
-            benchmarkOut.setRunOnHost(False)
-            benchmarkOut.setFps(-1)
+            benchmark_out = pipeline.create(dai.node.BenchmarkOut)
+            benchmark_out.setRunOnHost(False)
+            benchmark_out.setFps(-1)
 
-            neuralNetwork = pipeline.create(dai.node.NeuralNetwork)
-            if isinstance(model_path, str) or str(model_path).endswith(
-                ".tar.xz"
-            ):
-                neuralNetwork.setNNArchive(model_archive)
+            neural_network = pipeline.create(dai.node.NeuralNetwork)
+            neural_network.setNNArchive(model_archive)
 
-            neuralNetwork.setBackendProperties(
+            neural_network.setBackendProperties(
                 {
                     "runtime": runtime,
                     "performance_profile": profile,
                 }
             )
 
-            neuralNetwork.setNumInferenceThreads(num_threads)
+            neural_network.setNumInferenceThreads(num_threads)
 
-            benchmarkIn = pipeline.create(dai.node.BenchmarkIn)
-            benchmarkIn.setRunOnHost(False)
-            benchmarkIn.sendReportEveryNMessages(num_messages)
-            benchmarkIn.logReportsAsWarnings(False)
+            benchmark_in = pipeline.create(dai.node.BenchmarkIn)
+            benchmark_in.setRunOnHost(False)
+            benchmark_in.sendReportEveryNMessages(num_messages)
+            benchmark_in.logReportsAsWarnings(False)
 
-            benchmarkOut.out.link(neuralNetwork.input)
-            neuralNetwork.out.link(benchmarkIn.input)
+            benchmark_out.out.link(neural_network.input)
+            neural_network.out.link(benchmark_in.input)
 
-            outputQueue = benchmarkIn.report.createOutputQueue()
-            inputQueue = benchmarkOut.input.createInputQueue()
+            output_queue = benchmark_in.report.createOutputQueue()
+            input_queue = benchmark_out.input.createInputQueue()
 
             pipeline.start()
-            inputQueue.send(inputData)
+            input_queue.send(input_data_packet)
 
             progress, on_tick, should_continue = create_progress_handler(
                 benchmark_time, repetitions
@@ -429,15 +424,15 @@ class RVC4Benchmark(Benchmark):
 
             with progress:
                 while pipeline.isRunning() and should_continue():
-                    benchmarkReport = outputQueue.get()
-                    if not isinstance(benchmarkReport, dai.BenchmarkReport):
+                    benchmark_report = output_queue.get()
+                    if not isinstance(benchmark_report, dai.BenchmarkReport):
                         raise TypeError(
-                            f"Expected BenchmarkReport, got {type(benchmarkReport)}"
+                            f"Expected BenchmarkReport, got {type(benchmark_report)}"
                         )
 
-                    fps_list.append(benchmarkReport.fps)
+                    fps_list.append(benchmark_report.fps)
                     avg_latency_list.append(
-                        benchmarkReport.averageLatency * 1000
+                        benchmark_report.averageLatency * 1000
                     )
 
                     on_tick()

@@ -605,14 +605,20 @@ For usage instructions, see `modelconverter benchmark --help`.
 **Example:**
 
 ```bash
-modelconverter benchmark rvc4 --model-path <path_to_model.xml>
+modelconverter benchmark rvc4 --model-path <path_to_model.tar.xz>
 ```
 
 The command prints a table with the benchmark results to the console and
 optionally saves the results to a `.csv` file.
 
 > [!NOTE]
-> For **RVC2** and **RVC4**: The `--model-path` can be a path to a local .blob file, an NN Archive file (.tar.xz), or a name of a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai). To access models from different teams in Luxonis HubAI, remember to update the HUBAI_API_KEY environment variable respectively.
+> Benchmark input support depends on the target and backend:
+>
+> - **RVC2**: `--model-path` can be a local `.blob`, an NN Archive (`.tar.xz`), or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
+> - **RVC4** with `--dai-benchmark` (default): `--model-path` can be an NN Archive (`.tar.xz`) or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
+> - **RVC4** with `--no-dai-benchmark`: `--model-path` can be a local `.dlc`, an NN Archive (`.tar.xz`), or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
+>
+> To access models from different teams in Luxonis HubAI, remember to update the `HUBAI_API_KEY` environment variable accordingly.
 
 > [!NOTE]
 > **Benchmark Duration Control (RVC2/RVC4)**: Two flags can affect the duration of benchmarking:
@@ -625,8 +631,8 @@ optionally saves the results to a `.csv` file.
 > [!IMPORTANT]
 > **Device Connection Requirements for RVC4**: The device must be connected and accessible either using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb) or via SSH for the benchmarking to work in the following cases:
 >
-> - When `--device-monitor` is enabled (requires ADB or SSH connection to the device calculate power consumption)
-> - When benchmarking is conducted using the SNPE tools (by setting `--dai-benchmark` to `False`, default is `True`)
+> - When `--device-monitor` is enabled (requires ADB or SSH connection to the device to calculate power consumption)
+> - When benchmarking is conducted using the SNPE tools (with `--no-dai-benchmark`; default is `--dai-benchmark`)
 >
 > The tool can find the correct device automatically but you can also specify it with the `--device-id` flag.
 
