@@ -349,7 +349,8 @@ The `output_dir` can be specified using the `--output-dir` CLI argument. If such
 
 > [!NOTE]
 > When running the `modelconverter` CLI, `shared_with_container` and its standard subdirectories are created automatically in the current working directory if they do not exist yet.
-> Paths provided to the CLI are first resolved as given, and if not found, they are then resolved relative to `shared_with_container/`.
+> With the default CLI, local input files should be placed under `shared_with_container/`, for example `configs/resnet18.yaml` or `models/resnet18.onnx`.
+> Files outside of `shared_with_container/` are not visible to the container unless you mount them separately. Remote paths such as `s3://...` and `gs://...` work as usual.
 
 ### Running ModelConverter
 
@@ -371,7 +372,7 @@ You can run the built image either manually using the `docker run` command or us
   mkdir -p shared_with_container
   ```
 
-3. Without remote files, place the model, config, and calibration data in the respective directories (refer [Sharing Files](#sharing-files)).
+3. Without remote files, place the model, config, and calibration data somewhere under `shared_with_container/` (refer [Sharing Files](#sharing-files)).
 
 4. Execute the conversion:
 
