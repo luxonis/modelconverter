@@ -226,7 +226,7 @@ class AdbHandler(DeviceHandler):
 
     @override
     def push(
-        self, src: PathType, dst: PathType, check: bool = True
+        self, src: PathType, dst: PathType, *, check: bool = True
     ) -> tuple[int, str, str]:
         return self.run("push", src, dst, check=check)
 
