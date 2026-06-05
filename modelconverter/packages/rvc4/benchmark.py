@@ -172,11 +172,15 @@ class RVC4Benchmark(Benchmark):
 
         with tempfile.NamedTemporaryFile(delete=False) as f:
             f.write(input_list.encode())
+            temp_path = Path(f.name)
 
-        self.handler.push(
-            f.name,
-            f"/data/modelconverter/{self.model_name}/input_list.txt",
-        )
+        try:
+            self.handler.push(
+                temp_path,
+                f"/data/modelconverter/{self.model_name}/input_list.txt",
+            )
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     @staticmethod
     def _create_random_input(spec: InputSpec) -> np.ndarray:
