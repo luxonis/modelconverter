@@ -13,6 +13,7 @@ import numpy as np
 import polars as pl
 from depthai import XLinkPlatform
 from loguru import logger
+from rich.progress import track
 
 from modelconverter.packages.base_benchmark import Benchmark, Configuration
 from modelconverter.utils import (
@@ -141,14 +142,11 @@ class RVC4Benchmark(Benchmark):
     def _prepare_raw_inputs(
         self, input_specs: list[InputSpec], num_images: int
     ) -> None:
-        logger.info(
-            f"Preparing {num_images} synthetic inputs for benchmarking."
-        )
         input_list = ""
         self.handler.shell(
             f"mkdir -p /data/modelconverter/{self.model_name}/inputs"
         )
-        for i in range(num_images):
+        for i in track(range(num_images), description="Preparing inputs"):
             for spec in input_specs:
                 input_data = self._create_random_input(spec)
                 with tempfile.NamedTemporaryFile() as f:
