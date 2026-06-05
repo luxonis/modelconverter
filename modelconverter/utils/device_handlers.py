@@ -14,15 +14,28 @@ class DeviceHandler(ABC):
     over a concrete transport such as SSH or ADB.
     """
 
+    def __init__(self, silent: bool = True) -> None:
+        """Initialize the device handler.
+
+        @param silent: If C{True}, suppress command logging by default.
+        @type silent: bool
+        """
+        self.silent = silent
+
     @abstractmethod
-    def shell(self, cmd: str, *, check: bool = True) -> tuple[int, str, str]:
+    def shell(
+        self, cmd: str, *, check: bool = True, silent: bool | None = None
+    ) -> tuple[int, str, str]:
         """Execute a shell command on the target device.
 
-        @param cmd: Shell command to execute on the device.
         @type cmd: str
+        @param cmd: Shell command to execute on the device.
+        @type check: bool
         @param check: If C{True}, propagate subprocess failures as
             exceptions.
-        @type check: bool
+        @type silent: bool | None
+        @param silent: If C{True}, suppress command logging. If C{None},
+            use the default logging behavior of the handler.
         @return: A tuple containing return code, stdout, and stderr.
         @rtype: tuple[int, str, str]
         """
@@ -111,56 +124,32 @@ class SSHHandler(DeviceHandler):
     """Device handler implementation based on SSH and SCP."""
 
     def __init__(self, ip: str, silent: bool = True) -> None:
-        """Initialize the SSH handler.
+        """Initialize an SSH handler for the target device.
 
         @param ip: Target device IP address.
         @type ip: str
         @param silent: If C{True}, suppress command logging.
         @type silent: bool
         """
+        super().__init__(silent)
         self._address = f"root@{ip}"
-        self.silent = silent
 
     @override
-    def shell(self, cmd: str, *, check: bool = True) -> tuple[int, str, str]:
-        """Execute a shell command on the remote device over SSH.
-
-        @param cmd: Shell command to execute remotely.
-        @type cmd: str
-        @param check: If C{True}, propagate subprocess failures as
-            exceptions.
-        @type check: bool
-        @return: A tuple containing return code, stdout, and stderr.
-        @rtype: tuple[int, str, str] @raises
-            subprocess.CalledProcessError: If C{check} is enabled and
-            the SSH command exits with a non-zero status.
-        """
+    def shell(
+        self, cmd: str, *, check: bool = True, silent: bool | None = None
+    ) -> tuple[int, str, str]:
         return self.run(
             "ssh",
             self._address,
             cmd,
             check=check,
-            silent=self.silent,
+            silent=silent or self.silent,
         )
 
     @override
     def pull(
         self, src: PathType, dst: PathType, *, check: bool = True
     ) -> tuple[int, str, str]:
-        """Copy a file or directory from the remote device using SCP.
-
-        @param src: Source path on the remote device.
-        @type src: PathType
-        @param dst: Destination path on the local machine.
-        @type dst: PathType
-        @param check: If C{True}, propagate subprocess failures as
-            exceptions.
-        @type check: bool
-        @return: A tuple containing return code, stdout, and stderr.
-        @rtype: tuple[int, str, str] @raises
-            subprocess.CalledProcessError: If C{check} is enabled and
-            the SCP command exits with a non-zero status.
-        """
         return self.run(
             "scp",
             f"{self._address}:{src}",
@@ -174,20 +163,6 @@ class SSHHandler(DeviceHandler):
     def push(
         self, src: PathType, dst: PathType, *, check: bool = True
     ) -> tuple[int, str, str]:
-        """Copy a file or directory to the remote device using SCP.
-
-        @param src: Source path on the local machine.
-        @type src: PathType
-        @param dst: Destination path on the remote device.
-        @type dst: PathType
-        @param check: If C{True}, propagate subprocess failures as
-            exceptions.
-        @type check: bool
-        @return: A tuple containing return code, stdout, and stderr.
-        @rtype: tuple[int, str, str] @raises
-            subprocess.CalledProcessError: If C{check} is enabled and
-            the SCP command exits with a non-zero status.
-        """
         return self.run(
             "scp",
             src,
@@ -204,7 +179,7 @@ class AdbHandler(DeviceHandler):
     def __init__(
         self, device_id: str | None = None, silent: bool = True
     ) -> None:
-        """Initialize the ADB handler.
+        """Initialize an ADB handler for the target device.
 
         If no device ID is provided, the first connected device is
         selected.
@@ -217,30 +192,12 @@ class AdbHandler(DeviceHandler):
             connected device is available.
         @raises ValueError: If the specified device is not connected.
         """
+        super().__init__(silent)
         device_id = self._check_adb_connection(device_id)
         self._device_args = ["-s", device_id] if device_id else []
-        self.silent = silent
 
     @override
     def run(self, *args, check: bool = True, **kwargs) -> tuple[int, str, str]:
-        """Run an ADB command after requesting root access.
-
-        The method first invokes C{adb root} for the selected device and
-        then executes the requested ADB subcommand.
-
-        @param args: ADB subcommand arguments.
-        @type args: tuple
-        @param check: If C{True}, propagate subprocess failures as
-            exceptions.
-        @type check: bool
-        @param kwargs: Additional keyword arguments forwarded to the
-            base implementation.
-        @type kwargs: dict
-        @return: A tuple containing return code, stdout, and stderr.
-        @rtype: tuple[int, str, str] @raises
-            subprocess.CalledProcessError: If C{check} is enabled and
-            either C{adb root} or the requested ADB command fails.
-        """
         subprocess.run(
             ["adb", *map(str, self._device_args), "root"],
             capture_output=True,
@@ -251,59 +208,23 @@ class AdbHandler(DeviceHandler):
         )
 
     @override
-    def shell(self, cmd: str, *, check: bool = True) -> tuple[int, str, str]:
-        """Execute a shell command on the ADB-connected device.
-
-        @param cmd: Shell command to execute on the device.
-        @type cmd: str
-        @param check: If C{True}, propagate subprocess failures as
-            exceptions.
-        @type check: bool
-        @return: A tuple containing return code, stdout, and stderr.
-        @rtype: tuple[int, str, str] @raises
-            subprocess.CalledProcessError: If C{check} is enabled and
-            the ADB shell command exits with a non-zero status.
-        """
-        return self.run("shell", cmd, check=check)
+    def shell(
+        self, cmd: str, *, check: bool = True, silent: bool | None = None
+    ) -> tuple[int, str, str]:
+        return self.run(
+            "shell", cmd, check=check, silent=silent or self.silent
+        )
 
     @override
     def pull(
         self, src: PathType, dst: PathType, *, check: bool = True
     ) -> tuple[int, str, str]:
-        """Copy a file or directory from the device using ADB.
-
-        @param src: Source path on the device.
-        @type src: PathType
-        @param dst: Destination path on the local machine.
-        @type dst: PathType
-        @param check: If C{True}, propagate subprocess failures as
-            exceptions.
-        @type check: bool
-        @return: A tuple containing return code, stdout, and stderr.
-        @rtype: tuple[int, str, str] @raises
-            subprocess.CalledProcessError: If C{check} is enabled and
-            the ADB pull command exits with a non-zero status.
-        """
         return self.run("pull", src, dst, check=check)
 
     @override
     def push(
         self, src: PathType, dst: PathType, check: bool = True
     ) -> tuple[int, str, str]:
-        """Copy a file or directory to the device using ADB.
-
-        @param src: Source path on the local machine.
-        @type src: PathType
-        @param dst: Destination path on the device.
-        @type dst: PathType
-        @param check: If C{True}, propagate subprocess failures as
-            exceptions.
-        @type check: bool
-        @return: A tuple containing return code, stdout, and stderr.
-        @rtype: tuple[int, str, str] @raises
-            subprocess.CalledProcessError: If C{check} is enabled and
-            the ADB push command exits with a non-zero status.
-        """
         return self.run("push", src, dst, check=check)
 
     def _check_adb_connection(self, device_id: str | None) -> str:
