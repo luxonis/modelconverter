@@ -206,7 +206,7 @@ class RVC4Benchmark(Benchmark):
             self.handler.shell(
                 self._create_raw_input_link_script(
                     input_specs,
-                    inputs_dir,
+                    str(inputs_dir),
                     real_input_count,
                     num_images,
                 )
