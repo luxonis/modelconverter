@@ -143,7 +143,7 @@ class SSHHandler(DeviceHandler):
             self._address,
             cmd,
             check=check,
-            silent=silent or self.silent,
+            silent=silent if silent is not None else self.silent,
         )
 
     @override
@@ -212,7 +212,10 @@ class AdbHandler(DeviceHandler):
         self, cmd: str, *, check: bool = True, silent: bool | None = None
     ) -> tuple[int, str, str]:
         return self.run(
-            "shell", cmd, check=check, silent=silent or self.silent
+            "shell",
+            cmd,
+            check=check,
+            silent=silent if silent is not None else self.silent,
         )
 
     @override
