@@ -162,7 +162,9 @@ class RVC4Benchmark(Benchmark):
 
             with local_input_list_path.open("w", encoding="utf-8") as f:
                 for i in track(
-                    range(num_images), description="Preparing inputs"
+                    range(num_images),
+                    description="Preparing inputs",
+                    total=min(num_images, self.MAX_REAL_SNPE_INPUTS),
                 ):
                     input_paths: list[str] = []
                     for spec in input_specs:
@@ -186,6 +188,11 @@ class RVC4Benchmark(Benchmark):
             )
 
         if num_images > real_input_count and input_specs:
+            logger.info(
+                f"Linking additional {num_images - real_input_count} inputs "
+                f"to the first {real_input_count} inputs to avoid filling "
+                "up the device storage."
+            )
             self.handler.shell(
                 self._create_raw_input_link_script(
                     input_specs,
