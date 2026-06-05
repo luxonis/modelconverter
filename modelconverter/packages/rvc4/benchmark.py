@@ -148,17 +148,17 @@ class RVC4Benchmark(Benchmark):
         if num_images < 1:
             raise ValueError("num_images must be at least 1.")
 
-        inputs_dir = f"/data/modelconverter/{self.model_name}/inputs"
-        input_list_path = (
-            f"/data/modelconverter/{self.model_name}/input_list.txt"
-        )
+        model_dir = f"/data/modelconverter/{self.model_name}"
+        inputs_dir = f"{model_dir}/inputs"
         real_input_count = min(num_images, self.MAX_REAL_SNPE_INPUTS)
 
-        self.handler.shell(f"mkdir -p {inputs_dir}")
+        self.handler.shell(f"mkdir -p {model_dir}")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            local_input_list_path = tmp_path / "input_list.txt"
+            local_model_dir = Path(tmp_dir) / self.model_name
+            local_inputs_dir = local_model_dir / "inputs"
+            local_inputs_dir.mkdir(parents=True)
+            local_input_list_path = local_model_dir / "input_list.txt"
 
             with local_input_list_path.open("w", encoding="utf-8") as f:
                 for i in track(
@@ -173,19 +173,15 @@ class RVC4Benchmark(Benchmark):
 
                         if i < real_input_count:
                             input_data = self._create_random_input(spec)
-                            local_input_path = (
-                                tmp_path / f"{spec.name}_{i}.raw"
+                            local_input_path = local_inputs_dir / (
+                                f"{spec.name}_{i}.raw"
                             )
                             input_data.tofile(local_input_path)
-                            self.handler.push(local_input_path, input_path)
 
                     f.write(" ".join(input_paths))
                     f.write(" \n")
 
-            self.handler.push(
-                local_input_list_path,
-                input_list_path,
-            )
+            self.handler.push(local_model_dir, "/data/modelconverter")
 
         if num_images > real_input_count and input_specs:
             logger.info(
