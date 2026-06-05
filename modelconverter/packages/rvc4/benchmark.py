@@ -320,7 +320,7 @@ class RVC4Benchmark(Benchmark):
                 f"stdout:\n{stdout}"
             )
         fps = float(match.group(1))
-        return {"fps": fps, "latency": "N/A"}
+        return {"fps": fps, "latency": None}
 
     def _benchmark_dai(
         self,
@@ -445,12 +445,7 @@ class RVC4Benchmark(Benchmark):
                     on_tick()
 
             # Currently, the latency measurement is only supported on RVC4 when using ImgFrame as the input to the BenchmarkOut which we don't do here.
-            return {
-                "fps": float(np.mean(fps_list)),
-                "latency": float(np.mean(avg_latency_list))
-                if avg_latency_list
-                else "N/A",
-            }
+            return {"fps": float(np.mean(fps_list)), "latency": None}
 
     def _extra_header(
         self,
