@@ -330,7 +330,7 @@ def benchmark(
         Parameter(group="RVC4"),
     ] = "balanced",
     runtime: Annotated[Literal["dsp", "cpu"], Parameter(group="RVC4")] = "dsp",
-    num_images: Annotated[int, Parameter(group="RVC4")] = 5000,
+    num_images: Annotated[int, Parameter(group="RVC4")] = 500,
     device_ip: Annotated[str | None, Parameter(group="RVC4")] = None,
     device_id: Annotated[str | None, Parameter(group="RVC4")] = None,
     dai_benchmark: Annotated[bool, Parameter(group="RVC4")] = True,
