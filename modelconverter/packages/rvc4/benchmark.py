@@ -141,6 +141,9 @@ class RVC4Benchmark(Benchmark):
     def _prepare_raw_inputs(
         self, input_specs: list[InputSpec], num_images: int
     ) -> None:
+        logger.info(
+            f"Preparing {num_images} synthetic inputs for benchmarking."
+        )
         input_list = ""
         self.handler.shell(
             f"mkdir -p /data/modelconverter/{self.model_name}/inputs"
@@ -288,6 +291,10 @@ class RVC4Benchmark(Benchmark):
             raise ValueError(
                 "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
             )
+        logger.info(
+            f"Using SNPE profile '{profile}' and runtime '{runtime}' for benchmarking."
+        )
+        logger.info(f"Moving model '{dlc_path.name}' to the device.")
 
         self.handler.shell(f"mkdir -p /data/modelconverter/{self.model_name}")
         self.handler.push(
@@ -295,6 +302,7 @@ class RVC4Benchmark(Benchmark):
         )
         self._prepare_raw_inputs(input_specs, num_images)
 
+        logger.info("Starting SNPE benchmark...")
         _, stdout, _ = self.handler.shell(
             # "source /data/modelconverter/source_me.sh && "
             "snpe-parallel-run "
