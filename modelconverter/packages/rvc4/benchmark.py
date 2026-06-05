@@ -199,7 +199,6 @@ class RVC4Benchmark(Benchmark):
         if device_monitor:
             self.monitor = DeviceMonitor(self.handler)
             idle_measurements = self.monitor.get_idle_measurements()
-            self.monitor.start()
 
         try:
             if dai_benchmark:
@@ -301,6 +300,9 @@ class RVC4Benchmark(Benchmark):
         )
         self._prepare_raw_inputs(input_specs, num_images)
 
+        if self.monitor:
+            self.monitor.start()
+
         logger.info("Starting SNPE benchmark...")
         _, stdout, _ = self.handler.shell(
             # "source /data/modelconverter/source_me.sh && "
@@ -390,6 +392,9 @@ class RVC4Benchmark(Benchmark):
         logger.info(
             f"Using {device.getPlatformAsString()} device on IP {device.getDeviceInfo().name}."
         )
+
+        if self.monitor:
+            self.monitor.start()
 
         with dai.Pipeline(device) as pipeline:
             benchmark_out = pipeline.create(dai.node.BenchmarkOut)
