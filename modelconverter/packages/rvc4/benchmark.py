@@ -294,7 +294,12 @@ class RVC4Benchmark(Benchmark):
                 self.monitor.stop()
             if not dai_benchmark:
                 # so we don't delete the wrong directory
-                assert self.model_name
+                # if `model_name` gets unset for any reason
+                if not self.model_name:
+                    raise AssertionError(
+                        "`model_name` is not set, "
+                        "cannot clean up model files on the device."
+                    )
 
                 self.handler.shell(
                     f"rm -rf /data/modelconverter/{self.model_name}"
