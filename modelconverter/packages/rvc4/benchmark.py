@@ -369,7 +369,7 @@ class RVC4Benchmark(Benchmark):
             self.monitor.start()
 
         logger.info("Starting SNPE benchmark...")
-        _, stdout, _ = self.handler.shell(
+        retcode, stdout, _ = self.handler.shell(
             # "source /data/modelconverter/source_me.sh && "
             "snpe-parallel-run "
             f"--container /data/modelconverter/{self.model_name}/model.dlc "
@@ -377,8 +377,14 @@ class RVC4Benchmark(Benchmark):
             f"--output_dir /data/modelconverter/{self.model_name}/outputs "
             f"--perf_profile {profile} "
             "--cpu_fallback true "
-            f"--{runtime}"
+            f"--{runtime}",
+            check=False,
         )
+        if retcode == 137:
+            raise RuntimeError(
+                "Benchmark process was killed, likely due to out-of-memory. "
+                "Consider decreasing the number of images (`--num-images`)."
+            )
         pattern = re.compile(r"(\d+\.\d+) infs/sec")
         match = pattern.search(stdout)
         if match is None:
