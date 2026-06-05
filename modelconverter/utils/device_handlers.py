@@ -6,8 +6,6 @@ from loguru import logger
 from luxonis_ml.typing import PathType
 from typing_extensions import override
 
-from modelconverter.utils.subprocess import SubprocessHandle
-
 
 class DeviceHandler(ABC):
     """Abstract interface for communicating with a device.
@@ -93,10 +91,12 @@ class DeviceHandler(ABC):
         args = list(map(str, args))
         if not silent:
             logger.info(f"{' '.join(args)}")
-        with SubprocessHandle(args, silent=silent) as handle:
-            handle.wait()
-        result = handle.result()
-
+        result = subprocess.run(
+            args,
+            **kwargs,
+            capture_output=True,
+            check=check,
+        )
         stdout = result.stdout
         stderr = result.stderr
         assert result.returncode is not None
