@@ -25,7 +25,7 @@ def download_from_remote(
 ) -> Path:
     """Downloads file(s) from remote bucket storage.
 
-    It could be single file, entire direcory, or `max_files` within a
+    It could be single file, entire directory, or `max_files` within a
     directory
     """
     absolute_path, remote_path = LuxonisFileSystem.split_full_path(url)
