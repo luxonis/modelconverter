@@ -415,9 +415,9 @@ class RVC4Benchmark(Benchmark):
             input_specs = self._get_dlc_input_specs(resolved_model_path)
         except Exception as e:
             logger.warning(
-                f"Failed to read input specs from the DLC "
-                f"with error: {e}. Reading from the archive."
+                f"Failed to read input specs from the DLC with error: {e}"
             )
+            logger.info("Reading specs from the archive.")
             input_specs = self._get_archive_input_specs(model_archive)
 
         input_data_packet = dai.NNData()
