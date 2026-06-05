@@ -107,18 +107,32 @@ class RVC4Benchmark(Benchmark):
             raise ValueError("Expected .dlc, or .tar.xz model format.")
 
         csv_path = Path("info.csv")
-        subprocess_run(
-            [
-                "snpe-dlc-info",
-                "-i",
-                model_path,
-                "-s",
-                csv_path,
-            ],
-            silent=True,
-        )
-        content = csv_path.read_text()
-        csv_path.unlink()
+        if shutil.which("snpe-dlc-info") is not None:
+            subprocess_run(
+                [
+                    "snpe-dlc-info",
+                    "-i",
+                    model_path,
+                    "-s",
+                    csv_path,
+                ],
+                silent=True,
+            )
+            content = csv_path.read_text()
+            csv_path.unlink()
+        elif self.handler.shell("snpe-dlc-info -h", check=False)[0] == 0:
+            self.handler.shell(f"mkdir -p {self.device_pwd}")
+            self.handler.push(model_path, self.device_pwd / "model.dlc")
+            device_csv_path = self.device_pwd / "info.csv"
+            self.handler.shell(
+                f"snpe-dlc-info -i {self.device_pwd / 'model.dlc'} -s {device_csv_path}",
+            )
+            _, content, _ = self.handler.shell(f"cat {device_csv_path}")
+        else:
+            raise RuntimeError(
+                "Neither local nor remote `snpe-dlc-info` "
+                "command is available to read the DLC input specs."
+            )
 
         start_marker = "Input Name,Dimensions,Type,Encoding Info"
         end_marker = "Output Name,Dimensions,Type,Encoding Info"
@@ -149,11 +163,10 @@ class RVC4Benchmark(Benchmark):
         if num_images < 1:
             raise ValueError("num_images must be at least 1.")
 
-        model_dir = f"/data/modelconverter/{self.model_name}"
-        inputs_dir = f"{model_dir}/inputs"
+        inputs_dir = self.device_pwd / "inputs"
         real_input_count = min(num_images, self.MAX_REAL_SNPE_INPUTS)
 
-        self.handler.shell(f"mkdir -p {model_dir}")
+        self.handler.shell(f"mkdir -p {self.device_pwd}")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             local_model_dir = Path(tmp_dir) / self.model_name
@@ -182,7 +195,7 @@ class RVC4Benchmark(Benchmark):
                     f.write(" ".join(input_paths))
                     f.write(" \n")
 
-            self.handler.push(local_model_dir, "/data/modelconverter")
+            self.handler.push(local_model_dir, self.device_pwd.parent)
 
         if num_images > real_input_count and input_specs:
             logger.info(
@@ -250,6 +263,7 @@ class RVC4Benchmark(Benchmark):
             self.handler = create_handler(device_ip, device_adb_id)
 
         configuration["device_ip"] = device_ip
+        self.device_pwd = Path("/", "data", "modelconverter", self.model_name)
 
         self.monitor = None
         idle_measurements = {}
@@ -298,9 +312,7 @@ class RVC4Benchmark(Benchmark):
                         "cannot clean up model files on the device."
                     )
 
-                self.handler.shell(
-                    f"rm -rf /data/modelconverter/{self.model_name}"
-                )
+                self.handler.shell(f"rm -rf {self.device_pwd}")
 
     def _benchmark_snpe(
         self,
@@ -356,10 +368,8 @@ class RVC4Benchmark(Benchmark):
         )
         logger.info(f"Moving model '{dlc_path.name}' to the device.")
 
-        self.handler.shell(f"mkdir -p /data/modelconverter/{self.model_name}")
-        self.handler.push(
-            str(dlc_path), f"/data/modelconverter/{self.model_name}/model.dlc"
-        )
+        self.handler.shell(f"mkdir -p {self.device_pwd}")
+        self.handler.push(str(dlc_path), f"{self.device_pwd}/model.dlc")
         self._prepare_raw_inputs(input_specs, num_images)
 
         logger.info("Starting SNPE benchmark...")
@@ -370,9 +380,9 @@ class RVC4Benchmark(Benchmark):
         try:
             _, stdout, _ = self.handler.shell(
                 "snpe-parallel-run "
-                f"--container /data/modelconverter/{self.model_name}/model.dlc "
-                f"--input_list /data/modelconverter/{self.model_name}/input_list.txt "
-                f"--output_dir /data/modelconverter/{self.model_name}/outputs "
+                f"--container {self.device_pwd}/model.dlc "
+                f"--input_list {self.device_pwd}/input_list.txt "
+                f"--output_dir {self.device_pwd}/outputs "
                 f"--perf_profile {profile} "
                 "--cpu_fallback true "
                 f"--{runtime}",
