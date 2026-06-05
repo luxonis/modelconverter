@@ -19,4 +19,5 @@ jobs:
         with:
           token: ${{ secrets.WORKFLOW_SECRET }}
           update_version_with: "release-commit-sha"
-          pull_request_labels: "automated"
+          pull_request_labels: "automated,DevOps"
+          committer_username: "github-actions[bot]"
