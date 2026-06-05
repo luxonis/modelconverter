@@ -1,4 +1,3 @@
-
 name: HIL tests
 on:
   workflow_dispatch:
@@ -21,7 +20,7 @@ on:
       depthai_version:
         description: "DepthAI version to test against (e.g., 3.3.0)"
         required: true
-        type: string   
+        type: string
       additional_options:
         description: "Additional options:"
         required: false
@@ -49,7 +48,9 @@ jobs:
   BOM-test:
     runs-on: ["self-hosted", "testbed-runner"]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
 
       - name: Run tests
         # yamllint disable rule:line-length

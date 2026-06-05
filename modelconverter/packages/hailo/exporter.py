@@ -103,7 +103,6 @@ class HailoExporter(Exporter):
 
     def _force_onnx_names(self, har_path: Path) -> Path:
         """Force ONNX layer names into a .har model."""
-
         runner = ClientRunner(hw_arch=self.hw_arch, har=str(har_path))
         hn = runner.get_hn()
         npz = dict(runner.get_params())

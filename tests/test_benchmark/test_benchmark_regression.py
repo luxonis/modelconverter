@@ -125,7 +125,7 @@ def _write_fps_benchmark_result(
         success=success,
     )
     client = InfluxClient(bucket, token=token)
-    print(
+    print(  # noqa: T201
         "Writing fps_benchmark point to InfluxDB: "
         f"bucket={client.INFLUXDB_BUCKET}, org={client.INFLUXDB_ORG}"
     )
@@ -246,7 +246,7 @@ def test_benchmark_fps(
     deviation_pct = ((actual_fps - expected_fps) / expected_fps) * 100
     success = fps_min <= actual_fps <= fps_max
 
-    print(
+    print(  # noqa: T201
         f"Benchmark result for {model_slug}: "
         f"actual={actual_fps:.2f} FPS, expected={expected_fps:.2f} FPS. "
     )

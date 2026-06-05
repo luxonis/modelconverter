@@ -313,7 +313,7 @@ class RVC4Config(TargetConfig):
             self.snpe_onnx_to_dlc_args.pop(qo_index)
             encodings_json = self.snpe_onnx_to_dlc_args.pop(qo_index)
             with open(encodings_json) as f:
-                self.encodings = Encodings.model_validate_json(json.load(f))
+                self.encodings = Encodings.model_validate_json(f.read())
         return self
 
     @field_validator("encodings", mode="before")
@@ -582,7 +582,6 @@ def _extract_bin_xml_from_ir(ir_path: Any) -> tuple[Path, Path]:
     We assume that the base filename matches between the .bin and .xml
     file. Otherwise, an error will be thrown.
     """
-
     if not isinstance(ir_path, str) and not isinstance(ir_path, Path):
         raise TypeError("`input_path` must be str or Path.")
     ir_path = Path(ir_path)

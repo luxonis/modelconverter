@@ -262,7 +262,6 @@ def infer(
         Name of the stage to run. Only needed for multistage configs.
         If not provided, the first stage will be used.
     """
-
     if path is not None:
         config = path
     with catch_exceptions():
@@ -330,7 +329,7 @@ def benchmark(
         Parameter(group="RVC4"),
     ] = "balanced",
     runtime: Annotated[Literal["dsp", "cpu"], Parameter(group="RVC4")] = "dsp",
-    num_images: Annotated[int, Parameter(group="RVC4")] = 1000,
+    num_images: Annotated[int, Parameter(group="RVC4")] = 500,
     device_ip: Annotated[str | None, Parameter(group="RVC4")] = None,
     device_id: Annotated[str | None, Parameter(group="RVC4")] = None,
     dai_benchmark: Annotated[bool, Parameter(group="RVC4")] = True,
@@ -366,7 +365,7 @@ def benchmark(
     runtime : str
         The SNPE runtime to use for inference (dsp or cpu).
     num_images : int
-        The number of images to use for inference.
+        The number of images to use for inference. Only relevant for SNPE backend.
     device_ip : str | None
         IP address of the device to run the benchmark on. Interchangeable with device_id. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
     device_id : str | None
@@ -376,7 +375,6 @@ def benchmark(
     device_monitor : bool
         Whether to monitor the device performance during benchmarking and include it in the results. Only relevant for RVC4 target.
     """
-
     if target in {Target.RVC2, Target.RVC4}:
         kwargs = {
             "repetitions": repetitions,
@@ -440,7 +438,6 @@ def analyze(
     analyze_cycles : bool
         Whether to analyze the layer cycles.
     """
-
     with catch_exceptions():
         logger.info("Starting analysis")
         if len(image_dirs) == 1:
