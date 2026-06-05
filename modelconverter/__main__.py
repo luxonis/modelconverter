@@ -330,7 +330,7 @@ def benchmark(
         Parameter(group="RVC4"),
     ] = "balanced",
     runtime: Annotated[Literal["dsp", "cpu"], Parameter(group="RVC4")] = "dsp",
-    num_images: Annotated[int, Parameter(group="RVC4")] = 1000,
+    num_images: Annotated[int, Parameter(group="RVC4")] = 1_000_000,
     device_ip: Annotated[str | None, Parameter(group="RVC4")] = None,
     device_id: Annotated[str | None, Parameter(group="RVC4")] = None,
     dai_benchmark: Annotated[bool, Parameter(group="RVC4")] = True,
@@ -366,7 +366,7 @@ def benchmark(
     runtime : str
         The SNPE runtime to use for inference (dsp or cpu).
     num_images : int
-        The number of images to use for inference.
+        The number of images to use for inference. Only relevant for SNPE backend.
     device_ip : str | None
         IP address of the device to run the benchmark on. Interchangeable with device_id. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
     device_id : str | None

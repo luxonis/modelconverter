@@ -51,6 +51,8 @@ RUNTIMES: dict[str, str] = {
 
 
 class RVC4Benchmark(Benchmark):
+    MAX_REAL_SNPE_INPUTS = 100
+
     @property
     def default_configuration(self) -> Configuration:
         """
@@ -142,21 +144,30 @@ class RVC4Benchmark(Benchmark):
     def _prepare_raw_inputs(
         self, input_specs: list[InputSpec], num_images: int
     ) -> None:
+        if num_images < 1:
+            raise ValueError("num_images must be at least 1.")
+
+        inputs_dir = f"/data/modelconverter/{self.model_name}/inputs"
+        real_input_count = min(num_images, self.MAX_REAL_SNPE_INPUTS)
+
         input_list = ""
-        self.handler.shell(
-            f"mkdir -p /data/modelconverter/{self.model_name}/inputs"
-        )
+        self.handler.shell(f"mkdir -p {inputs_dir}")
         for i in track(range(num_images), description="Preparing inputs"):
             for spec in input_specs:
-                input_data = self._create_random_input(spec)
-                with tempfile.NamedTemporaryFile() as f:
-                    input_data.tofile(f)
-                    self.handler.push(
-                        f.name,
-                        f"/data/modelconverter/{self.model_name}/inputs/{spec.name}_{i}.raw",
+                input_path = f"{inputs_dir}/{spec.name}_{i}.raw"
+                if i < real_input_count:
+                    input_data = self._create_random_input(spec)
+                    with tempfile.NamedTemporaryFile() as f:
+                        input_data.tofile(f)
+                        self.handler.push(f.name, input_path)
+                else:
+                    source_index = i % real_input_count
+                    source_path = (
+                        f"{inputs_dir}/{spec.name}_{source_index}.raw"
                     )
+                    self.handler.shell(f"ln -f {source_path} {input_path}")
 
-                input_list += f"{spec.name}:=/data/modelconverter/{self.model_name}/inputs/{spec.name}_{i}.raw "
+                input_list += f"{spec.name}:={input_path} "
             input_list += "\n"
 
         with tempfile.NamedTemporaryFile(delete=False) as f:
