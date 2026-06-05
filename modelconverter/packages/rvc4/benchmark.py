@@ -7,6 +7,7 @@ import tempfile
 from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
+from subprocess import CalledProcessError, SubprocessError
 from typing import Any, Final
 
 import depthai as dai
@@ -361,26 +362,34 @@ class RVC4Benchmark(Benchmark):
         )
         self._prepare_raw_inputs(input_specs, num_images)
 
+        logger.info("Starting SNPE benchmark...")
+
         if self.monitor:
             self.monitor.start()
 
-        logger.info("Starting SNPE benchmark...")
-        retcode, stdout, _ = self.handler.shell(
-            # "source /data/modelconverter/source_me.sh && "
-            "snpe-parallel-run "
-            f"--container /data/modelconverter/{self.model_name}/model.dlc "
-            f"--input_list /data/modelconverter/{self.model_name}/input_list.txt "
-            f"--output_dir /data/modelconverter/{self.model_name}/outputs "
-            f"--perf_profile {profile} "
-            "--cpu_fallback true "
-            f"--{runtime}",
-            check=False,
-        )
-        if retcode == 137:
-            raise RuntimeError(
-                "Benchmark process was killed, likely due to out-of-memory. "
-                "Consider decreasing the number of images (`--num-images`)."
+        try:
+            _, stdout, _ = self.handler.shell(
+                "snpe-parallel-run "
+                f"--container /data/modelconverter/{self.model_name}/model.dlc "
+                f"--input_list /data/modelconverter/{self.model_name}/input_list.txt "
+                f"--output_dir /data/modelconverter/{self.model_name}/outputs "
+                f"--perf_profile {profile} "
+                "--cpu_fallback true "
+                f"--{runtime}",
             )
+        except CalledProcessError as e:
+            if e.returncode == 137:
+                raise SubprocessError(
+                    "Benchmark process was killed, likely due to out-of-memory. "
+                    "Consider decreasing the number of images (`--num-images`)."
+                ) from e
+
+            raise SubprocessError(
+                f"Benchmark process failed with return code {e.returncode}.\n"
+                f"stdout:\n{e.stdout}\n"
+                f"stderr:\n{e.stderr}"
+            ) from e
+
         pattern = re.compile(r"(\d+\.\d+) infs/sec")
         match = pattern.search(stdout)
         if match is None:
