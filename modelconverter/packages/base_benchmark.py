@@ -192,10 +192,10 @@ class Benchmark(ABC):
                 for config in self.all_configurations  # add only kwarg keys that are not already there to not overwrite
             ]
 
-        results: list[tuple[Configuration, dict[str, Any]]] = [
-            (configuration, self.benchmark(configuration))
-            for configuration in configurations
-        ]
+        results = []
+        for configuration in configurations:
+            logger.info(f"Running with configuration: {configuration}")
+            results.append((configuration, self.benchmark(configuration)))
 
         # Clean up configuration keys: keep either benchmark_time or repetitions
         for configuration, _ in results:
