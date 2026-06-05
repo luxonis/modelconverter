@@ -13,8 +13,10 @@ from modelconverter.packages.base_benchmark import Benchmark, Configuration
 class RVC3Benchmark(Benchmark):
     @property
     def default_configuration(self) -> Configuration:
-        """
-        requests: The number of requests to perform.
+        """Default configuration for RVC3 benchmarking.
+
+        Options:
+            requests: The number of requests to perform.
         """
         return {"requests": 1}
 

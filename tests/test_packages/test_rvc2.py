@@ -63,7 +63,6 @@ def test_resnet18_superblob_valid(
     - ...
     - Patch 16
     """
-
     _, superblob_path, *_ = rvc2_superblob_resnet18_onnx_env
     HEADER_SIZE = 8 + 16 * 8
 

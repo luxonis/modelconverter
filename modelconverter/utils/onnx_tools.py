@@ -340,7 +340,6 @@ class ONNXModifier:
     def load_onnx(self) -> None:
         """Load the ONNX model and store it as onnx.ModelProto and
         onnx_graphsurgeon.GraphSurgeon graph."""
-
         logger.info(f"Loading model: {self.model_path.stem}")
 
         try:
@@ -441,7 +440,6 @@ class ONNXModifier:
             model
         @type passes: Optional[List[str]]
         """
-
         self.optimize_onnx()
 
         self.onnx_model.ir_version = min(self.onnx_model.ir_version, 10)
@@ -461,7 +459,6 @@ class ONNXModifier:
             ONNX model
         @type output_names: List[str]
         """
-
         graph_outputs = [output.name for output in self.onnx_gs.outputs]
         for name, tensor in self.onnx_gs.tensors().items():
             if name in output_names and name not in graph_outputs:
@@ -477,7 +474,6 @@ class ONNXModifier:
             value as value
         @rtype: Dict[str, np.ndarray]
         """
-
         return {
             tensor.name: tensor.values
             for tensor in graph.tensors().values()
@@ -499,7 +495,6 @@ class ONNXModifier:
         @return: Constant tensor value and index
         @rtype: Optional[Tuple[np.ndarray, int]]
         """
-
         for idx, input in enumerate(node.inputs):
             if input.name in constant_map:
                 return (constant_map[input.name], idx)
@@ -515,7 +510,6 @@ class ONNXModifier:
         @return: Variable input and index
         @rtype: Optional[Tuple[gs.Variable, int]]
         """
-
         for idx, input in enumerate(node.inputs):
             if isinstance(input, gs.Variable):
                 return (input, idx)
@@ -539,7 +533,6 @@ class ONNXModifier:
             graph
         @type connections_to_fix: List[Tuple[gs.Variable, gs.Variable]]
         """
-
         for node in nodes_to_add:
             self.onnx_gs.nodes.append(node)
 
@@ -568,7 +561,6 @@ class ONNXModifier:
         @param target_node: Target node type to substitute with
         @type target_node: str
         """
-
         if source_node not in ["Sub", "Div"] or target_node not in [
             "Add",
             "Mul",
@@ -702,7 +694,6 @@ class ONNXModifier:
         3. Conv -> Mul
         4. Conv -> Add
         """
-
         FUSION_PATTERNS = [
             ("Conv", "Add", "Mul"),
             ("Conv", "Mul", "Add"),
@@ -856,7 +847,6 @@ class ONNXModifier:
     def fuse_single_add_mul_to_conv(self) -> None:
         """Fuse Add and Mul nodes that precede a Conv node directly into
         the Conv node."""
-
         nodes_to_remove = []
         connections_to_fix = []
 
@@ -991,7 +981,6 @@ class ONNXModifier:
         1. Add -> Mul -> Conv
         2. Mul -> Add -> Conv
         """
-
         nodes_to_remove = []
         connections_to_fix = []
 
@@ -1201,7 +1190,6 @@ class ONNXModifier:
         If any intermediate nodes have channel dimensions, the order of
         the channels is reversed.
         """
-
         nodes_to_remove = []
         connections_to_fix = []
 
@@ -1387,7 +1375,6 @@ class ONNXModifier:
         @param half: Flag to use half precision for the input tensors
         @type half: bool
         """
-
         import onnxruntime as ort
 
         ort.set_default_logger_severity(3)

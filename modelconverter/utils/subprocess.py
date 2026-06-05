@@ -77,7 +77,6 @@ class SubprocessHandle:
             the process to run. If the timeout is exceeded, the process
             will be
         """
-
         if isinstance(cmd, str):
             self.cmd = cmd.split()
         else:

@@ -52,15 +52,17 @@ RUNTIMES: dict[str, str] = {
 class RVC4Benchmark(Benchmark):
     @property
     def default_configuration(self) -> Configuration:
-        """
-        profile: The SNPE profile to use for inference.
-        runtime: The SNPE runtime to use for inference.
-        num_images: The number of images to use for inference.
-        dai_benchmark: Whether to use the DepthAI for benchmarking.
-        repetitions: The number of repetitions to perform (dai-benchmark only, ignored if benchmark_time is set).
-        benchmark_time: Duration in seconds for time-based benchmarking (overrides repetitions).
-        num_threads: The number of threads to use for inference (dai-benchmark only).
-        num_messages: The number of messages to use for inference (dai-benchmark only).
+        """Default configuration for RVC4 benchmarking.
+
+        Options:
+            profile: The SNPE profile to use for inference.
+            runtime: The SNPE runtime to use for inference.
+            num_images: The number of images to use for inference.
+            dai_benchmark: Whether to use the DepthAI for benchmarking.
+            repetitions: The number of repetitions to perform (dai-benchmark only, ignored if benchmark_time is set).
+            benchmark_time: Duration in seconds for time-based benchmarking (overrides repetitions).
+            num_threads: The number of threads to use for inference (dai-benchmark only).
+            num_messages: The number of messages to use for inference (dai-benchmark only).
         """
         return {
             "profile": "balanced",
