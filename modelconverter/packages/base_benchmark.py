@@ -84,16 +84,21 @@ class Benchmark(ABC):
             box=box.ROUNDED,
         )
 
-        # HEADER
         header = [*self._base_header(results), *self._extra_header(results)]
-        for field in header:
-            table.add_column(f"[cyan]{field}")
+        result_rows = [
+            [
+                *self._base_row_cells(configuration, result),
+                *self._extra_row_cells(configuration, result),
+            ]
+            for configuration, result in results
+        ]
 
-        # ROWS
-        for configuration, result in results:
-            base_cells = list(self._base_row_cells(configuration, result))
-            extra_cells = list(self._extra_row_cells(configuration, result))
-            table.add_row(*base_cells, *extra_cells)
+        table.add_column("[cyan]metric")
+        for index in range(1, len(result_rows) + 1):
+            table.add_column(f"[cyan]run {index}")
+
+        for field, *cells in zip(header, *result_rows, strict=True):
+            table.add_row(f"[cyan]{field}", *cells)
 
         Console().print(table)
 
