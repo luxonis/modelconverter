@@ -609,7 +609,16 @@ modelconverter benchmark rvc4 --model-path <path_to_model.tar.xz>
 ```
 
 The command prints a table with the benchmark results to the console and
-optionally saves the results to a `.csv` file.
+kptionally saves the results to a `.csv` file.
+
+> [!NOTE]
+> **Duration Control**:
+> There are two ways how to specify the duration of the benchmark:
+> `depthai` backend (default):
+>
+> - `--benchmark-time`: The duration of the benchmark in seconds (default is 20 seconds).
+>   `SNPE` backend (only **RVC4** with `--no-dai-benchmark`):
+> - `--num-images`: The number of images to run through the model (default is 500). The total benchmark time will depend on the model size and complexity, as well as the device performance. Too many images may lead to an out-of-memory error, while too few images may lead to less accurate results. Adjust this parameter based on your specific situation and requirements.
 
 > [!IMPORTANT]
 > **Device Connection Requirements for RVC4**: The device must be connected and accessible either using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb) or via SSH for the benchmarking to work in the following cases:
