@@ -262,7 +262,6 @@ def infer(
         Name of the stage to run. Only needed for multistage configs.
         If not provided, the first stage will be used.
     """
-
     if path is not None:
         config = path
     with catch_exceptions():
@@ -376,7 +375,6 @@ def benchmark(
     device_monitor : bool
         Whether to monitor the device performance during benchmarking and include it in the results. Only relevant for RVC4 target.
     """
-
     if target in {Target.RVC2, Target.RVC4}:
         kwargs = {
             "repetitions": repetitions,
@@ -440,7 +438,6 @@ def analyze(
     analyze_cycles : bool
         Whether to analyze the layer cycles.
     """
-
     with catch_exceptions():
         logger.info("Starting analysis")
         if len(image_dirs) == 1:

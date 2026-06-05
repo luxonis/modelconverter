@@ -65,7 +65,7 @@ There are two main ways to execute configure the conversion process:
 
 1. **NN Archive**:
    Alternatively, you can use an [NN Archive](https://docs.luxonis.com/software-v3/ai-inference/nn-archive/#NN%20Archive) as input. An NN Archive includes a model in one of the supported formats—ONNX (.onnx), OpenVINO IR (.xml and .bin), or TensorFlow Lite (.tflite)—alongside a `config.json` file. The config.json file follows a specific configuration format as described under the `Configuration` section.
-1. **YAML Configuration File (Legacy)**:
+2. **YAML Configuration File (Legacy)**:
    An alternative way to configure the conversion is through a YAML configuration file. For reference, you can check [defaults.yaml](shared_with_container/configs/defaults.yaml) and other examples located in the [shared_with_container/configs](shared_with_container/configs) directory.
 
 **Modifying Settings with Command-Line Arguments**:
@@ -359,11 +359,11 @@ You can run the built image either manually using the `docker run` command or us
    export AWS_S3_ENDPOINT_URL=<your_aws_s3_endpoint_url>
    ```
 
-1. If `shared_with_container` directory doesn't exist on your host, create it.
+2. If `shared_with_container` directory doesn't exist on your host, create it.
 
-1. Without remote files, place the model, config, and calibration data in the respective directories (refer [Sharing Files](#sharing-files)).
+3. Without remote files, place the model, config, and calibration data in the respective directories (refer [Sharing Files](#sharing-files)).
 
-1. Execute the conversion:
+4. Execute the conversion:
 
 - If using the `modelconverter` CLI:
 
@@ -641,8 +641,8 @@ optionally saves the results to a `.csv` file.
 ModelConverter offers additional analysis tools for the RVC4 platform. The tools provide an in-depth look at the following:
 
 1. The outputs of all layers in comparison to the ground truth ONNX model,
-1. The cycle usage of each layer on an RVC4 device.
-1. Visualizations for fast and easy comparison of multiple models.
+2. The cycle usage of each layer on an RVC4 device.
+3. Visualizations for fast and easy comparison of multiple models.
 
 This gives the user better insight into the successful quantization of a model, helps discover potential speed bottleneck layers, and allows for the comparison of different quantization parameters.
 

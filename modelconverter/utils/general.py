@@ -9,9 +9,10 @@ def _normalize_underscores(s: str) -> str:
 
 
 def sanitize_net_name(name: str, with_suffix: bool = False) -> str:
-    """Sanitize net name or path. If input is a path, only sanitize the
-    basename. If input is a name, sanitize the whole string. Collapse
-    multiple underscores.
+    """Sanitize net name or path.
+
+    If input is a path, only sanitize the basename. If input is a name,
+    sanitize the whole string. Collapse multiple underscores.
 
     @type name: str
     @param name: The name or path to sanitize.

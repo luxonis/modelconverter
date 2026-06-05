@@ -86,7 +86,6 @@ def get_configs(
     @return: Tuple of the parsed modelconverter L{Config},
         L{NNArchiveConfig} and the main stage key.
     """
-
     opts = opts or []
     if isinstance(opts, list):
         if len(opts) % 2 != 0:

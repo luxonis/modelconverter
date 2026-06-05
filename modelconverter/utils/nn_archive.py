@@ -48,7 +48,6 @@ def process_nn_archive(
     @return: Tuple of the parsed config, NNArchiveConfig and the main
         stage key.
     """
-
     untar_path = MISC_DIR / path.stem
     if path.is_dir():
         untar_path = path

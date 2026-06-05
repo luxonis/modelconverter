@@ -25,9 +25,9 @@ def download_from_remote(
 ) -> Path:
     """Downloads file(s) from remote bucket storage.
 
-    It could be single file, entire direcory, or `max_files` within a directory
+    It could be single file, entire direcory, or `max_files` within a
+    directory
     """
-
     absolute_path, remote_path = LuxonisFileSystem.split_full_path(url)
     if isinstance(dest, str):
         dest = Path(dest)
@@ -59,7 +59,6 @@ def upload_to_remote(
     put_file_plugin: str | None = None,
 ) -> None:
     """Uploads a file to remote bucket storage."""
-
     local_path = Path(local_path)
     absolute_path, remote_path = LuxonisFileSystem.split_full_path(url)
     fs = LuxonisFileSystem(absolute_path, put_file_plugin=put_file_plugin)
@@ -72,5 +71,4 @@ def upload_to_remote(
 
 def get_protocol(url: str) -> str:
     """Returns LuxonisFileSystem protocol."""
-
     return LuxonisFileSystem.get_protocol(url)

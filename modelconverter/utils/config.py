@@ -582,7 +582,6 @@ def _extract_bin_xml_from_ir(ir_path: Any) -> tuple[Path, Path]:
     We assume that the base filename matches between the .bin and .xml
     file. Otherwise, an error will be thrown.
     """
-
     if not isinstance(ir_path, str) and not isinstance(ir_path, Path):
         raise TypeError("`input_path` must be str or Path.")
     ir_path = Path(ir_path)
