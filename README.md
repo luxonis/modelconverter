@@ -634,7 +634,7 @@ kptionally saves the results to a `.csv` file.
 > - **RVC2**: `--model-path` can be a local `.blob`, an NN Archive (`.tar.xz`), or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
 > - **RVC4** with `--dai-benchmark` (default): `--model-path` can be an NN Archive (`.tar.xz`) or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
 > - **RVC4** with `--no-dai-benchmark`: `--model-path` can be an NN Archive (`.tar.xz`), a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai) or a `.dlc` file.
->   In the case of a `.dlc` file, the tool `snpe-dlc-info` must be accessible on the device.
+>   In the case of a `.dlc` file, the tool `snpe-dlc-info` must be available in `PATH` either on the host machine or on the device.
 >
 > To access models from different teams in Luxonis HubAI, remember to update the `HUBAI_API_KEY` environment variable accordingly when using a model slug as an input.
 
