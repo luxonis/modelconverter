@@ -11,12 +11,15 @@ from modelconverter.utils import create_progress_handler, environ
 class RVC2Benchmark(Benchmark):
     @property
     def default_configuration(self) -> Configuration:
-        """Repetitions: The number of repetitions to perform (ignored if
-        benchmark_time is set).
+        """Default configuration for RVC2 benchmarking.
 
-        benchmark_time: Duration in seconds for time-based benchmarking (overrides repetitions).
-        num_messages: The number of messages to send for benchmarking.
-        num_threads: The number of threads to use for inference.
+        Options:
+            repetitions: The number of repetitions to perform (ignored if
+            benchmark_time is set).
+
+            benchmark_time: Duration in seconds for time-based benchmarking (overrides repetitions).
+            num_messages: The number of messages to send for benchmarking.
+            num_threads: The number of threads to use for inference.
         """
         return {
             "repetitions": 10,
