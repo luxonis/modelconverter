@@ -617,7 +617,9 @@ kptionally saves the results to a `.csv` file.
 > `depthai` backend (default):
 >
 > - `--benchmark-time`: The duration of the benchmark in seconds (default is 20 seconds).
->   `SNPE` backend (only **RVC4** with `--no-dai-benchmark`):
+>
+> `SNPE` backend (only **RVC4** with `--no-dai-benchmark`):
+>
 > - `--num-images`: The number of images to run through the model (default is 500). The total benchmark time will depend on the model size and complexity, as well as the device performance. Too many images may lead to an out-of-memory error, while too few images may lead to less accurate results. Adjust this parameter based on your specific situation and requirements.
 
 > [!IMPORTANT]
