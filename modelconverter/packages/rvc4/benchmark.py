@@ -69,7 +69,7 @@ class RVC4Benchmark(Benchmark):
         return {
             "profile": "balanced",
             "runtime": "dsp",
-            "num_images": 1000,
+            "num_images": 500,
             "dai_benchmark": True,
             "repetitions": 10,
             "benchmark_time": 20,
