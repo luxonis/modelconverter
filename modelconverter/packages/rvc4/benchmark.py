@@ -1,6 +1,7 @@
 import io
 import json
 import re
+import shlex
 import shutil
 import tempfile
 from collections.abc import Iterable
@@ -148,39 +149,76 @@ class RVC4Benchmark(Benchmark):
             raise ValueError("num_images must be at least 1.")
 
         inputs_dir = f"/data/modelconverter/{self.model_name}/inputs"
+        input_list_path = (
+            f"/data/modelconverter/{self.model_name}/input_list.txt"
+        )
         real_input_count = min(num_images, self.MAX_REAL_SNPE_INPUTS)
 
-        input_list = ""
         self.handler.shell(f"mkdir -p {inputs_dir}")
-        for i in track(range(num_images), description="Preparing inputs"):
-            for spec in input_specs:
-                input_path = f"{inputs_dir}/{spec.name}_{i}.raw"
-                if i < real_input_count:
-                    input_data = self._create_random_input(spec)
-                    with tempfile.NamedTemporaryFile() as f:
-                        input_data.tofile(f)
-                        self.handler.push(f.name, input_path)
-                else:
-                    source_index = i % real_input_count
-                    source_path = (
-                        f"{inputs_dir}/{spec.name}_{source_index}.raw"
-                    )
-                    self.handler.shell(f"ln -f {source_path} {input_path}")
 
-                input_list += f"{spec.name}:={input_path} "
-            input_list += "\n"
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            local_input_list_path = tmp_path / "input_list.txt"
 
-        with tempfile.NamedTemporaryFile(delete=False) as f:
-            f.write(input_list.encode())
-            temp_path = Path(f.name)
+            with local_input_list_path.open("w", encoding="utf-8") as f:
+                for i in track(
+                    range(num_images), description="Preparing inputs"
+                ):
+                    input_paths: list[str] = []
+                    for spec in input_specs:
+                        input_path = f"{inputs_dir}/{spec.name}_{i}.raw"
+                        input_paths.append(f"{spec.name}:={input_path}")
 
-        try:
+                        if i < real_input_count:
+                            input_data = self._create_random_input(spec)
+                            local_input_path = (
+                                tmp_path / f"{spec.name}_{i}.raw"
+                            )
+                            input_data.tofile(local_input_path)
+                            self.handler.push(local_input_path, input_path)
+
+                    f.write(" ".join(input_paths))
+                    f.write(" \n")
+
             self.handler.push(
-                temp_path,
-                f"/data/modelconverter/{self.model_name}/input_list.txt",
+                local_input_list_path,
+                input_list_path,
             )
-        finally:
-            temp_path.unlink(missing_ok=True)
+
+        if num_images > real_input_count and input_specs:
+            self.handler.shell(
+                self._create_raw_input_link_script(
+                    input_specs,
+                    inputs_dir,
+                    real_input_count,
+                    num_images,
+                )
+            )
+
+    @staticmethod
+    def _create_raw_input_link_script(
+        input_specs: list[InputSpec],
+        inputs_dir: str,
+        real_input_count: int,
+        num_images: int,
+    ) -> str:
+        spec_names = " ".join(shlex.quote(spec.name) for spec in input_specs)
+        return "\n".join(
+            [
+                "set -eu",
+                f"inputs_dir={shlex.quote(inputs_dir)}",
+                f"real_input_count={real_input_count}",
+                f"num_images={num_images}",
+                f"for spec_name in {spec_names}; do",
+                '    i="$real_input_count"',
+                '    while [ "$i" -lt "$num_images" ]; do',
+                "        source_index=$((i % real_input_count))",
+                '        ln -f "$inputs_dir/${spec_name}_${source_index}.raw" "$inputs_dir/${spec_name}_${i}.raw"',
+                "        i=$((i + 1))",
+                "    done",
+                "done",
+            ]
+        )
 
     @staticmethod
     def _create_random_input(spec: InputSpec) -> np.ndarray:
