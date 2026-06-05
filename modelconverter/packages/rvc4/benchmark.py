@@ -161,12 +161,13 @@ class RVC4Benchmark(Benchmark):
                 input_list += f"{spec.name}:=/data/modelconverter/{self.model_name}/inputs/{spec.name}_{i}.raw "
             input_list += "\n"
 
-        with tempfile.NamedTemporaryFile() as f:
+        with tempfile.NamedTemporaryFile(delete=False) as f:
             f.write(input_list.encode())
-            self.handler.push(
-                f.name,
-                f"/data/modelconverter/{self.model_name}/input_list.txt",
-            )
+
+        self.handler.push(
+            f.name,
+            f"/data/modelconverter/{self.model_name}/input_list.txt",
+        )
 
     @staticmethod
     def _create_random_input(spec: InputSpec) -> np.ndarray:
