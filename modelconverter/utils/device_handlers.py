@@ -152,8 +152,8 @@ class SSHHandler(DeviceHandler):
     ) -> tuple[int, str, str]:
         return self.run(
             "scp",
-            f"{self._address}:{src}",
             "-r",
+            f"{self._address}:{src}",
             dst,
             check=check,
             silent=self.silent,
@@ -165,9 +165,9 @@ class SSHHandler(DeviceHandler):
     ) -> tuple[int, str, str]:
         return self.run(
             "scp",
+            "-r",
             src,
             f"{self._address}:{dst}",
-            "-r",
             check=check,
             silent=self.silent,
         )
