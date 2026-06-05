@@ -1,11 +1,13 @@
 import io
 import json
 import re
+import shlex
 import shutil
 import tempfile
 from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
+from subprocess import CalledProcessError, SubprocessError
 from typing import Any, Final
 
 import depthai as dai
@@ -13,6 +15,7 @@ import numpy as np
 import polars as pl
 from depthai import XLinkPlatform
 from loguru import logger
+from rich.progress import track
 
 from modelconverter.packages.base_benchmark import Benchmark, Configuration
 from modelconverter.utils import (
@@ -50,6 +53,8 @@ RUNTIMES: dict[str, str] = {
 
 
 class RVC4Benchmark(Benchmark):
+    MAX_REAL_SNPE_INPUTS = 100
+
     @property
     def default_configuration(self) -> Configuration:
         """Default configuration for RVC4 benchmarking.
@@ -67,7 +72,7 @@ class RVC4Benchmark(Benchmark):
         return {
             "profile": "balanced",
             "runtime": "dsp",
-            "num_images": 1000,
+            "num_images": 500,
             "dai_benchmark": True,
             "repetitions": 10,
             "benchmark_time": 20,
@@ -104,18 +109,32 @@ class RVC4Benchmark(Benchmark):
             raise ValueError("Expected .dlc, or .tar.xz model format.")
 
         csv_path = Path("info.csv")
-        subprocess_run(
-            [
-                "snpe-dlc-info",
-                "-i",
-                model_path,
-                "-s",
-                csv_path,
-            ],
-            silent=True,
-        )
-        content = csv_path.read_text()
-        csv_path.unlink()
+        if shutil.which("snpe-dlc-info") is not None:
+            subprocess_run(
+                [
+                    "snpe-dlc-info",
+                    "-i",
+                    model_path,
+                    "-s",
+                    csv_path,
+                ],
+                silent=True,
+            )
+            content = csv_path.read_text()
+            csv_path.unlink()
+        elif self.handler.shell("snpe-dlc-info -h", check=False)[0] == 0:
+            self.handler.shell(f"mkdir -p {self.device_pwd}")
+            self.handler.push(model_path, self.device_pwd / "model.dlc")
+            device_csv_path = self.device_pwd / "info.csv"
+            self.handler.shell(
+                f"snpe-dlc-info -i {self.device_pwd / 'model.dlc'} -s {device_csv_path}",
+            )
+            _, content, _ = self.handler.shell(f"cat {device_csv_path}")
+        else:
+            raise RuntimeError(
+                "Neither local nor remote `snpe-dlc-info` "
+                "command is available to read the DLC input specs."
+            )
 
         start_marker = "Input Name,Dimensions,Type,Encoding Info"
         end_marker = "Output Name,Dimensions,Type,Encoding Info"
@@ -143,29 +162,82 @@ class RVC4Benchmark(Benchmark):
     def _prepare_raw_inputs(
         self, input_specs: list[InputSpec], num_images: int
     ) -> None:
-        input_list = ""
-        self.handler.shell(
-            f"mkdir -p /data/modelconverter/{self.model_name}/inputs"
-        )
-        for i in range(num_images):
-            for spec in input_specs:
-                input_data = self._create_random_input(spec)
-                with tempfile.NamedTemporaryFile() as f:
-                    input_data.tofile(f)
-                    self.handler.push(
-                        f.name,
-                        f"/data/modelconverter/{self.model_name}/inputs/{spec.name}_{i}.raw",
-                    )
+        if num_images < 1:
+            raise ValueError("num_images must be at least 1.")
 
-                input_list += f"{spec.name}:=/data/modelconverter/{self.model_name}/inputs/{spec.name}_{i}.raw "
-            input_list += "\n"
+        inputs_dir = self.device_pwd / "inputs"
+        real_input_count = min(num_images, self.MAX_REAL_SNPE_INPUTS)
 
-        with tempfile.NamedTemporaryFile() as f:
-            f.write(input_list.encode())
-            self.handler.push(
-                f.name,
-                f"/data/modelconverter/{self.model_name}/input_list.txt",
+        self.handler.shell(f"mkdir -p {self.device_pwd}")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_model_dir = Path(tmp_dir) / self.model_name
+            local_inputs_dir = local_model_dir / "inputs"
+            local_inputs_dir.mkdir(parents=True)
+            local_input_list_path = local_model_dir / "input_list.txt"
+
+            with local_input_list_path.open("w", encoding="utf-8") as f:
+                for i in track(
+                    range(num_images),
+                    description="Preparing inputs",
+                    total=min(num_images, self.MAX_REAL_SNPE_INPUTS),
+                ):
+                    input_paths: list[str] = []
+                    for spec in input_specs:
+                        input_path = f"{inputs_dir}/{spec.name}_{i}.raw"
+                        input_paths.append(f"{spec.name}:={input_path}")
+
+                        if i < real_input_count:
+                            input_data = self._create_random_input(spec)
+                            local_input_path = local_inputs_dir / (
+                                f"{spec.name}_{i}.raw"
+                            )
+                            input_data.tofile(local_input_path)
+
+                    f.write(" ".join(input_paths))
+                    f.write(" \n")
+
+            self.handler.push(local_model_dir, self.device_pwd.parent)
+
+        if num_images > real_input_count and input_specs:
+            logger.info(
+                f"Linking additional {num_images - real_input_count} inputs "
+                f"to the first {real_input_count} inputs to avoid filling "
+                "up the device storage."
             )
+            self.handler.shell(
+                self._create_raw_input_link_script(
+                    input_specs,
+                    str(inputs_dir),
+                    real_input_count,
+                    num_images,
+                )
+            )
+
+    @staticmethod
+    def _create_raw_input_link_script(
+        input_specs: list[InputSpec],
+        inputs_dir: str,
+        real_input_count: int,
+        num_images: int,
+    ) -> str:
+        spec_names = " ".join(shlex.quote(spec.name) for spec in input_specs)
+        return "\n".join(
+            [
+                "set -eu",
+                f"inputs_dir={shlex.quote(inputs_dir)}",
+                f"real_input_count={real_input_count}",
+                f"num_images={num_images}",
+                f"for spec_name in {spec_names}; do",
+                '    i="$real_input_count"',
+                '    while [ "$i" -lt "$num_images" ]; do',
+                "        source_index=$((i % real_input_count))",
+                '        ln -f "$inputs_dir/${spec_name}_${source_index}.raw" "$inputs_dir/${spec_name}_${i}.raw"',
+                "        i=$((i + 1))",
+                "    done",
+                "done",
+            ]
+        )
 
     @staticmethod
     def _create_random_input(spec: InputSpec) -> np.ndarray:
@@ -193,13 +265,13 @@ class RVC4Benchmark(Benchmark):
             self.handler = create_handler(device_ip, device_adb_id)
 
         configuration["device_ip"] = device_ip
+        self.device_pwd = Path("/", "data", "modelconverter", self.model_name)
 
         self.monitor = None
         idle_measurements = {}
         if device_monitor:
             self.monitor = DeviceMonitor(self.handler)
             idle_measurements = self.monitor.get_idle_measurements()
-            self.monitor.start()
 
         try:
             if dai_benchmark:
@@ -235,11 +307,14 @@ class RVC4Benchmark(Benchmark):
                 self.monitor.stop()
             if not dai_benchmark:
                 # so we don't delete the wrong directory
-                assert self.model_name
+                # if `model_name` gets unset for any reason
+                if not self.model_name:
+                    raise AssertionError(
+                        "`model_name` is not set, "
+                        "cannot clean up model files on the device."
+                    )
 
-                self.handler.shell(
-                    f"rm -rf /data/modelconverter/{self.model_name}"
-                )
+                self.handler.shell(f"rm -rf {self.device_pwd}")
 
     def _benchmark_snpe(
         self,
@@ -290,23 +365,43 @@ class RVC4Benchmark(Benchmark):
             raise ValueError(
                 "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
             )
-
-        self.handler.shell(f"mkdir -p /data/modelconverter/{self.model_name}")
-        self.handler.push(
-            str(dlc_path), f"/data/modelconverter/{self.model_name}/model.dlc"
+        logger.info(
+            f"Using SNPE profile '{profile}' and runtime '{runtime}' for benchmarking."
         )
+        logger.info(f"Moving model '{dlc_path.name}' to the device.")
+
+        self.handler.shell(f"mkdir -p {self.device_pwd}")
+        self.handler.push(str(dlc_path), f"{self.device_pwd}/model.dlc")
         self._prepare_raw_inputs(input_specs, num_images)
 
-        _, stdout, _ = self.handler.shell(
-            # "source /data/modelconverter/source_me.sh && "
-            "snpe-parallel-run "
-            f"--container /data/modelconverter/{self.model_name}/model.dlc "
-            f"--input_list /data/modelconverter/{self.model_name}/input_list.txt "
-            f"--output_dir /data/modelconverter/{self.model_name}/outputs "
-            f"--perf_profile {profile} "
-            "--cpu_fallback true "
-            f"--{runtime}"
-        )
+        logger.info("Starting SNPE benchmark...")
+
+        if self.monitor:
+            self.monitor.start()
+
+        try:
+            _, stdout, _ = self.handler.shell(
+                "snpe-parallel-run "
+                f"--container {self.device_pwd}/model.dlc "
+                f"--input_list {self.device_pwd}/input_list.txt "
+                f"--output_dir {self.device_pwd}/outputs "
+                f"--perf_profile {profile} "
+                "--cpu_fallback true "
+                f"--{runtime}",
+            )
+        except CalledProcessError as e:
+            if e.returncode == 137:
+                raise SubprocessError(
+                    "Benchmark process was killed, likely due to out-of-memory. "
+                    "Consider decreasing the number of images (`--num-images`)."
+                ) from e
+
+            raise SubprocessError(
+                f"Benchmark process failed with return code {e.returncode}.\n"
+                f"stdout:\n{e.stdout}\n"
+                f"stderr:\n{e.stderr}"
+            ) from e
+
         pattern = re.compile(r"(\d+\.\d+) infs/sec")
         match = pattern.search(stdout)
         if match is None:
@@ -355,9 +450,9 @@ class RVC4Benchmark(Benchmark):
             input_specs = self._get_dlc_input_specs(resolved_model_path)
         except Exception as e:
             logger.warning(
-                f"Failed to read input specs from the DLC "
-                f"with error: {e}. Reading from the archive."
+                f"Failed to read input specs from the DLC with error: {e}"
             )
+            logger.info("Reading specs from the archive.")
             input_specs = self._get_archive_input_specs(model_archive)
 
         input_data_packet = dai.NNData()
@@ -385,6 +480,9 @@ class RVC4Benchmark(Benchmark):
         logger.info(
             f"Using {device.getPlatformAsString()} device on IP {device.getDeviceInfo().name}."
         )
+
+        if self.monitor:
+            self.monitor.start()
 
         with dai.Pipeline(device) as pipeline:
             benchmark_out = pipeline.create(dai.node.BenchmarkOut)
@@ -440,12 +538,7 @@ class RVC4Benchmark(Benchmark):
                     on_tick()
 
             # Currently, the latency measurement is only supported on RVC4 when using ImgFrame as the input to the BenchmarkOut which we don't do here.
-            return {
-                "fps": float(np.mean(fps_list)),
-                "latency": float(np.mean(avg_latency_list))
-                if avg_latency_list
-                else "N/A",
-            }
+            return {"fps": float(np.mean(fps_list)), "latency": "N/A"}
 
     def _extra_header(
         self,

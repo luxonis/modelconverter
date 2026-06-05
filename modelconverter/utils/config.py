@@ -313,7 +313,7 @@ class RVC4Config(TargetConfig):
             self.snpe_onnx_to_dlc_args.pop(qo_index)
             encodings_json = self.snpe_onnx_to_dlc_args.pop(qo_index)
             with open(encodings_json) as f:
-                self.encodings = Encodings.model_validate_json(json.load(f))
+                self.encodings = Encodings.model_validate_json(f.read())
         return self
 
     @field_validator("encodings", mode="before")

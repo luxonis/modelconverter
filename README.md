@@ -609,24 +609,7 @@ modelconverter benchmark rvc4 --model-path <path_to_model.tar.xz>
 ```
 
 The command prints a table with the benchmark results to the console and
-optionally saves the results to a `.csv` file.
-
-> [!NOTE]
-> Benchmark input support depends on the target and backend:
->
-> - **RVC2**: `--model-path` can be a local `.blob`, an NN Archive (`.tar.xz`), or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
-> - **RVC4** with `--dai-benchmark` (default): `--model-path` can be an NN Archive (`.tar.xz`) or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
-> - **RVC4** with `--no-dai-benchmark`: `--model-path` can be a local `.dlc`, an NN Archive (`.tar.xz`), or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
->
-> To access models from different teams in Luxonis HubAI, remember to update the `HUBAI_API_KEY` environment variable accordingly.
-
-> [!NOTE]
-> **Benchmark Duration Control (RVC2/RVC4)**: Two flags can affect the duration of benchmarking:
->
-> - `--benchmark-time`: Duration in seconds for time-based benchmarking (default: 20)
-> - `--repetitions`: Number of iterations to perform (default: 10)
->
-> By default, the benchmarking uses `--benchmark-time` (20 seconds) which takes precedence over `--repetitions`. To use `--repetitions` instead, you must explicitly set `--benchmark-time` to a negative value (e.g., `--benchmark-time -1`).
+kptionally saves the results to a `.csv` file.
 
 > [!IMPORTANT]
 > **Device Connection Requirements for RVC4**: The device must be connected and accessible either using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb) or via SSH for the benchmarking to work in the following cases:
@@ -635,6 +618,31 @@ optionally saves the results to a `.csv` file.
 > - When benchmarking is conducted using the SNPE tools (with `--no-dai-benchmark`; default is `--dai-benchmark`)
 >
 > The tool can find the correct device automatically but you can also specify it with the `--device-id` flag.
+
+> [!NOTE]
+> **Duration Control**:
+> There are two ways how to specify the duration of the benchmark:
+>
+> `depthai` backend (default):
+>
+> - `--benchmark-time`: The duration of the benchmark in seconds (default is 20 seconds).
+>
+> `SNPE` backend (only **RVC4** with `--no-dai-benchmark`):
+>
+> - `--num-images`: The number of images to run through the model (default is 500). The total benchmark time will depend on the model size and complexity, as well as the device performance. Too many images may lead to an out-of-memory error, while too few images may lead to less accurate results. Adjust this parameter based on your specific situation and requirements.
+
+> [!NOTE]
+> Benchmark input support depends on the target and backend:
+>
+> - **RVC2**: `--model-path` can be a local `.blob`, an NN Archive (`.tar.xz`), or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
+> - **RVC4** with `--dai-benchmark` (default): `--model-path` can be an NN Archive (`.tar.xz`) or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
+> - **RVC4** with `--no-dai-benchmark`: `--model-path` can be an NN Archive (`.tar.xz`), a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai) or a `.dlc` file.
+>   In the case of a `.dlc` file, the tool `snpe-dlc-info` must be available in `PATH` either on the host machine or on the device.
+>
+> To access models from different teams in Luxonis HubAI, remember to update the `HUBAI_API_KEY` environment variable accordingly when using a model slug as an input.
+
+> [!NOTE]
+> If you experience Segmentation Faults (core dumps) during benchmarking on RVC4 using the SNPE backend (`--no-dai-benchmark`), it may be due to the device running out of memory. Try decreasing the value of `--num-images` (the default is 500) to reduce RAM usage.
 
 ## [RVC4] DLC model analysis
 
