@@ -65,7 +65,7 @@ There are two main ways to execute configure the conversion process:
 
 1. **NN Archive**:
    Alternatively, you can use an [NN Archive](https://docs.luxonis.com/software-v3/ai-inference/nn-archive/#NN%20Archive) as input. An NN Archive includes a model in one of the supported formats—ONNX (.onnx), OpenVINO IR (.xml and .bin), or TensorFlow Lite (.tflite)—alongside a `config.json` file. The config.json file follows a specific configuration format as described under the `Configuration` section.
-1. **YAML Configuration File (Legacy)**:
+2. **YAML Configuration File (Legacy)**:
    An alternative way to configure the conversion is through a YAML configuration file. For reference, you can check [defaults.yaml](shared_with_container/configs/defaults.yaml) and other examples located in the [shared_with_container/configs](shared_with_container/configs) directory.
 
 **Modifying Settings with Command-Line Arguments**:
@@ -359,11 +359,11 @@ You can run the built image either manually using the `docker run` command or us
    export AWS_S3_ENDPOINT_URL=<your_aws_s3_endpoint_url>
    ```
 
-1. If `shared_with_container` directory doesn't exist on your host, create it.
+2. If `shared_with_container` directory doesn't exist on your host, create it.
 
-1. Without remote files, place the model, config, and calibration data in the respective directories (refer [Sharing Files](#sharing-files)).
+3. Without remote files, place the model, config, and calibration data in the respective directories (refer [Sharing Files](#sharing-files)).
 
-1. Execute the conversion:
+4. Execute the conversion:
 
 - If using the `modelconverter` CLI:
 
@@ -611,23 +611,6 @@ modelconverter benchmark rvc4 --model-path <path_to_model.tar.xz>
 The command prints a table with the benchmark results to the console and
 optionally saves the results to a `.csv` file.
 
-> [!NOTE]
-> Benchmark input support depends on the target and backend:
->
-> - **RVC2**: `--model-path` can be a local `.blob`, an NN Archive (`.tar.xz`), or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
-> - **RVC4** with `--dai-benchmark` (default): `--model-path` can be an NN Archive (`.tar.xz`) or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
-> - **RVC4** with `--no-dai-benchmark`: `--model-path` can be a local `.dlc`, an NN Archive (`.tar.xz`), or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
->
-> To access models from different teams in Luxonis HubAI, remember to update the `HUBAI_API_KEY` environment variable accordingly.
-
-> [!NOTE]
-> **Benchmark Duration Control (RVC2/RVC4)**: Two flags can affect the duration of benchmarking:
->
-> - `--benchmark-time`: Duration in seconds for time-based benchmarking (default: 20)
-> - `--repetitions`: Number of iterations to perform (default: 10)
->
-> By default, the benchmarking uses `--benchmark-time` (20 seconds) which takes precedence over `--repetitions`. To use `--repetitions` instead, you must explicitly set `--benchmark-time` to a negative value (e.g., `--benchmark-time -1`).
-
 > [!IMPORTANT]
 > **Device Connection Requirements for RVC4**: The device must be connected and accessible either using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb) or via SSH for the benchmarking to work in the following cases:
 >
@@ -636,13 +619,26 @@ optionally saves the results to a `.csv` file.
 >
 > The tool can find the correct device automatically but you can also specify it with the `--device-id` flag.
 
+> [!NOTE]
+> Benchmark input support depends on the target and backend:
+>
+> - **RVC2**: `--model-path` can be a local `.blob`, an NN Archive (`.tar.xz`), or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
+> - **RVC4** with `--dai-benchmark` (default): `--model-path` can be an NN Archive (`.tar.xz`) or a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai).
+> - **RVC4** with `--no-dai-benchmark`: `--model-path` can be an NN Archive (`.tar.xz`), a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai) or a `.dlc` file.
+>   In the case of a `.dlc` file, the tool `snpe-dlc-info` must be accessible on the device.
+>
+> To access models from different teams in Luxonis HubAI, remember to update the `HUBAI_API_KEY` environment variable accordingly when using a model slug as an input.
+
+> [!NOTE]
+> If you experience Segmentation Faults (core dumps) during benchmarking on RVC4 using the SNPE backend (`--no-dai-benchmark`), it may be due to the device running out of memory. Try decreasing the value of `--num-images` (the default is 500) to reduce RAM usage.
+
 ## [RVC4] DLC model analysis
 
 ModelConverter offers additional analysis tools for the RVC4 platform. The tools provide an in-depth look at the following:
 
 1. The outputs of all layers in comparison to the ground truth ONNX model,
-1. The cycle usage of each layer on an RVC4 device.
-1. Visualizations for fast and easy comparison of multiple models.
+2. The cycle usage of each layer on an RVC4 device.
+3. Visualizations for fast and easy comparison of multiple models.
 
 This gives the user better insight into the successful quantization of a model, helps discover potential speed bottleneck layers, and allows for the comparison of different quantization parameters.
 
