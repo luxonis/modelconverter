@@ -464,7 +464,7 @@ modelconverter convert rvc3 --path configs/resnet18.yaml \
 Specify all options via the command line without a config file:
 
 ```bash
-modelconverter convert rvc2 input_model models/yolov6n.onnx \
+modelconverter convert rvc2 --path models/yolov6n.onnx \
                         scale_values "[255,255,255]" \
                         inputs.0.encoding.from RGB \
                         inputs.0.encoding.to BGR \
