@@ -7,7 +7,7 @@ import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, Any, Literal, TypeAlias
+from typing import Annotated, Any, Literal
 
 from cyclopts import App, Group, Parameter
 from loguru import logger
@@ -62,10 +62,6 @@ docker_parameters = Group.create_ordered(
 docker_commands = Group.create_ordered("Docker Commands")
 device_commands = Group.create_ordered("Device Commands")
 
-OptsType: TypeAlias = Annotated[
-    list[str] | None, Parameter(json_list=False, json_dict=False)
-]
-
 
 @contextmanager
 def catch_exceptions():
@@ -82,9 +78,8 @@ def catch_exceptions():
 @app.command(group=docker_commands)
 def convert(
     target: Target,
-    opts: OptsType = None,
     /,
-    *,
+    *opts: str,
     path: str | None = None,
     output_dir: str | None = None,
     to: Literal["native", "nn_archive"] = "nn_archive",
@@ -97,7 +92,7 @@ def convert(
     ----------
     target: Target
         The target platform to export the model for.
-    opts: list[str] | None
+    opts: *str
         A list of optional CLI overrides for the configuration file.
     path: str | None
         A URL or a path to the configuration file or NN Archive.
@@ -129,7 +124,7 @@ def convert(
 
     with catch_exceptions():
         init_dirs()
-        cfg, archive_cfg, _main_stage = get_configs(target, path, opts)
+        cfg, archive_cfg, _main_stage = get_configs(target, path, list(opts))
         main_stage = main_stage or _main_stage
         is_multistage = len(cfg.stages) > 1
         if is_multistage and main_stage is None:
@@ -230,9 +225,8 @@ def convert(
 @app.command(group=docker_commands)
 def infer(
     target: Target,
-    opts: OptsType = None,
     /,
-    *,
+    *opts: str,
     model_path: str,
     input_path: Path,
     output_dir: str,
@@ -246,6 +240,8 @@ def infer(
     ----------
     target : Target
         The target platform to run the inference on.
+    opts: *str
+        A list of optional CLI overrides for the configuration file.
     model_path : str
         A URL or a path to the model file.
     input_path : Path
