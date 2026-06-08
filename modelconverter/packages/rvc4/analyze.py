@@ -32,6 +32,11 @@ class RVC4Analyzer(Analyzer):
         self.handler = create_handler(device_ip, device_adb_id)
 
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
+        onnx_all_layers = self._add_outputs_to_all_layers(str(onnx_model_path))
+        session = rt.InferenceSession(onnx_all_layers)
+        self._debug_output_names = self._replace_bad_layer_names(
+            [layer.name for layer in session.get_outputs()]
+        )
         input_matcher = self._prepare_input_matcher()
         dlc_matcher = self._prepare_raw_inputs(input_matcher, np.float32)
 
@@ -43,7 +48,7 @@ class RVC4Analyzer(Analyzer):
         dlc_matcher = {k: output_dir / v for k, v in dlc_matcher.items()}
 
         self._flatten_dlc_outputs(dlc_matcher)
-        self._compare_to_onnx(str(onnx_model_path), input_matcher, dlc_matcher)
+        self._compare_to_onnx(onnx_all_layers, input_matcher, dlc_matcher)
 
         self._cleanup_dlc_outputs()
 
@@ -139,11 +144,17 @@ class RVC4Analyzer(Analyzer):
         base_dir = f"/data/modelconverter/{self.model_name}/output"
         output_dirs = {base_dir}
         result_names = getattr(self, "_result_names", [])
+        debug_output_names = getattr(self, "_debug_output_names", [])
 
         for result_name in result_names:
             result_dir = posixpath.join(base_dir, result_name)
             output_dirs.add(result_dir)
             for output_name in self.output_sizes:
+                parent_dir = posixpath.dirname(
+                    posixpath.join(result_dir, f"{output_name}.raw")
+                )
+                output_dirs.add(parent_dir)
+            for output_name in debug_output_names:
                 parent_dir = posixpath.dirname(
                     posixpath.join(result_dir, f"{output_name}.raw")
                 )
@@ -212,12 +223,11 @@ class RVC4Analyzer(Analyzer):
 
     def _compare_to_onnx(
         self,
-        onnx_model_path: str,
+        onnx_all_layers: Path,
         input_matcher: dict[str, dict[str, str]],
         dlc_matcher: dict[str, Path],
     ) -> None:
         logger.info("Comparing ONNX and DLC layer outputs.")
-        onnx_all_layers = self._add_outputs_to_all_layers(str(onnx_model_path))
         session = rt.InferenceSession(onnx_all_layers)
         output_names = [layer.name for layer in session.get_outputs()]
 
