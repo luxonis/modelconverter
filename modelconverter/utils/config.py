@@ -362,7 +362,7 @@ class SingleStageConfig(BaseModelExtraForbid):
     def validate_onnx_simplification(
         cls, data: dict[str, Any]
     ) -> dict[str, Any]:
-        if data.get("disable_onnx_simplification", False):
+        if data.pop("disable_onnx_simplification", False):
             warnings.warn(
                 "`disable_onnx_simplification` is deprecated. Please use "
                 "`onnx_simplification` set to `False` instead.",

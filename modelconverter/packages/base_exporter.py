@@ -127,7 +127,7 @@ class Exporter(ABC):
                 from onnxsim import simplify
 
                 logger.info("Using `onnxsim` for simplification.")
-            else:
+            elif self.onnx_simplification == "onnxslim":
                 from onnxslim import slim
 
                 logger.info("Using `onnxslim` for simplification.")
@@ -137,9 +137,10 @@ class Exporter(ABC):
                     return slimmed, bool(slimmed)  # type: ignore
 
         except ImportError:
+            backend = self.onnx_simplification
             logger.warning(
-                "onnxsim not installed, proceeding without simplification."
-                "Please install it using `pip install onnxsim`."
+                f"`{backend}` not installed, proceeding without simplification."
+                f"Please install it using `pip install {backend}`."
             )
             return self.input_model
 
