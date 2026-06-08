@@ -69,7 +69,7 @@ class RVC4Exporter(Exporter):
                 self.inputs,
             )
 
-            if not config.disable_onnx_optimization:
+            if not self.onnx_optimizations.all_disabled():
                 onnx_modifier = ONNXModifier(
                     model_path=self.input_model,
                     output_path=self._attach_suffix(
@@ -79,7 +79,9 @@ class RVC4Exporter(Exporter):
 
                 try:
                     if (
-                        onnx_modifier.modify_onnx()
+                        onnx_modifier.modify_onnx(
+                            **self.onnx_optimizations.model_dump()
+                        )
                         and onnx_modifier.compare_outputs()
                     ):
                         logger.info("ONNX model has been optimized for RVC4.")

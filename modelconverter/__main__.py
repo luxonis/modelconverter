@@ -100,7 +100,8 @@ def convert(
     opts: list[str] | None
         A list of optional CLI overrides for the configuration file.
     path: str | None
-        A URL or a path to the configuration file or NN Archive.
+        A URL or a path to the configuration file, NN Archive
+        or a standalone model file.
     output_dir: str | None
         Name of the directory where the exported model will be saved.
     to: Literal["native", "nn_archive"]
@@ -126,6 +127,35 @@ def convert(
     if output_dir is not None:
         output_dir = sanitize_net_name(output_dir)
     t = time.time()
+
+    opts = opts or []
+    if path is not None:
+        suffix = Path(path).suffix
+        if suffix in {".xml", ".bin"} and target not in {
+            Target.RVC2,
+            Target.RVC3,
+        }:
+            raise ValueError(
+                f"OpenVINO IR format is not supported for target {target.name}."
+            )
+        if suffix in {".onnx", ".xml", ".dlc", ".tflite"}:
+            opts = ["input_model", path, *opts]
+            if suffix == ".xml":
+                opts = [
+                    "input_bin",
+                    str(Path(path).with_suffix(".bin")),
+                    *opts,
+                ]
+            path = None
+        elif suffix == ".bin":
+            opts = [
+                "input_model",
+                str(Path(path).with_suffix(".xml")),
+                "input_bin",
+                path,
+                *opts,
+            ]
+            path = None
 
     with catch_exceptions():
         init_dirs()

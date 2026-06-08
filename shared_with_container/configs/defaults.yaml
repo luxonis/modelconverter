@@ -90,8 +90,41 @@ stages:
     # or `False` to disable simplification.
     onnx_simplification: "onnxsim"
 
-    # Do not run ONNX graph optimizations on the provided model.
-    disable_onnx_optimization: false
+    # Settings for ONNX optimizations. By default, all optimizations
+    # are enabled. To disable all optimizations at once, set
+    # `onnx_optimizations` to `False` or `None`.
+    onnx_optimizations:
+      # Replace sub with add and neg.
+      substitute_sub_with_add: true
+
+      # Replace div with mul and reciprocal.
+      substitute_div_with_mul: true
+
+      # Fuse Add/Sub and Mul nodes that come immediately after a Conv
+      # node into a BatchNormalization node.
+      # The fusion patterns considered are:
+      # 1. Conv -> Add -> Mul
+      # 2. Conv -> Mul -> Add
+      # 3. Conv -> Mul
+      # 4. Conv -> Add
+      fuse_add_mul_to_bn: true
+
+      # Fuse combinations of Add and Mul nodes preceding a Conv node
+      # directly into the Conv node itself.
+      # The fusion patterns considered are:
+      # 1. Add -> Mul -> Conv
+      # 2. Mul -> Add -> Conv
+      fuse_comb_add_mul_to_conv: true
+
+      # Fuse Add and Mul nodes that precede a Conv node directly into
+      # the Conv node.
+      fuse_single_add_mul_to_conv: true
+
+      # Fuse Split and Concat nodes that come before a Conv node into
+      # the Conv node.
+      # If any intermediate nodes have channel dimensions, the order of
+      # the channels is reversed.
+      fuse_split_concat_to_conv: true
 
     # List of input names with shapes,
     # data types, values for freezing and input modifiers.
