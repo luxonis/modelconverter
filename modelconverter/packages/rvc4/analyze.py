@@ -148,11 +148,13 @@ class RVC4Analyzer(Analyzer):
             result_dir = posixpath.join(base_dir, result_name)
             output_dirs.add(result_dir)
             for output_name in self.output_sizes:
+                output_name = output_name.lstrip("/")
                 parent_dir = posixpath.dirname(
                     posixpath.join(result_dir, f"{output_name}.raw")
                 )
                 output_dirs.add(parent_dir)
             for output_name in debug_output_paths:
+                output_name = output_name.lstrip("/")
                 parent_dir = posixpath.dirname(
                     posixpath.join(result_dir, f"{output_name}.raw")
                 )
