@@ -7,6 +7,7 @@ from typing import Any
 
 import cv2
 import numpy as np
+import onnx
 from loguru import logger
 
 from modelconverter.utils import (
@@ -43,7 +44,7 @@ class Exporter(ABC):
 
         self.outputs = {out.name: out for out in config.outputs}
         self.keep_intermediate_outputs = config.keep_intermediate_outputs
-        self.disable_onnx_simplification = config.disable_onnx_simplification
+        self.onnx_simplification = config.onnx_simplification
         self.onnx_optimizations = config.onnx_optimizations
 
         self.model_name = sanitize_net_name(input_model.stem)
@@ -95,7 +96,7 @@ class Exporter(ABC):
         self.input_model = self.intermediate_outputs_dir / sanitized_model_name
 
         if (
-            not self.disable_onnx_simplification
+            self.onnx_simplification
             and self.input_file_type == InputFileType.ONNX
         ):
             self.input_model = self.simplify_onnx()
@@ -122,11 +123,24 @@ class Exporter(ABC):
     def simplify_onnx(self) -> Path:
         logger.info("Simplifying ONNX.")
         try:
-            from onnxsim import simplify
+            if self.onnx_simplification == "onnxsim":
+                from onnxsim import simplify
+
+                logger.info("Using `onnxsim` for simplification.")
+            elif self.onnx_simplification == "onnxslim":
+                from onnxslim import slim
+
+                logger.info("Using `onnxslim` for simplification.")
+
+                def simplify(model: str) -> tuple[onnx.ModelProto, bool]:
+                    slimmed = slim(onnx.load(model))
+                    return slimmed, bool(slimmed)  # type: ignore
+
         except ImportError:
+            backend = self.onnx_simplification
             logger.warning(
-                "onnxsim not installed, proceeding without simplification."
-                "Please install it using `pip install onnxsim`."
+                f"`{backend}` not installed, proceeding without simplification."
+                f"Please install it using `pip install {backend}`."
             )
             return self.input_model
 

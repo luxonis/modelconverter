@@ -93,7 +93,7 @@ DEFAULT_CALIBRATION_CONFIG = {
 
 DEFAULT_GENERAL_CONFIG = {
     "keep_intermediate_outputs": True,
-    "disable_onnx_simplification": False,
+    "onnx_simplification": "onnxsim",
     "onnx_optimizations": {
         "fuse_add_mul_to_bn": True,
         "fuse_comb_add_mul_to_conv": True,

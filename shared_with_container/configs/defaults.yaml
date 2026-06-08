@@ -85,8 +85,10 @@ stages:
     # Keep the intermediate files created during the compilation.
     keep_intermediate_outputs: true
 
-    # Do not run ONNX simplifier on the provided model.
-    disable_onnx_simplification: false
+    # What ONNX simplification method to use.
+    # Options are: onnxsim (default), onnxslim (experimental),
+    # or `False` to disable simplification.
+    onnx_simplification: "onnxsim"
 
     # Settings for ONNX optimizations. By default, all optimizations
     # are enabled. To disable all optimizations at once, set

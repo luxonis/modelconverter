@@ -367,7 +367,7 @@ class SingleStageConfig(BaseModelExtraForbid):
     outputs: Annotated[list[OutputConfig], Field(min_length=1)] = []
 
     keep_intermediate_outputs: bool = True
-    disable_onnx_simplification: bool = False
+    onnx_simplification: Literal["onnxsim", "onnxslim", False] = "onnxsim"
     onnx_optimizations: ONNXOptimizationsConfig = ONNXOptimizationsConfig()
     output_remote_url: str | None = None
     intermediate_outputs_remote_url: str | None = None
@@ -377,6 +377,27 @@ class SingleStageConfig(BaseModelExtraForbid):
     rvc2: RVC2Config = RVC2Config()
     rvc3: RVC3Config = RVC3Config()
     rvc4: RVC4Config = RVC4Config()
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_onnx_simplification(
+        cls, data: dict[str, Any]
+    ) -> dict[str, Any]:
+        if data.pop("disable_onnx_simplification", False):
+            if "onnx_simplification" in data:
+                raise ValueError(
+                    "Cannot specify both `disable_onnx_simplification` "
+                    "and `onnx_simplification`."
+                )
+
+            warnings.warn(
+                "`disable_onnx_simplification` is deprecated. Please use "
+                "`onnx_simplification` set to `False` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            data["onnx_simplification"] = False
+        return data
 
     def get_target_config(self, target: Target) -> TargetConfig:
         """Returns the target configuration for the given target."""

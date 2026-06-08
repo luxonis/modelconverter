@@ -59,6 +59,7 @@ def test_simplify_onnx_falls_back_on_error(
     class DummyExporter:
         input_model = input_path
         _attach_suffix = staticmethod(Exporter._attach_suffix)
+        onnx_simplification = "onnxsim"
 
     assert Exporter.simplify_onnx(DummyExporter()) == input_path
 
