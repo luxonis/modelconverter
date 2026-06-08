@@ -34,9 +34,7 @@ class RVC4Analyzer(Analyzer):
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
         onnx_all_layers = self._add_outputs_to_all_layers(str(onnx_model_path))
         session = rt.InferenceSession(onnx_all_layers)
-        self._debug_output_names = self._replace_bad_layer_names(
-            [layer.name for layer in session.get_outputs()]
-        )
+        self._debug_output_paths = [layer.name for layer in session.get_outputs()]
         input_matcher = self._prepare_input_matcher()
         dlc_matcher = self._prepare_raw_inputs(input_matcher, np.float32)
 
@@ -144,7 +142,7 @@ class RVC4Analyzer(Analyzer):
         base_dir = f"/data/modelconverter/{self.model_name}/output"
         output_dirs = {base_dir}
         result_names = getattr(self, "_result_names", [])
-        debug_output_names = getattr(self, "_debug_output_names", [])
+        debug_output_paths = getattr(self, "_debug_output_paths", [])
 
         for result_name in result_names:
             result_dir = posixpath.join(base_dir, result_name)
@@ -154,7 +152,7 @@ class RVC4Analyzer(Analyzer):
                     posixpath.join(result_dir, f"{output_name}.raw")
                 )
                 output_dirs.add(parent_dir)
-            for output_name in debug_output_names:
+            for output_name in debug_output_paths:
                 parent_dir = posixpath.dirname(
                     posixpath.join(result_dir, f"{output_name}.raw")
                 )
