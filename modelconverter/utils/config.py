@@ -397,9 +397,9 @@ class SingleStageConfig(BaseModelExtraForbid):
         if "onnx_optimizations" not in data:
             return data
         optimizations = data["onnx_optimizations"]
-        if optimizations in {"all", True}:
+        if optimizations in ["all", True]:
             data["onnx_optimizations"] = ONNXOptimizationsConfig()
-        elif optimizations in {"none", None, False}:
+        elif optimizations in ["none", None, False]:
             data["onnx_optimizations"] = ONNXOptimizationsConfig(
                 fuse_add_mul_to_bn=False,
                 fuse_comb_add_mul_to_conv=False,
