@@ -2,6 +2,9 @@ Pillow
 luxonis-ml[data,nn-archive,s3,gcs]>=0.8.5
 cyclopts==4.8.0
 onnx==1.21.0
+tf2onnx
+tflite
+tensorflow
 onnxruntime
 onnxsim
 docker

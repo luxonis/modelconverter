@@ -10,7 +10,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Final, NamedTuple
 
-import tflite2onnx
+import tf2onnx
+import tf2onnx.convert
 from loguru import logger
 
 from modelconverter.packages.base_exporter import Exporter
@@ -198,7 +199,9 @@ class RVC2Exporter(Exporter):
         logger.warning("The TFLite to ONNX conversion is experimental.")
 
         onnx_path = self.input_model.with_suffix(".onnx")
-        tflite2onnx.convert(str(self.input_model), str(onnx_path))
+        tf2onnx.convert.from_tflite(
+            str(self.input_model), output_path=str(onnx_path)
+        )
 
         self.input_model = onnx_path
         self.input_file_type = InputFileType.ONNX
