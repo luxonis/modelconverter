@@ -160,8 +160,11 @@ class RVC4Analyzer(Analyzer):
                 )
                 output_dirs.add(parent_dir)
 
-        mkdir_args = " ".join(sorted(output_dirs))
-        self.handler.shell(f"mkdir -p {mkdir_args}")
+        sorted_dirs = sorted(output_dirs)
+        chunk_size = 64
+        for i in range(0, len(sorted_dirs), chunk_size):
+            mkdir_args = " ".join(sorted_dirs[i : i + chunk_size])
+            self.handler.shell(f"mkdir -p {mkdir_args}")
 
     def _add_outputs_to_all_layers(self, onnx_file_path: str) -> Path:
         onnx_path = Path(onnx_file_path)
