@@ -1,5 +1,7 @@
 import os
+import posixpath
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import cast
@@ -130,7 +132,25 @@ class RVC4Analyzer(Analyzer):
         logger.info(
             f"Raw inputs pushed to device at /data/modelconverter/{self.model_name}/input_list.txt"
         )
+        self._result_names = list(dlc_matcher.values())
         return dlc_matcher
+
+    def _prepare_output_dirs(self) -> None:
+        base_dir = f"/data/modelconverter/{self.model_name}/output"
+        output_dirs = {base_dir}
+        result_names = getattr(self, "_result_names", [])
+
+        for result_name in result_names:
+            result_dir = posixpath.join(base_dir, result_name)
+            output_dirs.add(result_dir)
+            for output_name in self.output_sizes:
+                parent_dir = posixpath.dirname(
+                    posixpath.join(result_dir, f"{output_name}.raw")
+                )
+                output_dirs.add(parent_dir)
+
+        mkdir_args = " ".join(sorted(output_dirs))
+        self.handler.shell(f"mkdir -p {mkdir_args}")
 
     def _add_outputs_to_all_layers(self, onnx_file_path: str) -> Path:
         onnx_path = Path(onnx_file_path)
@@ -332,6 +352,7 @@ class RVC4Analyzer(Analyzer):
             self.handler.shell(
                 f"rm -rf /data/modelconverter/{self.model_name}/output"
             )
+            self._prepare_output_dirs()
             self.handler.shell(
                 f"cd /data/modelconverter/{self.model_name} && {command}"
             )
@@ -348,6 +369,17 @@ class RVC4Analyzer(Analyzer):
             logger.info(
                 f"Raw outputs pulled from device to {target_dir}/output"
             )
+        except subprocess.CalledProcessError as e:
+            stdout = e.output.decode(errors="ignore") if e.output else ""
+            stderr = e.stderr.decode(errors="ignore") if e.stderr else ""
+            if stdout:
+                logger.error(f"DLC inference stdout:\n{stdout}")
+            if stderr:
+                logger.error(f"DLC inference stderr:\n{stderr}")
+            logger.error(f"Error during DLC inference: {e}")
+            raise RuntimeError(
+                f"Failed to run DLC model with command: {command}"
+            ) from e
         except Exception as e:
             logger.error(f"Error during DLC inference: {e}")
             raise RuntimeError(

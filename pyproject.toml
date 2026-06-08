@@ -2,8 +2,7 @@
 name = "modelconv"
 description = "Converter for neural models into various formats."
 readme = "README.md"
-license-files = ["LICENSE"]
-license = "Apache-2.0"
+license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 authors = [{ name = "Luxonis", email = "support@luxonis.com" }]
 maintainers = [{ name = "Luxonis", email = "support@luxonis.com" }]
@@ -25,12 +24,15 @@ repository = "https://github.com/luxonis/modelconverter"
 issues = "https://github.com/luxonis/modelconverter/issues"
 
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools<82", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["modelconverter*"]
+
+[tool.setuptools]
+license-files = ["LICENSE"]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
