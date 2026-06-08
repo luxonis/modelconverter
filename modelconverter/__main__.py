@@ -141,7 +141,11 @@ def convert(
         if suffix in {".onnx", ".xml", ".dlc", ".tflite"}:
             opts = ["input_model", path, *opts]
             if suffix == ".xml":
-                opts += ["input_bin", str(Path(path).with_suffix(".bin"))]
+                opts = [
+                    "input_bin",
+                    str(Path(path).with_suffix(".bin")),
+                    *opts,
+                ]
             path = None
         elif suffix == ".bin":
             opts = [
