@@ -44,7 +44,7 @@ class Exporter(ABC):
         self.outputs = {out.name: out for out in config.outputs}
         self.keep_intermediate_outputs = config.keep_intermediate_outputs
         self.disable_onnx_simplification = config.disable_onnx_simplification
-        self.disable_onnx_optimization = config.disable_onnx_optimization
+        self.onnx_optimizations = config.onnx_optimizations
 
         self.model_name = sanitize_net_name(input_model.stem)
         self.original_model_name = sanitize_net_name(

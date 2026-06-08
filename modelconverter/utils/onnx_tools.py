@@ -345,7 +345,7 @@ class ONNXModifier:
         try:
             self.onnx_model, _ = simplify(
                 self.model_path.as_posix(),
-                perform_optimization=True and not self.skip_optimization,
+                perform_optimization=not self.skip_optimization,
                 skip_constant_folding=self.skip_constant_folding,
             )
         except Exception as e:
@@ -641,7 +641,9 @@ class ONNXModifier:
                 # Skip optimization for nodes followed by Erf operations due to conversion compatibility issues with SNPE 2.32.6.
                 if any(n.op == "Erf" for n in next_nodes):
                     logger.warning(
-                        f"Skipping `substitute_node_by_type ({source_node} -> {target_node})` optimization for node {node.name} with op {node.op} because it is followed by an Erf node."
+                        f"Skipping `substitute_node_by_type ({source_node} -> {target_node})` "
+                        f"optimization for node '{node.name}' with op '{node.op}' "
+                        "because it is followed by an 'Erf' node."
                     )
                     continue
                 constant = self.get_constant_value(node, constant_map)
@@ -1314,7 +1316,15 @@ class ONNXModifier:
             )
             self.revert_changes()
 
-    def modify_onnx(self) -> bool:
+    def modify_onnx(
+        self,
+        substitute_sub_with_add: bool = True,
+        substitute_div_with_mul: bool = True,
+        fuse_add_mul_to_bn: bool = True,
+        fuse_comb_add_mul_to_conv: bool = True,
+        fuse_single_add_mul_to_conv: bool = True,
+        fuse_split_concat_to_conv: bool = True,
+    ) -> bool:
         """Modify the ONNX model by applying a series of optimizations.
 
         @param passes: List of optimization passes to apply to the ONNX
@@ -1327,39 +1337,40 @@ class ONNXModifier:
             )
             return False
 
-        optimization_steps = [
-            (
+        if substitute_div_with_mul:
+            self.apply_optimization_step(
                 "Substitute Div -> Mul nodes",
                 lambda: self.substitute_node_by_type(
                     source_node="Div", target_node="Mul"
                 ),
-            ),
-            (
+            )
+        if substitute_sub_with_add:
+            self.apply_optimization_step(
                 "Substitute Sub -> Add nodes",
                 lambda: self.substitute_node_by_type(
                     source_node="Sub", target_node="Add"
                 ),
-            ),
-            (
+            )
+        if fuse_add_mul_to_bn:
+            self.apply_optimization_step(
                 "Fuse Add and Mul nodes to BatchNormalization nodes",
                 self.fuse_add_mul_to_bn,
-            ),
-            (
+            )
+        if fuse_comb_add_mul_to_conv:
+            self.apply_optimization_step(
                 "Fuse Add and Mul nodes to Conv nodes (combined)",
                 self.fuse_comb_add_mul_to_conv,
-            ),
-            (
+            )
+        if fuse_single_add_mul_to_conv:
+            self.apply_optimization_step(
                 "Fuse Add and Mul nodes to Conv nodes (single)",
                 self.fuse_single_add_mul_to_conv,
-            ),
-            (
+            )
+        if fuse_split_concat_to_conv:
+            self.apply_optimization_step(
                 "Fuse Split and Concat nodes to Conv nodes",
                 self.fuse_split_concat_to_conv,
-            ),
-        ]
-
-        for step_name, optimization_func in optimization_steps:
-            self.apply_optimization_step(step_name, optimization_func)
+            )
 
         try:
             self.export_onnx()

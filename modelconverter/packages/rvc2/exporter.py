@@ -115,7 +115,7 @@ class RVC2Exporter(Exporter):
                 inp.encoding.from_ = Encoding.BGR
                 inp.encoding.to = Encoding.BGR
 
-        if not self.config.disable_onnx_optimization:
+        if not self.onnx_optimizations.all_disabled():
             onnx_modifier = ONNXModifier(
                 model_path=self.input_model,
                 output_path=self._attach_suffix(
@@ -126,7 +126,9 @@ class RVC2Exporter(Exporter):
 
             try:
                 if (
-                    onnx_modifier.modify_onnx()
+                    onnx_modifier.modify_onnx(
+                        **self.onnx_optimizations.model_dump()
+                    )
                     and onnx_modifier.compare_outputs()
                 ):
                     logger.info("ONNX model has been optimized for RVC2.")
