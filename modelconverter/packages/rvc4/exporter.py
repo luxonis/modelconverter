@@ -34,9 +34,6 @@ class RVC4Exporter(Exporter):
     target: Target = Target.RVC4
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
-        # NOTE: Handled inside `snpe-onnx-to-dlc` command.
-        config.disable_onnx_simplification = True
-
         super().__init__(config=config, output_dir=output_dir)
 
         rvc4_cfg = config.rvc4

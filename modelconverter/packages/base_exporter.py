@@ -7,6 +7,7 @@ from typing import Any
 
 import cv2
 import numpy as np
+import onnx
 from loguru import logger
 
 from modelconverter.utils import (
@@ -43,7 +44,7 @@ class Exporter(ABC):
 
         self.outputs = {out.name: out for out in config.outputs}
         self.keep_intermediate_outputs = config.keep_intermediate_outputs
-        self.disable_onnx_simplification = config.disable_onnx_simplification
+        self.onnx_simplification = config.onnx_simplification
         self.disable_onnx_optimization = config.disable_onnx_optimization
 
         self.model_name = sanitize_net_name(input_model.stem)
@@ -95,7 +96,7 @@ class Exporter(ABC):
         self.input_model = self.intermediate_outputs_dir / sanitized_model_name
 
         if (
-            not self.disable_onnx_simplification
+            self.onnx_simplification
             and self.input_file_type == InputFileType.ONNX
         ):
             self.input_model = self.simplify_onnx()
@@ -122,7 +123,19 @@ class Exporter(ABC):
     def simplify_onnx(self) -> Path:
         logger.info("Simplifying ONNX.")
         try:
-            from onnxsim import simplify
+            if self.onnx_simplification == "onnxsim":
+                from onnxsim import simplify
+
+                logger.info("Using `onnxsim` for simplification.")
+            else:
+                from onnxslim import slim
+
+                logger.info("Using `onnxslim` for simplification.")
+
+                def simplify(model: str) -> tuple[onnx.ModelProto, bool]:
+                    slimmed = slim(onnx.load(model))
+                    return slimmed, bool(slimmed)  # type: ignore
+
         except ImportError:
             logger.warning(
                 "onnxsim not installed, proceeding without simplification."

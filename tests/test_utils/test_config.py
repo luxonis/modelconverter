@@ -93,7 +93,7 @@ DEFAULT_CALIBRATION_CONFIG = {
 
 DEFAULT_GENERAL_CONFIG = {
     "keep_intermediate_outputs": True,
-    "disable_onnx_simplification": False,
+    "onnx_simplification": "onnxsim",
     "disable_onnx_optimization": False,
     "output_remote_url": None,
     "intermediate_outputs_remote_url": None,

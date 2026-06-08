@@ -1,4 +1,5 @@
 import json
+import warnings
 from itertools import chain
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
@@ -345,7 +346,7 @@ class SingleStageConfig(BaseModelExtraForbid):
     outputs: Annotated[list[OutputConfig], Field(min_length=1)] = []
 
     keep_intermediate_outputs: bool = True
-    disable_onnx_simplification: bool = False
+    onnx_simplification: Literal["onnxsim", "onnxslim", False] = "onnxsim"
     disable_onnx_optimization: bool = False
     output_remote_url: str | None = None
     intermediate_outputs_remote_url: str | None = None
@@ -355,6 +356,21 @@ class SingleStageConfig(BaseModelExtraForbid):
     rvc2: RVC2Config = RVC2Config()
     rvc3: RVC3Config = RVC3Config()
     rvc4: RVC4Config = RVC4Config()
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_onnx_simplification(
+        cls, data: dict[str, Any]
+    ) -> dict[str, Any]:
+        if data.get("disable_onnx_simplification", False):
+            warnings.warn(
+                "`disable_onnx_simplification` is deprecated. Please use "
+                "`onnx_simplification` set to `False` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            data["onnx_simplification"] = False
+        return data
 
     def get_target_config(self, target: Target) -> TargetConfig:
         """Returns the target configuration for the given target."""
