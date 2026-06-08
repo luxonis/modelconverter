@@ -1,4 +1,5 @@
 import json
+import warnings
 from itertools import chain
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
@@ -336,6 +337,27 @@ class RVC4Config(TargetConfig):
         return self
 
 
+class ONNXOptimizationsConfig(BaseModelExtraForbid):
+    fuse_add_mul_to_bn: bool = True
+    fuse_comb_add_mul_to_conv: bool = True
+    fuse_single_add_mul_to_conv: bool = True
+    fuse_split_concat_to_conv: bool = True
+    substitute_sub_with_add: bool = True
+    substitute_div_with_mul: bool = True
+
+    def all_disabled(self) -> bool:
+        return not any(
+            [
+                self.fuse_add_mul_to_bn,
+                self.fuse_comb_add_mul_to_conv,
+                self.fuse_single_add_mul_to_conv,
+                self.fuse_split_concat_to_conv,
+                self.substitute_sub_with_add,
+                self.substitute_div_with_mul,
+            ]
+        )
+
+
 class SingleStageConfig(BaseModelExtraForbid):
     input_model: Path
     input_bin: Path | None = None
@@ -346,7 +368,7 @@ class SingleStageConfig(BaseModelExtraForbid):
 
     keep_intermediate_outputs: bool = True
     disable_onnx_simplification: bool = False
-    disable_onnx_optimization: bool = False
+    onnx_optimizations: ONNXOptimizationsConfig = ONNXOptimizationsConfig()
     output_remote_url: str | None = None
     intermediate_outputs_remote_url: str | None = None
     put_file_plugin: str | None = None
@@ -366,6 +388,56 @@ class SingleStageConfig(BaseModelExtraForbid):
             return self.rvc3
         if target == Target.RVC4:
             return self.rvc4
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_onnx_optimizations(
+        cls, data: dict[str, Any]
+    ) -> dict[str, Any]:
+        if "onnx_optimizations" not in data:
+            return data
+        optimizations = data["onnx_optimizations"]
+        if optimizations in ["all", True]:
+            data["onnx_optimizations"] = ONNXOptimizationsConfig()
+        elif optimizations in ["none", None, False]:
+            data["onnx_optimizations"] = ONNXOptimizationsConfig(
+                fuse_add_mul_to_bn=False,
+                fuse_comb_add_mul_to_conv=False,
+                fuse_single_add_mul_to_conv=False,
+                fuse_split_concat_to_conv=False,
+                substitute_sub_with_add=False,
+                substitute_div_with_mul=False,
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_disable_onnx_optimizations(
+        cls, data: dict[str, Any]
+    ) -> dict[str, Any]:
+        if "disable_onnx_optimizations" not in data:
+            return data
+        if data.pop("disable_onnx_optimizations", False):
+            warnings.warn(
+                "`disable_onnx_optimizations` is deprecated. Please use "
+                "`onnx_optimizations: false` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if "onnx_optimizations" in data:
+                raise ValueError(
+                    "Cannot specify both `disable_onnx_optimizations` and "
+                    "`onnx_optimizations` at the same time."
+                )
+            data["onnx_optimizations"] = ONNXOptimizationsConfig(
+                fuse_add_mul_to_bn=False,
+                fuse_comb_add_mul_to_conv=False,
+                fuse_single_add_mul_to_conv=False,
+                fuse_split_concat_to_conv=False,
+                substitute_sub_with_add=False,
+                substitute_div_with_mul=False,
+            )
+        return data
 
     @model_validator(mode="before")
     @classmethod

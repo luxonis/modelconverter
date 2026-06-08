@@ -94,7 +94,14 @@ DEFAULT_CALIBRATION_CONFIG = {
 DEFAULT_GENERAL_CONFIG = {
     "keep_intermediate_outputs": True,
     "disable_onnx_simplification": False,
-    "disable_onnx_optimization": False,
+    "onnx_optimizations": {
+        "fuse_add_mul_to_bn": True,
+        "fuse_comb_add_mul_to_conv": True,
+        "fuse_single_add_mul_to_conv": True,
+        "fuse_split_concat_to_conv": True,
+        "substitute_sub_with_add": True,
+        "substitute_div_with_mul": True,
+    },
     "output_remote_url": None,
     "intermediate_outputs_remote_url": None,
     "put_file_plugin": None,
