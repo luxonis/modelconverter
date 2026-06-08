@@ -261,7 +261,7 @@ def infer(
     if path is not None:
         config = path
     with catch_exceptions():
-        mult_cfg, _, _ = get_configs(target, str(config), opts)
+        mult_cfg, _, _ = get_configs(target, str(config), list(opts))
         cfg = mult_cfg.get_stage_config(stage)
         setup_logging(
             file="modelconverter.log", use_rich=mult_cfg.rich_logging
