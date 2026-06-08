@@ -363,6 +363,12 @@ class SingleStageConfig(BaseModelExtraForbid):
         cls, data: dict[str, Any]
     ) -> dict[str, Any]:
         if data.pop("disable_onnx_simplification", False):
+            if "onnx_simplification" in data:
+                raise ValueError(
+                    "Cannot specify both `disable_onnx_simplification` "
+                    "and `onnx_simplification`."
+                )
+
             warnings.warn(
                 "`disable_onnx_simplification` is deprecated. Please use "
                 "`onnx_simplification` set to `False` instead.",
