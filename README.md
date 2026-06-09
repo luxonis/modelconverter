@@ -663,18 +663,21 @@ pip install modelconv[analysis]
 There are several options to run the tools. The most general approach is:
 
 ```bash
-modelconverter analyze
-              <dlc_model>
-              <onnx_model>
-              <input_name_1> <path_to_input_images_1>
-              ...
-              <input_name_n> <path_to_input_images_n>
+modelconverter analyze \
+  --dlc-model-path <dlc_model> \
+  --onnx-model-path <onnx_model> \
+  --image-dirs <input_name_1> <path_to_input_images_1> \
+               ...
+               <input_name_n> <path_to_input_images_n>
 ```
 
 If the model accepts only one input, there is no need to specify the input name and the tools can simply be ran as:
 
 ```bash
-modelconverter analyze <dlc_model> <onnx_model> <path_to_input_images>
+modelconverter analyze \
+  --dlc-model-path <dlc_model> \
+  --onnx-model-path <onnx_model> \
+  --image-dirs <path_to_input_images>
 ```
 
 For other usage instructions run `modelconverter analyze --help`
