@@ -236,7 +236,7 @@ def test_benchmark_fps(
     configuration["device_ip"] = benchmark_device_ip
 
     result = bench.benchmark(configuration)
-    actual_fps = result.fps
+    actual_fps = result["fps"]
 
     tolerance_low = model_config["tolerance_low"]
     tolerance_high = model_config["tolerance_high"]
