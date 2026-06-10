@@ -247,8 +247,16 @@ class RVC4Benchmark(Benchmark):
             return np.zeros(spec.shape, dtype=np.int32)
         if spec.data_type == DataType.INT8:
             return np.random.randint(-128, 128, size=spec.shape, dtype=np.int8)
-        if spec.data_type == DataType.UFXP8:
+        if spec.data_type == DataType.INT16:
+            return np.random.randint(
+                -32768, 32768, size=spec.shape, dtype=np.int16
+            )
+        if spec.data_type in {DataType.UINT8, DataType.UFXP8}:
             return np.random.randint(0, 256, size=spec.shape, dtype=np.uint8)
+        if spec.data_type in {DataType.UINT16, DataType.UFXP16}:
+            return np.random.randint(
+                0, 65536, size=spec.shape, dtype=np.uint16
+            )
 
         return np.random.rand(*spec.shape).astype(
             spec.data_type.as_numpy_dtype()
