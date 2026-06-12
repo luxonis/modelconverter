@@ -45,10 +45,14 @@ def _get_metadata_dlc(path: Path) -> Metadata:
     if path.suffix == ".csv":
         csv_path = path
     else:
-        csv_path = Path("info.csv")
-        subprocess_run(
-            ["snpe-dlc-info", "-i", path, "-s", csv_path], silent=True
-        )
+        csv_path = path.with_suffix(".info.csv")
+        if (
+            not csv_path.exists()
+            or csv_path.stat().st_mtime < path.stat().st_mtime
+        ):
+            subprocess_run(
+                ["snpe-dlc-info", "-i", path, "-s", csv_path], silent=True
+            )
     content = csv_path.read_text()
 
     metadata = {}

@@ -222,6 +222,21 @@ class InputConfig(OutputConfig):
             return [value, value, value]
         return value
 
+    def requires_onnx_input_modification(
+        self, *, reverse_only: bool = False
+    ) -> bool:
+        if self.encoding_mismatch:
+            return True
+        if reverse_only:
+            return False
+        return (
+            self.mean_values is not None
+            and any(v != 0 for v in self.mean_values)
+        ) or (
+            self.scale_values is not None
+            and any(v != 1 for v in self.scale_values)
+        )
+
 
 class TargetConfig(BaseModelExtraForbid):
     disable_calibration: bool = False
