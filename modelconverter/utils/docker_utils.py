@@ -377,13 +377,10 @@ def _get_candidate_docker_images(
         image = f"{image_repo}:{tag}"
 
     candidate_images = [image]
-    if target == "rvc4":
-        candidate_images.insert(0, f"{image_repo}-private:{tag}")
-        # add full version if specified RVC4 tag is with
-        # build number included (e.g. version=2.32.6.250402
-        # instead of version=2.32.6)
-        if tag_version != version and image_tag is None:
-            candidate_images.append(f"{image_repo}:{version}-{bare_tag}")
+    # Add full version if the specified RVC4 tag includes a build number
+    # (e.g. version=2.32.6.250402 instead of version=2.32.6).
+    if target == "rvc4" and tag_version != version and image_tag is None:
+        candidate_images.append(f"{image_repo}:{version}-{bare_tag}")
 
     return candidate_images
 
