@@ -79,7 +79,6 @@ jobs:
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
 
       - name: Download build files from GCS
-        if: ${{ inputs.package }} != hailo
         env:
           GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
         run: |
