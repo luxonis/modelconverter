@@ -4,11 +4,15 @@ import shutil
 import tarfile
 import tempfile
 from pathlib import Path
+from textwrap import dedent
 
 import numpy as np
 import onnx
 import pytest
-from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
+from luxonis_ml.nn_archive.config_building_blocks import (
+    InputType,
+    PreprocessingBlock,
+)
 from luxonis_ml.typing import Params
 from onnx import checker, helper
 from onnx.onnx_pb import TensorProto
@@ -248,29 +252,34 @@ def create_json(
 
 def create_yaml(append: str = "") -> str:
     config = (
-        f"""
-input_model: "{DATA_DIR}/dummy_model.onnx"
-mean_values: "imagenet"
-data_type: float32
-shape: [ 1, 3, 256, 256 ]
+        dedent(
+            """
+        input_model: "{data_dir}/dummy_model.onnx"
+        mean_values: "imagenet"
+        data_type: float32
+        shape: [ 1, 3, 256, 256 ]
 
-calibration:
-  path: "{CALIBRATION_DATA_DIR_1}"
-  max_images: 20
+        calibration:
+          path: "{calibration_data_dir_1}"
+          max_images: 20
 
-hailo:
-  optimization_level: 3
-  compression_level: 3
-  batch_size: 4
+        hailo:
+          optimization_level: 3
+          compression_level: 3
+          batch_size: 4
 
-inputs:
-  - name: "input0"
-    scale_values: [255,255,255]
-    shape: [1, 3, 64, 64]
-    layout: "NCHW"
-    calibration:
-      max_images: 100
-"""
+        inputs:
+          - name: "input0"
+            scale_values: [255,255,255]
+            shape: [1, 3, 64, 64]
+            layout: "NCHW"
+            calibration:
+              max_images: 100
+        """
+        ).format(
+            data_dir=DATA_DIR,
+            calibration_data_dir_1=CALIBRATION_DATA_DIR_1,
+        )
         + append
     )
 
@@ -832,6 +841,89 @@ def test_modified_onnx(keys: list[str], values: list[str]):
         else:
             assert input_configs[inp].mean_values is None or [0, 0, 0]
             assert input_configs[inp].scale_values is None or [1, 1, 1]
+
+
+def test_output_nn_config_from_yaml_raw_input_with_archive_preprocess():
+    model_path = DATA_DIR / "dummy_model.onnx"
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model_path),
+            "inputs.0.name": "input0",
+            "inputs.0.encoding": "NONE",
+            "inputs.1.name": "input1",
+        },
+    )
+    config, preprocessing = extract_preprocessing(config)
+    nn_config = modelconverter_config_to_nn(
+        config,
+        model_path,
+        None,
+        preprocessing,
+        "dummy_model",
+        model_path,
+        Target.RVC4,
+    )
+
+    input_0 = nn_config.model.inputs[0]
+
+    assert input_0.input_type == InputType.RAW
+    assert input_0.preprocessing == PreprocessingBlock(
+        mean=None,
+        scale=None,
+        reverse_channels=None,
+        interleaved_to_planar=None,
+        dai_type=None,
+    )
+
+
+@pytest.mark.parametrize("nn_preprocess", [False, True])
+def test_output_nn_config_preserves_raw_inputs_from_nn_archive(
+    nn_preprocess: bool,
+):
+    nn_archive_path = DATA_DIR / "dummy_model.tar.xz"
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        tar_path = Path(tmpdirname) / "dummy_model.tar.xz"
+        with tarfile.open(tar_path, "w") as tar:
+            tar.add(
+                str(DATA_DIR / "dummy_model.onnx"), arcname="dummy_model.onnx"
+            )
+            tar.add(
+                create_json(
+                    keys=["inputs.0.input_type"],
+                    values=["raw"],
+                ),
+                arcname="config.json",
+            )
+        shutil.copy(tar_path, nn_archive_path)
+    config, archive_cfg, main_stage = process_nn_archive(
+        Target.RVC4, nn_archive_path, overrides=None
+    )
+    preprocessing = {}
+    if nn_preprocess:
+        config, preprocessing = extract_preprocessing(config)
+    nn_config = modelconverter_config_to_nn(
+        config,
+        DATA_DIR / "dummy_model.onnx",
+        archive_cfg,
+        preprocessing,
+        main_stage,
+        DATA_DIR / "dummy_model.onnx",
+        Target.RVC4,
+    )
+
+    input_0 = nn_config.model.inputs[0]
+    input_1 = nn_config.model.inputs[1]
+
+    assert input_0.input_type == InputType.RAW
+    assert input_0.preprocessing == PreprocessingBlock(
+        mean=None,
+        scale=None,
+        reverse_channels=None,
+        interleaved_to_planar=None,
+        dai_type=None,
+    )
+    assert input_1.input_type == InputType.IMAGE
 
 
 @pytest.mark.parametrize(

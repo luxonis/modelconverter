@@ -53,14 +53,14 @@ def get_default_target_version(
     return {
         "rvc2": "2022.3.0",
         "rvc3": "2022.3.0",
-        "rvc4": "2.32.6",
+        "rvc4": "2.41.0",
         "hailo": "2025.04",
     }[target]
 
 
 def rvc4_tag_version(version: str) -> str:
-    """Removes build component from version string (e.g. 2.32.6.250402
-    -> 2.32.6)"""
+    """Removes build component from version string (e.g. 2.41.0.251128
+    -> 2.41.0)"""
     parts = version.split(".")
     if len(parts) <= 3:
         return version
