@@ -307,13 +307,6 @@ def modelconverter_config_to_nn(
             layout = guess_new_layout(inp.layout, inp.shape, new_shape)
         else:
             layout = make_default_layout(new_shape)
-        dai_type = inp.encoding.to.value
-        if inp.data_type == DataType.FLOAT16:
-            channel_format = "F16F16F16"
-        else:
-            channel_format = "888"
-        dai_type += channel_format
-        dai_type += "i" if layout == "NHWC" else "p"
 
         dtype = _get_io_dtype(
             target,
@@ -323,26 +316,28 @@ def modelconverter_config_to_nn(
             mode="input",
         )
 
+        orig_inp = find_archive_input(orig_nn, inp.name)
+        input_type = (
+            orig_inp.input_type.value
+            if orig_inp is not None
+            else _default_archive_input_type(is_raw_input=inp.is_raw_input)
+        )
+        preprocessing_cfg = (
+            orig_inp.preprocessing.model_dump(mode="json")
+            if input_type == "raw" and orig_inp is not None
+            else _default_archive_preprocessing(
+                inp, layout, input_type=input_type
+            )
+        )
+
         archive_cfg["model"]["inputs"].append(
             {
                 "name": inp.name,
                 "shape": new_shape,
                 "layout": layout,
                 "dtype": dtype,
-                "input_type": "image",
-                "preprocessing": {
-                    "mean": [0 for _ in inp.mean_values]
-                    if inp.mean_values
-                    else None,
-                    "scale": (
-                        [1 for _ in inp.scale_values]
-                        if inp.scale_values
-                        else None
-                    ),
-                    "reverse_channels": inp.encoding.to == Encoding.RGB,
-                    "interleaved_to_planar": layout == "NHWC",
-                    "dai_type": dai_type,
-                },
+                "input_type": input_type,
+                "preprocessing": preprocessing_cfg,
             }
         )
     for out in cfg.outputs:
@@ -401,6 +396,57 @@ def modelconverter_config_to_nn(
             f"{post_stage_key}{model_name.suffix}"
         )
     return archive
+
+
+def find_archive_input(
+    cfg: NNArchiveConfig | None, name: str
+) -> NNArchiveInput | None:
+    if cfg is None:
+        return None
+    for inp in cfg.model.inputs:
+        if inp.name == name:
+            return inp
+    return None
+
+
+def _default_archive_input_type(
+    *, is_raw_input: bool
+) -> Literal["raw", "image"]:
+    if is_raw_input:
+        return "raw"
+    return "image"
+
+
+def _default_archive_preprocessing(
+    inp: Any,
+    layout: str,
+    *,
+    input_type: Literal["raw", "image"],
+) -> dict[str, Any]:
+    if input_type == "raw":
+        return {
+            "mean": None,
+            "scale": None,
+            "reverse_channels": None,
+            "interleaved_to_planar": None,
+            "dai_type": None,
+        }
+
+    dai_type = inp.encoding.to.value
+    if inp.data_type == DataType.FLOAT16:
+        channel_format = "F16F16F16"
+    else:
+        channel_format = "888"
+    dai_type += channel_format
+    dai_type += "i" if layout == "NHWC" else "p"
+
+    return {
+        "mean": [0 for _ in inp.mean_values] if inp.mean_values else None,
+        "scale": ([1 for _ in inp.scale_values] if inp.scale_values else None),
+        "reverse_channels": inp.encoding.to == Encoding.RGB,
+        "interleaved_to_planar": layout == "NHWC",
+        "dai_type": dai_type,
+    }
 
 
 def archive_from_model(model_path: Path) -> NNArchiveConfig:
