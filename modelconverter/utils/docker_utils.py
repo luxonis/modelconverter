@@ -53,14 +53,14 @@ def get_default_target_version(
     return {
         "rvc2": "2022.3.0",
         "rvc3": "2022.3.0",
-        "rvc4": "2.32.6",
+        "rvc4": "2.41.0",
         "hailo": "2025.04",
     }[target]
 
 
 def rvc4_tag_version(version: str) -> str:
-    """Removes build component from version string (e.g. 2.32.6.250402
-    -> 2.32.6)"""
+    """Removes build component from version string (e.g. 2.41.0.251128
+    -> 2.41.0)"""
     parts = version.split(".")
     if len(parts) <= 3:
         return version
@@ -380,8 +380,8 @@ def _get_candidate_docker_images(
     if target == "rvc4":
         candidate_images.insert(0, f"{image_repo}-private:{tag}")
         # add full version if specified RVC4 tag is with
-        # build number included (e.g. version=2.32.6.250402
-        # instead of version=2.32.6)
+        # build number included (e.g. version=2.41.0.251128
+        # instead of version=2.41.0)
         if tag_version != version and image_tag is None:
             candidate_images.append(f"{image_repo}:{version}-{bare_tag}")
 
