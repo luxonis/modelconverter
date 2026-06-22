@@ -1,9 +1,10 @@
 import os
 import posixpath
+import shlex
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import cast
 
 import numpy as np
@@ -43,7 +44,8 @@ class RVC4Analyzer(Analyzer):
 
             output_dir = Path(
                 self._run_dlc(
-                    f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float"
+                    f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float",
+                    prepare_debug_dirs=True,
                 )
             )
             dlc_matcher = {k: output_dir / v for k, v in dlc_matcher.items()}
@@ -143,26 +145,35 @@ class RVC4Analyzer(Analyzer):
         self._result_names = list(dlc_matcher.values())
         return dlc_matcher
 
-    def _prepare_output_dirs(self) -> None:
+    def _sanitize_output_name(self, output_name: str) -> str:
+        output_name = output_name.lstrip("/")
+        output_path = PurePosixPath(output_name)
+        if output_path.is_absolute() or ".." in output_path.parts:
+            raise ValueError(f"Unsafe output tensor path: {output_name}")
+        return output_path.as_posix()
+
+    def _prepare_output_dirs(self, *, debug: bool) -> None:
         base_dir = f"/data/modelconverter/{self.model_name}/output"
         output_dirs = {base_dir}
         result_names = self._result_names
-        debug_output_paths = self._debug_output_paths
 
         for result_name in result_names:
             result_dir = posixpath.join(base_dir, result_name)
             output_dirs.add(result_dir)
-            for output_name in debug_output_paths:
-                output_name = output_name.lstrip("/")
-                parent_dir = posixpath.dirname(
-                    posixpath.join(result_dir, f"{output_name}.raw")
-                )
-                output_dirs.add(parent_dir)
+            if debug:
+                for output_name in self._debug_output_paths:
+                    safe_output_name = self._sanitize_output_name(output_name)
+                    parent_dir = posixpath.dirname(
+                        posixpath.join(result_dir, f"{safe_output_name}.raw")
+                    )
+                    output_dirs.add(parent_dir)
 
         sorted_dirs = sorted(output_dirs)
         chunk_size = 64
         for i in range(0, len(sorted_dirs), chunk_size):
-            mkdir_args = " ".join(sorted_dirs[i : i + chunk_size])
+            mkdir_args = " ".join(
+                shlex.quote(path) for path in sorted_dirs[i : i + chunk_size]
+            )
             self.handler.shell(f"mkdir -p {mkdir_args}")
 
     def _add_outputs_to_all_layers(self, onnx_file_path: str) -> Path:
@@ -353,7 +364,9 @@ class RVC4Analyzer(Analyzer):
 
         return [max_abs_diff, mse, cosine_sim, mean_ape]
 
-    def _run_dlc(self, command: str) -> str:
+    def _run_dlc(
+        self, command: str, *, prepare_debug_dirs: bool = False
+    ) -> str:
         logger.info("Inferencing DLC model on device.")
         try:
             self.handler.push(
@@ -363,7 +376,7 @@ class RVC4Analyzer(Analyzer):
             self.handler.shell(
                 f"rm -rf /data/modelconverter/{self.model_name}/output"
             )
-            self._prepare_output_dirs()
+            self._prepare_output_dirs(debug=prepare_debug_dirs)
             self.handler.shell(
                 f"cd /data/modelconverter/{self.model_name} && {command}"
             )
@@ -444,7 +457,8 @@ class RVC4Analyzer(Analyzer):
 
         logger.info("Running DLC model to analyze layer cycles.")
         output_dir = self._run_dlc(
-            f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_auto"
+            f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_auto",
+            prepare_debug_dirs=False,
         )
 
         csv_path = Path(output_dir + "/layer_stats.csv")
