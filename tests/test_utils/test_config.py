@@ -290,6 +290,15 @@ def create_yaml(append: str = "") -> str:
     return f.name
 
 
+def create_encodings_file(data: dict, suffix: str = ".json") -> str:
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=suffix, delete=False
+    ) as f:
+        json.dump(data, f)
+        f.flush()
+    return f.name
+
+
 def load_and_compare(
     path: str | None,
     opts: list[str],
@@ -1554,3 +1563,148 @@ def test_defaults():
         },
     ).model_dump()
     assert default == empty
+
+
+def test_rvc4_encodings_path_accepts_aimet_format():
+    encodings_path = create_encodings_file(
+        {
+            "version": "1.0.0",
+            "activation_encodings": [
+                {
+                    "name": "image",
+                    "dtype": "INT",
+                    "bw": 8,
+                    "is_sym": False,
+                    "scale": [1.0],
+                    "offset": [0],
+                },
+                {
+                    "name": "feature_map",
+                    "dtype": "INT",
+                    "bw": 8,
+                    "is_sym": False,
+                    "scale": [0.25, 0.5],
+                    "offset": [-2, -4],
+                },
+            ],
+            "param_encodings": [
+                {
+                    "name": "conv.weight",
+                    "dtype": "FLOAT",
+                    "bw": 16,
+                }
+            ],
+        },
+        suffix=".encodings",
+    )
+
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(DATA_DIR / "dummy_model.onnx"),
+            "rvc4.encodings": encodings_path,
+        },
+    )
+
+    assert config.get("stages.dummy_model.rvc4.encodings").model_dump(
+        mode="json", exclude_none=True
+    ) == {
+        "activation_encodings": {
+            "image": [
+                {
+                    "bitwidth": 8,
+                    "is_symmetric": "False",
+                    "dtype": "int",
+                    "scale": 1.0,
+                    "offset": 0,
+                }
+            ],
+            "feature_map": [
+                {
+                    "bitwidth": 8,
+                    "is_symmetric": "False",
+                    "dtype": "int",
+                    "scale": 0.25,
+                    "offset": -2,
+                },
+                {
+                    "bitwidth": 8,
+                    "is_symmetric": "False",
+                    "dtype": "int",
+                    "scale": 0.5,
+                    "offset": -4,
+                },
+            ],
+        },
+        "param_encodings": {
+            "conv.weight": [
+                {
+                    "bitwidth": 16,
+                    "dtype": "float",
+                }
+            ]
+        },
+    }
+
+
+def test_rvc4_quantization_overrides_accepts_aimet_format():
+    encodings_path = create_encodings_file(
+        {
+            "version": "1.0.0",
+            "activation_encodings": [
+                {
+                    "name": "image",
+                    "dtype": "INT",
+                    "bw": 8,
+                    "is_sym": False,
+                    "scale": [1.0],
+                    "offset": [0],
+                }
+            ],
+            "param_encodings": [
+                {
+                    "name": "conv.weight",
+                    "dtype": "FLOAT",
+                    "bw": 16,
+                }
+            ],
+        },
+        suffix=".encodings",
+    )
+
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(DATA_DIR / "dummy_model.onnx"),
+            "rvc4.snpe_onnx_to_dlc_args": json.dumps(
+                ["--quantization_overrides", encodings_path]
+            ),
+        },
+    )
+
+    assert (
+        config.get("stages.dummy_model.rvc4.snpe_onnx_to_dlc_args") == []
+    )
+    assert config.get("stages.dummy_model.rvc4.encodings").model_dump(
+        mode="json", exclude_none=True
+    ) == {
+        "activation_encodings": {
+            "image": [
+                {
+                    "bitwidth": 8,
+                    "is_symmetric": "False",
+                    "dtype": "int",
+                    "scale": 1.0,
+                    "offset": 0,
+                }
+            ]
+        },
+        "param_encodings": {
+            "conv.weight": [
+                {
+                    "bitwidth": 16,
+                    "dtype": "float",
+                }
+            ]
+        },
+    }

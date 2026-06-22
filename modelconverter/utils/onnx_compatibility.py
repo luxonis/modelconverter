@@ -62,3 +62,15 @@ def save_onnx_model(
         return
 
     onnx.save(model, str(output_path))
+
+
+def get_external_data_path(model_path: str | Path) -> Path | None:
+    model_path = Path(model_path)
+    candidates = [
+        model_path.with_suffix(".onnx_data"),
+        model_path.with_name(f"{model_path.name}.data"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None

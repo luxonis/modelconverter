@@ -12,6 +12,7 @@ from onnxsim import simplify
 from modelconverter.utils.config import InputConfig, OutputConfig
 from modelconverter.utils.onnx_compatibility import (
     ensure_onnx_helper_compatibility,
+    get_external_data_path,
     save_onnx_model,
 )
 
@@ -112,8 +113,9 @@ def onnx_attach_normalization_to_inputs(
     reverse_only: bool = False,
 ) -> Path:
     model = onnx.load(str(model_path))
-    if model_path.with_suffix(".onnx_data").exists():
-        model_data_path = str(model_path).replace(".onnx", ".onnx_data")
+    external_data_path = get_external_data_path(model_path)
+    if external_data_path is not None:
+        model_data_path = str(external_data_path)
     else:
         model_data_path = None
 
@@ -326,10 +328,7 @@ class ONNXModifier:
         skip_constant_folding: bool = False,
     ) -> None:
         self.model_path = model_path
-        if model_path.with_suffix(".onnx_data").exists():
-            self.has_external_data = True
-        else:
-            self.has_external_data = False
+        self.has_external_data = get_external_data_path(model_path) is not None
         self.output_path = output_path
         self.skip_optimization = skip_optimization
         self.skip_constant_folding = skip_constant_folding
@@ -422,7 +421,7 @@ class ONNXModifier:
                     optimized_onnx_model,
                     tmp_onnx_file.name,
                     save_as_external_data=True,
-                    location=f"{tmp_onnx_file.name}_data",
+                    location=f"{Path(tmp_onnx_file.name).name}_data",
                 )
                 onnx.checker.check_model(tmp_onnx_file.name)
         else:
