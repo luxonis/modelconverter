@@ -33,22 +33,27 @@ class RVC4Analyzer(Analyzer):
 
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
         onnx_all_layers = self._add_outputs_to_all_layers(str(onnx_model_path))
-        session = rt.InferenceSession(onnx_all_layers)
-        self._debug_output_paths = [layer.name for layer in session.get_outputs()]
-        input_matcher = self._prepare_input_matcher()
-        dlc_matcher = self._prepare_raw_inputs(input_matcher, np.float32)
+        try:
+            session = rt.InferenceSession(onnx_all_layers)
+            self._debug_output_paths = [
+                layer.name for layer in session.get_outputs()
+            ]
+            input_matcher = self._prepare_input_matcher()
+            dlc_matcher = self._prepare_raw_inputs(input_matcher, np.float32)
 
-        output_dir = Path(
-            self._run_dlc(
-                f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float"
+            output_dir = Path(
+                self._run_dlc(
+                    f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float"
+                )
             )
-        )
-        dlc_matcher = {k: output_dir / v for k, v in dlc_matcher.items()}
+            dlc_matcher = {k: output_dir / v for k, v in dlc_matcher.items()}
 
-        self._flatten_dlc_outputs(dlc_matcher)
-        self._compare_to_onnx(onnx_all_layers, input_matcher, dlc_matcher)
+            self._flatten_dlc_outputs(dlc_matcher)
+            self._compare_to_onnx(onnx_all_layers, input_matcher, dlc_matcher)
 
-        self._cleanup_dlc_outputs()
+            self._cleanup_dlc_outputs()
+        finally:
+            onnx_all_layers.unlink(missing_ok=True)
 
     def _resize_image(
         self, img_path: str, input_sizes: list[int]
@@ -141,8 +146,8 @@ class RVC4Analyzer(Analyzer):
     def _prepare_output_dirs(self) -> None:
         base_dir = f"/data/modelconverter/{self.model_name}/output"
         output_dirs = {base_dir}
-        result_names = getattr(self, "_result_names", [])
-        debug_output_paths = getattr(self, "_debug_output_paths", [])
+        result_names = self._result_names
+        debug_output_paths = self._debug_output_paths
 
         for result_name in result_names:
             result_dir = posixpath.join(base_dir, result_name)
@@ -328,7 +333,6 @@ class RVC4Analyzer(Analyzer):
         logger.info(
             f"Layer comparison results saved to {output_dir}/layer_comparison.csv"
         )
-        Path(onnx_all_layers).unlink()
 
     def _calculate_statistics(
         self, onnx_output: np.ndarray, dlc_output: np.ndarray
