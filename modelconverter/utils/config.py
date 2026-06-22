@@ -147,6 +147,13 @@ class InputConfig(OutputConfig):
     def is_color_input(self) -> bool:
         return self.encoding.from_ in {Encoding.RGB, Encoding.BGR}
 
+    @property
+    def is_raw_input(self) -> bool:
+        return (
+            self.encoding.from_ == Encoding.NONE
+            and self.encoding.to == Encoding.NONE
+        )
+
     @model_validator(mode="after")
     def _validate_grayscale_inputs(self) -> Self:
         if self.layout is None:

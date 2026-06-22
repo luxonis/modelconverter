@@ -126,28 +126,36 @@ def extract_preprocessing(
     stage_cfg = next(iter(cfg.stages.values()))
     preprocessing = {}
     for inp in stage_cfg.inputs:
-        mean = inp.mean_values or [0, 0, 0]
-        scale = inp.scale_values or [1, 1, 1]
+        mean = inp.mean_values
+        scale = inp.scale_values
         encoding = inp.encoding
         layout = inp.layout
 
-        dai_type = encoding.to.value
-        if dai_type != "NONE":
+        if inp.is_raw_input:
+            if mean is not None or scale is not None:
+                preprocessing[inp.name] = PreprocessingBlock(
+                    mean=mean,
+                    scale=scale,
+                    reverse_channels=None,
+                    interleaved_to_planar=None,
+                    dai_type=None,
+                )
+        else:
+            dai_type = encoding.to.value
             if inp.data_type == DataType.FLOAT16:
-                type = "F16F16F16"
+                channel_type = "F16F16F16"
             else:
-                type = "888"
-            dai_type += type
+                channel_type = "888"
+            dai_type += channel_type
             dai_type += "i" if layout == "NHWC" else "p"
 
-        preproc_block = PreprocessingBlock(
-            mean=mean,
-            scale=scale,
-            reverse_channels=encoding.to == Encoding.RGB,
-            interleaved_to_planar=layout == "NHWC",
-            dai_type=dai_type,
-        )
-        preprocessing[inp.name] = preproc_block
+            preprocessing[inp.name] = PreprocessingBlock(
+                mean=mean or [0, 0, 0],
+                scale=scale or [1, 1, 1],
+                reverse_channels=encoding.to == Encoding.RGB,
+                interleaved_to_planar=layout == "NHWC",
+                dai_type=dai_type,
+            )
 
         inp.mean_values = None
         inp.scale_values = None
