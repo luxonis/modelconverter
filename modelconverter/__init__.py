@@ -4,7 +4,7 @@ from typing import Final
 from luxonis_ml.utils import PUT_FILE_REGISTRY
 from pydantic_extra_types.semantic_version import SemanticVersion
 
-__version__: Final[str] = "0.5.5"
+__version__: Final[str] = "0.5.6"
 __semver__: Final[SemanticVersion] = SemanticVersion.parse(__version__)
 
 
