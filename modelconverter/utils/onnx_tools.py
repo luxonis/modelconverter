@@ -112,6 +112,15 @@ def onnx_attach_normalization_to_inputs(
     *,
     reverse_only: bool = False,
 ) -> Path:
+    if not any(
+        cfg.requires_onnx_input_modification(reverse_only=reverse_only)
+        for cfg in input_configs.values()
+    ):
+        logger.info(
+            "No ONNX input normalization changes requested; using original model."
+        )
+        return model_path
+
     model = onnx.load(str(model_path))
     external_data_path = get_external_data_path(model_path)
     if external_data_path is not None:
@@ -138,11 +147,7 @@ def onnx_attach_normalization_to_inputs(
         if input_name not in input_configs:
             continue
         cfg = input_configs[input_name]
-        if (
-            cfg.encoding.from_ == cfg.encoding.to
-            and cfg.mean_values is None
-            and cfg.scale_values is None
-        ):
+        if not cfg.requires_onnx_input_modification(reverse_only=reverse_only):
             continue
 
         shape = cfg.shape

@@ -852,6 +852,30 @@ def test_modified_onnx(keys: list[str], values: list[str]):
             assert input_configs[inp].scale_values is None or [1, 1, 1]
 
 
+def test_modified_onnx_noop_returns_original_model():
+    model_path = DATA_DIR / "dummy_model.onnx"
+    modified_path = DATA_DIR / "dummy_model_noop_modified.onnx"
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model_path),
+            "encoding": "NONE",
+        },
+    )
+    input_configs = {
+        inp.name: inp for inp in next(iter(config.stages.values())).inputs
+    }
+
+    result = onnx_attach_normalization_to_inputs(
+        model_path,
+        modified_path,
+        input_configs,
+    )
+
+    assert result == model_path
+    assert not modified_path.exists()
+
+
 def test_output_nn_config_from_yaml_raw_input_with_archive_preprocess():
     model_path = DATA_DIR / "dummy_model.onnx"
     config = Config.get_config(
