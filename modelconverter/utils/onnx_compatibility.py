@@ -3,6 +3,7 @@ from pathlib import Path
 import ml_dtypes
 import numpy as np
 import onnx
+from onnx.external_data_helper import ExternalDataInfo, uses_external_data
 
 
 def ensure_onnx_helper_compatibility() -> None:
@@ -63,14 +64,20 @@ def save_onnx_model(
 
     onnx.save(model, str(output_path))
 
-
 def get_external_data_path(model_path: str | Path) -> Path | None:
     model_path = Path(model_path)
-    candidates = [
-        model_path.with_suffix(".onnx_data"),
-        model_path.with_name(f"{model_path.name}.data"),
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
+    model = onnx.load(str(model_path), load_external_data=False)
+
+    tensors = list(model.graph.initializer)
+    tensors.extend(
+        sparse_tensor.values for sparse_tensor in model.graph.sparse_initializer
+    )
+    tensors.extend(
+        sparse_tensor.indices for sparse_tensor in model.graph.sparse_initializer
+    )
+    for tensor in tensors:
+        if uses_external_data(tensor):
+            location = ExternalDataInfo(tensor).location
+            if location:
+                return model_path.parent / location
     return None
