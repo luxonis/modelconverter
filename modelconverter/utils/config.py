@@ -349,6 +349,8 @@ class RVC4Config(TargetConfig):
             return None
 
         if isinstance(value, str):
+            if value.lstrip().startswith("{"):
+                return parse_encodings(value)
             value_path = resolve_path(value, MISC_DIR)
             return parse_encodings(value_path.read_text())
 
