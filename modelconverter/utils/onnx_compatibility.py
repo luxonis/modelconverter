@@ -67,6 +67,7 @@ def save_onnx_model(
 def get_external_data_path(model_path: str | Path) -> Path | None:
     model_path = Path(model_path)
     model = onnx.load(str(model_path), load_external_data=False)
+    model_dir = model_path.parent.resolve()
 
     tensors = list(model.graph.initializer)
     tensors.extend(
@@ -79,5 +80,13 @@ def get_external_data_path(model_path: str | Path) -> Path | None:
         if uses_external_data(tensor):
             location = ExternalDataInfo(tensor).location
             if location:
-                return model_path.parent / location
+                candidate = (model_path.parent / location).resolve()
+                try:
+                    candidate.relative_to(model_dir)
+                except ValueError as exc:
+                    raise ValueError(
+                        "ONNX external data location must stay within the "
+                        f"model directory: {location}"
+                    ) from exc
+                return candidate
     return None
