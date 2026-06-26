@@ -1,4 +1,3 @@
-import json
 import warnings
 from itertools import chain
 from pathlib import Path
@@ -20,10 +19,14 @@ from typing_extensions import Self
 
 from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
+from modelconverter.utils.encodings import parse_encodings
 from modelconverter.utils.filesystem_utils import resolve_path
 from modelconverter.utils.layout import make_default_layout
 from modelconverter.utils.metadata import Metadata, get_metadata
-from modelconverter.utils.onnx_compatibility import save_onnx_model
+from modelconverter.utils.onnx_compatibility import (
+    get_external_data_path,
+    save_onnx_model,
+)
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -336,7 +339,7 @@ class RVC4Config(TargetConfig):
             self.snpe_onnx_to_dlc_args.pop(qo_index)
             encodings_json = self.snpe_onnx_to_dlc_args.pop(qo_index)
             with open(encodings_json) as f:
-                self.encodings = Encodings.model_validate_json(f.read())
+                self.encodings = parse_encodings(f.read())
         return self
 
     @field_validator("encodings", mode="before")
@@ -346,10 +349,12 @@ class RVC4Config(TargetConfig):
             return None
 
         if isinstance(value, str):
+            if value.lstrip().startswith("{"):
+                return parse_encodings(value)
             value_path = resolve_path(value, MISC_DIR)
-            return Encodings(**json.loads(value_path.read_text()))
+            return parse_encodings(value_path.read_text())
 
-        return Encodings(**value)
+        return parse_encodings(value)
 
     @model_validator(mode="after")
     def _validate_fp16(self) -> Self:
@@ -845,10 +850,7 @@ def generate_renamed_onnx(
     onnx_path = Path(onnx_path)
     output_path = Path(output_path)
     model = onnx.load(str(onnx_path))
-    if onnx_path.with_suffix(".onnx_data").exists():
-        model_data_path = onnx_path.with_suffix(".onnx_data")
-    else:
-        model_data_path = None
+    model_data_path = get_external_data_path(onnx_path)
 
     for node in model.graph.node:
         for i, input_name in enumerate(node.input):
