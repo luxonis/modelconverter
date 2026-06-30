@@ -797,6 +797,9 @@ def launcher(
     if not is_convert_command:
         return run_in_configured_environment()
 
+    if running_in_docker:  # to suppress duplicate COMMAND_EVENT capture
+        return run_in_configured_environment()
+
     assert target is not None
     command_telemetry = get_component_telemetry()
     conversion_run_id = get_conversion_run_id()
