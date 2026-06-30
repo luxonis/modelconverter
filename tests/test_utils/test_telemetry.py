@@ -87,7 +87,6 @@ def test_build_conversion_summary_rvc4(tmp_path: Path) -> None:
         "multiple_input_model_formats": False,
         "input_count_bucket": "1",
         "output_count_bucket": "1",
-        "has_calibration": True,
         "calibration_source": "image_directory",
         "disable_calibration": False,
         "keep_intermediate_outputs": False,
