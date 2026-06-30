@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import yaml
 from onnx import checker, helper
 from onnx.onnx_pb import TensorProto
@@ -7,9 +8,11 @@ from onnx.onnx_pb import TensorProto
 from modelconverter.utils.config import Config
 from modelconverter.utils.docker_utils import generate_compose_config
 from modelconverter.utils.telemetry import (
+    MODELCONVERTER_TELEMETRY_DEFAULTS,
     build_conversion_result_properties,
     build_conversion_summary,
     detect_config_source,
+    get_component_telemetry,
 )
 from modelconverter.utils.types import Target
 
@@ -154,3 +157,25 @@ def test_generate_compose_config_includes_extra_environment():
     environment = compose["services"]["modelconverter"]["environment"]
     assert environment["MODELCONVERTER_CONVERSION_RUN_ID"] == "run-123"
     assert environment["LUXONIS_TELEMETRY_ENABLED"] == "true"
+
+
+def test_get_component_telemetry_uses_modelconverter_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LUXONIS_TELEMETRY_BACKEND", raising=False)
+    monkeypatch.delenv("LUXONIS_TELEMETRY_API_KEY", raising=False)
+    monkeypatch.delenv("LUXONIS_TELEMETRY_ENDPOINT", raising=False)
+    monkeypatch.delenv("LUXONIS_TELEMETRY_DEBUG", raising=False)
+
+    telemetry = get_component_telemetry()
+
+    assert (
+        telemetry._config.backend == MODELCONVERTER_TELEMETRY_DEFAULTS.backend
+    )
+    assert (
+        telemetry._config.api_key == MODELCONVERTER_TELEMETRY_DEFAULTS.api_key
+    )
+    assert (
+        telemetry._config.endpoint
+        == MODELCONVERTER_TELEMETRY_DEFAULTS.endpoint
+    )

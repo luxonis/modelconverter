@@ -5,6 +5,9 @@ on:
     - cron: "0 0 * * 0"
   workflow_dispatch:
 
+env:
+  LUXONIS_TELEMETRY_ENABLED: "false"
+
 jobs:
   update-github-actions:
     runs-on: ubuntu-latest

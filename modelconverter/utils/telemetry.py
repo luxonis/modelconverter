@@ -10,6 +10,7 @@ from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.telemetry import (
     Telemetry,
     TelemetryConfig,
+    TelemetryDefaults,
     get_or_init,
     system_context_provider,
 )
@@ -36,6 +37,12 @@ FLOW_NAME = "modelconverter_conversion_lifecycle"
 COMMAND_EVENT = "modelconverter_command_ran"
 CONFIGURED_EVENT = "modelconverter_conversion_configured"
 RESULT_EVENT = "modelconverter_conversion_result_recorded"
+MODELCONVERTER_TELEMETRY_DEFAULTS = TelemetryDefaults(
+    enabled=True,
+    backend="posthog",
+    api_key="phc_ojEByaCiZZ5eigzaM43PaEVbfLfFDF5NgkXEMPabrT9a",
+    endpoint="https://us.i.posthog.com",
+)
 
 
 def get_conversion_run_id() -> str:
@@ -68,7 +75,9 @@ def get_component_telemetry() -> Telemetry:
     return get_or_init(
         "modelconverter",
         library_version=__version__,
-        config=TelemetryConfig.from_environ(),
+        config=TelemetryConfig.from_environ(
+            defaults=MODELCONVERTER_TELEMETRY_DEFAULTS
+        ),
         system_context_providers=[system_context_provider],
     )
 
