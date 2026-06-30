@@ -1,7 +1,6 @@
 import importlib.metadata
 import os
 import re
-import resource
 import signal
 import sys
 import time
@@ -43,6 +42,24 @@ from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.constants import MODELS_DIR
 from modelconverter.utils.general import sanitize_net_name
 from modelconverter.utils.nn_archive import generate_archive
+from modelconverter.utils.telemetry import (
+    COMMAND_EVENT,
+    CONFIGURED_EVENT,
+    CONVERSION_RUN_ID_ENV_VAR,
+    RESULT_EVENT,
+    build_command_properties,
+    build_conversion_result_properties,
+    build_conversion_summary,
+    build_flow_properties,
+    command_failure_reason_from_exception,
+    command_result_from_exception,
+    detect_config_source,
+    get_component_telemetry,
+    get_conversion_run_id,
+    peak_ram_usage_bytes,
+    resolve_target_tool_version,
+    runtime_failure_reason_from_exception,
+)
 from modelconverter.utils.types import Target
 
 app = App(
@@ -115,15 +132,25 @@ def convert(
     def handle_signal(signum: int, frame: Any) -> None:
         signame = signal.Signals(signum).name
         logger.error(f"{signame} received, exiting...")
-        sys.exit(1)
+        sys.exit(130)
 
     signal.signal(signal.SIGTERM, handle_signal)
 
     if output_dir is not None:
         output_dir = sanitize_net_name(output_dir)
-    t = time.time()
+    t = time.monotonic()
+    runtime_telemetry = get_component_telemetry()
+    conversion_run_id = get_conversion_run_id()
+    original_path = path
+    opts: list[str] = list(opts or [])
+    conversion_start: float | None = None
+    conversion_summary: dict[str, Any] | None = None
+    output_artifact_count: int | None = None
+    uploaded_output = False
+    uploaded_intermediate_outputs = False
+    phase = "configuration"
+    caught_exc: BaseException | None = None
 
-    opts = opts or []
     if path is not None:
         suffix = Path(path).suffix
         if suffix in {".xml", ".bin"} and target not in {
@@ -152,7 +179,7 @@ def convert(
             ]
             path = None
 
-    with catch_exceptions():
+    try:
         init_dirs()
         cfg, archive_cfg, _main_stage = get_configs(target, path, list(opts))
         main_stage = main_stage or _main_stage
@@ -182,6 +209,29 @@ def convert(
                 output_dir=output_path,
             )
 
+        conversion_summary = build_flow_properties(
+            conversion_run_id,
+            "configuration_resolved",
+            build_conversion_summary(
+                cfg,
+                target=target,
+                config_source=detect_config_source(
+                    original_path, opts, archive_cfg
+                ),
+                archive_output_mode=to,
+                archive_preprocess=archive_preprocess,
+                main_stage_provided=main_stage is not None,
+            ),
+        )
+        runtime_telemetry.capture(
+            CONFIGURED_EVENT,
+            conversion_summary,
+            include_system_metadata=True,
+            distinct_id=conversion_run_id,
+        )
+
+        conversion_start = time.monotonic()
+        phase = "conversion"
         out_models = exporter.run()
         if not isinstance(out_models, list):
             out_models = [out_models]
@@ -189,8 +239,8 @@ def convert(
             from modelconverter.packages.base_exporter import Exporter
 
             archive_name = None
-            if path is not None and is_nn_archive(path):
-                archive_name = Path(path).name.split(".")[0]
+            if original_path is not None and is_nn_archive(original_path):
+                archive_name = Path(original_path).name.split(".")[0]
 
             assert main_stage is not None
             out_models = [
@@ -212,6 +262,7 @@ def convert(
                     archive_name=archive_name,
                 )
             ]
+        output_artifact_count = len(out_models)
 
         if isinstance(exporter.config, SingleStageConfig):
             _cfg = exporter.config
@@ -222,6 +273,7 @@ def convert(
         put_file_plugin = _cfg.put_file_plugin
 
         if upload_url is not None:
+            phase = "upload_output"
             for model_path in out_models:
                 logger.info(f"Uploading {model_path} to {upload_url}")
                 upload_to_remote(
@@ -229,10 +281,10 @@ def convert(
                     upload_url,
                     put_file_plugin,
                 )
-
-            logger.info("Conversion finished successfully")
+            uploaded_output = True
 
         if intermediate_url is not None:
+            phase = "upload_intermediate"
             exporters = (
                 exporter.exporters.values()
                 if isinstance(exporter, MultiStageExporter)
@@ -247,9 +299,70 @@ def convert(
                     intermediate_url,
                     put_file_plugin,
                 )
-    ram = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-    logger.info(f"Peak RAM usage: {ram:.2f} MB")
-    logger.info(f"Conversion finished in {time.time() - t:.2f} seconds")
+            uploaded_intermediate_outputs = True
+
+        logger.info("Conversion finished successfully")
+    except KeyboardInterrupt as exc:
+        caught_exc = exc
+        logger.error("Keyboard interrupt received, exiting...")
+        raise SystemExit(130) from exc
+    except SystemExit as exc:
+        caught_exc = exc
+        raise
+    except ModelconverterException as exc:
+        caught_exc = exc
+        logger.exception("Encountered an exception in the conversion process!")
+        raise SystemExit(1) from exc
+    except Exception as exc:
+        caught_exc = exc
+        logger.exception("Encountered an unexpected error!")
+        raise SystemExit(2) from exc
+    finally:
+        peak_ram_bytes = peak_ram_usage_bytes()
+        logger.info(f"Peak RAM usage: {peak_ram_bytes / (1024 * 1024):.2f} MB")
+        logger.info(
+            f"Conversion finished in {time.monotonic() - t:.2f} seconds"
+        )
+        if conversion_summary is not None and conversion_start is not None:
+            failure_reason = runtime_failure_reason_from_exception(
+                caught_exc, phase=phase
+            )
+            runtime_telemetry.capture(
+                RESULT_EVENT,
+                build_flow_properties(
+                    conversion_run_id,
+                    "result_recorded",
+                    {
+                        **{
+                            key: value
+                            for key, value in conversion_summary.items()
+                            if key != "flow_step"
+                        },
+                        **build_conversion_result_properties(
+                            result=(
+                                "success"
+                                if caught_exc is None
+                                else (
+                                    "interrupted"
+                                    if failure_reason == "user_interrupt"
+                                    else "failed"
+                                )
+                            ),
+                            failure_reason=failure_reason,
+                            duration_ms=int(
+                                (time.monotonic() - conversion_start) * 1000
+                            ),
+                            output_artifact_count=output_artifact_count,
+                            uploaded_output=uploaded_output,
+                            uploaded_intermediate_outputs=uploaded_intermediate_outputs,
+                            peak_ram_bytes=peak_ram_bytes,
+                        ),
+                    },
+                ),
+                include_system_metadata=True,
+                distinct_id=conversion_run_id,
+            )
+        os.environ.pop(CONVERSION_RUN_ID_ENV_VAR, None)
 
 
 @app.command(group=docker_commands)
@@ -629,6 +742,9 @@ def launcher(
     ] = None,
 ):
     command, bound, _ = app.parse_args(tokens)
+    target = bound.arguments.get("target")
+    is_convert_command = getattr(command, "__name__", "") == "convert"
+    running_in_docker = in_docker()
 
     if memory is not None:
         if not re.match(r"^\d+(?:[bkmgBKMG])?$", memory):
@@ -643,40 +759,81 @@ def launcher(
     if cpus is not None and cpus <= 0:
         raise ValueError("CPUs value must be a positive number.")
 
-    if in_docker():
-        return command(*bound.args, **bound.kwargs)
+    def run_in_configured_environment() -> Any:
+        if running_in_docker:
+            return command(*bound.args, **bound.kwargs)
 
-    tag = "dev" if dev else "latest"
+        assert target is not None
+        tag = "dev" if dev else "latest"
+        if dev:
+            version = tool_version or get_default_target_version(target.value)
+            # CI invokes multiple dev docker commands per job; reuse the first
+            # local build so later commands don't rebuild the same image again.
+            if not (
+                os.getenv("CI") == "true"
+                and get_local_docker_image(
+                    target.value,
+                    bare_tag=tag,
+                    version=version,
+                    image=image,
+                )
+            ):
+                docker_build(
+                    target.value, bare_tag=tag, version=version, image=image
+                )
 
-    target = bound.arguments["target"]
+        docker_exec(
+            target.value,
+            *tokens,
+            bare_tag=tag,
+            use_gpu=gpu,
+            version=tool_version,
+            image=image,
+            memory=memory,
+            cpus=cpus,
+        )
+        return None
 
-    if dev:
-        version = tool_version or get_default_target_version(target.value)
-        # CI invokes multiple dev docker commands per job; reuse the first
-        # local build so later commands don't rebuild the same image again.
-        if not (
-            os.getenv("CI") == "true"
-            and get_local_docker_image(
-                target.value,
-                bare_tag=tag,
-                version=version,
-                image=image,
-            )
-        ):
-            docker_build(
-                target.value, bare_tag=tag, version=version, image=image
-            )
+    if not is_convert_command:
+        return run_in_configured_environment()
 
-    docker_exec(
-        target.value,
-        *tokens,
-        bare_tag=tag,
-        use_gpu=gpu,
-        version=tool_version,
-        image=image,
-        memory=memory,
-        cpus=cpus,
-    )
+    assert target is not None
+    command_telemetry = get_component_telemetry()
+    conversion_run_id = get_conversion_run_id()
+    command_start = time.monotonic()
+    caught_exc: BaseException | None = None
+
+    try:
+        return run_in_configured_environment()
+    except BaseException as exc:
+        caught_exc = exc
+        raise
+    finally:
+        command_telemetry.capture(
+            COMMAND_EVENT,
+            build_command_properties(
+                conversion_run_id=conversion_run_id,
+                target=target,
+                runs_in_docker=not running_in_docker,
+                dev_image=dev,
+                gpu_enabled=gpu,
+                target_tool_version=resolve_target_tool_version(
+                    target=target,
+                    tool_version=tool_version,
+                    image=image,
+                ),
+                custom_image_provided=image is not None,
+                memory_limit_set=memory is not None,
+                cpu_limit_set=cpus is not None,
+                result=command_result_from_exception(caught_exc),
+                failure_reason=command_failure_reason_from_exception(
+                    caught_exc
+                ),
+                duration_ms=int((time.monotonic() - command_start) * 1000),
+            ),
+            include_system_metadata=True,
+            distinct_id=conversion_run_id,
+        )
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 import docker
 from modelconverter import __version__
+from modelconverter.utils.telemetry import telemetry_environment
 
 
 def get_docker_client_from_active_context() -> docker.DockerClient:
@@ -72,22 +73,27 @@ def generate_compose_config(
     gpu: bool = False,
     memory: str | None = None,
     cpus: float | None = None,
+    extra_environment: dict[str, str] | None = None,
 ) -> str:
+    environment = {
+        "AWS_ACCESS_KEY_ID": environ.AWS_ACCESS_KEY_ID.get_secret_value()
+        if environ.AWS_ACCESS_KEY_ID
+        else "",
+        "AWS_SECRET_ACCESS_KEY": environ.AWS_SECRET_ACCESS_KEY.get_secret_value()
+        if environ.AWS_SECRET_ACCESS_KEY
+        else "",
+        "AWS_S3_ENDPOINT_URL": environ.AWS_S3_ENDPOINT_URL or "",
+        "LUXONISML_BUCKET": environ.LUXONISML_BUCKET or "",
+        "TF_CPP_MIN_LOG_LEVEL": "3",
+        "GOOGLE_APPLICATION_CREDENTIALS": "/run/secrets/gcp-credentials",
+    }
+    if extra_environment:
+        environment.update(extra_environment)
+
     config = {
         "services": {
             "modelconverter": {
-                "environment": {
-                    "AWS_ACCESS_KEY_ID": environ.AWS_ACCESS_KEY_ID.get_secret_value()
-                    if environ.AWS_ACCESS_KEY_ID
-                    else "",
-                    "AWS_SECRET_ACCESS_KEY": environ.AWS_SECRET_ACCESS_KEY.get_secret_value()
-                    if environ.AWS_SECRET_ACCESS_KEY
-                    else "",
-                    "AWS_S3_ENDPOINT_URL": environ.AWS_S3_ENDPOINT_URL or "",
-                    "LUXONISML_BUCKET": environ.LUXONISML_BUCKET or "",
-                    "TF_CPP_MIN_LOG_LEVEL": "3",
-                    "GOOGLE_APPLICATION_CREDENTIALS": "/run/secrets/gcp-credentials",
-                },
+                "environment": environment,
                 "volumes": [
                     f"{Path.cwd().absolute() / 'shared_with_container'}:/app/shared_with_container"
                 ],
@@ -452,6 +458,7 @@ def docker_exec(
                 gpu=use_gpu and target == "hailo",
                 memory=memory,
                 cpus=cpus,
+                extra_environment=telemetry_environment(),
             ).encode()
         )
 
