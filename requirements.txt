@@ -1,5 +1,6 @@
 Pillow
-luxonis-ml[data,nn_archive,s3,gcs,telemetry]~=0.9.0
+# luxonis-ml[data,nn_archive,s3,gcs,telemetry]~=0.9.0
+luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@feat/telemetry
 cyclopts~=4.16
 onnx==1.21.0
 onnxruntime
