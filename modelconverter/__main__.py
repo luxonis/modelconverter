@@ -151,35 +151,36 @@ def convert(
     phase = "configuration"
     caught_exc: BaseException | None = None
 
-    if path is not None:
-        suffix = Path(path).suffix
-        if suffix in {".xml", ".bin"} and target not in {
-            Target.RVC2,
-            Target.RVC3,
-        }:
-            raise ValueError(
-                f"OpenVINO IR format is not supported for target {target.name}."
-            )
-        if suffix in {".onnx", ".xml", ".dlc", ".tflite"}:
-            opts = ["input_model", path, *opts]
-            if suffix == ".xml":
+    try:
+        main_stage_provided = main_stage is not None
+        if path is not None:
+            suffix = Path(path).suffix
+            if suffix in {".xml", ".bin"} and target not in {
+                Target.RVC2,
+                Target.RVC3,
+            }:
+                raise ValueError(
+                    f"OpenVINO IR format is not supported for target {target.name}."
+                )
+            if suffix in {".onnx", ".xml", ".dlc", ".tflite"}:
+                opts = ["input_model", path, *opts]
+                if suffix == ".xml":
+                    opts = [
+                        "input_bin",
+                        str(Path(path).with_suffix(".bin")),
+                        *opts,
+                    ]
+                path = None
+            elif suffix == ".bin":
                 opts = [
+                    "input_model",
+                    str(Path(path).with_suffix(".xml")),
                     "input_bin",
-                    str(Path(path).with_suffix(".bin")),
+                    path,
                     *opts,
                 ]
-            path = None
-        elif suffix == ".bin":
-            opts = [
-                "input_model",
-                str(Path(path).with_suffix(".xml")),
-                "input_bin",
-                path,
-                *opts,
-            ]
-            path = None
+                path = None
 
-    try:
         init_dirs()
         cfg, archive_cfg, _main_stage = get_configs(target, path, list(opts))
         main_stage = main_stage or _main_stage
@@ -220,7 +221,7 @@ def convert(
                 ),
                 archive_output_mode=to,
                 archive_preprocess=archive_preprocess,
-                main_stage_provided=main_stage is not None,
+                main_stage_provided=main_stage_provided,
             ),
         )
         runtime_telemetry.capture(
@@ -240,7 +241,13 @@ def convert(
 
             archive_name = None
             if original_path is not None and is_nn_archive(original_path):
-                archive_name = Path(original_path).name.split(".")[0]
+                archive_filename = Path(original_path).name
+                archive_suffix = "".join(Path(original_path).suffixes)
+                archive_name = (
+                    archive_filename.removesuffix(archive_suffix)
+                    if archive_suffix
+                    else archive_filename
+                )
 
             assert main_stage is not None
             out_models = [
@@ -323,45 +330,48 @@ def convert(
         logger.info(
             f"Conversion finished in {time.monotonic() - t:.2f} seconds"
         )
-        if conversion_summary is not None and conversion_start is not None:
-            failure_reason = runtime_failure_reason_from_exception(
-                caught_exc, phase=phase
-            )
-            runtime_telemetry.capture(
-                RESULT_EVENT,
-                build_flow_properties(
-                    conversion_run_id,
-                    "result_recorded",
-                    {
-                        **{
+        failure_reason = runtime_failure_reason_from_exception(
+            caught_exc, phase=phase
+        )
+        runtime_telemetry.capture(
+            RESULT_EVENT,
+            build_flow_properties(
+                conversion_run_id,
+                "result_recorded",
+                {
+                    **(
+                        {
                             key: value
                             for key, value in conversion_summary.items()
                             if key != "flow_step"
-                        },
-                        **build_conversion_result_properties(
-                            result=(
-                                "success"
-                                if caught_exc is None
-                                else (
-                                    "interrupted"
-                                    if failure_reason == "user_interrupt"
-                                    else "failed"
-                                )
-                            ),
-                            failure_reason=failure_reason,
-                            duration_ms=int(
-                                (time.monotonic() - conversion_start) * 1000
-                            ),
-                            output_artifact_count=output_artifact_count,
-                            uploaded_output=uploaded_output,
-                            uploaded_intermediate_outputs=uploaded_intermediate_outputs,
-                            peak_ram_bytes=peak_ram_bytes,
+                        }
+                        if conversion_summary is not None
+                        else {"target": target.value}
+                    ),
+                    **build_conversion_result_properties(
+                        result=(
+                            "success"
+                            if caught_exc is None
+                            else (
+                                "interrupted"
+                                if failure_reason == "user_interrupt"
+                                else "failed"
+                            )
                         ),
-                    },
-                ),
-                include_system_metadata=True,
-                distinct_id=conversion_run_id,
-            )
+                        failure_reason=failure_reason,
+                        duration_ms=int(
+                            (time.monotonic() - (conversion_start or t)) * 1000
+                        ),
+                        output_artifact_count=output_artifact_count,
+                        uploaded_output=uploaded_output,
+                        uploaded_intermediate_outputs=uploaded_intermediate_outputs,
+                        peak_ram_bytes=peak_ram_bytes,
+                    ),
+                },
+            ),
+            include_system_metadata=True,
+            distinct_id=conversion_run_id,
+        )
         os.environ.pop(CONVERSION_RUN_ID_ENV_VAR, None)
 
 
@@ -802,6 +812,7 @@ def launcher(
 
     assert target is not None
     command_telemetry = get_component_telemetry()
+    previous_conversion_run_id = os.environ.get(CONVERSION_RUN_ID_ENV_VAR)
     conversion_run_id = get_conversion_run_id()
     command_start = time.monotonic()
     caught_exc: BaseException | None = None
@@ -812,31 +823,40 @@ def launcher(
         caught_exc = exc
         raise
     finally:
-        command_telemetry.capture(
-            COMMAND_EVENT,
-            build_command_properties(
-                conversion_run_id=conversion_run_id,
-                target=target,
-                runs_in_docker=not running_in_docker,
-                dev_image=dev,
-                gpu_enabled=gpu,
-                target_tool_version=resolve_target_tool_version(
+        try:
+            command_telemetry.capture(
+                COMMAND_EVENT,
+                build_command_properties(
+                    conversion_run_id=conversion_run_id,
                     target=target,
-                    tool_version=tool_version,
-                    image=image,
+                    runs_in_docker=not running_in_docker,
+                    dev_image=dev,
+                    gpu_enabled=gpu,
+                    target_tool_version=resolve_target_tool_version(
+                        target=target,
+                        tool_version=tool_version,
+                        image=image,
+                    ),
+                    custom_image_provided=image is not None,
+                    memory_limit_set=memory is not None,
+                    cpu_limit_set=cpus is not None,
+                    result=command_result_from_exception(caught_exc),
+                    failure_reason=command_failure_reason_from_exception(
+                        caught_exc
+                    ),
+                    duration_ms=int((time.monotonic() - command_start) * 1000),
                 ),
-                custom_image_provided=image is not None,
-                memory_limit_set=memory is not None,
-                cpu_limit_set=cpus is not None,
-                result=command_result_from_exception(caught_exc),
-                failure_reason=command_failure_reason_from_exception(
-                    caught_exc
-                ),
-                duration_ms=int((time.monotonic() - command_start) * 1000),
-            ),
-            include_system_metadata=True,
-            distinct_id=conversion_run_id,
-        )
+                include_system_metadata=True,
+                distinct_id=conversion_run_id,
+            )
+        finally:
+            if previous_conversion_run_id is None:
+                os.environ.pop(CONVERSION_RUN_ID_ENV_VAR, None)
+            else:
+                # Restore in case this is used elsewhere
+                os.environ[CONVERSION_RUN_ID_ENV_VAR] = (
+                    previous_conversion_run_id
+                )
 
 
 if __name__ == "__main__":

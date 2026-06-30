@@ -235,9 +235,13 @@ def build_conversion_result_properties(
 def command_result_from_exception(exc: BaseException | None) -> str:
     if exc is None:
         return "success"
-    if isinstance(exc, (KeyboardInterrupt, SystemExit)) and getattr(
-        exc, "code", None
-    ) in {None, 130}:
+    code = getattr(exc, "code", None)
+    if isinstance(exc, SystemExit) and code in {None, 0}:
+        return "success"
+    if isinstance(exc, (KeyboardInterrupt, SystemExit)) and code in {
+        None,
+        130,
+    }:
         return "interrupted"
     return "failed"
 
@@ -247,9 +251,13 @@ def command_failure_reason_from_exception(
 ) -> str | None:
     if exc is None:
         return None
-    if isinstance(exc, (KeyboardInterrupt, SystemExit)) and getattr(
-        exc, "code", None
-    ) in {None, 130}:
+    code = getattr(exc, "code", None)
+    if isinstance(exc, SystemExit) and code in {None, 0}:
+        return None
+    if isinstance(exc, (KeyboardInterrupt, SystemExit)) and code in {
+        None,
+        130,
+    }:
         return "user_interrupt"
     return "runtime_error"
 
@@ -350,10 +358,14 @@ def _target_configuration(
         )
 
     if isinstance(target_config, RVC3Config):
-        return {
-            "pot_target_device": target_config.pot_target_device.value.lower(),
-            "compress_to_fp16": target_config.compress_to_fp16,
-        }
+        return _drop_none(
+            {
+                "pot_target_device": (
+                    target_config.pot_target_device.value.lower()
+                ),
+                "compress_to_fp16": target_config.compress_to_fp16,
+            }
+        )
 
     if isinstance(target_config, RVC4Config):
         return _drop_none(

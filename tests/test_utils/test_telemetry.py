@@ -13,6 +13,8 @@ from modelconverter.utils.telemetry import (
     MODELCONVERTER_TELEMETRY_DEFAULTS,
     build_conversion_result_properties,
     build_conversion_summary,
+    command_failure_reason_from_exception,
+    command_result_from_exception,
     detect_config_source,
     get_component_telemetry,
 )
@@ -160,6 +162,11 @@ def test_build_conversion_result_properties():
     }
 
 
+def test_command_result_from_exception_treats_system_exit_zero_as_success():
+    assert command_result_from_exception(SystemExit(0)) == "success"
+    assert command_failure_reason_from_exception(SystemExit(0)) is None
+
+
 def test_generate_compose_config_includes_extra_environment():
     compose = yaml.safe_load(
         generate_compose_config(
@@ -183,6 +190,7 @@ def test_get_component_telemetry_uses_modelconverter_defaults(
     monkeypatch.delenv("LUXONIS_TELEMETRY_API_KEY", raising=False)
     monkeypatch.delenv("LUXONIS_TELEMETRY_ENDPOINT", raising=False)
     monkeypatch.delenv("LUXONIS_TELEMETRY_DEBUG", raising=False)
+    monkeypatch.delenv("LUXONIS_TELEMETRY_ENABLED", raising=False)
 
     telemetry = get_component_telemetry()
 
