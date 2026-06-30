@@ -1,3 +1,5 @@
+import json
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -39,6 +41,15 @@ def _create_dummy_onnx(path: Path) -> None:
     checker.check_model(model)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(model.SerializeToString())
+
+
+def _create_dummy_archive(path: Path, model_path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    config_path = path.parent / "config.json"
+    config_path.write_text(json.dumps({}), encoding="utf-8")
+    with tarfile.open(path, "w:xz") as tar:
+        tar.add(str(model_path), arcname=model_path.name)
+        tar.add(str(config_path), arcname="config.json")
 
 
 def test_build_conversion_summary_rvc4(tmp_path: Path) -> None:
@@ -106,14 +117,21 @@ def test_build_conversion_summary_rvc4(tmp_path: Path) -> None:
     }
 
 
-def test_detect_config_source():
+def test_detect_config_source(tmp_path: Path) -> None:
+    model_path = tmp_path / "dummy_model.onnx"
+    archive_path = tmp_path / "archive.tar.xz"
+    _create_dummy_onnx(model_path)
+    _create_dummy_archive(archive_path, model_path)
+
     assert detect_config_source("model.onnx", [], None) == "direct_model_input"
     assert detect_config_source("config.yaml", [], None) == "yaml_config"
     assert (
         detect_config_source(None, ["input_model", "model.onnx"], None)
         == "direct_model_input"
     )
-    assert detect_config_source("archive.tar.xz", [], object()) == "nn_archive"
+    assert (
+        detect_config_source(str(archive_path), [], object()) == "nn_archive"
+    )
     assert (
         detect_config_source("archive_dir", [], object())
         == "archive_directory"
