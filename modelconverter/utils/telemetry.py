@@ -15,7 +15,6 @@ from luxonis_ml.telemetry import (
 )
 
 from modelconverter import __version__
-from modelconverter.utils import get_default_target_version
 from modelconverter.utils.config import (
     Config,
     HailoConfig,
@@ -26,6 +25,9 @@ from modelconverter.utils.config import (
     RVC3Config,
     RVC4Config,
     SingleStageConfig,
+)
+from modelconverter.utils.target_versions import (
+    get_default_target_version,
 )
 from modelconverter.utils.types import Target
 

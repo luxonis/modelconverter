@@ -12,7 +12,6 @@ from .docker_utils import (
     docker_exec,
     get_container_memory_available,
     get_container_memory_limit,
-    get_default_target_version,
     get_docker_image,
     get_local_docker_image,
     in_docker,
@@ -47,6 +46,7 @@ from .onnx_tools import (
 )
 from .progress_handler import create_progress_handler
 from .subprocess import SubprocessHandle, subprocess_run
+from .target_versions import get_default_target_version
 from .types import DataType
 
 __all__ = [

@@ -22,6 +22,9 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 import docker
 from modelconverter import __version__
+from modelconverter.utils.target_versions import (
+    get_default_target_version,
+)
 from modelconverter.utils.telemetry import telemetry_environment
 
 
@@ -46,17 +49,6 @@ def get_docker_client_from_active_context() -> docker.DockerClient:
         kwargs["tls"] = True
 
     return docker.DockerClient(**kwargs)
-
-
-def get_default_target_version(
-    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
-) -> str:
-    return {
-        "rvc2": "2022.3.0",
-        "rvc3": "2022.3.0",
-        "rvc4": "2.41.0",
-        "hailo": "2025.04",
-    }[target]
 
 
 def rvc4_tag_version(version: str) -> str:
