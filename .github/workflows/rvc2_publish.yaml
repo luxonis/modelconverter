@@ -8,6 +8,9 @@ on:
     branches:
       - main
 
+env:
+  LUXONIS_TELEMETRY_ENABLED: "false"
+
 jobs:
   rvc2-publish:
     strategy:

@@ -22,6 +22,10 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 import docker
 from modelconverter import __version__
+from modelconverter.utils.target_versions import (
+    get_default_target_version,
+)
+from modelconverter.utils.telemetry import telemetry_environment
 
 
 def get_docker_client_from_active_context() -> docker.DockerClient:
@@ -47,17 +51,6 @@ def get_docker_client_from_active_context() -> docker.DockerClient:
     return docker.DockerClient(**kwargs)
 
 
-def get_default_target_version(
-    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
-) -> str:
-    return {
-        "rvc2": "2022.3.0",
-        "rvc3": "2022.3.0",
-        "rvc4": "2.41.0",
-        "hailo": "2025.04",
-    }[target]
-
-
 def rvc4_tag_version(version: str) -> str:
     """Removes build component from version string (e.g. 2.41.0.251128
     -> 2.41.0)"""
@@ -72,22 +65,27 @@ def generate_compose_config(
     gpu: bool = False,
     memory: str | None = None,
     cpus: float | None = None,
+    extra_environment: dict[str, str] | None = None,
 ) -> str:
+    environment = {
+        "AWS_ACCESS_KEY_ID": environ.AWS_ACCESS_KEY_ID.get_secret_value()
+        if environ.AWS_ACCESS_KEY_ID
+        else "",
+        "AWS_SECRET_ACCESS_KEY": environ.AWS_SECRET_ACCESS_KEY.get_secret_value()
+        if environ.AWS_SECRET_ACCESS_KEY
+        else "",
+        "AWS_S3_ENDPOINT_URL": environ.AWS_S3_ENDPOINT_URL or "",
+        "LUXONISML_BUCKET": environ.LUXONISML_BUCKET or "",
+        "TF_CPP_MIN_LOG_LEVEL": "3",
+        "GOOGLE_APPLICATION_CREDENTIALS": "/run/secrets/gcp-credentials",
+    }
+    if extra_environment:
+        environment.update(extra_environment)
+
     config = {
         "services": {
             "modelconverter": {
-                "environment": {
-                    "AWS_ACCESS_KEY_ID": environ.AWS_ACCESS_KEY_ID.get_secret_value()
-                    if environ.AWS_ACCESS_KEY_ID
-                    else "",
-                    "AWS_SECRET_ACCESS_KEY": environ.AWS_SECRET_ACCESS_KEY.get_secret_value()
-                    if environ.AWS_SECRET_ACCESS_KEY
-                    else "",
-                    "AWS_S3_ENDPOINT_URL": environ.AWS_S3_ENDPOINT_URL or "",
-                    "LUXONISML_BUCKET": environ.LUXONISML_BUCKET or "",
-                    "TF_CPP_MIN_LOG_LEVEL": "3",
-                    "GOOGLE_APPLICATION_CREDENTIALS": "/run/secrets/gcp-credentials",
-                },
+                "environment": environment,
                 "volumes": [
                     f"{Path.cwd().absolute() / 'shared_with_container'}:/app/shared_with_container"
                 ],
@@ -452,6 +450,7 @@ def docker_exec(
                 gpu=use_gpu and target == "hailo",
                 memory=memory,
                 cpus=cpus,
+                extra_environment=telemetry_environment(),
             ).encode()
         )
 
