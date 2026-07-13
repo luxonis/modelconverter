@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 from itertools import chain
@@ -16,6 +17,8 @@ from .test_packages.metrics import (
     ResnetMetric,
     YoloV6Metric,
 )
+
+os.environ.setdefault("LUXONIS_TELEMETRY_ENABLED", "false")
 
 ConvertEnv: TypeAlias = tuple[
     str,
