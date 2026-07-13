@@ -11,11 +11,11 @@ from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
     exit_with,
-    get_extra_quant_tensors,
     onnx_attach_normalization_to_inputs,
     read_image,
 )
 from modelconverter.utils.config import (
+    Encodings,
     ImageCalibrationConfig,
     SingleStageConfig,
 )
@@ -47,7 +47,6 @@ class RVC4Exporter(Exporter):
         self.use_per_row_quantization = rvc4_cfg.use_per_row_quantization
         self.optimization_level = rvc4_cfg.optimization_level
         self.quantization_mode = rvc4_cfg.quantization_mode
-        self.extra_quant_tensors = []
         if self.quantization_mode != QuantizationMode.CUSTOM:
             self.snpe_onnx_to_dlc = []
             self.snpe_dlc_quant = []
@@ -96,14 +95,6 @@ class RVC4Exporter(Exporter):
                 finally:
                     if onnx_modifier.output_path.exists():
                         onnx_modifier.output_path.unlink()
-
-            if self.quantization_mode in [
-                QuantizationMode.INT8_16_MIX,
-                QuantizationMode.INT8_16_MIX_ACC,
-            ]:
-                self.extra_quant_tensors = get_extra_quant_tensors(
-                    self.input_model, self.outputs, depth=2
-                )
         else:
             logger.warning(
                 "Input file type is not ONNX. Skipping pre-processing."
@@ -183,11 +174,10 @@ class RVC4Exporter(Exporter):
             self._add_args(args, ["--param_quantizer", "enhanced"])
             self._add_args(args, ["--act_quantizer", "enhanced"])
             self._add_args(args, ["--act_bitwidth", "16"])
-            args.append("--override_params")
         elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
             self._add_args(args, ["--act_bitwidth", "16"])
-            args.append("--override_params")
-        elif self.encodings is not None:
+
+        if self.encodings is not None:
             args.append("--override_params")
 
         start_time = time.time()
@@ -274,39 +264,15 @@ class RVC4Exporter(Exporter):
                 f.write(entry_str + "\n")
         return self.input_list_path
 
-    def generate_io_encodings(self) -> Path:
-        if self.encodings is not None:
-            encodings_dict = self.encodings.model_dump(
-                mode="json", exclude_none=True
-            )
-            # DAI does not support custom TF8 encodings on exposed model IO.
-            # Keep AIMET's internal tensor encodings, but normalize the
-            # inputs/outputs to the default int8 IO.
-            for name in (
-                list(self.inputs.keys())
-                + list(self.outputs.keys())
-                + self.extra_quant_tensors
-            ):
-                encodings_dict["activation_encodings"][name] = [
-                    {"bitwidth": 8, "dtype": "int"}
-                ]
-        else:
-            encodings_dict = {
-                "activation_encodings": {},
-                "param_encodings": {},
-            }
-            if not (list(self.inputs.keys()) and list(self.outputs.keys())):
-                logger.warning(
-                    "Cannot generate I/O encodings as inputs or outputs are not defined. The resulting DLC may not be compatible with DAI."
-                )
-            for name in (
-                list(self.inputs.keys())
-                + list(self.outputs.keys())
-                + self.extra_quant_tensors
-            ):
-                encodings_dict["activation_encodings"][name] = [
-                    {"bitwidth": 8, "dtype": "int"}
-                ]
+    def generate_io_encodings(self, encodings: Encodings) -> Path:
+        encodings_dict = encodings.model_dump(mode="json", exclude_none=True)
+        # DAI does not support custom TF8 encodings on exposed tensors.
+        # Keep AIMET's internal tensor encodings, but normalize exposed
+        # inputs and outputs to default int8 IO.
+        for name in list(self.inputs.keys()) + list(self.outputs.keys()):
+            encodings_dict["activation_encodings"][name] = [
+                {"bitwidth": 8, "dtype": "int"}
+            ]
         encodings_path = self.intermediate_outputs_dir / "encodings.json"
         with open(encodings_path, "w") as encodings_file:
             json.dump(encodings_dict, encodings_file, indent=4)
@@ -366,15 +332,8 @@ class RVC4Exporter(Exporter):
 
         if self.quantization_mode == QuantizationMode.FP16_STD:
             self._add_args(args, ["--float_bitwidth", "16"])
-        elif (
-            self.quantization_mode
-            in [
-                QuantizationMode.INT8_16_MIX,
-                QuantizationMode.INT8_16_MIX_ACC,
-            ]
-            or self.encodings is not None
-        ):
-            io_encodings_file = self.generate_io_encodings()
+        elif self.encodings is not None:
+            io_encodings_file = self.generate_io_encodings(self.encodings)
             self._add_args(
                 args,
                 [

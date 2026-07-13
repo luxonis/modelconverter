@@ -247,12 +247,35 @@ class RVC4Benchmark(Benchmark):
             return np.zeros(spec.shape, dtype=np.int32)
         if spec.data_type == DataType.INT8:
             return np.random.randint(-128, 128, size=spec.shape, dtype=np.int8)
-        if spec.data_type == DataType.UFXP8:
+        if spec.data_type == DataType.INT16:
+            return np.random.randint(
+                -32768, 32768, size=spec.shape, dtype=np.int16
+            )
+        if spec.data_type in {DataType.UINT8, DataType.UFXP8}:
             return np.random.randint(0, 256, size=spec.shape, dtype=np.uint8)
+        if spec.data_type in {DataType.UINT16, DataType.UFXP16}:
+            return np.random.randint(
+                0, 65536, size=spec.shape, dtype=np.uint16
+            )
 
         return np.random.rand(*spec.shape).astype(
             spec.data_type.as_numpy_dtype()
         )
+
+    @staticmethod
+    def _validate_dai_input_specs(input_specs: Iterable[InputSpec]) -> None:
+        unsupported_inputs = [
+            f"{spec.name} ({spec.data_type.value})"
+            for spec in input_specs
+            if not spec.data_type.supports_dai_dtype()
+        ]
+        if unsupported_inputs:
+            details = ", ".join(unsupported_inputs)
+            raise ValueError(
+                "DepthAI benchmark does not support these input tensor "
+                f"data types: {details}. Use SNPE benchmarking for these "
+                "models."
+            )
 
     def benchmark(self, configuration: Configuration) -> dict[str, Any]:
         dai_benchmark = configuration.get("dai_benchmark")
@@ -454,6 +477,8 @@ class RVC4Benchmark(Benchmark):
             )
             logger.info("Reading specs from the archive.")
             input_specs = self._get_archive_input_specs(model_archive)
+
+        self._validate_dai_input_specs(input_specs)
 
         input_data_packet = dai.NNData()
         for spec in input_specs:
