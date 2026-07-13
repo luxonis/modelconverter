@@ -272,9 +272,10 @@ class RVC4Exporter(Exporter):
 
     def generate_io_encodings(self, encodings: Encodings) -> Path:
         encodings_dict = encodings.model_dump(mode="json", exclude_none=True)
-        # DAI does not support custom TF8 encodings on exposed model IO.
-        # Keep AIMET's internal tensor encodings, but normalize the
-        # inputs/outputs to the default int8 IO.
+        # DAI does not support custom TF8 encodings on exposed tensors.
+        # Keep AIMET's internal tensor encodings, but normalize exposed
+        # inputs, outputs, and upstream output-adjacent tensors to default
+        # int8 IO.
         for name in (
             list(self.inputs.keys())
             + list(self.outputs.keys())
