@@ -11,6 +11,7 @@ from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
     exit_with,
+    get_extra_quant_tensors,
     onnx_attach_normalization_to_inputs,
     read_image,
 )
@@ -47,6 +48,7 @@ class RVC4Exporter(Exporter):
         self.use_per_row_quantization = rvc4_cfg.use_per_row_quantization
         self.optimization_level = rvc4_cfg.optimization_level
         self.quantization_mode = rvc4_cfg.quantization_mode
+        self.extra_quant_tensors = []
         if self.quantization_mode != QuantizationMode.CUSTOM:
             self.snpe_onnx_to_dlc = []
             self.snpe_dlc_quant = []
@@ -95,6 +97,11 @@ class RVC4Exporter(Exporter):
                 finally:
                     if onnx_modifier.output_path.exists():
                         onnx_modifier.output_path.unlink()
+
+            if self.encodings is not None:
+                self.extra_quant_tensors = get_extra_quant_tensors(
+                    self.input_model, self.outputs, depth=2
+                )
         else:
             logger.warning(
                 "Input file type is not ONNX. Skipping pre-processing."
@@ -266,6 +273,18 @@ class RVC4Exporter(Exporter):
 
     def generate_io_encodings(self, encodings: Encodings) -> Path:
         encodings_dict = encodings.model_dump(mode="json", exclude_none=True)
+        # DAI does not support custom TF8 encodings on exposed tensors.
+        # Keep AIMET's internal tensor encodings, but normalize exposed
+        # inputs, outputs, and upstream output-adjacent tensors to default
+        # int8 IO.
+        for name in (
+            list(self.inputs.keys())
+            + list(self.outputs.keys())
+            + self.extra_quant_tensors
+        ):
+            encodings_dict["activation_encodings"][name] = [
+                {"bitwidth": 8, "dtype": "int"}
+            ]
         encodings_path = self.intermediate_outputs_dir / "encodings.json"
         with open(encodings_path, "w") as encodings_file:
             json.dump(encodings_dict, encodings_file, indent=4)
