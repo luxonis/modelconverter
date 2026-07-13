@@ -226,6 +226,19 @@ class DataType(Enum):
             "DepthAI",
         )
 
+    def supports_dai_dtype(self) -> bool:
+        return self.value in {
+            "float16",
+            "float32",
+            "float64",
+            "int8",
+            "int32",
+            "uint8",
+            "uint16",
+            "ufxp8",
+            "ufxp16",
+        }
+
     def as_numpy_dtype(self) -> np.dtype:
         return self._transform(
             {

@@ -262,6 +262,21 @@ class RVC4Benchmark(Benchmark):
             spec.data_type.as_numpy_dtype()
         )
 
+    @staticmethod
+    def _validate_dai_input_specs(input_specs: Iterable[InputSpec]) -> None:
+        unsupported_inputs = [
+            f"{spec.name} ({spec.data_type.value})"
+            for spec in input_specs
+            if not spec.data_type.supports_dai_dtype()
+        ]
+        if unsupported_inputs:
+            details = ", ".join(unsupported_inputs)
+            raise ValueError(
+                "DepthAI benchmark does not support these input tensor "
+                f"data types: {details}. Use SNPE benchmarking for these "
+                "models."
+            )
+
     def benchmark(self, configuration: Configuration) -> dict[str, Any]:
         dai_benchmark = configuration.get("dai_benchmark")
         device_monitor = configuration.get("device_monitor")
@@ -462,6 +477,8 @@ class RVC4Benchmark(Benchmark):
             )
             logger.info("Reading specs from the archive.")
             input_specs = self._get_archive_input_specs(model_archive)
+
+        self._validate_dai_input_specs(input_specs)
 
         input_data_packet = dai.NNData()
         for spec in input_specs:
