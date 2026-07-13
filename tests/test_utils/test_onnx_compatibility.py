@@ -8,6 +8,7 @@ from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils.config import generate_renamed_onnx
 from modelconverter.utils.onnx_compatibility import (
     ensure_onnx_helper_compatibility,
+    get_external_data_path,
     save_onnx_model,
 )
 from modelconverter.utils.types import DataType
@@ -64,7 +65,13 @@ def test_simplify_onnx_falls_back_on_error(
     assert Exporter.simplify_onnx(DummyExporter()) == input_path
 
 
-def test_generate_renamed_onnx_overwrites_external_data(tmp_path: Path):
+@pytest.mark.parametrize(
+    "input_external_data_name",
+    ["external_input.onnx_data", "external_input.onnx.data"],
+)
+def test_generate_renamed_onnx_overwrites_external_data(
+    tmp_path: Path, input_external_data_name: str
+):
     input_tensor = helper.make_tensor_value_info(
         "input0", TensorProto.FLOAT, [1, 1024]
     )
@@ -95,9 +102,12 @@ def test_generate_renamed_onnx_overwrites_external_data(tmp_path: Path):
         model,
         input_path,
         save_as_external_data=True,
-        location=f"{input_path.name}_data",
+        location=input_external_data_name,
     )
-    assert input_path.with_name(f"{input_path.name}_data").exists()
+    assert input_path.with_name(input_external_data_name).exists()
+    assert get_external_data_path(input_path) == input_path.with_name(
+        input_external_data_name
+    )
 
     generate_renamed_onnx(input_path, {"output0": "renamed0"}, output_path)
     assert output_path.with_name(f"{output_path.name}_data").exists()

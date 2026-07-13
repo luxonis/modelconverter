@@ -11,7 +11,6 @@ from modelconverter.packages.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
     exit_with,
-    get_extra_quant_tensors,
     onnx_attach_normalization_to_inputs,
     read_image,
 )
@@ -48,7 +47,6 @@ class RVC4Exporter(Exporter):
         self.use_per_row_quantization = rvc4_cfg.use_per_row_quantization
         self.optimization_level = rvc4_cfg.optimization_level
         self.quantization_mode = rvc4_cfg.quantization_mode
-        self.extra_quant_tensors = []
         if self.quantization_mode != QuantizationMode.CUSTOM:
             self.snpe_onnx_to_dlc = []
             self.snpe_dlc_quant = []
@@ -97,14 +95,6 @@ class RVC4Exporter(Exporter):
                 finally:
                     if onnx_modifier.output_path.exists():
                         onnx_modifier.output_path.unlink()
-
-            if self.quantization_mode in [
-                QuantizationMode.INT8_16_MIX,
-                QuantizationMode.INT8_16_MIX_ACC,
-            ]:
-                self.extra_quant_tensors = get_extra_quant_tensors(
-                    self.input_model, self.outputs, depth=2
-                )
         else:
             logger.warning(
                 "Input file type is not ONNX. Skipping pre-processing."

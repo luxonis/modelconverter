@@ -3,6 +3,7 @@ from pathlib import Path
 import ml_dtypes
 import numpy as np
 import onnx
+from onnx.external_data_helper import ExternalDataInfo, uses_external_data
 
 
 def ensure_onnx_helper_compatibility() -> None:
@@ -62,3 +63,30 @@ def save_onnx_model(
         return
 
     onnx.save(model, str(output_path))
+
+def get_external_data_path(model_path: str | Path) -> Path | None:
+    model_path = Path(model_path)
+    model = onnx.load(str(model_path), load_external_data=False)
+    model_dir = model_path.parent.resolve()
+
+    tensors = list(model.graph.initializer)
+    tensors.extend(
+        sparse_tensor.values for sparse_tensor in model.graph.sparse_initializer
+    )
+    tensors.extend(
+        sparse_tensor.indices for sparse_tensor in model.graph.sparse_initializer
+    )
+    for tensor in tensors:
+        if uses_external_data(tensor):
+            location = ExternalDataInfo(tensor).location
+            if location:
+                candidate = (model_path.parent / location).resolve()
+                try:
+                    candidate.relative_to(model_dir)
+                except ValueError as exc:
+                    raise ValueError(
+                        "ONNX external data location must stay within the "
+                        f"model directory: {location}"
+                    ) from exc
+                return candidate
+    return None

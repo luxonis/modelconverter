@@ -21,7 +21,10 @@ from modelconverter.utils.config import (
     RandomCalibrationConfig,
     SingleStageConfig,
 )
-from modelconverter.utils.onnx_compatibility import save_onnx_model
+from modelconverter.utils.onnx_compatibility import (
+    get_external_data_path,
+    save_onnx_model,
+)
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import InputFileType, Target
 
@@ -71,14 +74,15 @@ class Exporter(ABC):
             self.intermediate_outputs_dir / sanitized_model_name,
         )
         shutil.copy(input_model, self.output_dir / sanitized_model_name)
-        if input_model.with_suffix(".onnx_data").exists():
+        external_data_path = get_external_data_path(input_model)
+        if external_data_path is not None:
             shutil.copy(
-                input_model.with_suffix(".onnx_data"),
-                self.intermediate_outputs_dir,
+                external_data_path,
+                self.intermediate_outputs_dir / external_data_path.name,
             )
             shutil.copy(
-                input_model.with_suffix(".onnx_data"),
-                self.output_dir,
+                external_data_path,
+                self.output_dir / external_data_path.name,
             )
         if self.input_file_type == InputFileType.IR:
             assert self.config.input_bin is not None
@@ -165,9 +169,8 @@ class Exporter(ABC):
         save_onnx_model(
             onnx_sim,
             onnx_sim_path,
-            save_as_external_data=self.input_model.with_suffix(
-                ".onnx_data"
-            ).exists(),
+            save_as_external_data=get_external_data_path(self.input_model)
+            is not None,
             location=f"{onnx_sim_path.name}_data",
         )
         return onnx_sim_path
