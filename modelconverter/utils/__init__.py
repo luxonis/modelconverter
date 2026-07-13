@@ -42,6 +42,7 @@ from .nn_archive import (
 )
 from .onnx_tools import (
     ONNXModifier,
+    get_extra_quant_tensors,
     onnx_attach_normalization_to_inputs,
 )
 from .progress_handler import create_progress_handler
@@ -74,6 +75,7 @@ __all__ = [
     "get_container_memory_limit",
     "get_default_target_version",
     "get_docker_image",
+    "get_extra_quant_tensors",
     "get_local_docker_image",
     "get_metadata",
     "get_protocol",
