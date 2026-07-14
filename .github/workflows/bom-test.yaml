@@ -78,8 +78,11 @@ jobs:
             OS_VERSION_OPTION="--os-version $OS_VERSION"
           fi
 
-          if [[ "$DEPTHAI_VERSION" =~ ^3\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
+          if [[ "$DEPTHAI_VERSION" =~ ^3\.(8|9|[1-9][0-9])\.[0-9]{1,2}$ ]]; then
             DEPTHAI_VERSION_CHECKED="$DEPTHAI_VERSION"
+          else
+            echo "DEPTHAI_VERSION must be within >=3.8.0,<4.0.0; got: $DEPTHAI_VERSION" >&2
+            exit 1
           fi
           : "${INFLUX_TOKEN:?INFLUX_TOKEN is required on the runner}"
           : "${INFLUX_BUCKET:?INFLUX_BUCKET must be set by the workflow}"
