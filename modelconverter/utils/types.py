@@ -82,6 +82,7 @@ class DataType(Enum):
             dai.TensorInfo.DataType.I8: "int8",
             dai.TensorInfo.DataType.INT: "int32",
             dai.TensorInfo.DataType.U8F: "ufxp8",
+            dai.TensorInfo.DataType.U16F: "ufxp16",
         }
         if dtype not in dtype_map:
             raise ValueError(f"Unsupported DepthAI data type: `{dtype}`")
@@ -218,15 +219,25 @@ class DataType(Enum):
                 "int8": dai.TensorInfo.DataType.I8,
                 "int32": dai.TensorInfo.DataType.INT,
                 "uint8": dai.TensorInfo.DataType.U8F,
+                "uint16": dai.TensorInfo.DataType.U16F,
                 "ufxp8": dai.TensorInfo.DataType.U8F,
-                # DAI does not currently expose a 16-bit
-                # fixed-point/int tensor type.
-                # Until it does, keep uFxp_16 on the closest
-                # supported 16-bit path.
-                "ufxp16": dai.TensorInfo.DataType.FP16,
+                "ufxp16": dai.TensorInfo.DataType.U16F,
             },
             "DepthAI",
         )
+
+    def supports_dai_dtype(self) -> bool:
+        return self.value in {
+            "float16",
+            "float32",
+            "float64",
+            "int8",
+            "int32",
+            "uint8",
+            "uint16",
+            "ufxp8",
+            "ufxp16",
+        }
 
     def as_numpy_dtype(self) -> np.dtype:
         return self._transform(
