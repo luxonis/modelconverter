@@ -107,6 +107,16 @@ ENV IN_DOCKER=
 ENV VERSION=${VERSION}
 ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib/python3.8/site-packages/openvino/libs/
 
+RUN <<EOF
+
+    set -e
+
+    apt-get update
+    apt-get install -y --no-install-recommends git
+    rm -rf /var/lib/apt/lists/*
+
+EOF
+
 
 COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libcurl.so.4 \

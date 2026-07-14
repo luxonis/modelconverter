@@ -33,6 +33,7 @@ permissions:
   packages: write
 
 env:
+  LUXONIS_TELEMETRY_ENABLED: "false"
   GAR_LOCATION: us-central1
   PACKAGE: ${{ inputs.package }}
   NAME: luxonis/modelconverter-${{ inputs.package }}

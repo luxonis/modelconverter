@@ -20,6 +20,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  LUXONIS_TELEMETRY_ENABLED: "false"
+
 jobs:
   rvc2-test:
     strategy:

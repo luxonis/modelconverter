@@ -38,6 +38,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  LUXONIS_TELEMETRY_ENABLED: "false"
+
 jobs:
   utils-test:
     runs-on: ubuntu-latest
