@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from onnx import checker, helper
 from onnx.onnx_pb import TensorProto
 
@@ -11,6 +12,10 @@ from modelconverter.utils.config import Config
 from modelconverter.utils.docker_utils import generate_compose_config
 from modelconverter.utils.telemetry import (
     MODELCONVERTER_TELEMETRY_DEFAULTS,
+    ArchiveOutputMode,
+    CommandResult,
+    ConfigSource,
+    FailureReason,
     build_conversion_result_properties,
     build_conversion_summary,
     command_failure_reason_from_exception,
@@ -82,8 +87,8 @@ def test_build_conversion_summary_rvc4(tmp_path: Path) -> None:
     summary = build_conversion_summary(
         cfg,
         target=Target.RVC4,
-        config_source="direct_model_input",
-        archive_output_mode="nn_archive",
+        config_source=ConfigSource.DIRECT_MODEL_INPUT,
+        archive_output_mode=ArchiveOutputMode.NN_ARCHIVE,
         archive_preprocess=False,
         main_stage_provided=True,
     )
@@ -122,28 +127,36 @@ def test_build_conversion_summary_rvc4(tmp_path: Path) -> None:
 def test_detect_config_source(tmp_path: Path) -> None:
     model_path = tmp_path / "dummy_model.onnx"
     archive_path = tmp_path / "archive.tar.xz"
+    archive_cfg = NNArchiveConfig.model_construct()
     _create_dummy_onnx(model_path)
     _create_dummy_archive(archive_path, model_path)
 
-    assert detect_config_source("model.onnx", [], None) == "direct_model_input"
-    assert detect_config_source("config.yaml", [], None) == "yaml_config"
+    assert (
+        detect_config_source("model.onnx", [], None)
+        is ConfigSource.DIRECT_MODEL_INPUT
+    )
+    assert (
+        detect_config_source("config.yaml", [], None)
+        is ConfigSource.YAML_CONFIG
+    )
     assert (
         detect_config_source(None, ["input_model", "model.onnx"], None)
-        == "direct_model_input"
+        is ConfigSource.DIRECT_MODEL_INPUT
     )
     assert (
-        detect_config_source(str(archive_path), [], object()) == "nn_archive"
+        detect_config_source(str(archive_path), [], archive_cfg)
+        is ConfigSource.NN_ARCHIVE
     )
     assert (
-        detect_config_source("archive_dir", [], object())
-        == "archive_directory"
+        detect_config_source("archive_dir", [], archive_cfg)
+        is ConfigSource.ARCHIVE_DIRECTORY
     )
 
 
 def test_build_conversion_result_properties():
     properties = build_conversion_result_properties(
-        result="failed",
-        failure_reason="upload_error",
+        result=CommandResult.FAILED,
+        failure_reason=FailureReason.UPLOAD_ERROR,
         duration_ms=1234,
         output_artifact_count=3,
         uploaded_output=True,
@@ -163,7 +176,9 @@ def test_build_conversion_result_properties():
 
 
 def test_command_result_from_exception_treats_system_exit_zero_as_success():
-    assert command_result_from_exception(SystemExit(0)) == "success"
+    assert (
+        command_result_from_exception(SystemExit(0)) is CommandResult.SUCCESS
+    )
     assert command_failure_reason_from_exception(SystemExit(0)) is None
 
 
