@@ -1,6 +1,7 @@
 import os
 import resource
 import sys
+from enum import Enum
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -43,6 +44,54 @@ MODELCONVERTER_TELEMETRY_DEFAULTS = TelemetryDefaults(
     api_key="phc_ojEByaCiZZ5eigzaM43PaEVbfLfFDF5NgkXEMPabrT9a",
     endpoint="https://us.i.posthog.com",
 )
+
+
+class TelemetryFlowStep(str, Enum):
+    CONFIGURATION_RESOLVED = "configuration_resolved"
+    RESULT_RECORDED = "result_recorded"
+
+
+class CommandName(str, Enum):
+    CONVERT = "convert"
+
+
+class CommandResult(str, Enum):
+    SUCCESS = "success"
+    INTERRUPTED = "interrupted"
+    FAILED = "failed"
+
+
+class FailureReason(str, Enum):
+    USER_INTERRUPT = "user_interrupt"
+    RUNTIME_ERROR = "runtime_error"
+    CONFIG_ERROR = "config_error"
+    UPLOAD_ERROR = "upload_error"
+    CONVERSION_ERROR = "conversion_error"
+
+
+class ConversionPhase(str, Enum):
+    CONFIGURATION = "configuration"
+    CONVERSION = "conversion"
+    UPLOAD_OUTPUT = "upload_output"
+    UPLOAD_INTERMEDIATE = "upload_intermediate"
+
+
+class ConfigSource(str, Enum):
+    DIRECT_MODEL_INPUT = "direct_model_input"
+    YAML_CONFIG = "yaml_config"
+    NN_ARCHIVE = "nn_archive"
+    ARCHIVE_DIRECTORY = "archive_directory"
+
+
+class ArchiveOutputMode(str, Enum):
+    NATIVE = "native"
+    NN_ARCHIVE = "nn_archive"
+
+
+class CalibrationSource(str, Enum):
+    IMAGE_DIRECTORY = "image_directory"
+    RANDOM = "random"
+    REMOTE_LINK = "remote_link"
 
 
 def get_conversion_run_id() -> str:
@@ -93,14 +142,14 @@ def build_command_properties(
     custom_image_provided: bool,
     memory_limit_set: bool,
     cpu_limit_set: bool,
-    result: str,
+    result: CommandResult,
     duration_ms: int,
-    failure_reason: str | None = None,
+    failure_reason: FailureReason | None = None,
 ) -> dict[str, Any]:
     return _drop_none(
         {
             "conversion_run_id": conversion_run_id,
-            "command_name": "convert",
+            "command_name": CommandName.CONVERT.value,
             "target": target.value,
             "runs_in_docker": runs_in_docker,
             "dev_image": dev_image,
@@ -109,8 +158,8 @@ def build_command_properties(
             "custom_image_provided": custom_image_provided,
             "memory_limit_set": memory_limit_set,
             "cpu_limit_set": cpu_limit_set,
-            "result": result,
-            "failure_reason": failure_reason,
+            "result": result.value,
+            "failure_reason": failure_reason.value if failure_reason else None,
             "duration_ms": duration_ms,
         }
     )
@@ -120,8 +169,8 @@ def build_conversion_summary(
     cfg: Config,
     *,
     target: Target,
-    config_source: str,
-    archive_output_mode: str,
+    config_source: ConfigSource,
+    archive_output_mode: ArchiveOutputMode,
     archive_preprocess: bool,
     main_stage_provided: bool,
 ) -> dict[str, Any]:
@@ -145,11 +194,11 @@ def build_conversion_summary(
     return _drop_none(
         {
             "target": target.value,
-            "config_source": config_source,
+            "config_source": config_source.value,
             "stage_count_bucket": bucket_count(len(stages)),
             "is_multistage": len(stages) > 1,
             "main_stage_provided": main_stage_provided,
-            "archive_output_mode": archive_output_mode,
+            "archive_output_mode": archive_output_mode.value,
             "archive_preprocess": archive_preprocess,
             "input_model_format": (
                 input_format_values[0] if input_format_values else None
@@ -191,30 +240,32 @@ def build_conversion_summary(
 
 
 def build_flow_properties(
-    conversion_run_id: str, flow_step: str, properties: dict[str, Any]
+    conversion_run_id: str,
+    flow_step: TelemetryFlowStep,
+    properties: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "flow_name": FLOW_NAME,
         "conversion_run_id": conversion_run_id,
-        "flow_step": flow_step,
+        "flow_step": flow_step.value,
         **properties,
     }
 
 
 def build_conversion_result_properties(
     *,
-    result: str,
+    result: CommandResult,
     duration_ms: int,
     uploaded_output: bool,
     uploaded_intermediate_outputs: bool,
-    failure_reason: str | None = None,
+    failure_reason: FailureReason | None = None,
     output_artifact_count: int | None = None,
     peak_ram_bytes: int | None = None,
 ) -> dict[str, Any]:
     return _drop_none(
         {
-            "result": result,
-            "failure_reason": failure_reason,
+            "result": result.value,
+            "failure_reason": failure_reason.value if failure_reason else None,
             "duration_ms": duration_ms,
             "output_artifact_count_bucket": (
                 bucket_count(output_artifact_count)
@@ -232,23 +283,25 @@ def build_conversion_result_properties(
     )
 
 
-def command_result_from_exception(exc: BaseException | None) -> str:
+def command_result_from_exception(
+    exc: BaseException | None,
+) -> CommandResult:
     if exc is None:
-        return "success"
+        return CommandResult.SUCCESS
     code = getattr(exc, "code", None)
     if isinstance(exc, SystemExit) and code in {None, 0}:
-        return "success"
+        return CommandResult.SUCCESS
     if isinstance(exc, (KeyboardInterrupt, SystemExit)) and code in {
         None,
         130,
     }:
-        return "interrupted"
-    return "failed"
+        return CommandResult.INTERRUPTED
+    return CommandResult.FAILED
 
 
 def command_failure_reason_from_exception(
     exc: BaseException | None,
-) -> str | None:
+) -> FailureReason | None:
     if exc is None:
         return None
     code = getattr(exc, "code", None)
@@ -258,24 +311,27 @@ def command_failure_reason_from_exception(
         None,
         130,
     }:
-        return "user_interrupt"
-    return "runtime_error"
+        return FailureReason.USER_INTERRUPT
+    return FailureReason.RUNTIME_ERROR
 
 
 def runtime_failure_reason_from_exception(
-    exc: BaseException | None, *, phase: str
-) -> str | None:
+    exc: BaseException | None, *, phase: ConversionPhase
+) -> FailureReason | None:
     if exc is None:
         return None
     if isinstance(exc, (KeyboardInterrupt, SystemExit)) and getattr(
         exc, "code", None
     ) in {None, 130}:
-        return "user_interrupt"
-    if phase == "configuration":
-        return "config_error"
-    if phase.startswith("upload"):
-        return "upload_error"
-    return "conversion_error"
+        return FailureReason.USER_INTERRUPT
+    if phase is ConversionPhase.CONFIGURATION:
+        return FailureReason.CONFIG_ERROR
+    if phase in {
+        ConversionPhase.UPLOAD_OUTPUT,
+        ConversionPhase.UPLOAD_INTERMEDIATE,
+    }:
+        return FailureReason.UPLOAD_ERROR
+    return FailureReason.CONVERSION_ERROR
 
 
 def resolve_target_tool_version(
@@ -290,16 +346,16 @@ def detect_config_source(
     path: str | None,
     opts: list[str],
     archive_cfg: NNArchiveConfig | None,
-) -> str:
+) -> ConfigSource:
     if archive_cfg is not None:
         if path and is_nn_archive(path):
-            return "nn_archive"
-        return "archive_directory"
+            return ConfigSource.NN_ARCHIVE
+        return ConfigSource.ARCHIVE_DIRECTORY
     if path and _looks_like_model_input(path):
-        return "direct_model_input"
+        return ConfigSource.DIRECT_MODEL_INPUT
     if "input_model" in opts[::2]:
-        return "direct_model_input"
-    return "yaml_config"
+        return ConfigSource.DIRECT_MODEL_INPUT
+    return ConfigSource.YAML_CONFIG
 
 
 def _looks_like_model_input(path: str) -> bool:
@@ -405,13 +461,13 @@ def _target_configuration(
     return None
 
 
-def _calibration_source(calibration: Any) -> str | None:
+def _calibration_source(calibration: Any) -> CalibrationSource | None:
     if isinstance(calibration, ImageCalibrationConfig):
-        return "image_directory"
+        return CalibrationSource.IMAGE_DIRECTORY
     if isinstance(calibration, RandomCalibrationConfig):
-        return "random"
+        return CalibrationSource.RANDOM
     if isinstance(calibration, LinkCalibrationConfig):
-        return "remote_link"
+        return CalibrationSource.REMOTE_LINK
     return None
 
 
