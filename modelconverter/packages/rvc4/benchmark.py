@@ -122,7 +122,10 @@ class RVC4Benchmark(Benchmark):
             )
             content = csv_path.read_text()
             csv_path.unlink()
-        elif self.handler.shell("snpe-dlc-info -h", check=False)[0] == 0:
+        elif (
+            self.handler is not None
+            and self.handler.shell("snpe-dlc-info -h", check=False)[0] == 0
+        ):
             self.handler.shell(f"mkdir -p {self.device_pwd}")
             self.handler.push(model_path, self.device_pwd / "model.dlc")
             device_csv_path = self.device_pwd / "info.csv"
@@ -162,6 +165,12 @@ class RVC4Benchmark(Benchmark):
     def _prepare_raw_inputs(
         self, input_specs: list[InputSpec], num_images: int
     ) -> None:
+        if self.handler is None:
+            raise RuntimeError(
+                "Device handler is not initialized. "
+                "Cannot prepare raw inputs on the device."
+            )
+
         if num_images < 1:
             raise ValueError("num_images must be at least 1.")
 
@@ -286,13 +295,15 @@ class RVC4Benchmark(Benchmark):
         )
         if device_monitor or not dai_benchmark:
             self.handler = create_handler(device_ip, device_adb_id)
+        else:
+            self.handler = None
 
         configuration["device_ip"] = device_ip
         self.device_pwd = Path("/", "data", "modelconverter", self.model_name)
 
         self.monitor = None
         idle_measurements = {}
-        if device_monitor:
+        if device_monitor and self.handler is not None:
             self.monitor = DeviceMonitor(self.handler)
             idle_measurements = self.monitor.get_idle_measurements()
 
@@ -328,7 +339,7 @@ class RVC4Benchmark(Benchmark):
         finally:
             if self.monitor:
                 self.monitor.stop()
-            if not dai_benchmark:
+            if not dai_benchmark and self.handler is not None:
                 # so we don't delete the wrong directory
                 # if `model_name` gets unset for any reason
                 if not self.model_name:
@@ -393,6 +404,10 @@ class RVC4Benchmark(Benchmark):
         )
         logger.info(f"Moving model '{dlc_path.name}' to the device.")
 
+        if self.handler is None:
+            raise RuntimeError(
+                "Handler is not initialized. Cannot benchmark over ADB."
+            )
         self.handler.shell(f"mkdir -p {self.device_pwd}")
         self.handler.push(str(dlc_path), f"{self.device_pwd}/model.dlc")
         self._prepare_raw_inputs(input_specs, num_images)
@@ -570,7 +585,7 @@ class RVC4Benchmark(Benchmark):
         results: list[tuple[Configuration, dict[str, Any]]],
     ) -> list[str]:
         heads = []
-        if self.monitor:
+        if self.monitor is not None:
             heads.append("power_sys (W)")
             heads.append("power_core (W)")
             heads.append("dsp (%)")
@@ -589,7 +604,7 @@ class RVC4Benchmark(Benchmark):
         memory = result.get("ram_used")
         cpu = result.get("cpu_utilization")
 
-        if self.monitor:
+        if self.monitor is not None:
             yield f"{power_sys:.2f}" if power_sys else "[orange3]N/A"
             yield f"{power_core:.2f}" if power_core else "[orange3]N/A"
             yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
