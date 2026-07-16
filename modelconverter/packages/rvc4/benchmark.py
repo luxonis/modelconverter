@@ -168,7 +168,7 @@ class RVC4Benchmark(Benchmark):
         if self.handler is None:
             raise RuntimeError(
                 "Device handler is not initialized. "
-                "Cannot prepare raw inputs on the device."
+                "Cannot prepare `.raw` inputs on the device."
             )
 
         if num_images < 1:
@@ -329,7 +329,7 @@ class RVC4Benchmark(Benchmark):
                     "device_monitor",
                 ]:
                     configuration.pop(key, None)
-                logger.info("Running SNPE benchmark over ADB")
+                logger.info("Running SNPE benchmark directly on the device...")
                 result = self._benchmark_snpe(self.model_path, **configuration)
 
             if self.monitor:
@@ -406,7 +406,7 @@ class RVC4Benchmark(Benchmark):
 
         if self.handler is None:
             raise RuntimeError(
-                "Handler is not initialized. Cannot benchmark over ADB."
+                "Handler is not initialized. Cannot benchmark directly on the device."
             )
         self.handler.shell(f"mkdir -p {self.device_pwd}")
         self.handler.push(str(dlc_path), f"{self.device_pwd}/model.dlc")
