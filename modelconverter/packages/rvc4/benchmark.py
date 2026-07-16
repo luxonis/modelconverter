@@ -332,12 +332,12 @@ class RVC4Benchmark(Benchmark):
                 logger.info("Running SNPE benchmark directly on the device...")
                 result = self._benchmark_snpe(self.model_path, **configuration)
 
-            if self.monitor:
+            if self.monitor is not None:
                 result |= self.monitor.get_stats()
                 result |= idle_measurements
             return result
         finally:
-            if self.monitor:
+            if self.monitor is not None:
                 self.monitor.stop()
             if not dai_benchmark and self.handler is not None:
                 # so we don't delete the wrong directory
@@ -414,7 +414,7 @@ class RVC4Benchmark(Benchmark):
 
         logger.info("Starting SNPE benchmark...")
 
-        if self.monitor:
+        if self.monitor is not None:
             self.monitor.start()
 
         try:
@@ -521,7 +521,7 @@ class RVC4Benchmark(Benchmark):
             f"Using {device.getPlatformAsString()} device on IP {device.getDeviceInfo().name}."
         )
 
-        if self.monitor:
+        if self.monitor is not None:
             self.monitor.start()
 
         with dai.Pipeline(device) as pipeline:
