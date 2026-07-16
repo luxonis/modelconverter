@@ -47,6 +47,11 @@ from modelconverter.utils.telemetry import (
     CONFIGURED_EVENT,
     CONVERSION_RUN_ID_ENV_VAR,
     RESULT_EVENT,
+    ArchiveOutputMode,
+    CommandResult,
+    ConversionPhase,
+    FailureReason,
+    TelemetryFlowStep,
     build_command_properties,
     build_conversion_result_properties,
     build_conversion_summary,
@@ -148,7 +153,7 @@ def convert(
     output_artifact_count: int | None = None
     uploaded_output = False
     uploaded_intermediate_outputs = False
-    phase = "configuration"
+    phase = ConversionPhase.CONFIGURATION
     caught_exc: BaseException | None = None
 
     try:
@@ -212,14 +217,14 @@ def convert(
 
         conversion_summary = build_flow_properties(
             conversion_run_id,
-            "configuration_resolved",
+            TelemetryFlowStep.CONFIGURATION_RESOLVED,
             build_conversion_summary(
                 cfg,
                 target=target,
                 config_source=detect_config_source(
                     original_path, opts, archive_cfg
                 ),
-                archive_output_mode=to,
+                archive_output_mode=ArchiveOutputMode(to),
                 archive_preprocess=archive_preprocess,
                 main_stage_provided=main_stage_provided,
             ),
@@ -232,7 +237,7 @@ def convert(
         )
 
         conversion_start = time.monotonic()
-        phase = "conversion"
+        phase = ConversionPhase.CONVERSION
         out_models = exporter.run()
         if not isinstance(out_models, list):
             out_models = [out_models]
@@ -280,7 +285,7 @@ def convert(
         put_file_plugin = _cfg.put_file_plugin
 
         if upload_url is not None:
-            phase = "upload_output"
+            phase = ConversionPhase.UPLOAD_OUTPUT
             for model_path in out_models:
                 logger.info(f"Uploading {model_path} to {upload_url}")
                 upload_to_remote(
@@ -291,7 +296,7 @@ def convert(
             uploaded_output = True
 
         if intermediate_url is not None:
-            phase = "upload_intermediate"
+            phase = ConversionPhase.UPLOAD_INTERMEDIATE
             exporters = (
                 exporter.exporters.values()
                 if isinstance(exporter, MultiStageExporter)
@@ -337,7 +342,7 @@ def convert(
             RESULT_EVENT,
             build_flow_properties(
                 conversion_run_id,
-                "result_recorded",
+                TelemetryFlowStep.RESULT_RECORDED,
                 {
                     **(
                         {
@@ -350,12 +355,13 @@ def convert(
                     ),
                     **build_conversion_result_properties(
                         result=(
-                            "success"
+                            CommandResult.SUCCESS
                             if caught_exc is None
                             else (
-                                "interrupted"
-                                if failure_reason == "user_interrupt"
-                                else "failed"
+                                CommandResult.INTERRUPTED
+                                if failure_reason
+                                is FailureReason.USER_INTERRUPT
+                                else CommandResult.FAILED
                             )
                         ),
                         failure_reason=failure_reason,
