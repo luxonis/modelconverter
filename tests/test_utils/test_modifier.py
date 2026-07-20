@@ -204,7 +204,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     metafunc.parametrize("onnx_file", params)
 
 
-def test_onnx_model(onnx_file: Path):
+def test_onnx_model(onnx_file: Path, tmp_path: Path):
     skip_optimization = onnx_file.stem in EXCEMPT_OPTIMIZATION
     nn_config = onnx_file.parent / f"{onnx_file.stem}_config.json"
     cfg, main_stage_key = get_config(nn_config)
@@ -216,13 +216,14 @@ def test_onnx_model(onnx_file: Path):
     for input_config in input_configs.values():
         input_config.layout = "NCHW"
 
-    modified_onnx = onnx_file.parent / f"{onnx_file.stem}_modified.onnx"
-    onnx_attach_normalization_to_inputs(
-        onnx_file, modified_onnx, input_configs
+    modified_onnx = onnx_attach_normalization_to_inputs(
+        onnx_file,
+        tmp_path / f"{onnx_file.stem}_modified.onnx",
+        input_configs,
     )
 
     modified_optimized_onnx = (
-        onnx_file.parent / f"{onnx_file.stem}_modified_optimized.onnx"
+        tmp_path / f"{onnx_file.stem}_modified_optimized.onnx"
     )
     onnx_modifier = ONNXModifier(
         model_path=modified_onnx,
