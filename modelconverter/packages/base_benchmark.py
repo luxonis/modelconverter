@@ -136,7 +136,7 @@ class Benchmark(ABC):
                 if latency > 100
                 else "green"
             )
-            yield f"[{latency_color}]{latency:.5f}"
+            yield f"[{latency_color}]{latency:.2f}"
 
     def _extra_header(
         self,
