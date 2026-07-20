@@ -779,7 +779,7 @@ def test_incorrect_type(key: str, value: str):
         ),
     ],
 )
-def test_modified_onnx(keys: list[str], values: list[str]):
+def test_modified_onnx(keys: list[str], values: list[str], tmp_path: Path):
     overrides: Params = {keys[i]: values[i] for i in range(len(keys))}
     overrides["input_model"] = str(DATA_DIR / "dummy_model.onnx")
     config = Config.get_config(
@@ -791,7 +791,7 @@ def test_modified_onnx(keys: list[str], values: list[str]):
 
     modified_onnx_path = onnx_attach_normalization_to_inputs(
         DATA_DIR / "dummy_model.onnx",
-        DATA_DIR / "dummy_model_modified.onnx",
+        tmp_path / "dummy_model_modified.onnx",
         input_configs,
         reverse_only=False,
     )
@@ -852,9 +852,9 @@ def test_modified_onnx(keys: list[str], values: list[str]):
             assert input_configs[inp].scale_values is None or [1, 1, 1]
 
 
-def test_modified_onnx_noop_returns_original_model():
+def test_modified_onnx_noop_returns_original_model(tmp_path: Path):
     model_path = DATA_DIR / "dummy_model.onnx"
-    modified_path = DATA_DIR / "dummy_model_noop_modified.onnx"
+    modified_path = tmp_path / "dummy_model_noop_modified.onnx"
     config = Config.get_config(
         None,
         {
@@ -1706,9 +1706,7 @@ def test_rvc4_quantization_overrides_accepts_aimet_format():
         },
     )
 
-    assert (
-        config.get("stages.dummy_model.rvc4.snpe_onnx_to_dlc_args") == []
-    )
+    assert config.get("stages.dummy_model.rvc4.snpe_onnx_to_dlc_args") == []
     assert config.get("stages.dummy_model.rvc4.encodings").model_dump(
         mode="json", exclude_none=True
     ) == {

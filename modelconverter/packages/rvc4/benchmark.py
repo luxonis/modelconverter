@@ -27,6 +27,10 @@ from modelconverter.utils import (
     subprocess_run,
 )
 from modelconverter.utils.config import OutputConfig
+from modelconverter.utils.log_latency import (
+    RVC4_INFERENCE_LATENCY_RE,
+    parse_inference_latency,
+)
 
 
 class InputSpec(OutputConfig):
@@ -524,61 +528,77 @@ class RVC4Benchmark(Benchmark):
         if self.monitor is not None:
             self.monitor.start()
 
-        with dai.Pipeline(device) as pipeline:
-            benchmark_out = pipeline.create(dai.node.BenchmarkOut)
-            benchmark_out.setRunOnHost(False)
-            benchmark_out.setFps(-1)
+        latencies: list[float] = []
 
-            neural_network = pipeline.create(dai.node.NeuralNetwork)
-            neural_network.setNNArchive(model_archive)
-
-            neural_network.setBackendProperties(
-                {
-                    "runtime": runtime,
-                    "performance_profile": profile,
-                }
+        def on_log_message(log_message: dai.LogMessage) -> None:
+            latency = parse_inference_latency(
+                log_message, RVC4_INFERENCE_LATENCY_RE
             )
+            if latency is not None:
+                latencies.append(latency)
 
-            neural_network.setNumInferenceThreads(num_threads)
+        callback_id = device.addLogCallback(on_log_message)
+        # RVC4 reports per-inference latency at DEBUG level.  Suppress the
+        # verbose device output while retaining callback delivery.
+        device.setLogLevel(dai.LogLevel.DEBUG)
+        device.setLogOutputLevel(dai.LogLevel.WARN)
 
-            benchmark_in = pipeline.create(dai.node.BenchmarkIn)
-            benchmark_in.setRunOnHost(False)
-            benchmark_in.sendReportEveryNMessages(num_messages)
-            benchmark_in.logReportsAsWarnings(False)
+        fps_list = []
+        try:
+            with dai.Pipeline(device) as pipeline:
+                benchmark_out = pipeline.create(dai.node.BenchmarkOut)
+                benchmark_out.setRunOnHost(False)
+                benchmark_out.setFps(-1)
 
-            benchmark_out.out.link(neural_network.input)
-            neural_network.out.link(benchmark_in.input)
+                neural_network = pipeline.create(dai.node.NeuralNetwork)
+                neural_network.setNNArchive(model_archive)
 
-            output_queue = benchmark_in.report.createOutputQueue()
-            input_queue = benchmark_out.input.createInputQueue()
+                neural_network.setBackendProperties(
+                    {
+                        "runtime": runtime,
+                        "performance_profile": profile,
+                    }
+                )
 
-            pipeline.start()
-            input_queue.send(input_data_packet)
+                neural_network.setNumInferenceThreads(num_threads)
 
-            progress, on_tick, should_continue = create_progress_handler(
-                benchmark_time, repetitions
-            )
+                benchmark_in = pipeline.create(dai.node.BenchmarkIn)
+                benchmark_in.setRunOnHost(False)
+                benchmark_in.sendReportEveryNMessages(num_messages)
+                benchmark_in.logReportsAsWarnings(False)
 
-            fps_list = []
-            avg_latency_list = []
+                benchmark_out.out.link(neural_network.input)
+                neural_network.out.link(benchmark_in.input)
 
-            with progress:
-                while pipeline.isRunning() and should_continue():
-                    benchmark_report = output_queue.get()
-                    if not isinstance(benchmark_report, dai.BenchmarkReport):
-                        raise TypeError(
-                            f"Expected BenchmarkReport, got {type(benchmark_report)}"
-                        )
+                output_queue = benchmark_in.report.createOutputQueue()
+                input_queue = benchmark_out.input.createInputQueue()
 
-                    fps_list.append(benchmark_report.fps)
-                    avg_latency_list.append(
-                        benchmark_report.averageLatency * 1000
-                    )
+                pipeline.start()
+                input_queue.send(input_data_packet)
 
-                    on_tick()
+                progress, on_tick, should_continue = create_progress_handler(
+                    benchmark_time, repetitions
+                )
 
-            # Currently, the latency measurement is only supported on RVC4 when using ImgFrame as the input to the BenchmarkOut which we don't do here.
-            return {"fps": float(np.mean(fps_list)), "latency": "N/A"}
+                with progress:
+                    while pipeline.isRunning() and should_continue():
+                        benchmark_report = output_queue.get()
+                        if not isinstance(
+                            benchmark_report, dai.BenchmarkReport
+                        ):
+                            raise TypeError(
+                                f"Expected BenchmarkReport, got {type(benchmark_report)}"
+                            )
+
+                        fps_list.append(benchmark_report.fps)
+                        on_tick()
+        finally:
+            device.removeLogCallback(callback_id)
+
+        return {
+            "fps": float(np.mean(fps_list)),
+            "latency": float(np.mean(latencies)) if latencies else "N/A",
+        }
 
     def _extra_header(
         self,
