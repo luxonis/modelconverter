@@ -6,7 +6,9 @@ on:
     paths:
       - modelconverter/__init__.py
       - requirements.txt
-      - "tests/test_utils/**"
+      - requirements-dev.txt
+      - "tests/unit/**"
+      - "tests/helpers/**"
       - "modelconverter/**"
       - ".github/workflows/unittests.yaml"
 
@@ -83,12 +85,24 @@ jobs:
             "luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
             --upgrade --force-reinstall
 
-      - name: Run Unit Tests
+      - name: Run Tier-1 unit tests with coverage
         working-directory: modelconverter
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_S3_ENDPOINT_URL: ${{ secrets.AWS_S3_ENDPOINT_URL }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
-          HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
-        run: python -m pytest tests/test_utils
+        # Hermetic host-side unit tests (no cloud/network) -- tiny ONNX models
+        # built on the fly. Codecov merges this report with the per-backend
+        # e2e reports automatically (via flags), so no manual combine is done.
+        run: |
+          python -m pytest tests/unit -n auto \
+            --cov=modelconverter --cov-branch \
+            --cov-report=term-missing --cov-report=xml:coverage-unit.xml
+
+      - name: Upload coverage to Codecov
+        if: ${{ always() }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: modelconverter/coverage-unit.xml
+          flags: unit
+          name: unit
+          fail_ci_if_error: false
+          disable_search: true
+          handle_no_reports_found: true

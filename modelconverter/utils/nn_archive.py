@@ -283,7 +283,7 @@ def modelconverter_config_to_nn(
         case Target.RVC3 | Target.RVC4, _, False:
             precision = DataType.INT8
 
-        case Target.HAILO, _, _:
+        case Target.HAILO, _, _:  # pragma: no branch
             precision = DataType.INT8
 
     archive_cfg = {

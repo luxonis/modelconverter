@@ -7,18 +7,16 @@ on:
         required: true
         type: string
         description: Which package to test
-
       version:
         required: true
         type: string
         description: >
           Which version of underlying conversion tools to use
-
       os:
         required: false
         type: string
         description: >
-          Which OS to use for the tests. If not specified, the default is 'ubuntu-latest'.
+          Which OS to use for the tests. Defaults to 'ubuntu-latest'.
         default: "ubuntu-latest"
 
 permissions:
@@ -27,9 +25,6 @@ permissions:
 
 env:
   LUXONIS_TELEMETRY_ENABLED: "false"
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_S3_ENDPOINT_URL: ${{ secrets.AWS_S3_ENDPOINT_URL }}
   PACKAGE: ${{ inputs.package }}
   VERSION: ${{ inputs.version }}
 
@@ -46,41 +41,89 @@ jobs:
       - name: Set up Docker
         uses: crazy-max/ghaction-setup-docker@6d7cfa65f60a9dda7b46e5513fa982536f3c9877
 
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
-        with:
-          python-version: "3.10"
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install -e .[dev]
-
       - name: Authenticate to Google Cloud
         id: google-auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
           credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          create_credentials_file: true
           token_format: access_token
 
-      - name: Prepare build dependencies
+      - name: Build the conversion image
+        id: build
         env:
           GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
         run: |
           mkdir -p docker/extra_packages
-          if [ "${PACKAGE}" = "rvc4" ]; then
-              gcloud storage cp                             \
+          if [ "${PACKAGE}" = "hailo" ]; then
+            gcloud storage cp "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
+            # The prebuilt Hailo image cannot be built from scratch; load it
+            # and capture its tag.
+            IMAGE=$(docker load -i "hailo-${VERSION}.tar.gz" \
+              | sed -n 's/^Loaded image: //p' | head -1)
+          else
+            if [ "${PACKAGE}" = "rvc4" ]; then
+              gcloud storage cp \
                 "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
                 "docker/extra_packages/snpe-${VERSION}.zip"
-          elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
-              gcloud storage cp                                    \
+            else
+              gcloud storage cp \
                 "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
                 "docker/extra_packages/openvino-${VERSION}.tar.gz"
-          elif [ "${PACKAGE}" = "hailo" ]; then
-              gcloud storage cp                                    \
-                "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
-              docker load -i "hailo-${VERSION}.tar.gz"
+            fi
+            IMAGE="modelconverter-${PACKAGE}:e2e"
+            docker build \
+              -f "docker/${PACKAGE}/Dockerfile" \
+              -t "${IMAGE}" \
+              --build-arg "VERSION=${VERSION}" \
+              --load .
           fi
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
 
-      - name: Run Tests
+      - name: Run e2e conversions with coverage (in-container)
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          GCP_CREDS: ${{ steps.google-auth.outputs.credentials_file_path }}
+          HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_S3_ENDPOINT_URL: ${{ secrets.AWS_S3_ENDPOINT_URL }}
         run: |
-          pytest -x "tests/test_packages/test_${PACKAGE}.py" --tool-version "${VERSION}"
+          mkdir -p shared_with_container
+          # pytest runs INSIDE the image (where the vendor tools live) so
+          # pytest-cov measures the exporter code directly. The e2e tests
+          # call `convert` in-process; IN_DOCKER makes it skip the launcher.
+          docker run --rm \
+            -e IN_DOCKER=1 \
+            -e LUXONIS_TELEMETRY_ENABLED=false \
+            -e HUBAI_API_KEY \
+            -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_S3_ENDPOINT_URL \
+            -e GOOGLE_APPLICATION_CREDENTIALS=/run/gcp-creds.json \
+            -v "${GCP_CREDS}:/run/gcp-creds.json:ro" \
+            -v "${PWD}/tests:/app/tests:ro" \
+            -v "${PWD}/pyproject.toml:/app/pyproject.toml:ro" \
+            -v "${PWD}/shared_with_container:/app/shared_with_container" \
+            --entrypoint bash \
+            "${IMAGE}" -c '
+              set -e
+              pip install --no-cache-dir pytest pytest-cov pytest-xdist
+              cd /app
+              python -m pytest tests/e2e -m "'"${PACKAGE}"'" \
+                --cov=modelconverter --cov-branch \
+                --cov-report=term-missing \
+                --cov-report=xml:shared_with_container/coverage-'"${PACKAGE}-${VERSION}"'.xml
+            '
+
+      - name: Upload coverage to Codecov
+        if: ${{ always() }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: shared_with_container/coverage-${{ inputs.package }}-${{ inputs.version }}.xml
+          flags: e2e-${{ inputs.package }}
+          name: e2e-${{ inputs.package }}-${{ inputs.version }}
+          fail_ci_if_error: false
+          disable_search: true
+          handle_no_reports_found: true

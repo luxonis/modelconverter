@@ -60,7 +60,7 @@ def read_image(
         img = img.crop((left, upper, right, lower))
     elif resize_method == ResizeMethod.RESIZE:
         img = img.resize((w, h))
-    elif resize_method == ResizeMethod.PAD:
+    elif resize_method == ResizeMethod.PAD:  # pragma: no branch
         orig_ratio = img.size[0] / img.size[1]
 
         # Calculate aspect ratio of new size

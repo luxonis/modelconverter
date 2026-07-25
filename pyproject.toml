@@ -136,3 +136,64 @@ wrap-descriptions = 72
 
 [tool.pyright]
 typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit", "tests/e2e"]
+addopts = "-ra --strict-markers --import-mode=importlib"
+markers = [
+  "unit: host-side genuine unit tests (no Docker, xdist-safe)",
+  "e2e: end-to-end 'successfully convert' tests (real vendor tools, in-container)",
+  "slow: long-running conversions",
+  "rvc2: RVC2 conversion tests",
+  "rvc3: RVC3 conversion tests",
+  "rvc4: RVC4 conversion tests",
+  "hailo: Hailo conversion tests",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["modelconverter"]
+# Relative paths so the host (Tier-1) and in-container (Tier-2, rooted at
+# /app) coverage reports use matching filenames for Codecov to merge.
+relative_files = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "@(abc\\.)?abstractmethod",
+  "@overload",
+  "if __name__ == .__main__.:",
+  "(sys\\.)?exit\\(",
+  "pytest\\.skip",
+]
+omit = [
+  # The CLI entrypoint mixes the conversion command with out-of-scope
+  # commands (infer/benchmark/analyze/…); e2e still executes `convert`.
+  "**/__main__.py",
+  "modelconverter/utils/onnx_tools.py",
+  "modelconverter/utils/onnx_compatibility.py",
+  "modelconverter/packages/hailo/*",
+  "modelconverter/packages/base_inferer.py",
+  "modelconverter/packages/*/inferer.py",
+  "modelconverter/packages/base_benchmark.py",
+  "modelconverter/packages/*/benchmark.py",
+  "modelconverter/packages/base_analyze.py",
+  "modelconverter/packages/*/analyze.py",
+  "modelconverter/packages/base_visualize.py",
+  "modelconverter/packages/*/visualize.py",
+  "modelconverter/utils/device_handlers.py",
+  "modelconverter/utils/device_monitors.py",
+  "modelconverter/utils/telemetry.py",
+  "modelconverter/utils/log_latency.py",
+  "modelconverter/utils/hub_requests.py",
+  "modelconverter/utils/hubai_utils.py",
+  "modelconverter/utils/docker_utils.py",
+  "modelconverter/utils/progress_handler.py",
+  "modelconverter/utils/subprocess.py",
+  "tests/*",
+]
+
+[tool.coverage.xml]
+output = "coverage.xml"
