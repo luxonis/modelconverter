@@ -123,7 +123,7 @@ jobs:
         run: |
           modelconverter shell "${PACKAGE}" --dev --no-gpu \
             --tool-version "${VERSION}" \
-            -c "python -m pytest tests/e2e -m ${PACKAGE} -x \
+            -c "python -m pytest tests/conversion -m ${PACKAGE} -x \
                 --cov=modelconverter \
                 --cov-report=term-missing \
                 --cov-report=xml:shared_with_container/coverage-${PACKAGE}-${VERSION}.xml"
@@ -134,8 +134,8 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: shared_with_container/coverage-${{ matrix.package }}-${{ matrix.version }}.xml
-          flags: e2e-${{ matrix.package }}
-          name: e2e-${{ matrix.package }}-${{ matrix.version }}
+          flags: conversion-${{ matrix.package }}
+          name: conversion-${{ matrix.package }}-${{ matrix.version }}
           fail_ci_if_error: false
           disable_search: true
           handle_no_reports_found: true

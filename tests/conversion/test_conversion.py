@@ -1,0 +1,129 @@
+"""Conversion tests -- "does the model convert successfully" per platform.
+
+These run inside the per-platform Docker image (`modelconverter shell
+<platform> --dev -c pytest ...`) where the vendor tools live; the tests
+call ``convert`` in-process (``shell`` sets IN_DOCKER, so the launcher is
+skipped) so pytest-cov measures the exporter code directly. They assert a
+conversion succeeds and produces an output artifact -- not numerical
+fidelity.
+
+Every scenario runs on every applicable platform, and each case carries
+its platform marker, so ``pytest -m rvc2`` runs *only* the RVC2
+conversions, ``-m rvc4`` only the RVC4 ones, etc. Platform-specific
+scenarios (e.g. OpenVINO IR ``xml``+``bin`` input, which only RVC2/RVC3
+support) are restricted to those platforms.
+
+Assets are the known-good, purpose-built test-bucket archives/configs
+(they carry their own calibration, including the multistage model's
+linked calibration); a raw zoo multistage archive cannot be converted
+with calibration.
+"""
+
+from dataclasses import dataclass, field
+
+import pytest
+
+from modelconverter.__main__ import convert
+from modelconverter.utils.constants import OUTPUTS_DIR
+from modelconverter.utils.types import Target
+
+GS = "gs://luxonis-test-bucket/modelconverter"
+
+ALL_PLATFORMS = ("rvc2", "rvc3", "rvc4", "hailo")
+# OpenVINO IR (xml+bin) is only supported by the OpenVINO backends.
+IR_PLATFORMS = ("rvc2", "rvc3")
+
+# Keep the (otherwise very slow) Hailo compilation cheap for a smoke run.
+_HAILO_FAST_OPTS = (
+    "hailo.compression_level",
+    "0",
+    "hailo.optimization_level",
+    "0",
+    "hailo.disable_compilation",
+    "True",
+)
+
+
+@dataclass(frozen=True)
+class Scenario:
+    id: str
+    """Human-readable scenario id (used in the test id / output dir)."""
+    path: str
+    """Input path/URL: an NN archive (.tar.xz), a config (.yaml) or an IR."""
+    to_format: str
+    """Output format: ``nn_archive`` or ``native``."""
+    platforms: tuple[str, ...] = ALL_PLATFORMS
+    """Platforms this scenario applies to."""
+    opts: tuple[str, ...] = field(default_factory=tuple)
+    """Extra ``key value`` conversion overrides."""
+
+
+SCENARIOS: list[Scenario] = [
+    # --- single-stage (resnet18), every input/output format combination ---
+    Scenario("archive-to-archive", f"{GS}/resnet18.tar.xz", "nn_archive"),
+    Scenario("archive-to-native", f"{GS}/resnet18.tar.xz", "native"),
+    Scenario("config-to-archive", f"{GS}/resnet18.yaml", "nn_archive"),
+    Scenario("config-to-native", f"{GS}/resnet18.yaml", "native"),
+    # --- multistage (yolov8n_seg) with full linked calibration ---
+    # native -> nn_archive is unsupported for the multistage model.
+    Scenario(
+        "multistage-archive-to-archive",
+        f"{GS}/yolov8n_seg.tar.xz",
+        "nn_archive",
+    ),
+    Scenario(
+        "multistage-archive-to-native",
+        f"{GS}/yolov8n_seg.tar.xz",
+        "native",
+    ),
+    Scenario(
+        "multistage-config-to-native",
+        f"{GS}/yolov8n_seg.yaml",
+        "native",
+    ),
+    # --- platform-specific: OpenVINO IR (xml+bin) input (RVC2/RVC3 only) ---
+    Scenario(
+        "ir-to-archive",
+        "shared_with_container/configs/resnet18_IR.yaml",
+        "nn_archive",
+        platforms=IR_PLATFORMS,
+    ),
+]
+
+_CASES = [
+    pytest.param(
+        platform,
+        scenario,
+        marks=getattr(pytest.mark, platform),
+        id=f"{platform}-{scenario.id}",
+    )
+    for scenario in SCENARIOS
+    for platform in scenario.platforms
+]
+
+
+def _assert_produced(output_name: str, to_format: str) -> None:
+    out_dir = OUTPUTS_DIR / output_name
+    assert out_dir.exists(), f"output dir {out_dir} was not created"
+    if to_format == "nn_archive":
+        produced = list(out_dir.rglob("*.tar.xz")) + list(
+            out_dir.rglob("*.tar")
+        )
+        assert produced, f"no NN archive produced in {out_dir}"
+    else:
+        assert any(out_dir.iterdir()), f"no output produced in {out_dir}"
+
+
+@pytest.mark.parametrize(("platform", "scenario"), _CASES)
+def test_convert(platform: str, scenario: Scenario):
+    output_name = f"_{platform}-{scenario.id}"
+    extra = _HAILO_FAST_OPTS if platform == "hailo" else ()
+    convert(
+        Target(platform),
+        *scenario.opts,
+        *extra,
+        path=scenario.path,
+        output_dir=output_name,
+        to=scenario.to_format,
+    )
+    _assert_produced(output_name, scenario.to_format)

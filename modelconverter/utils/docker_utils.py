@@ -88,7 +88,8 @@ def generate_compose_config(
     cwd = Path.cwd().absolute()
     volumes = [f"{cwd / 'shared_with_container'}:/app/shared_with_container"]
     # Mount the test suite (excluded from the image via .dockerignore) so a
-    # dev container can run it, e.g. `modelconverter shell <t> --dev -c pytest`.
+    # dev container can run it, e.g.
+    # `modelconverter shell <t> --dev -c "pytest -m <t>"`.
     if (cwd / "tests").exists():
         volumes.append(f"{cwd / 'tests'}:/app/tests")
     if (cwd / "pyproject.toml").exists():

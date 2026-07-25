@@ -138,12 +138,10 @@ wrap-descriptions = 72
 typeCheckingMode = "basic"
 
 [tool.pytest.ini_options]
-testpaths = ["tests/unit", "tests/e2e"]
+testpaths = ["tests/unit", "tests/conversion"]
 addopts = "-ra --strict-markers --import-mode=importlib"
 markers = [
-  "unit: host-side genuine unit tests (no Docker, xdist-safe)",
-  "e2e: end-to-end 'successfully convert' tests (real vendor tools, in-container)",
-  "slow: long-running conversions",
+  "unit: host-side unit tests (fast, no Docker)",
   "rvc2: RVC2 conversion tests",
   "rvc3: RVC3 conversion tests",
   "rvc4: RVC4 conversion tests",
@@ -170,7 +168,7 @@ exclude_also = [
 ]
 omit = [
   # The CLI entrypoint mixes the conversion command with out-of-scope
-  # commands (infer/benchmark/analyze/…); e2e still executes `convert`.
+  # commands (infer/benchmark/analyze/…); conversion tests still run `convert`.
   "**/__main__.py",
   "modelconverter/utils/onnx_tools.py",
   "modelconverter/utils/onnx_compatibility.py",
