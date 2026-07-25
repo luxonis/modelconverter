@@ -172,8 +172,6 @@ omit = [
   "**/__main__.py",
   "modelconverter/utils/onnx_tools.py",
   "modelconverter/utils/onnx_compatibility.py",
-  "modelconverter/packages/base_inferer.py",
-  "modelconverter/packages/*/inferer.py",
   "modelconverter/packages/base_benchmark.py",
   "modelconverter/packages/*/benchmark.py",
   "modelconverter/packages/base_analyze.py",
@@ -189,7 +187,6 @@ omit = [
   "modelconverter/utils/docker_utils.py",
   "modelconverter/utils/progress_handler.py",
   "modelconverter/utils/subprocess.py",
-  "tests/*",
 ]
 
 [tool.coverage.xml]
