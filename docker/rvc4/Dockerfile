@@ -20,7 +20,7 @@ RUN <<EOF
         libcurl4t64     \
         libncurses5     \
         libtinfo5       \
-        llvm-19-runtime \
+        llvm-14-runtime \
         git
 
 EOF
@@ -102,6 +102,7 @@ COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libz3.so.4 \
     /usr/lib/x86_64-linux-gnu/libxml2.so.2 \
     /usr/lib/x86_64-linux-gnu/libtinfo.so.5 \
+    /usr/lib/x86_64-linux-gnu/libLLVM-14.so.1 \
     /usr/lib/
 
 
