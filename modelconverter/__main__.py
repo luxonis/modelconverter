@@ -13,6 +13,10 @@ from cyclopts import App, Group, Parameter
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator, is_nn_archive
 from luxonis_ml.utils import LuxonisFileSystem, setup_logging
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
 from modelconverter.cli import (
     extract_preprocessing,
@@ -709,8 +713,26 @@ cache_app = App(
 app.meta.command(cache_app)
 
 
-def _dir_size(path: Path) -> int:
-    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+# Human-readable descriptions of the known cache sub-directories.
+_CACHE_SUBDIR_DESCRIPTIONS = {
+    "inputs": "Staged input files",
+    "models": "Downloaded models",
+    "calibration_data": "Calibration datasets",
+    "misc": "Miscellaneous downloads",
+    "configs": "Configuration files",
+}
+
+
+def _dir_stats(path: Path) -> tuple[int, int]:
+    """Returns the total size (bytes) and number of files under
+    ``path``."""
+    size = 0
+    count = 0
+    for f in path.rglob("*"):
+        if f.is_file():
+            size += f.stat().st_size
+            count += 1
+    return size, count
 
 
 def _human_size(num: float) -> str:
@@ -721,35 +743,76 @@ def _human_size(num: float) -> str:
     return f"{num:.1f} PiB"
 
 
-@cache_app.command(name="info")
+@cache_app.command(name="info", sort_key=0)
 def cache_info() -> None:
     """Reports the location and disk usage of the modelconverter
     cache."""
+    console = Console()
     root = get_cache_dir()
-    if not root.exists():
-        logger.info(f"Cache is empty (would be located at {root}).")
+
+    if not root.exists() or not any(root.iterdir()):
+        console.print(
+            Panel(
+                f"The cache is empty.\nLocation: [cyan]{root}[/]",
+                title="[bold]ModelConverter cache[/]",
+                border_style="cyan",
+                expand=False,
+            )
+        )
         return
 
-    logger.info(f"Cache location: {root}")
-    total = 0
-    for sub in sorted(p for p in root.iterdir() if p.is_dir()):
-        size = _dir_size(sub)
-        total += size
-        logger.info(f"  {sub.name}: {_human_size(size)}")
-    # Account for any stray top-level files as well.
-    total += sum(f.stat().st_size for f in root.iterdir() if f.is_file())
-    logger.info(f"Total: {_human_size(total)}")
+    table = Table(box=box.SIMPLE_HEAD, expand=False, pad_edge=False)
+    table.add_column("Directory", style="cyan", no_wrap=True)
+    table.add_column("Contents", style="dim")
+    table.add_column("Files", justify="right", style="magenta")
+    table.add_column("Size", justify="right", style="green")
+
+    total_size = 0
+    total_files = 0
+    for entry in sorted(root.iterdir(), key=lambda p: p.name):
+        if entry.is_dir():
+            size, count = _dir_stats(entry)
+            description = _CACHE_SUBDIR_DESCRIPTIONS.get(entry.name, "")
+        else:
+            size, count = entry.stat().st_size, 1
+            description = ""
+        total_size += size
+        total_files += count
+        table.add_row(entry.name, description, str(count), _human_size(size))
+
+    table.add_section()
+    table.add_row(
+        "[bold]Total[/]",
+        "",
+        f"[bold]{total_files}[/]",
+        f"[bold]{_human_size(total_size)}[/]",
+    )
+
+    console.print(
+        Panel(
+            table,
+            title="[bold]ModelConverter cache[/]",
+            subtitle=f"[dim]{root}[/]",
+            border_style="cyan",
+            expand=False,
+        )
+    )
 
 
-@cache_app.command(name="clean")
+@cache_app.command(name="clean", sort_key=1)
 def cache_clean() -> None:
     """Removes the entire modelconverter cache."""
+    console = Console()
     root = get_cache_dir()
-    if root.exists():
+    if root.exists() and any(root.iterdir()):
+        size, _ = _dir_stats(root)
         shutil.rmtree(root)
-        logger.info(f"Cleared cache at {root}.")
+        console.print(
+            f":wastebasket:  Cleared cache at [cyan]{root}[/] "
+            f"(freed [green]{_human_size(size)}[/])."
+        )
     else:
-        logger.info(f"Cache is already empty ({root}).")
+        console.print(f"Cache is already empty ([cyan]{root}[/]).")
 
 
 @app.meta.default
