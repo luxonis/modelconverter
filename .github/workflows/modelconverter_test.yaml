@@ -81,15 +81,10 @@ jobs:
           fi
 
       - name: Run e2e conversions (in dev container, with coverage)
-        # `--dev` builds an image that also carries the test/coverage tooling;
-        # `shell -c` runs pytest inside it (vendor tools present), so pytest-cov
-        # measures the exporters. The e2e tests call `convert` in-process
-        # (IN_DOCKER skips the launcher). coverage.xml lands on the mounted
-        # shared_with_container dir so the host can upload it.
         run: |
           modelconverter shell "${PACKAGE}" --dev --no-gpu \
             --tool-version "${VERSION}" \
-            -c "pytest tests/e2e -m ${PACKAGE} -x \
+            -c "python -m pytest tests/e2e -m ${PACKAGE} -x \
                 --cov=modelconverter --cov-branch \
                 --cov-report=term-missing \
                 --cov-report=xml:shared_with_container/coverage-${PACKAGE}-${VERSION}.xml"

@@ -87,9 +87,6 @@ jobs:
 
       - name: Run Tier-1 unit tests with coverage
         working-directory: modelconverter
-        # Hermetic host-side unit tests (no cloud/network) -- tiny ONNX models
-        # built on the fly. Codecov merges this report with the per-backend
-        # e2e reports automatically (via flags), so no manual combine is done.
         run: |
           python -m pytest tests/unit -n auto \
             --cov=modelconverter --cov-branch \
