@@ -108,7 +108,7 @@ jobs:
             --entrypoint bash \
             "${IMAGE}" -c '
               set -e
-              pip install --no-cache-dir pytest pytest-cov pytest-xdist
+              pip install --no-cache-dir pytest pytest-cov pytest-xdist hubai-sdk
               cd /app
               python -m pytest tests/e2e -m "'"${PACKAGE}"'" \
                 --cov=modelconverter --cov-branch \

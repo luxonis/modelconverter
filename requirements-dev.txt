@@ -1,3 +1,4 @@
-pre-commit==3.2.1
-pytest-cov>=4.1.0
-pytest-xdist>=3.5.0
+pre-commit~=4.6
+pytest-cov~=7.1
+pytest-xdist~=3.5
+hubai-sdk~=0.3
