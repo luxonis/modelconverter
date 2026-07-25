@@ -172,7 +172,6 @@ omit = [
   "**/__main__.py",
   "modelconverter/utils/onnx_tools.py",
   "modelconverter/utils/onnx_compatibility.py",
-  "modelconverter/packages/hailo/*",
   "modelconverter/packages/base_inferer.py",
   "modelconverter/packages/*/inferer.py",
   "modelconverter/packages/base_benchmark.py",
