@@ -89,6 +89,15 @@ SCENARIOS: list[Scenario] = [
             "hailo": "Hailo SDK ONNX parser fails on this multistage model",
         },
     ),
+    # --- tflite input (posenet mobilenet v1), exercises .tflite -> native ---
+    # The tflite is converted to ONNX internally, then to the native model.
+    # Expected to fail on Hailo (its SDK does not handle this model).
+    Scenario(
+        "tflite-to-native",
+        f"{GS}/posenet_mobilenet_v1.tflite",
+        "native",
+        xfail={"hailo": "posenet tflite model fails to convert on Hailo"},
+    ),
     # --- platform-specific: OpenVINO IR (xml+bin) input (RVC2/RVC3 only) ---
     Scenario(
         "ir-to-archive",
