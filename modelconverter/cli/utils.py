@@ -25,6 +25,7 @@ from modelconverter.utils.constants import (
     MODELS_DIR,
     OUTPUTS_DIR,
 )
+from modelconverter.utils.filesystem_utils import set_input_base
 from modelconverter.utils.hub_requests import Request
 from modelconverter.utils.types import DataType, Encoding, Target
 
@@ -101,6 +102,9 @@ def get_configs(
         path_ = resolve_path(path, MISC_DIR)
         if path_.is_dir() or is_nn_archive(path_):
             return process_nn_archive(target, path_, overrides)
+        # Resolve files referenced *inside* the config (calibration data,
+        # scripts, encodings, ...) relative to the config file's directory.
+        set_input_base(path_.parent)
     cfg = Config.get_config(path, overrides)
 
     main_stage_key = None

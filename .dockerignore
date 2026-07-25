@@ -1,2 +1,3 @@
-shared_with_container/*
+shared_with_container/
+output/
 tests

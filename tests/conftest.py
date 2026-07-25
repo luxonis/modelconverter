@@ -173,9 +173,7 @@ def prepare(
         f"s3://luxonis-test-bucket/modelconverter-test/{model_name}.onnx"
     )
     config_url = f"gs://luxonis-test-bucket/modelconverter/{model_name}.yaml"
-    converted_model_path_prefix = (
-        Path("shared_with_container") / "outputs" / f"_{model_name}-test"
-    )
+    converted_model_path_prefix = Path("output") / f"_{model_name}-test"
     if service in ["rvc4", "rvc4_non_quant"]:
         converted_model_path = (
             converted_model_path_prefix / f"{model_name}.dlc"
@@ -242,11 +240,10 @@ def prepare(
     for name, value in expected_metric.items():
         assert value > 0.7, f"{name} is too low: {value}"
 
+    # Inference inputs live in an ordinary host directory; the CLI copies them
+    # into the cache automatically.
     input_files_dirs = [
-        Path("shared_with_container")
-        / "inference_inputs"
-        / f"_{model_name}-test"
-        / input_name
+        Path("inference_inputs") / f"_{model_name}-test" / input_name
         for input_name in input_names
     ]
     for input_files_dir in input_files_dirs:
@@ -254,12 +251,8 @@ def prepare(
             shutil.rmtree(input_files_dir)
         input_files_dir.mkdir(parents=True)
 
-    dest = (
-        Path("shared_with_container")
-        / "inference_outputs"
-        / f"_{model_name}-test"
-    )
-    dest.mkdir(parents=True, exist_ok=True)
+    # Inference results are written to `./output/<name>` on the host.
+    dest = Path("output") / f"_{model_name}-test-infer"
     return (
         config_url,
         converted_model_path,

@@ -1,6 +1,7 @@
 import importlib.metadata
 import os
 import re
+import shutil
 import signal
 import sys
 import time
@@ -39,8 +40,13 @@ from modelconverter.utils import (
     upload_to_remote,
 )
 from modelconverter.utils.config import SingleStageConfig
-from modelconverter.utils.constants import MODELS_DIR
+from modelconverter.utils.constants import (
+    MODELS_DIR,
+    OUTPUTS_DIR,
+    get_cache_dir,
+)
 from modelconverter.utils.general import sanitize_net_name
+from modelconverter.utils.input_staging import stage_inputs
 from modelconverter.utils.nn_archive import generate_archive
 from modelconverter.utils.telemetry import (
     COMMAND_EVENT,
@@ -422,13 +428,15 @@ def infer(
     with catch_exceptions():
         mult_cfg, _, _ = get_configs(target, str(config), list(opts))
         cfg = mult_cfg.get_stage_config(stage)
+        # Write inference results to `./output/<output_dir>` on the host
+        # instead of an ephemeral path inside the container.
+        output_path = OUTPUTS_DIR / output_dir
         setup_logging(
-            file="modelconverter.log", use_rich=mult_cfg.rich_logging
+            file=str(OUTPUTS_DIR / f"{output_dir}.log"),
+            use_rich=mult_cfg.rich_logging,
         )
         logger.info("Starting inference")
-        get_inferer(
-            target, model_path, input_path, Path(output_dir), cfg
-        ).run()
+        get_inferer(target, model_path, input_path, output_path, cfg).run()
 
 
 @app.command(group=docker_commands)
@@ -633,7 +641,7 @@ def visualize(dir_path: str) -> None:
     ----------
     dir_path : str
         The path to the directory containing the analysis results.
-        The default search path is ``shared_with_container/outputs/analysis``.
+        The default search path is ``output/analysis``.
     """
     get_visualizer(Target.RVC4, dir_path).visualize()
 
@@ -691,6 +699,57 @@ def archive(
         logger.info(f"Archive uploaded to {save_path}")
     else:
         logger.info(f"Archive saved to {save_path}")
+
+
+cache_app = App(
+    name="cache",
+    help="Manage the hidden modelconverter cache "
+    "(staged inputs and remote downloads).",
+)
+app.meta.command(cache_app)
+
+
+def _dir_size(path: Path) -> int:
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def _human_size(num: float) -> str:
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if num < 1024:
+            return f"{num:.1f} {unit}"
+        num /= 1024
+    return f"{num:.1f} PiB"
+
+
+@cache_app.command(name="info")
+def cache_info() -> None:
+    """Reports the location and disk usage of the modelconverter
+    cache."""
+    root = get_cache_dir()
+    if not root.exists():
+        logger.info(f"Cache is empty (would be located at {root}).")
+        return
+
+    logger.info(f"Cache location: {root}")
+    total = 0
+    for sub in sorted(p for p in root.iterdir() if p.is_dir()):
+        size = _dir_size(sub)
+        total += size
+        logger.info(f"  {sub.name}: {_human_size(size)}")
+    # Account for any stray top-level files as well.
+    total += sum(f.stat().st_size for f in root.iterdir() if f.is_file())
+    logger.info(f"Total: {_human_size(total)}")
+
+
+@cache_app.command(name="clean")
+def cache_clean() -> None:
+    """Removes the entire modelconverter cache."""
+    root = get_cache_dir()
+    if root.exists():
+        shutil.rmtree(root)
+        logger.info(f"Cleared cache at {root}.")
+    else:
+        logger.info(f"Cache is already empty ({root}).")
 
 
 @app.meta.default
@@ -798,9 +857,14 @@ def launcher(
                     target.value, bare_tag=tag, version=version, image=image
                 )
 
+        # Copy user-provided inputs into the hidden cache (which is the only
+        # host directory mounted into the container) and rewrite the tokens to
+        # their container-side paths.
+        staged_tokens = stage_inputs(list(tokens))
+
         docker_exec(
             target.value,
-            *tokens,
+            *staged_tokens,
             bare_tag=tag,
             use_gpu=gpu,
             version=tool_version,

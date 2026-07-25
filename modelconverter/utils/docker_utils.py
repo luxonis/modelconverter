@@ -22,10 +22,30 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 import docker
 from modelconverter import __version__
+from modelconverter.utils.constants import get_cache_dir
 from modelconverter.utils.target_versions import (
     get_default_target_version,
 )
 from modelconverter.utils.telemetry import telemetry_environment
+
+
+def is_rootless_docker() -> bool:
+    """Returns whether the active Docker daemon runs in rootless mode.
+
+    In rootless mode the container's root user is already mapped to the
+    invoking host user, so files written by the container come out owned
+    by the host user and must NOT be chowned (doing so would map them to
+    an unmapped sub-uid, showing up as ``nobody`` on the host).
+    """
+    try:
+        out = subprocess.check_output(
+            [docker_bin(), "info", "-f", "{{json .SecurityOptions}}"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return False
+    return "rootless" in out
 
 
 def get_docker_client_from_active_context() -> docker.DockerClient:
@@ -79,6 +99,14 @@ def generate_compose_config(
         "TF_CPP_MIN_LOG_LEVEL": "3",
         "GOOGLE_APPLICATION_CREDENTIALS": "/run/secrets/gcp-credentials",
     }
+    # Pass the host user's identity so the container can chown the outputs and
+    # cache back to the invoking user on exit (see docker/*/entrypoint.sh).
+    # `getuid`/`getgid` are POSIX-only; on other platforms chowning is neither
+    # possible nor necessary. In rootless Docker the container root is already
+    # mapped to the host user, so chowning would instead break ownership.
+    if hasattr(os, "getuid") and not is_rootless_docker():
+        environment["HOST_UID"] = str(os.getuid())
+        environment["HOST_GID"] = str(os.getgid())
     if extra_environment:
         environment.update(extra_environment)
 
@@ -87,7 +115,8 @@ def generate_compose_config(
             "modelconverter": {
                 "environment": environment,
                 "volumes": [
-                    f"{Path.cwd().absolute() / 'shared_with_container'}:/app/shared_with_container"
+                    f"{get_cache_dir()}:/app/shared_with_container",
+                    f"{Path.cwd().absolute() / 'output'}:/app/output",
                 ],
                 "secrets": ["gcp-credentials"],
                 "image": image,
@@ -442,6 +471,12 @@ def docker_exec(
 ) -> None:
     version = version or get_default_target_version(target)
     image = get_docker_image(target, bare_tag, version, image)
+
+    # Create the writable host directories up front so they are owned by the
+    # invoking user (the cache also holds the staged inputs, and `./output`
+    # receives the conversion results).
+    get_cache_dir().mkdir(parents=True, exist_ok=True)
+    (Path.cwd() / "output").mkdir(parents=True, exist_ok=True)
 
     with tempfile.NamedTemporaryFile(delete=False) as f:
         f.write(

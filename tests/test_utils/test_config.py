@@ -37,7 +37,7 @@ from modelconverter.utils.types import (
 DATA_DIR = Path("tests/data/test_utils/test_config")
 CALIBRATION_DATA_DIR_1 = DATA_DIR / "calibration_data_1"
 CALIBRATION_DATA_DIR_2 = DATA_DIR / "calibration_data_2"
-DEFAULT_CONFIG_FILE = "shared_with_container/configs/defaults.yaml"
+DEFAULT_CONFIG_FILE = "configs/defaults.yaml"
 
 DEFAULT_ENCODINGS = {
     "from_": Encoding.RGB,

@@ -1,9 +1,34 @@
 import os
+from contextvars import ContextVar
 from pathlib import Path
 
 from luxonis_ml.utils import LuxonisFileSystem
 
 from modelconverter.utils.constants import SHARED_DIR
+
+# Base directory against which relative local paths are resolved when they do
+# not exist as-is. It is set to the directory of the active config file while
+# it is being parsed (see `set_input_base`), so that files referenced *inside*
+# a config (calibration data, scripts, encodings, ...) are resolved relative to
+# the config file. Outside of that context it defaults to the cache directory
+# (inside the container) or the current working directory (native runs).
+_input_base: ContextVar[Path | None] = ContextVar("input_base", default=None)
+
+
+def set_input_base(base: Path | None) -> None:
+    """Sets the base directory for resolving relative local paths.
+
+    Pass C{None} to reset to the default.
+    """
+    _input_base.set(base)
+
+
+def get_input_base() -> Path:
+    """Returns the base directory for resolving relative local paths."""
+    base = _input_base.get()
+    if base is not None:
+        return base
+    return SHARED_DIR if "IN_DOCKER" in os.environ else Path.cwd()
 
 
 def resolve_path(string: str, dest: Path) -> Path:
@@ -12,9 +37,9 @@ def resolve_path(string: str, dest: Path) -> Path:
     if protocol != "file":
         path = download_from_remote(string, dest)
     else:
-        path = Path(string)
+        path = Path(string).expanduser()
     if not path.exists():
-        path = SHARED_DIR / path
+        path = get_input_base() / string
     if not path.exists():
         raise ValueError(f"Path `{string}` does not exist.")
     return path
