@@ -59,6 +59,19 @@ COPY --link pyproject.toml /app/pyproject.toml
 
 RUN pip install -e . --no-deps --no-cache-dir
 
+COPY --link requirements-dev.txt /app/requirements-dev.txt
+ARG DEV=false
+RUN <<EOF
+
+    if [ "$DEV" = "true" ]; then
+        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli
+    else
+        rm -r /app/tests
+        rm /app/requirements-dev.txt
+    fi
+
+EOF
+
 COPY --link docker/hailo/entrypoint.sh /app/entrypoint.sh
 
 RUN <<EOF
