@@ -79,10 +79,14 @@ SCENARIOS: list[Scenario] = [
         "shared_with_container/configs/multistage.yaml",
         "native",
         main_stage="yolov5n-seg",
-        # RVC3 (POT) quantization does not support multi-input models, and the
-        # postprocessor stage (`mult`) has two inputs (coeffs + prototypes).
+        # Known per-platform limitations converting this multistage model:
+        #  * RVC3 (POT) quantization does not support multi-input models, and the
+        #    postprocessor stage (`mult`) has two inputs (coeffs + prototypes);
+        #  * the Hailo SDK's ONNX parser crashes on it (IndexError in its
+        #    internal `is_null_reshape`), not something modelconverter controls.
         xfail={
             "rvc3": "RVC3 quantization does not support multi-input models",
+            "hailo": "Hailo SDK ONNX parser fails on this multistage model",
         },
     ),
     # --- platform-specific: OpenVINO IR (xml+bin) input (RVC2/RVC3 only) ---
