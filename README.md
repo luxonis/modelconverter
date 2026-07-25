@@ -375,8 +375,13 @@ You can run the built image either manually using the `docker run` command or us
 - If using `docker-compose`:
 
   ```bash
-  # Export your identity so outputs are owned by you instead of root.
-  export HOST_UID=$(id -u) HOST_GID=$(id -g)
+  # Rootful Docker needs your identity for output ownership. With rootless
+  # Docker, container root is already mapped to your host user.
+  if docker info -f '{{json .SecurityOptions}}' | grep -q rootless; then
+      unset HOST_UID HOST_GID
+  else
+      export HOST_UID=$(id -u) HOST_GID=$(id -g)
+  fi
   docker compose run <target> convert <target> ...
   ```
 

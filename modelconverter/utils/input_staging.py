@@ -15,11 +15,14 @@ then resolves the config's relative references against that copied directory
 import hashlib
 import shutil
 from pathlib import Path
+from typing import Any
 
+import yaml
 from loguru import logger
 
 from modelconverter.utils.constants import get_cache_dir
 from modelconverter.utils.filesystem_utils import get_protocol
+from modelconverter.utils.onnx_compatibility import get_external_data_path
 
 # Container-side location of the cache mount (see docker_utils / constants).
 _CONTAINER_SHARED_DIR = Path("/app/shared_with_container")
@@ -139,14 +142,23 @@ def _stage_value(value: str, inputs_dir: Path) -> str | None:
         return _to_container(dest)
 
     # Config file: stage the whole containing directory so its relative
-    # references resolve alongside it.
+    # references resolve alongside it, then stage and rewrite absolute local
+    # references which may live anywhere on the host.
     if src.suffix.lower() in _CONFIG_EXTS:
         parent_dest = _stage_dir(src.parent, inputs_dir)
-        return _to_container(parent_dest / src.name)
+        config_dest = parent_dest / src.name
+        _rewrite_absolute_config_paths(src, config_dest, inputs_dir)
+        return _to_container(config_dest)
 
     # OpenVINO IR: stage the `.xml`/`.bin` pair together.
     if src.suffix.lower() in {".xml", ".bin"}:
         dest = _stage_ir_pair(src, inputs_dir)
+        return _to_container(dest)
+
+    # ONNX models may store their tensors in a companion file. Preserve the
+    # relative external-data location expected by the model.
+    if src.suffix.lower() == ".onnx":
+        dest = _stage_onnx(src, inputs_dir)
         return _to_container(dest)
 
     dest = _stage_file(src, inputs_dir)
@@ -176,6 +188,72 @@ def _stage_ir_pair(src: Path, inputs_dir: Path) -> Path:
             _log_copy(member, member.stat().st_size)
             shutil.copy2(member, dest)
     return hash_dir / src.name
+
+
+def _stage_onnx(src: Path, inputs_dir: Path) -> Path:
+    external_data = get_external_data_path(src)
+    members = [src]
+    if external_data is not None and external_data.exists():
+        members.append(external_data)
+
+    digest = _hash_files(members)
+    hash_dir = inputs_dir / digest
+    destinations = {src: hash_dir / src.name}
+    if external_data is not None and external_data.exists():
+        destinations[external_data] = hash_dir / external_data.relative_to(
+            src.parent
+        )
+
+    for member, dest in destinations.items():
+        if not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            _log_copy(member, member.stat().st_size)
+            shutil.copy2(member, dest)
+    return hash_dir / src.name
+
+
+def _rewrite_absolute_config_paths(
+    src: Path, dest: Path, inputs_dir: Path
+) -> None:
+    """Stage absolute local paths in a YAML config and rewrite its
+    copy."""
+    data = yaml.safe_load(src.read_text())
+    rewritten, changed = _rewrite_absolute_paths(data, inputs_dir)
+    if changed:
+        dest.write_text(yaml.safe_dump(rewritten, sort_keys=False))
+    else:
+        # The cached directory may have been used for a previously rewritten
+        # config. Restore the source verbatim when no references are rewritten.
+        shutil.copy2(src, dest)
+
+
+def _rewrite_absolute_paths(value: Any, inputs_dir: Path) -> tuple[Any, bool]:
+    if isinstance(value, dict):
+        changed = False
+        rewritten = {}
+        for key, item in value.items():
+            new_item, item_changed = _rewrite_absolute_paths(item, inputs_dir)
+            rewritten[key] = new_item
+            changed |= item_changed
+        return rewritten, changed
+
+    if isinstance(value, list):
+        changed = False
+        rewritten_list = []
+        for item in value:
+            new_item, item_changed = _rewrite_absolute_paths(item, inputs_dir)
+            rewritten_list.append(new_item)
+            changed |= item_changed
+        return rewritten_list, changed
+
+    if isinstance(value, str):
+        path = Path(value).expanduser()
+        if path.is_absolute() and path.exists():
+            staged = _stage_value(value, inputs_dir)
+            if staged is not None:
+                return staged, True
+
+    return value, False
 
 
 # Warn when a single staged directory is larger than this (e.g. a config file
