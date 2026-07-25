@@ -112,7 +112,6 @@ _CROSS_FORMAT_CASES = [
 
 @pytest.mark.e2e
 @pytest.mark.slow
-@pytest.mark.rvc4
 @pytest.mark.parametrize(
     ("from_format", "to_format", "model"), _CROSS_FORMAT_CASES
 )

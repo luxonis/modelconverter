@@ -35,13 +35,10 @@ jobs:
       - name: Install package
         run: pip install -e .[dev]
 
-      - name: Run Tier-1 unit tests with coverage
-        # Hermetic host-side unit tests (no cloud/network) -- tiny ONNX models
-        # built on the fly. Codecov merges this with the per-backend e2e
-        # reports automatically (via flags).
+      - name: Run unit tests
         run: |
           python -m pytest tests/unit -n auto \
-            --cov=modelconverter --cov-branch \
+            --cov=modelconverter \
             --cov-report=term-missing --cov-report=xml:coverage-unit.xml
 
       - name: Upload coverage to Codecov
@@ -122,17 +119,12 @@ jobs:
               docker load -i "hailo-${VERSION}.tar.gz"
           fi
 
-      - name: Run e2e conversions (in dev container, with coverage)
-        # `--dev` builds an image that also carries the test/coverage tooling;
-        # `shell -c` runs pytest inside it (vendor tools present), so pytest-cov
-        # measures the exporters. The e2e tests call `convert` in-process
-        # (IN_DOCKER skips the launcher). coverage.xml lands on the mounted
-        # shared_with_container dir so the host can upload it.
+      - name: Run integration tests
         run: |
           modelconverter shell "${PACKAGE}" --dev --no-gpu \
             --tool-version "${VERSION}" \
             -c "python -m pytest tests/e2e -m ${PACKAGE} -x \
-                --cov=modelconverter --cov-branch \
+                --cov=modelconverter \
                 --cov-report=term-missing \
                 --cov-report=xml:shared_with_container/coverage-${PACKAGE}-${VERSION}.xml"
 
