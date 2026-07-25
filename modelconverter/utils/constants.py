@@ -23,8 +23,10 @@ def get_cache_dir() -> Path:
 # the on-disk cache directory and a local `./output` directory.
 _IN_DOCKER: Final[bool] = "IN_DOCKER" in os.environ
 
+CONTAINER_SHARED_DIR: Final[Path] = Path("/app/shared_with_container")
+
 SHARED_DIR: Final[Path] = (
-    Path("/app/shared_with_container") if _IN_DOCKER else get_cache_dir()
+    CONTAINER_SHARED_DIR if _IN_DOCKER else get_cache_dir()
 )
 OUTPUTS_DIR: Final[Path] = (
     Path("/app/output") if _IN_DOCKER else Path.cwd() / "output"
@@ -46,6 +48,7 @@ LOADERS = Registry(name="loaders")
 __all__ = [
     "CALIBRATION_DIR",
     "CONFIGS_DIR",
+    "CONTAINER_SHARED_DIR",
     "INPUTS_DIR",
     "MISC_DIR",
     "MODELS_DIR",

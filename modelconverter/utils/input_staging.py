@@ -23,12 +23,9 @@ from typing import Any
 import yaml
 from loguru import logger
 
-from modelconverter.utils.constants import get_cache_dir
+from modelconverter.utils.constants import CONTAINER_SHARED_DIR, get_cache_dir
 from modelconverter.utils.filesystem_utils import get_protocol
 from modelconverter.utils.onnx_compatibility import get_external_data_path
-
-# Container-side location of the cache mount (see docker_utils / constants).
-_CONTAINER_SHARED_DIR = Path("/app/shared_with_container")
 
 # CLI flags whose following value is a path that should be staged. Values that
 # follow any other flag (e.g. --output-dir, --to) are left untouched.
@@ -340,7 +337,7 @@ def _stage_dir(src: Path, inputs_dir: Path) -> Path:
 def _to_container(dest: Path) -> str:
     """Maps a host cache path to its container-side location."""
     relative = dest.relative_to(get_cache_dir())
-    return str(_CONTAINER_SHARED_DIR / relative)
+    return str(CONTAINER_SHARED_DIR / relative)
 
 
 def _hash_file(path: Path) -> str:

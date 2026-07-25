@@ -22,7 +22,10 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 import docker
 from modelconverter import __version__
-from modelconverter.utils.constants import get_cache_dir
+from modelconverter.utils.constants import (
+    CONTAINER_SHARED_DIR,
+    get_cache_dir,
+)
 from modelconverter.utils.target_versions import (
     get_default_target_version,
 )
@@ -115,7 +118,7 @@ def generate_compose_config(
             "modelconverter": {
                 "environment": environment,
                 "volumes": [
-                    f"{get_cache_dir()}:/app/shared_with_container",
+                    f"{get_cache_dir()}:{CONTAINER_SHARED_DIR}",
                     f"{Path.cwd().absolute() / 'output'}:/app/output",
                 ],
                 "secrets": ["gcp-credentials"],

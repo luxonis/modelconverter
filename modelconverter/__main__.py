@@ -16,6 +16,7 @@ from luxonis_ml.utils import LuxonisFileSystem, setup_logging
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
+from rich.prompt import Confirm
 from rich.table import Table
 
 from modelconverter.cli import (
@@ -800,12 +801,30 @@ def cache_info() -> None:
 
 
 @cache_app.command(name="clean", sort_key=1)
-def cache_clean() -> None:
-    """Removes the entire modelconverter cache."""
+def cache_clean(
+    yes: Annotated[
+        bool,
+        Parameter(
+            name="--yes",
+            alias="-y",
+            negative_bool=[],
+        ),
+    ] = False,
+) -> None:
+    """Removes the entire modelconverter cache.
+
+    Args:
+        yes: Clear the cache without prompting for confirmation.
+    """
     console = Console()
     root = get_cache_dir()
     if root.exists() and any(root.iterdir()):
         size, _ = _dir_stats(root)
+        if not yes and not Confirm.ask(
+            f"Clear the entire ModelConverter cache at [cyan]{root}[/]?"
+        ):
+            console.print("Cache clean cancelled.")
+            return
         shutil.rmtree(root)
         console.print(
             f":wastebasket:  Cleared cache at [cyan]{root}[/] "

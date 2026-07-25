@@ -10,10 +10,11 @@ import yaml
 from onnx import helper, numpy_helper
 
 from modelconverter.utils import input_staging
+from modelconverter.utils.constants import CONTAINER_SHARED_DIR
 
 
 def _host_staged_path(staged: str, cache_dir: Path) -> Path:
-    relative = Path(staged).relative_to("/app/shared_with_container")
+    relative = Path(staged).relative_to(CONTAINER_SHARED_DIR)
     return cache_dir / relative
 
 
@@ -96,12 +97,12 @@ def test_stages_and_rewrites_absolute_config_paths(
     staged_config = _host_staged_path(staged_tokens[1], cache_dir)
     rewritten = yaml.safe_load(staged_config.read_text())
     for key in ("input_model", "script"):
-        assert rewritten[key].startswith("/app/shared_with_container/inputs/")
+        assert rewritten[key].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
     assert rewritten["calibration"]["path"].startswith(
-        "/app/shared_with_container/inputs/"
+        f"{CONTAINER_SHARED_DIR}/inputs/"
     )
     assert rewritten["rvc4"]["encodings"].startswith(
-        "/app/shared_with_container/inputs/"
+        f"{CONTAINER_SHARED_DIR}/inputs/"
     )
     assert rewritten["relative_model"] == relative_model.name
     assert rewritten["remote_model"] == "s3://bucket/model.onnx"

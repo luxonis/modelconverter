@@ -348,7 +348,8 @@ with:
 
 ```bash
 modelconverter cache info    # show cache location and disk usage
-modelconverter cache clean   # remove the entire cache
+modelconverter cache clean       # remove the cache after confirmation
+modelconverter cache clean --yes # remove it non-interactively
 ```
 
 ### Running ModelConverter
