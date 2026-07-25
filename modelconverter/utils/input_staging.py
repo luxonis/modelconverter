@@ -12,8 +12,11 @@ then resolves the config's relative references against that copied directory
 (see ``modelconverter.utils.filesystem_utils.set_input_base``).
 """
 
+import errno
 import hashlib
+import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -171,7 +174,7 @@ def _stage_file(src: Path, inputs_dir: Path) -> Path:
     if not dest.exists():
         dest.parent.mkdir(parents=True, exist_ok=True)
         _log_copy(src, src.stat().st_size)
-        shutil.copy2(src, dest)
+        _atomic_copy_file(src, dest)
     return dest
 
 
@@ -181,12 +184,8 @@ def _stage_ir_pair(src: Path, inputs_dir: Path) -> Path:
     members = [p for p in (xml, bin_) if p.exists()]
     digest = _hash_files(members)
     hash_dir = inputs_dir / digest
-    for member in members:
-        dest = hash_dir / member.name
-        if not dest.exists():
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            _log_copy(member, member.stat().st_size)
-            shutil.copy2(member, dest)
+    destinations = {member: Path(member.name) for member in members}
+    _stage_file_bundle(destinations, hash_dir)
     return hash_dir / src.name
 
 
@@ -198,18 +197,55 @@ def _stage_onnx(src: Path, inputs_dir: Path) -> Path:
 
     digest = _hash_files(members)
     hash_dir = inputs_dir / digest
-    destinations = {src: hash_dir / src.name}
+    destinations = {src: Path(src.name)}
     if external_data is not None and external_data.exists():
-        destinations[external_data] = hash_dir / external_data.relative_to(
-            src.parent
-        )
+        destinations[external_data] = external_data.relative_to(src.parent)
 
-    for member, dest in destinations.items():
-        if not dest.exists():
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            _log_copy(member, member.stat().st_size)
-            shutil.copy2(member, dest)
+    _stage_file_bundle(destinations, hash_dir)
     return hash_dir / src.name
+
+
+def _atomic_copy_file(src: Path, dest: Path) -> None:
+    """Copy one file and atomically publish it at ``dest``."""
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{dest.name}.tmp-", dir=dest.parent
+    )
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        shutil.copy2(src, tmp)
+        tmp.replace(dest)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _stage_file_bundle(destinations: dict[Path, Path], dest_dir: Path) -> None:
+    """Atomically stage a set of files as one digest-keyed directory."""
+    if dest_dir.exists():
+        return
+
+    dest_dir.parent.mkdir(parents=True, exist_ok=True)
+    tmp_dir = Path(
+        tempfile.mkdtemp(prefix=f".{dest_dir.name}.tmp-", dir=dest_dir.parent)
+    )
+    try:
+        for src, relative_dest in destinations.items():
+            tmp_dest = tmp_dir / relative_dest
+            tmp_dest.parent.mkdir(parents=True, exist_ok=True)
+            _log_copy(src, src.stat().st_size)
+            shutil.copy2(src, tmp_dest)
+        _publish_directory(tmp_dir, dest_dir)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _publish_directory(src: Path, dest: Path) -> None:
+    """Rename ``src`` to ``dest``, accepting a concurrent winner."""
+    try:
+        src.rename(dest)
+    except OSError as exc:
+        if exc.errno not in {errno.EEXIST, errno.ENOTEMPTY}:
+            raise
 
 
 def _rewrite_absolute_config_paths(
@@ -220,11 +256,24 @@ def _rewrite_absolute_config_paths(
     data = yaml.safe_load(src.read_text())
     rewritten, changed = _rewrite_absolute_paths(data, inputs_dir)
     if changed:
-        dest.write_text(yaml.safe_dump(rewritten, sort_keys=False))
+        _atomic_write_text(dest, yaml.safe_dump(rewritten, sort_keys=False))
     else:
         # The cached directory may have been used for a previously rewritten
         # config. Restore the source verbatim when no references are rewritten.
-        shutil.copy2(src, dest)
+        _atomic_copy_file(src, dest)
+
+
+def _atomic_write_text(dest: Path, content: str) -> None:
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{dest.name}.tmp-", dir=dest.parent, text=True
+    )
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(content)
+        tmp.replace(dest)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _rewrite_absolute_paths(value: Any, inputs_dir: Path) -> tuple[Any, bool]:
@@ -275,7 +324,16 @@ def _stage_dir(src: Path, inputs_dir: Path) -> Path:
                 "`modelconverter cache clean` to reclaim space."
             )
         _log_copy(src, size)
-        shutil.copytree(src, dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp_root = Path(
+            tempfile.mkdtemp(prefix=f".{src.name}.tmp-", dir=dest.parent)
+        )
+        tmp_dest = tmp_root / src.name
+        try:
+            shutil.copytree(src, tmp_dest)
+            _publish_directory(tmp_dest, dest)
+        finally:
+            shutil.rmtree(tmp_root, ignore_errors=True)
     return dest
 
 
