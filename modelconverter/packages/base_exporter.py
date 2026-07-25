@@ -74,7 +74,13 @@ class Exporter(ABC):
             self.intermediate_outputs_dir / sanitized_model_name,
         )
         shutil.copy(input_model, self.output_dir / sanitized_model_name)
-        external_data_path = get_external_data_path(input_model)
+        # External data is an ONNX-only concept; loading a non-ONNX input
+        # (e.g. an OpenVINO IR .xml/.bin) as ONNX would fail.
+        external_data_path = (
+            get_external_data_path(input_model)
+            if self.input_file_type == InputFileType.ONNX
+            else None
+        )
         if external_data_path is not None:
             shutil.copy(
                 external_data_path,

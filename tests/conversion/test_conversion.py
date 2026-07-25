@@ -56,6 +56,8 @@ class Scenario:
     """Platforms this scenario applies to."""
     opts: tuple[str, ...] = field(default_factory=tuple)
     """Extra ``key value`` conversion overrides."""
+    main_stage: str | None = None
+    """Main stage name (required for multistage configs)."""
 
 
 SCENARIOS: list[Scenario] = [
@@ -64,22 +66,17 @@ SCENARIOS: list[Scenario] = [
     Scenario("archive-to-native", f"{GS}/resnet18.tar.xz", "native"),
     Scenario("config-to-archive", f"{GS}/resnet18.yaml", "nn_archive"),
     Scenario("config-to-native", f"{GS}/resnet18.yaml", "native"),
-    # --- multistage (yolov8n_seg) with full linked calibration ---
-    # native -> nn_archive is unsupported for the multistage model.
-    Scenario(
-        "multistage-archive-to-archive",
-        f"{GS}/yolov8n_seg.tar.xz",
-        "nn_archive",
-    ),
-    Scenario(
-        "multistage-archive-to-native",
-        f"{GS}/yolov8n_seg.tar.xz",
-        "native",
-    ),
+    # --- multistage (yolov5n-seg + mult) with full linked calibration ---
+    # Supported the same on every platform. The config carries the inter-stage
+    # linked calibration (stage-2 `coeffs` via a script, `prototypes` from
+    # stage-1 `protos_output`) and is self-contained (all assets on S3). A raw
+    # multistage NN archive cannot reconstruct the linked calibration -- its
+    # non-image stage-2 inputs would fall back to random calibration and fail.
     Scenario(
         "multistage-config-to-native",
-        f"{GS}/yolov8n_seg.yaml",
+        "shared_with_container/configs/multistage.yaml",
         "native",
+        main_stage="yolov5n-seg",
     ),
     # --- platform-specific: OpenVINO IR (xml+bin) input (RVC2/RVC3 only) ---
     Scenario(
@@ -125,5 +122,6 @@ def test_convert(platform: str, scenario: Scenario):
         path=scenario.path,
         output_dir=output_name,
         to=scenario.to_format,
+        main_stage=scenario.main_stage,
     )
     _assert_produced(output_name, scenario.to_format)
