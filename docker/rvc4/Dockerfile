@@ -106,29 +106,21 @@ COPY --link --from=base \
 
 
 COPY --link docker/rvc4/entrypoint.sh /app/entrypoint.sh
+
+ARG DEV=false
+COPY --link requirements-dev.txt /app/requirements-dev.txt
+RUN if [ "$DEV" = "true" ]; then \
+        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli; \
+    fi
+
 COPY --link modelconverter /app/modelconverter/
 COPY --link pyproject.toml /app/pyproject.toml
-COPY --link tests /app/tests/
-
 RUN <<EOF
 
     set -e
 
     pip install -e . --no-deps --no-cache-dir
     chmod +x /app/entrypoint.sh
-
-EOF
-
-COPY --link requirements-dev.txt /app/requirements-dev.txt
-ARG DEV=false
-RUN <<EOF
-
-    if [ "$DEV" = "true" ]; then
-        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli
-    else
-        rm -r /app/tests
-        rm /app/requirements-dev.txt
-    fi
 
 EOF
 

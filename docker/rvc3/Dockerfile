@@ -123,24 +123,15 @@ COPY --link --from=base /usr/local/bin/mo \
     /usr/local/bin/python3.8 \
     /usr/local/bin/
 
-COPY --link modelconverter /app/modelconverter/
-COPY --link tests /app/tests/
-COPY --link pyproject.toml /app/pyproject.toml
-
-RUN pip install -e . --no-deps
-
-COPY --link requirements-dev.txt /app/requirements-dev.txt
 ARG DEV=false
-RUN <<EOF
-
-    if [ "$DEV" = "true" ]; then
-        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli
-    else
-        rm -r /app/tests
-        rm /app/requirements-dev.txt
+COPY --link requirements-dev.txt /app/requirements-dev.txt
+RUN if [ "$DEV" = "true" ]; then \
+        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli; \
     fi
 
-EOF
+COPY --link modelconverter /app/modelconverter/
+COPY --link pyproject.toml /app/pyproject.toml
+RUN pip install -e . --no-deps
 
 # The RVC2 entrypoint is used for RVC3 as well
 COPY --link docker/rvc2/entrypoint.sh /app/entrypoint.sh
