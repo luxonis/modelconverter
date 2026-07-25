@@ -53,6 +53,15 @@ jobs:
           disable_search: true
           handle_no_reports_found: true
 
+      # Kept so update-cov-report.yaml can refresh the main-branch base report.
+      - name: Upload coverage artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coverage-unit
+          path: coverage-unit.xml
+          if-no-files-found: ignore
+
   integration:
     name: ${{ matrix.package }} ${{ matrix.version }}
     strategy:
@@ -139,3 +148,12 @@ jobs:
           fail_ci_if_error: false
           disable_search: true
           handle_no_reports_found: true
+
+      # Kept so update-cov-report.yaml can refresh the main-branch base report.
+      - name: Upload coverage artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coverage-conversion-${{ matrix.package }}-${{ matrix.version }}
+          path: shared_with_container/coverage-${{ matrix.package }}-${{ matrix.version }}.xml
+          if-no-files-found: ignore

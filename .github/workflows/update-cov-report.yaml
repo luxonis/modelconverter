@@ -1,0 +1,63 @@
+name: Update Coverage Report
+
+# Refreshes the Codecov base report for `main` after a merge. CI only runs on
+# pull requests, so this reuses the merged PR's coverage artifacts (from the
+# last CI run) and re-uploads them for the main branch -- one job per flag.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  update-base-report:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { flag: unit, pattern: "coverage-unit" }
+          - { flag: conversion-rvc2, pattern: "coverage-conversion-rvc2-.*" }
+          - { flag: conversion-rvc3, pattern: "coverage-conversion-rvc3-.*" }
+          - { flag: conversion-rvc4, pattern: "coverage-conversion-rvc4-.*" }
+          - { flag: conversion-hailo, pattern: "coverage-conversion-hailo-.*" }
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      - name: Download coverage artifacts
+        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151
+        with:
+          name: ${{ matrix.pattern }}
+          name_is_regexp: true
+          path: coverage
+          workflow: ci.yaml
+          merge_multiple: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Collect coverage files
+        id: coverage-files
+        shell: bash
+        run: |
+          files=$(find coverage -type f -name '*.xml' | sort | paste -sd, -)
+          if [[ -z "$files" ]]; then
+            echo "No coverage files found for flag '${{ matrix.flag }}'" >&2
+            exit 1
+          fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+
+      - name: Upload base report to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ steps.coverage-files.outputs.files }}
+          flags: ${{ matrix.flag }}
+          name: ${{ matrix.flag }}
+          fail_ci_if_error: false
+          disable_search: true
