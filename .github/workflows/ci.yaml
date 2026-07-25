@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  LUXONIS_TELEMETRY_ENABLED: "false"
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install package
+        run: pip install -e .[dev]
+
+      - name: Run Tier-1 unit tests with coverage
+        # Hermetic host-side unit tests (no cloud/network) -- tiny ONNX models
+        # built on the fly. Codecov merges this with the per-backend e2e
+        # reports automatically (via flags).
+        run: |
+          python -m pytest tests/unit -n auto \
+            --cov=modelconverter --cov-branch \
+            --cov-report=term-missing --cov-report=xml:coverage-unit.xml
+
+      - name: Upload coverage to Codecov
+        if: ${{ always() }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage-unit.xml
+          flags: unit
+          name: unit
+          fail_ci_if_error: false
+          disable_search: true
+          handle_no_reports_found: true
+
+  integration:
+    name: ${{ matrix.package }} ${{ matrix.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { package: rvc2, version: "2022.3.0", os: ubuntu-latest }
+          - { package: rvc3, version: "2022.3.0", os: ubuntu-latest }
+          - { package: rvc4, version: "2.32.6", os: ubuntu-latest }
+          - { package: rvc4, version: "2.41.0", os: ubuntu-latest }
+          - { package: hailo, version: "2024.10", os: ubuntu-22.04-4core }
+          - { package: hailo, version: "2025.01", os: ubuntu-22.04-4core }
+          - { package: hailo, version: "2025.04", os: ubuntu-22.04-4core }
+    runs-on: ${{ matrix.os }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_S3_ENDPOINT_URL: ${{ secrets.AWS_S3_ENDPOINT_URL }}
+      HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
+      PACKAGE: ${{ matrix.package }}
+      VERSION: ${{ matrix.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker
+        uses: crazy-max/ghaction-setup-docker@6d7cfa65f60a9dda7b46e5513fa982536f3c9877
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install package (host CLI)
+        run: pip install -e .
+
+      - name: Authenticate to Google Cloud
+        id: google-auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          token_format: access_token
+
+      - name: Prepare build dependencies
+        env:
+          GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
+        run: |
+          mkdir -p docker/extra_packages
+          if [ "${PACKAGE}" = "rvc4" ]; then
+              gcloud storage cp \
+                "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
+                "docker/extra_packages/snpe-${VERSION}.zip"
+          elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
+              gcloud storage cp \
+                "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
+                "docker/extra_packages/openvino-${VERSION}.tar.gz"
+          elif [ "${PACKAGE}" = "hailo" ]; then
+              gcloud storage cp \
+                "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
+              docker load -i "hailo-${VERSION}.tar.gz"
+          fi
+
+      - name: Run e2e conversions (in dev container, with coverage)
+        # `--dev` builds an image that also carries the test/coverage tooling;
+        # `shell -c` runs pytest inside it (vendor tools present), so pytest-cov
+        # measures the exporters. The e2e tests call `convert` in-process
+        # (IN_DOCKER skips the launcher). coverage.xml lands on the mounted
+        # shared_with_container dir so the host can upload it.
+        run: |
+          modelconverter shell "${PACKAGE}" --dev --no-gpu \
+            --tool-version "${VERSION}" \
+            -c "python -m pytest tests/e2e -m ${PACKAGE} -x \
+                --cov=modelconverter --cov-branch \
+                --cov-report=term-missing \
+                --cov-report=xml:shared_with_container/coverage-${PACKAGE}-${VERSION}.xml"
+
+      - name: Upload coverage to Codecov
+        if: ${{ always() }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: shared_with_container/coverage-${{ matrix.package }}-${{ matrix.version }}.xml
+          flags: e2e-${{ matrix.package }}
+          name: e2e-${{ matrix.package }}-${{ matrix.version }}
+          fail_ci_if_error: false
+          disable_search: true
+          handle_no_reports_found: true

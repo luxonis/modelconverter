@@ -1,32 +1,9 @@
-name: Package publishing
+name: Publish images
 
 on:
-  workflow_call:
-    inputs:
-      package:
-        required: true
-        type: string
-        description: Which package to publish
-
-      version:
-        required: true
-        type: string
-        description: >
-          Which version of underlying conversion tools to use
-
-      default:
-        required: true
-        type: string
-        description: >
-          The default tool version. The image using this version will be also
-          tagged with a bare `:latest` tag.
-
-      os:
-        required: false
-        type: string
-        description: >
-          Which OS to use for the tests. If not specified, the default is 'ubuntu-latest'.
-        default: "ubuntu-latest"
+  workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -35,19 +12,32 @@ permissions:
 env:
   LUXONIS_TELEMETRY_ENABLED: "false"
   GAR_LOCATION: us-central1
-  PACKAGE: ${{ inputs.package }}
-  NAME: luxonis/modelconverter-${{ inputs.package }}
-  STEM: modelconverter-${{ inputs.package }}
-  VERSION: ${{ inputs.version }}
   GAR_STEM: us-central1-docker.pkg.dev/easyml-394818
 
 jobs:
   publish:
-    runs-on: ${{ inputs.os }}
+    name: ${{ matrix.package }} ${{ matrix.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `default` is the version that also receives the bare `:latest` tag.
+          - { package: rvc2, version: "2021.4.0", default: "2022.3.0", os: ubuntu-latest }
+          - { package: rvc2, version: "2022.3.0", default: "2022.3.0", os: ubuntu-latest }
+          - { package: rvc3, version: "2022.3.0", default: "2022.3.0", os: ubuntu-latest }
+          - { package: rvc4, version: "2.32.6", default: "2.41.0", os: ubuntu-latest }
+          - { package: rvc4, version: "2.41.0", default: "2.41.0", os: ubuntu-latest }
+          - { package: hailo, version: "2024.10", default: "2025.04", os: ubuntu-22.04-4core }
+          - { package: hailo, version: "2025.01", default: "2025.04", os: ubuntu-22.04-4core }
+          - { package: hailo, version: "2025.04", default: "2025.04", os: ubuntu-22.04-4core }
+    runs-on: ${{ matrix.os }}
     env:
-      BARE_LOCAL_NAME: luxonis/modelconverter-${{ inputs.package }}
-      LOCAL_NAME: luxonis/modelconverter-${{ inputs.package }}:${{ inputs.version }}-latest
-      DEFAULT: ${{ inputs.default }}
+      PACKAGE: ${{ matrix.package }}
+      NAME: luxonis/modelconverter-${{ matrix.package }}
+      STEM: modelconverter-${{ matrix.package }}
+      VERSION: ${{ matrix.version }}
+      DEFAULT: ${{ matrix.default }}
+      LOCAL_NAME: luxonis/modelconverter-${{ matrix.package }}:${{ matrix.version }}-latest
 
     steps:
       - name: Checkout code
@@ -86,23 +76,23 @@ jobs:
           mkdir -p docker/extra_packages
           cd docker/extra_packages
           if [ "${PACKAGE}" = "rvc4" ]; then
-              gcloud storage cp                             \
+              gcloud storage cp \
                 "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
                 "snpe-${VERSION}.zip"
           elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
-              gcloud storage cp                                    \
+              gcloud storage cp \
                 "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
                 "openvino-${VERSION}.tar.gz"
           elif [ "${PACKAGE}" = "hailo" ]; then
-              gcloud storage cp                                    \
+              gcloud storage cp \
                 "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
               docker load -i "hailo-${VERSION}.tar.gz"
           fi
 
       - name: Build image
         run: |
-          DOCKERFILE="docker/${PACKAGE}/Dockerfile"
-          docker build -f "${DOCKERFILE}" -t "${LOCAL_NAME}" . --build-arg VERSION="${VERSION}"
+          docker build -f "docker/${PACKAGE}/Dockerfile" \
+            -t "${LOCAL_NAME}" . --build-arg VERSION="${VERSION}"
 
       - name: GHCR publish latest
         run: |
@@ -143,7 +133,6 @@ jobs:
       - name: GAR publish clients
         run: |
           read -r -a REPO_ARRAY <<< "${{ vars.EXTERNAL_CLIENTS }}"
-
           SHA=$(git rev-parse --short HEAD)
           for REPO in "${REPO_ARRAY[@]}"; do
             GAR_CLIENT_NAME="${GAR_STEM}/${REPO}/${STEM}:${VERSION}-${SHA}"
