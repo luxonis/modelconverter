@@ -465,7 +465,12 @@ def docker_exec(
                 gpu=use_gpu and target == "hailo",
                 memory=memory,
                 cpus=cpus,
-                extra_environment=telemetry_environment(),
+                extra_environment={
+                    **telemetry_environment(),
+                    # Lets the in-container test suite auto-select this
+                    # platform's conversion tests (see tests/conftest.py).
+                    "MODELCONVERTER_TARGET": target,
+                },
             ).encode()
         )
 

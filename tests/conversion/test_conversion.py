@@ -58,6 +58,8 @@ class Scenario:
     """Extra ``key value`` conversion overrides."""
     main_stage: str | None = None
     """Main stage name (required for multistage configs)."""
+    xfail: dict[str, str] = field(default_factory=dict)
+    """Platforms where this scenario is a known/expected failure -> reason."""
 
 
 SCENARIOS: list[Scenario] = [
@@ -77,6 +79,11 @@ SCENARIOS: list[Scenario] = [
         "shared_with_container/configs/multistage.yaml",
         "native",
         main_stage="yolov5n-seg",
+        # RVC3 (POT) quantization does not support multi-input models, and the
+        # postprocessor stage (`mult`) has two inputs (coeffs + prototypes).
+        xfail={
+            "rvc3": "RVC3 quantization does not support multi-input models",
+        },
     ),
     # --- platform-specific: OpenVINO IR (xml+bin) input (RVC2/RVC3 only) ---
     Scenario(
@@ -87,11 +94,25 @@ SCENARIOS: list[Scenario] = [
     ),
 ]
 
+
+def _marks(platform: str, scenario: Scenario) -> list:
+    marks = [getattr(pytest.mark, platform)]
+    if platform in scenario.xfail:
+        marks.append(
+            pytest.mark.xfail(
+                reason=scenario.xfail[platform],
+                strict=True,
+                raises=SystemExit,
+            )
+        )
+    return marks
+
+
 _CASES = [
     pytest.param(
         platform,
         scenario,
-        marks=getattr(pytest.mark, platform),
+        marks=_marks(platform, scenario),
         id=f"{platform}-{scenario.id}",
     )
     for scenario in SCENARIOS
