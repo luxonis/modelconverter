@@ -108,6 +108,7 @@ COPY --link --from=base \
 COPY --link docker/rvc4/entrypoint.sh /app/entrypoint.sh
 COPY --link modelconverter /app/modelconverter/
 COPY --link pyproject.toml /app/pyproject.toml
+COPY --link tests /app/tests/
 
 RUN <<EOF
 

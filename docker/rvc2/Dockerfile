@@ -169,6 +169,7 @@ COPY --link --from=base /usr/local/bin/mo \
 
 COPY --link modelconverter /app/modelconverter/
 COPY --link pyproject.toml /app/pyproject.toml
+COPY --link tests /app/tests/
 
 RUN pip install -e . --no-deps --no-cache-dir
 

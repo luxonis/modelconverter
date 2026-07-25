@@ -56,10 +56,12 @@ EOF
 
 COPY --link modelconverter /app/modelconverter/
 COPY --link pyproject.toml /app/pyproject.toml
+COPY --link requirements-dev.txt /app/requirements-dev.txt
+COPY --link tests /app/tests/
 
 RUN pip install -e . --no-deps --no-cache-dir
 
-COPY --link requirements-dev.txt /app/requirements-dev.txt
+
 ARG DEV=false
 RUN <<EOF
 
