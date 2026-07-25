@@ -28,7 +28,8 @@ from tests.helpers.onnx_factory import build_onnx, single_io_onnx
 
 
 class TestMetadataDataclass:
-    """The plain ``Metadata`` dataclass stores the four field mappings."""
+    """The plain ``Metadata`` dataclass stores the four field
+    mappings."""
 
     def test_fields_and_equality(self):
         meta = Metadata(
@@ -102,7 +103,8 @@ class TestGetMetadataOnnx:
         assert meta.input_dtypes["input0"] is DataType.FLOAT32
 
     def test_load_failure_raises(self, work_dir: Path):
-        """A non-ONNX file with an ``.onnx`` suffix raises ``ValueError``."""
+        """A non-ONNX file with an ``.onnx`` suffix raises
+        ``ValueError``."""
         bad = work_dir / "broken.onnx"
         bad.write_text("this is not a protobuf")
         with pytest.raises(ValueError, match="Failed to load ONNX model"):
@@ -110,10 +112,12 @@ class TestGetMetadataOnnx:
 
 
 class TestGetMetadataDlc:
-    """The ``.csv`` route through ``_get_metadata_dlc`` (no ``snpe`` needed)."""
+    """The ``.csv`` route through ``_get_metadata_dlc`` (no ``snpe``
+    needed)."""
 
     def test_plain_csv(self, work_dir: Path):
-        """A quoted-dimension CSV yields shapes and dtypes for both ends.
+        """A quoted-dimension CSV yields shapes and dtypes for both
+        ends.
 
         A trailing ``Unconsumed Tensor Name`` block exercises the
         output-section end-marker search.
@@ -190,7 +194,9 @@ class TestGetMetadataDispatch:
         except ImportError:
             pass
         else:
-            pytest.skip(f"`{vendor_mod}` importable; backend body out of scope")
+            pytest.skip(
+                f"`{vendor_mod}` importable; backend body out of scope"
+            )
 
         path = work_dir / f"model{suffix}"
         path.write_bytes(b"dummy")

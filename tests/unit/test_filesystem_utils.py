@@ -116,9 +116,7 @@ class TestDownloadFromRemote:
         result = fsu.download_from_remote("s3://b/model.onnx", work_dir)
         expected = work_dir / "model.onnx"
         assert result == expected
-        assert instances[0].get_file_calls == [
-            ("model.onnx", str(expected))
-        ]
+        assert instances[0].get_file_calls == [("model.onnx", str(expected))]
 
     def test_dest_as_str(
         self, work_dir: Path, monkeypatch: pytest.MonkeyPatch
@@ -150,9 +148,7 @@ class TestDownloadFromRemote:
         instances = _install_fake_fs(
             monkeypatch, is_dir=True, walk=walk, split=("s3://b", "d")
         )
-        result = fsu.download_from_remote(
-            "s3://b/d", work_dir, max_files=2
-        )
+        result = fsu.download_from_remote("s3://b/d", work_dir, max_files=2)
         local_path = work_dir / "d"
         assert result == local_path
         # Only the first two files fetched before the ``i == max_files``
@@ -195,9 +191,7 @@ class TestUploadToRemote:
         assert fs.put_file_calls == [(local, "model.onnx")]
         assert fs.put_dir_calls == []
 
-    def test_upload_dir(
-        self, work_dir: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_upload_dir(self, work_dir: Path, monkeypatch: pytest.MonkeyPatch):
         local = work_dir / "d"
         local.mkdir()
         instances = _install_fake_fs(monkeypatch, split=("s3://b", "d"))

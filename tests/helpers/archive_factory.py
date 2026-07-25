@@ -57,7 +57,8 @@ def default_archive_config() -> dict[str, Any]:
 def set_nested_config_value(
     config: dict[str, Any], keys: list[str], values: list[Any]
 ) -> dict[str, Any]:
-    """Sets dotted ``a.b.0.c`` keys (relative to ``config["model"]``)."""
+    """Sets dotted ``a.b.0.c`` keys (relative to
+    ``config["model"]``)."""
     for key, value in zip(keys, values, strict=True):
         parts = key.split(".")
         current = config["model"]

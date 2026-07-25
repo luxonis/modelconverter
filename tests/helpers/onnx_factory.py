@@ -22,21 +22,19 @@ __all__ = [
     "standard_dummy_onnx",
 ]
 
-IO = tuple[str, list[int], int]
-"""(name, shape, TensorProto dtype)."""
-
 
 def build_onnx(
     path: str | Path,
-    inputs: list[IO],
-    outputs: list[IO],
+    inputs: list[tuple[str, list[int], int]],
+    outputs: list[tuple[str, list[int], int]],
     *,
     producer: str = "DummyModelProducer",
 ) -> Path:
     """Builds a minimal valid ONNX model with the given inputs/outputs.
 
-    Each output is produced by an ``Identity`` node fed from an input, so
-    the model is structurally valid regardless of the declared shapes.
+    Each output is produced by an ``Identity`` node fed from an input,
+    so the model is structurally valid regardless of the declared
+    shapes.
     """
     graph_inputs = [
         helper.make_tensor_value_info(name, dtype, shape)
@@ -50,9 +48,7 @@ def build_onnx(
     for i, (out_name, _, _) in enumerate(outputs):
         src_name = inputs[min(i, len(inputs) - 1)][0]
         nodes.append(
-            helper.make_node(
-                "Identity", inputs=[src_name], outputs=[out_name]
-            )
+            helper.make_node("Identity", inputs=[src_name], outputs=[out_name])
         )
 
     graph = helper.make_graph(nodes, "DummyModel", graph_inputs, graph_outputs)

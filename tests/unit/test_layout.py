@@ -38,9 +38,7 @@ class TestGuessNewLayout:
         )
 
     def test_duplicate_dims_preserve_order(self):
-        assert (
-            guess_new_layout("NCHW", [1, 3, 3, 4], [1, 3, 4, 3]) == "NCWH"
-        )
+        assert guess_new_layout("NCHW", [1, 3, 3, 4], [1, 3, 4, 3]) == "NCWH"
 
     def test_length_mismatch(self):
         with pytest.raises(ValueError, match="same as the old one"):

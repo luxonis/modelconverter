@@ -1,9 +1,10 @@
 """Host-side unit tests for ``modelconverter.utils.config``.
 
 Everything runs without network, cloud, Docker or vendor tooling. Tiny
-dummy ONNX models are built on the fly (see ``tests/helpers/onnx_factory``)
-and the sub-config validators are exercised both directly (by constructing
-the pydantic models) and through the full ``Config.get_config`` pipeline.
+dummy ONNX models are built on the fly (see
+``tests/helpers/onnx_factory``) and the sub-config validators are
+exercised both directly (by constructing the pydantic models) and
+through the full ``Config.get_config`` pipeline.
 """
 
 import json
@@ -56,7 +57,8 @@ from tests.helpers.onnx_factory import (
 
 
 def _models_dir() -> Path:
-    """The (cwd-relative) models directory created by ``_isolate_cwd``."""
+    """The (cwd-relative) models directory created by
+    ``_isolate_cwd``."""
     return Path("shared_with_container") / "models"
 
 
@@ -73,11 +75,15 @@ def _named_node_onnx(path: Path) -> Path:
     """A model whose node *name* differs from its output *tensor* name.
 
     ``mynode`` produces tensor ``y`` (described in ``value_info``), so a
-    lookup by node name misses the tensor search and falls through to the
-    node search -- the branch the standard fixtures cannot reach.
+    lookup by node name misses the tensor search and falls through to
+    the node search -- the branch the standard fixtures cannot reach.
     """
-    inp = helper.make_tensor_value_info("input0", TensorProto.FLOAT, [1, 3, 8, 8])
-    out = helper.make_tensor_value_info("output0", TensorProto.FLOAT, [1, 3, 8, 8])
+    inp = helper.make_tensor_value_info(
+        "input0", TensorProto.FLOAT, [1, 3, 8, 8]
+    )
+    out = helper.make_tensor_value_info(
+        "output0", TensorProto.FLOAT, [1, 3, 8, 8]
+    )
     y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 3, 8, 8])
     node0 = helper.make_node("Relu", ["input0"], ["y"], name="mynode")
     node1 = helper.make_node("Identity", ["y"], ["output0"], name="outnode")
@@ -97,8 +103,9 @@ def _named_node_onnx(path: Path) -> Path:
 
 class TestStageValidation:
     def test_flat_config_wrapped_and_renamed(self):
-        """A flat single-stage config is wrapped and the ``default_stage``
-        placeholder is renamed to the input-model stem."""
+        """A flat single-stage config is wrapped and the
+        ``default_stage`` placeholder is renamed to the input-model
+        stem."""
         dummy = _dummy()
         config = Config.get_config(None, {"input_model": str(dummy)})
         assert config.name == dummy.stem
@@ -115,8 +122,8 @@ class TestStageValidation:
         assert set(config.stages) == {"custom"}
 
     def test_multistage_extras_fanned_into_each_stage(self):
-        """Top-level extras are distributed to stages missing them, and the
-        derived name joins the stage keys."""
+        """Top-level extras are distributed to stages missing them, and
+        the derived name joins the stage keys."""
         dummy = _dummy()
         config = Config.get_config(
             None,
@@ -195,8 +202,8 @@ class TestDownloadInputModel:
     def test_ir_path_extracts_bin_and_xml(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ):
-        """The IR branch splits the ``.xml``/``.bin`` pair; ``get_metadata``
-        is stubbed so no OpenVINO runtime is needed."""
+        """The IR branch splits the ``.xml``/``.bin`` pair;
+        ``get_metadata`` is stubbed so no OpenVINO runtime is needed."""
         xml = (_models_dir() / "model.xml").resolve()
         bin_ = (_models_dir() / "model.bin").resolve()
         xml.write_text("<net/>")
@@ -398,9 +405,7 @@ class TestRequiresOnnxInputModification:
         assert inp.requires_onnx_input_modification() is True
 
     def test_reverse_only_ignores_normalization(self):
-        inp = InputConfig(
-            name="i", encoding="RGB", mean_values=[1, 2, 3]
-        )
+        inp = InputConfig(name="i", encoding="RGB", mean_values=[1, 2, 3])
         assert inp.requires_onnx_input_modification(reverse_only=True) is False
 
     def test_normalization_requires(self):
@@ -533,7 +538,9 @@ class TestRVC4Config:
         assert isinstance(cfg.encodings, Encodings)
 
     def test_encodings_from_path(self):
-        enc_file = (Path("shared_with_container") / "misc" / "e.json").resolve()
+        enc_file = (
+            Path("shared_with_container") / "misc" / "e.json"
+        ).resolve()
         enc_file.write_text(
             json.dumps({"activation_encodings": {}, "param_encodings": {}})
         )
@@ -541,7 +548,9 @@ class TestRVC4Config:
         assert isinstance(cfg.encodings, Encodings)
 
     def test_quantization_overrides_extracted(self):
-        enc_file = (Path("shared_with_container") / "misc" / "qo.json").resolve()
+        enc_file = (
+            Path("shared_with_container") / "misc" / "qo.json"
+        ).resolve()
         enc_file.write_text(
             json.dumps({"activation_encodings": {}, "param_encodings": {}})
         )
@@ -596,10 +605,15 @@ class TestONNXOptimizationsConfig:
 class TestOnnxSimplificationDeprecation:
     def test_disable_flag_warns_and_sets_false(self):
         dummy = _dummy()
-        with pytest.warns(DeprecationWarning, match="disable_onnx_simplification"):
+        with pytest.warns(
+            DeprecationWarning, match="disable_onnx_simplification"
+        ):
             config = Config.get_config(
                 None,
-                {"input_model": str(dummy), "disable_onnx_simplification": True},
+                {
+                    "input_model": str(dummy),
+                    "disable_onnx_simplification": True,
+                },
             )
         assert _single_stage(config).onnx_simplification is False
 
@@ -647,17 +661,24 @@ class TestOnnxOptimizations:
 class TestDisableOnnxOptimizationsDeprecation:
     def test_deprecated_flag_warns_and_disables(self):
         dummy = _dummy()
-        with pytest.warns(DeprecationWarning, match="disable_onnx_optimizations"):
+        with pytest.warns(
+            DeprecationWarning, match="disable_onnx_optimizations"
+        ):
             config = Config.get_config(
                 None,
-                {"input_model": str(dummy), "disable_onnx_optimizations": True},
+                {
+                    "input_model": str(dummy),
+                    "disable_onnx_optimizations": True,
+                },
             )
         assert _single_stage(config).onnx_optimizations.all_disabled() is True
 
     def test_conflict_raises(self):
         dummy = _dummy()
         with (
-            pytest.warns(DeprecationWarning, match="disable_onnx_optimizations"),
+            pytest.warns(
+                DeprecationWarning, match="disable_onnx_optimizations"
+            ),
             pytest.raises(ValueError, match="Cannot specify both"),
         ):
             Config.get_config(
@@ -748,8 +769,8 @@ class TestValidateModelInference:
             )
 
     def test_custom_output_with_shape_and_dtype(self):
-        """Output not present in metadata but given a shape/dtype hits the
-        ``None, None`` branch (no ONNX lookup)."""
+        """Output not present in metadata but given a shape/dtype hits
+        the ``None, None`` branch (no ONNX lookup)."""
         config = Config.get_config(
             None,
             {

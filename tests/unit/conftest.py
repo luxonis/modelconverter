@@ -2,9 +2,10 @@
 
 Every test runs inside its own ``tmp_path`` working directory. Because
 the ``modelconverter.utils.constants`` ``*_DIR`` values are *relative*
-paths (``shared_with_container/...``), ``monkeypatch.chdir`` re-roots all
-of them into the temp dir, so nothing ever writes into the repo's real
-``shared_with_container/`` and tests are safe under ``pytest -n auto``.
+paths (``shared_with_container/...``), ``monkeypatch.chdir`` re-roots
+all of them into the temp dir, so nothing ever writes into the repo's
+real ``shared_with_container/`` and tests are safe under ``pytest -n
+auto``.
 """
 
 from pathlib import Path
@@ -17,10 +18,9 @@ _SHARED_SUBDIRS = ["misc", "configs", "outputs", "calibration_data", "models"]
 
 
 @pytest.fixture(autouse=True)
-def _isolate_cwd(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
-    """Chdir into an isolated temp dir and pre-create the shared dirs."""
+def _isolate_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Chdir into an isolated temp dir and pre-create the shared
+    dirs."""
     monkeypatch.chdir(tmp_path)
     shared = tmp_path / "shared_with_container"
     for sub in _SHARED_SUBDIRS:

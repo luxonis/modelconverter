@@ -1,15 +1,15 @@
 """Host-side unit tests for ``modelconverter.packages.getters``.
 
-``getters`` is pure dispatch: each factory imports a backend class lazily
-and constructs it. The concrete backends live in vendor-heavy modules
-(RVC2/RVC3 need ``tflite2onnx``/``openvino``, Hailo needs
-``hailo_sdk_client``) that are *omitted* from the coverage target, so the
-success branches are exercised by injecting a lightweight fake backend
-module into ``sys.modules`` for the path the factory imports from. The
-RVC4 exporter, whose module imports cleanly host-side, is additionally
-constructed for real as a smoke test. The cheap ``raise`` branches
-(unsupported analyzer/visualizer targets, unimplemented Hailo benchmark)
-are covered directly.
+``getters`` is pure dispatch: each factory imports a backend class
+lazily and constructs it. The concrete backends live in vendor-heavy
+modules (RVC2/RVC3 need ``tflite2onnx``/``openvino``, Hailo needs
+``hailo_sdk_client``) that are *omitted* from the coverage target, so
+the success branches are exercised by injecting a lightweight fake
+backend module into ``sys.modules`` for the path the factory imports
+from. The RVC4 exporter, whose module imports cleanly host-side, is
+additionally constructed for real as a smoke test. The cheap ``raise``
+branches (unsupported analyzer/visualizer targets, unimplemented Hailo
+benchmark) are covered directly.
 """
 
 import sys
@@ -41,7 +41,8 @@ class _Recorder:
 def _inject_fake_backend(
     monkeypatch: pytest.MonkeyPatch, module_path: str, class_name: str
 ) -> None:
-    """Register a fake backend module so ``from <path> import <cls>`` resolves.
+    """Register a fake backend module so ``from <path> import <cls>``
+    resolves.
 
     The real subpackage ``__init__`` files are empty, so overriding only
     the leaf module in ``sys.modules`` is sufficient and is undone after
@@ -78,7 +79,8 @@ class TestGetExporter:
         assert exporter.args == ("cfg", "out_dir")
 
     def test_rvc4_real_construction(self, work_dir: Path):
-        """Smoke test the RVC4 branch against the real exporter class."""
+        """Smoke test the RVC4 branch against the real exporter
+        class."""
         from modelconverter.packages.rvc4.exporter import RVC4Exporter
         from modelconverter.utils.config import Config
 
@@ -105,7 +107,11 @@ class TestGetInferer:
         (Target.RVC2, "modelconverter.packages.rvc2.inferer", "RVC2Inferer"),
         (Target.RVC3, "modelconverter.packages.rvc3.inferer", "RVC3Inferer"),
         (Target.RVC4, "modelconverter.packages.rvc4.inferer", "RVC4Inferer"),
-        (Target.HAILO, "modelconverter.packages.hailo.inferer", "HailoInferer"),
+        (
+            Target.HAILO,
+            "modelconverter.packages.hailo.inferer",
+            "HailoInferer",
+        ),
     ]
 
     @pytest.mark.parametrize(("target", "path", "cls_name"), FAKE_CASES)

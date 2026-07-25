@@ -73,9 +73,12 @@ def test_convert_single_stage(backend: str, model: ZooModel, tmp_path: Path):
     # Keep the (otherwise very slow) Hailo compilation cheap for a smoke run.
     extra = (
         (
-            "hailo.compression_level", "0",
-            "hailo.optimization_level", "0",
-            "hailo.disable_compilation", "True",
+            "hailo.compression_level",
+            "0",
+            "hailo.optimization_level",
+            "0",
+            "hailo.disable_compilation",
+            "True",
         )
         if backend == "hailo"
         else ()
@@ -102,14 +105,17 @@ _CROSS_FORMAT_CASES = [
     for from_format in ("nn_archive", "native")
     for to_format in ("nn_archive", "native")
     for model in ("resnet18", "yolov8n_seg")
-    if (from_format, to_format, model) != ("native", "nn_archive", "yolov8n_seg")
+    if (from_format, to_format, model)
+    != ("native", "nn_archive", "yolov8n_seg")
 ]
 
 
 @pytest.mark.e2e
 @pytest.mark.slow
 @pytest.mark.rvc4
-@pytest.mark.parametrize(("from_format", "to_format", "model"), _CROSS_FORMAT_CASES)
+@pytest.mark.parametrize(
+    ("from_format", "to_format", "model"), _CROSS_FORMAT_CASES
+)
 def test_rvc4_cross_format(from_format: str, to_format: str, model: str):
     # nn_archive input -> .tar.xz; native input -> the .yaml config (both
     # carry their own calibration, incl. the multistage linked calibration).

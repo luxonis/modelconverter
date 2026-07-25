@@ -17,8 +17,8 @@ def load_and_compare(
     *,
     multistage: bool = False,
 ) -> None:
-    """Loads a config (with CLI-style ``opts`` overrides) and asserts the
-    resulting ``model_dump()`` equals ``expected``.
+    """Loads a config (with CLI-style ``opts`` overrides) and asserts
+    the resulting ``model_dump()`` equals ``expected``.
 
     For single-stage configs, ``expected`` is the stage dict; it is
     wrapped into the top-level ``{name, rich_logging, stages}`` shape

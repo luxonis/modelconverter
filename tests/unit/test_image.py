@@ -1,8 +1,8 @@
 """Host-side unit tests for ``modelconverter.utils.image``.
 
 Re-homes the golden-image coverage from the old
-``tests/test_utils/test_image.py`` and extends it to hit every branch
-of ``read_image`` / ``read_calib_dir``.
+``tests/test_utils/test_image.py`` and extends it to hit every branch of
+``read_image`` / ``read_calib_dir``.
 """
 
 from pathlib import Path
@@ -34,7 +34,8 @@ def _make_img(
     size: tuple[int, int] = (64, 48),
     color: tuple[int, int, int] = (10, 20, 30),
 ) -> Path:
-    """Write a solid-color RGB image (``size`` is ``(width, height)``)."""
+    """Write a solid-color RGB image (``size`` is ``(width,
+    height)``)."""
     Image.new("RGB", size, color).save(path)
     return path
 
@@ -55,9 +56,7 @@ def _make_img(
 )
 def test_golden_rgb(golden: str, encoding: Encoding, resize: ResizeMethod):
     expected = _golden(golden)
-    img = read_image(
-        ORIG, [256, 256, 3], encoding, resize, transpose=False
-    )
+    img = read_image(ORIG, [256, 256, 3], encoding, resize, transpose=False)
     assert img.shape == expected.shape
     assert img.dtype == np.uint8
     assert np.allclose(img, expected)

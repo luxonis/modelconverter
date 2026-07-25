@@ -102,8 +102,8 @@ def _pack_single_input(
     grayscale: bool = False,
     **cfg_kwargs: Any,
 ) -> Path:
-    """Builds a matching dummy ONNX + single-input archive and returns the
-    ``.tar`` path."""
+    """Builds a matching dummy ONNX + single-input archive and returns
+    the ``.tar`` path."""
     model_path = work_dir / "model.onnx"
     if grayscale:
         grayscale_onnx(model_path)
@@ -304,7 +304,9 @@ class TestProcessNNArchiveDaiType:
     def test_unknown_dai_type_defaults_to_rgb(self, work_dir: Path):
         tar = _pack_single_input(
             work_dir,
-            {"dai_type": "XYZ123"},  # neither RGB/BGR/GRAY, ends in neither i/p
+            {
+                "dai_type": "XYZ123"
+            },  # neither RGB/BGR/GRAY, ends in neither i/p
         )
         config, *_ = process_nn_archive(Target.RVC4, tar, None)
         inp = _stage_input(config)
@@ -381,9 +383,7 @@ class TestProcessNNArchiveRawInput:
             },
             input_type="raw",
         )
-        config, archive_cfg, _main = process_nn_archive(
-            Target.RVC4, tar, None
-        )
+        config, archive_cfg, _main = process_nn_archive(Target.RVC4, tar, None)
         assert archive_cfg.model.inputs[0].input_type == InputType.RAW
         inp = _stage_input(config)
         # Non-image input -> no mean/scale defaults filled.
@@ -809,15 +809,11 @@ class TestGetIODtype:
             ]
         )
         assert (
-            _get_io_dtype(
-                Target.RVC2, "input0", metadata, cfg, mode="input"
-            )
+            _get_io_dtype(Target.RVC2, "input0", metadata, cfg, mode="input")
             == "float16"
         )
         assert (
-            _get_io_dtype(
-                Target.RVC2, "output0", metadata, cfg, mode="output"
-            )
+            _get_io_dtype(Target.RVC2, "output0", metadata, cfg, mode="output")
             == "uint8"
         )
 
@@ -827,24 +823,18 @@ class TestGetIODtype:
         metadata = get_metadata(dummy_onnx)
         cfg = RVC2Config(compile_tool_args=["-iop", "other:FP16"])
         with pytest.raises(ValueError, match="Unsupported IR data type"):
-            _get_io_dtype(
-                Target.RVC2, "input0", metadata, cfg, mode="input"
-            )
+            _get_io_dtype(Target.RVC2, "input0", metadata, cfg, mode="input")
 
     def test_ip_input_and_default_output(self, dummy_onnx: Path):
         metadata = get_metadata(dummy_onnx)
         cfg = RVC2Config(compile_tool_args=["-ip", "FP16"])
         assert (
-            _get_io_dtype(
-                Target.RVC2, "input0", metadata, cfg, mode="input"
-            )
+            _get_io_dtype(Target.RVC2, "input0", metadata, cfg, mode="input")
             == "float16"
         )
         # Output falls through to the model's own dtype (float32).
         assert (
-            _get_io_dtype(
-                Target.RVC2, "output0", metadata, cfg, mode="output"
-            )
+            _get_io_dtype(Target.RVC2, "output0", metadata, cfg, mode="output")
             == "float32"
         )
 
@@ -852,15 +842,11 @@ class TestGetIODtype:
         metadata = get_metadata(dummy_onnx)
         cfg = RVC2Config(compile_tool_args=["-op", "U8"])
         assert (
-            _get_io_dtype(
-                Target.RVC2, "output0", metadata, cfg, mode="output"
-            )
+            _get_io_dtype(Target.RVC2, "output0", metadata, cfg, mode="output")
             == "uint8"
         )
         assert (
-            _get_io_dtype(
-                Target.RVC2, "input0", metadata, cfg, mode="input"
-            )
+            _get_io_dtype(Target.RVC2, "input0", metadata, cfg, mode="input")
             == "float32"
         )
 
@@ -868,9 +854,7 @@ class TestGetIODtype:
         metadata = get_metadata(dummy_onnx)
         cfg = RVC3Config()
         assert (
-            _get_io_dtype(
-                Target.RVC3, "input0", metadata, cfg, mode="input"
-            )
+            _get_io_dtype(Target.RVC3, "input0", metadata, cfg, mode="input")
             == "float32"
         )
 
@@ -878,9 +862,7 @@ class TestGetIODtype:
         metadata = get_metadata(dummy_onnx)
         cfg = RVC4Config()
         assert (
-            _get_io_dtype(
-                Target.RVC4, "output0", metadata, cfg, mode="output"
-            )
+            _get_io_dtype(Target.RVC4, "output0", metadata, cfg, mode="output")
             == "float32"
         )
 
@@ -917,9 +899,7 @@ class TestDefaultArchivePreprocessing:
             mean_values=[1, 2, 3],
             scale_values=[4, 5, 6],
         )
-        block = _default_archive_preprocessing(
-            inp, "NHWC", input_type="image"
-        )
+        block = _default_archive_preprocessing(inp, "NHWC", input_type="image")
         assert block["dai_type"] == "RGBF16F16F16i"
         assert block["reverse_channels"] is True
         assert block["interleaved_to_planar"] is True
@@ -934,9 +914,7 @@ class TestDefaultArchivePreprocessing:
             data_type="float32",
             encoding={"from": "BGR", "to": "BGR"},
         )
-        block = _default_archive_preprocessing(
-            inp, "NCHW", input_type="image"
-        )
+        block = _default_archive_preprocessing(inp, "NCHW", input_type="image")
         assert block["dai_type"] == "BGR888p"
         assert block["reverse_channels"] is False
         assert block["interleaved_to_planar"] is False

@@ -151,9 +151,7 @@ class TestDownloadCalibrationData:
             "download_from_remote",
             lambda string, dest, max_images=-1: target,
         )
-        assert (
-            cd.download_calibration_data("s3://b/remote") == target
-        )
+        assert cd.download_calibration_data("s3://b/remote") == target
 
     def test_ldf_two_part(self, monkeypatch: pytest.MonkeyPatch):
         calls: list = []
@@ -174,8 +172,8 @@ class TestDownloadCalibrationData:
             "load_from_ldf",
             lambda *a: calls.append(a) or Path("out"),
         )
-        assert (
-            cd.download_calibration_data("dataset:train:plug") == Path("out")
+        assert cd.download_calibration_data("dataset:train:plug") == Path(
+            "out"
         )
         assert calls == [("dataset", "train", "plug")]
 
@@ -205,9 +203,7 @@ class TestLoadFromLdf:
         monkeypatch.setattr(
             cd, "LuxonisDataset", lambda name: ("dataset", name)
         )
-        monkeypatch.setattr(
-            cd, "LuxonisLoader", lambda dataset, view: loader
-        )
+        monkeypatch.setattr(cd, "LuxonisLoader", lambda dataset, view: loader)
         result = cd.load_from_ldf("myset", "train")
         assert result == CALIBRATION_DIR / "myset"
         assert (result / "0.png").exists()
@@ -218,9 +214,7 @@ class TestLoadFromLdf:
     ):
         loader = _FakeLoader([({"a": 1}, None)])
         monkeypatch.setattr(cd, "LuxonisDataset", lambda name: None)
-        monkeypatch.setattr(
-            cd, "LuxonisLoader", lambda dataset, view: loader
-        )
+        monkeypatch.setattr(cd, "LuxonisLoader", lambda dataset, view: loader)
         with pytest.raises(NotImplementedError):
             cd.load_from_ldf("myset", "train")
 
@@ -234,9 +228,7 @@ class TestLoadFromLdf:
             assert view == "train"
             return loader
 
-        monkeypatch.setattr(
-            cd.LOADERS, "get", lambda plugin: fake_plugin
-        )
+        monkeypatch.setattr(cd.LOADERS, "get", lambda plugin: fake_plugin)
         result = cd.load_from_ldf("myset", "train", loader_plugin="Custom")
         assert result == CALIBRATION_DIR / "myset"
         assert (result / "0.png").exists()

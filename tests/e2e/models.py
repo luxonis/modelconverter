@@ -33,10 +33,13 @@ BACKENDS: list[str] = ["rvc2", "rvc3", "rvc4", "hailo"]
 class ZooModel:
     slug: str
     """Short identifier used in the test id / output dir."""
+
     model_slug: str
     """HubAI model slug (no team prefix), e.g. ``yolov6-nano``."""
+
     onnx_variant: str
-    """Preferred ONNX instance slug to disambiguate (e.g. resolution)."""
+    """Preferred ONNX instance slug to disambiguate (e.g.
+    resolution)."""
 
 
 # Single-stage model(s) used for the per-backend smoke conversion.
@@ -55,11 +58,12 @@ def single_stage_models_for_backend(backend: str) -> list[ZooModel]:
 
 
 def download_zoo_archive(model: ZooModel, dest: Path) -> Path:
-    """Downloads ``model``'s ONNX NN archive fresh from the zoo into ``dest``.
+    """Downloads ``model``'s ONNX NN archive fresh from the zoo into
+    ``dest``.
 
     Skips the calling test (via ``pytest.skip``) when the archive cannot
-    be fetched -- e.g. no ``HUBAI_API_KEY``, no network, or the instance is
-    not available.
+    be fetched -- e.g. no ``HUBAI_API_KEY``, no network, or the instance
+    is not available.
     """
     dest.mkdir(parents=True, exist_ok=True)
     try:
@@ -81,9 +85,9 @@ def download_zoo_archive(model: ZooModel, dest: Path) -> Path:
             (i for i in onnx if i.slug == model.onnx_variant), onnx[0]
         )
         return Path(
-            client.instances.download_instance(
-                chosen.id, output_dir=str(dest)
-            )
+            client.instances.download_instance(chosen.id, output_dir=str(dest))
         )
     except Exception as exc:
-        pytest.skip(f"Could not fetch zoo archive for {model.model_slug!r}: {exc}")
+        pytest.skip(
+            f"Could not fetch zoo archive for {model.model_slug!r}: {exc}"
+        )

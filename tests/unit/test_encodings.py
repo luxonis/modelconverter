@@ -150,9 +150,7 @@ class TestParseEncodings:
                 "activation_encodings": {
                     "act": {"scale": 0.1, "bw": 8, "dtype": "INT"}
                 },
-                "param_encodings": [
-                    {"name": "weight", "scale": [0.1, 0.2]}
-                ],
+                "param_encodings": [{"name": "weight", "scale": [0.1, 0.2]}],
             }
         )
         enc = parse_encodings(raw)
