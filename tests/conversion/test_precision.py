@@ -49,7 +49,6 @@ GS = "gs://luxonis-test-bucket/modelconverter"
 
 DEFAULT_PLATFORMS = ("rvc2", "rvc3", "rvc4")
 
-# Eventually can be finetuned per-case.
 DEFAULT_THRESHOLD: Final[float] = 0.8
 
 
@@ -71,7 +70,11 @@ class PrecisionCase:
 
 CASES: list[PrecisionCase] = [
     PrecisionCase("resnet18", f"{GS}/resnet18.yaml"),
-    PrecisionCase("mnist", f"{GS}/mnist.yaml"),
+    PrecisionCase(
+        "mnist",
+        f"{GS}/mnist.yaml",
+        platforms=("rvc2", "rvc3", "rvc4", "hailo"),
+    ),
 ]
 
 
@@ -98,7 +101,6 @@ def test_precision(platform: str, case: PrecisionCase):
     target = Target(platform)
     output_name = sanitize_net_name(f"prec_{platform}_{case.id}")
 
-    # 1. Convert the original model to a native model file.
     convert(
         target,
         path=case.config,
@@ -107,23 +109,18 @@ def test_precision(platform: str, case: PrecisionCase):
         main_stage=case.main_stage,
     )
 
-    # 2. Resolve the config (downloads + rewrites `input_model` to a local
-    #    path) and locate the produced converted model file.
     cfg, _, _ = get_configs(target, case.config, [])
     stage = _main_stage(cfg, case)
     model_path = locate_converted_model(OUTPUTS_DIR / output_name, platform)
 
-    # 3. Reference outputs from the original ONNX (preprocessing applied here).
     reference = ONNXReferenceInferer.from_stage(stage).infer(case.image)
 
-    # 4. Converted-model outputs via the vendor inferer (in-memory infer()).
     dest = OUTPUTS_DIR / f"{output_name}_infer"
     inferer = get_inferer(
         target, str(model_path), case.image.parent, dest, stage
     )
     converted = inferer.infer({stage.inputs[0].name: case.image})
 
-    # 5. Compare each output by cosine similarity to the reference.
     assert len(reference) == len(converted), (
         f"output count mismatch: {list(reference)} vs {list(converted)}"
     )

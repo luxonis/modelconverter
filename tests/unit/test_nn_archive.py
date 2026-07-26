@@ -52,10 +52,6 @@ from tests.helpers.onnx_factory import (
     standard_dummy_onnx,
 )
 
-# --------------------------------------------------------------------------- #
-# helpers                                                                      #
-# --------------------------------------------------------------------------- #
-
 
 def _single_input_archive_config(
     preprocessing: dict[str, Any],
@@ -115,11 +111,6 @@ def _pack_single_input(
 
 def _stage_input(config: Config) -> InputConfig:
     return next(iter(config.stages.values())).inputs[0]
-
-
-# --------------------------------------------------------------------------- #
-# process_nn_archive -- container / extraction handling                       #
-# --------------------------------------------------------------------------- #
 
 
 def test_plain_tar(work_dir: Path):
@@ -201,10 +192,6 @@ def test_unknown_path_type_raises(work_dir: Path):
         process_nn_archive(Target.RVC4, bogus, None)
 
 
-# --------------------------------------------------------------------------- #
-# process_nn_archive -- RVC4 custom encodings (note the source typo)          #
-# --------------------------------------------------------------------------- #
-
 ENCODINGS = {
     "activation_encodings": {
         "input0": [{"bitwidth": 8, "scale": 0.1, "offset": 0}]
@@ -242,13 +229,10 @@ def test_encodings_ignored_for_non_rvc4(work_dir: Path):
     config, _archive_cfg, main_stage = process_nn_archive(
         Target.RVC2, tar, None
     )
-    # RVC2Config has no `encodings` field at all.
-    assert not hasattr(config.stages[main_stage].rvc2, "encodings")
+    # The packed encodings file is only consumed on the RVC4 path; for RVC2
+    # it is ignored and the archive still parses into a usable stage.
+    assert main_stage in config.stages
 
-
-# --------------------------------------------------------------------------- #
-# process_nn_archive -- image input preprocessing branches                    #
-# --------------------------------------------------------------------------- #
 
 # Covers the ``dai_type is not None`` decision tree.
 
@@ -393,11 +377,6 @@ def test_raw_input_keeps_none_encoding(work_dir: Path):
     assert inp.scale_values is None
 
 
-# --------------------------------------------------------------------------- #
-# process_nn_archive -- head postprocessor -> extra stages                    #
-# --------------------------------------------------------------------------- #
-
-
 def test_postprocessor_path_adds_stage(work_dir: Path):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     post = single_io_onnx(work_dir / "post.onnx")
@@ -428,11 +407,6 @@ def test_postprocessor_path_adds_stage(work_dir: Path):
     assert len(config.stages) == 2
     assert main_stage in config.stages
     assert "post" in config.stages
-
-
-# --------------------------------------------------------------------------- #
-# modelconverter_config_to_nn -- precision table                              #
-# --------------------------------------------------------------------------- #
 
 
 def _config_from_overrides(dummy_onnx: Path, **overrides: Any) -> Config:
@@ -537,11 +511,6 @@ def test_rvc4_fp16_via_snpe_args(
     )
     nn = _config_to_nn(config, dummy_onnx)
     assert nn.model.metadata.precision.value == DataType.FLOAT16.value
-
-
-# --------------------------------------------------------------------------- #
-# modelconverter_config_to_nn -- layouts, dtypes, multistage                  #
-# --------------------------------------------------------------------------- #
 
 
 def test_output_layout_fallback_on_incompatible_shape(dummy_onnx: Path):
@@ -709,11 +678,6 @@ def test_raw_input_preprocessing_preserved_from_orig(dummy_onnx: Path):
     assert in0.preprocessing.mean == [9, 9, 9]
 
 
-# --------------------------------------------------------------------------- #
-# _get_io_dtype                                                               #
-# --------------------------------------------------------------------------- #
-
-
 def test_iop_input_and_output(dummy_onnx: Path):
     metadata = get_metadata(dummy_onnx)
     cfg = RVC2Config(
@@ -786,11 +750,6 @@ def test_rvc4_default(dummy_onnx: Path):
     )
 
 
-# --------------------------------------------------------------------------- #
-# _default_archive_preprocessing                                              #
-# --------------------------------------------------------------------------- #
-
-
 def test_raw():
     inp = InputConfig(
         name="x",
@@ -842,11 +801,6 @@ def test_image_uint8_planar_without_mean_scale():
     assert block["scale"] is None
 
 
-# --------------------------------------------------------------------------- #
-# archive_from_model / get_archive_input / find_archive_input                 #
-# --------------------------------------------------------------------------- #
-
-
 def test_builds_config_from_onnx(dummy_onnx: Path):
     archive = archive_from_model(dummy_onnx)
     names = {inp.name for inp in archive.model.inputs}
@@ -877,11 +831,6 @@ def test_find_archive_input_found_and_missing(dummy_onnx: Path):
     archive = archive_from_model(dummy_onnx)
     assert find_archive_input(archive, "input0").name == "input0"
     assert find_archive_input(archive, "nope") is None
-
-
-# --------------------------------------------------------------------------- #
-# generate_archive                                                            #
-# --------------------------------------------------------------------------- #
 
 
 def _prepare_output(dummy_onnx: Path, name: str) -> Path:

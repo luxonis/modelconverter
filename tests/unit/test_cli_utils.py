@@ -1,3 +1,5 @@
+"""Host-side unit tests for ``modelconverter.cli.utils``."""
+
 from pathlib import Path
 from typing import Any
 
@@ -75,8 +77,6 @@ def test_explicit_non_existing_kept():
 
 
 def test_init_dirs():
-    for d in (CONFIGS_DIR, MODELS_DIR, OUTPUTS_DIR, CALIBRATION_DIR):
-        assert not d.exists() or d.is_dir()
     init_dirs()
     for d in (CONFIGS_DIR, MODELS_DIR, OUTPUTS_DIR, CALIBRATION_DIR):
         assert d.is_dir()

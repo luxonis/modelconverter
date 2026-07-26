@@ -229,7 +229,6 @@ def _assert_correct(
     input_configs = {inp.name: inp for inp in stage.inputs}
 
     golden_dir = OUTPUTS_DIR / f"{output_name}_golden"
-    golden_dir.mkdir(parents=True, exist_ok=True)
     reference = golden_reference_outputs(
         Path(stage.input_model), input_configs, golden_dir, float(_CALIB_VALUE)
     )

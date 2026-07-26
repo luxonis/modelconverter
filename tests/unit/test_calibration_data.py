@@ -131,7 +131,7 @@ def test_local_existing_dir(work_dir: Path):
     assert cd.download_calibration_data(str(d)) == Path(str(d))
 
 
-def test_shared_dir_fallback(work_dir: Path):
+def test_shared_dir_fallback():
     (SHARED_DIR / "calibdir").mkdir(parents=True)
     result = cd.download_calibration_data("calibdir")
     assert result == SHARED_DIR / "calibdir"
@@ -197,9 +197,7 @@ class _FakeLoader:
         return iter(self._items)
 
 
-def test_dataset_loader_writes_images(
-    work_dir: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_dataset_loader_writes_images(monkeypatch: pytest.MonkeyPatch):
     img = np.zeros((4, 4, 3), dtype=np.uint8)
     loader = _FakeLoader([(img, None), (img, None)])
     monkeypatch.setattr(cd, "LuxonisDataset", lambda name: ("dataset", name))
@@ -210,7 +208,7 @@ def test_dataset_loader_writes_images(
     assert (result / "1.png").exists()
 
 
-def test_multi_input_raises(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_multi_input_raises(monkeypatch: pytest.MonkeyPatch):
     loader = _FakeLoader([({"a": 1}, None)])
     monkeypatch.setattr(cd, "LuxonisDataset", lambda name: None)
     monkeypatch.setattr(cd, "LuxonisLoader", lambda dataset, view: loader)
@@ -218,7 +216,7 @@ def test_multi_input_raises(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
         cd.load_from_ldf("myset", "train")
 
 
-def test_loader_plugin_branch(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_loader_plugin_branch(monkeypatch: pytest.MonkeyPatch):
     img = np.zeros((2, 2, 3), dtype=np.uint8)
     loader = _FakeLoader([(img, None)])
 

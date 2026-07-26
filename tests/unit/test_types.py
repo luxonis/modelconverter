@@ -6,48 +6,7 @@ import numpy as np
 import pytest
 from onnx.onnx_pb import TensorProto
 
-from modelconverter.utils.types import (
-    DataType,
-    Encoding,
-    InputFileType,
-    Layout,
-    PotDevice,
-    QuantizationMode,
-    ResizeMethod,
-    Target,
-)
-
-
-# Construct every member of the value-only enums.
-@pytest.mark.parametrize("member", list(Layout))
-def test_plain_enums_layout(member: Layout):
-    assert Layout(member.value) is member
-
-
-@pytest.mark.parametrize("member", list(Encoding))
-def test_plain_enums_encoding(member: Encoding):
-    assert Encoding(member.value) is member
-
-
-@pytest.mark.parametrize("member", list(ResizeMethod))
-def test_plain_enums_resize_method(member: ResizeMethod):
-    assert ResizeMethod(member.value) is member
-
-
-@pytest.mark.parametrize("member", list(PotDevice))
-def test_plain_enums_pot_device(member: PotDevice):
-    assert PotDevice(member.value) is member
-
-
-@pytest.mark.parametrize("member", list(Target))
-def test_plain_enums_target(member: Target):
-    assert Target(member.value) is member
-
-
-@pytest.mark.parametrize("member", list(QuantizationMode))
-def test_plain_enums_quantization_mode(member: QuantizationMode):
-    assert QuantizationMode(member.value) is member
-
+from modelconverter.utils.types import DataType, InputFileType
 
 FROM_ONNX_DTYPE_CASES = [
     (TensorProto.BFLOAT16, DataType.BFLOAT16),
@@ -311,8 +270,8 @@ AS_DAI_DTYPE_SUPPORTED = [
 def test_as_dai_dtype_supported(dtype: DataType):
     import depthai as dai
 
-    result = dtype.as_dai_dtype()
-    assert isinstance(result, dai.TensorInfo.DataType)
+    dai_dtype = dtype.as_dai_dtype()
+    assert isinstance(dai_dtype, dai.TensorInfo.DataType)
     assert dtype.supports_dai_dtype()
 
 

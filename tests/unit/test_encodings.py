@@ -104,14 +104,14 @@ def test_mismatched_lengths_raise():
 
 def test_dict_form_scalar_value():
     group = {"tensor": {"scale": 0.1, "bitwidth": 8}}
-    result = _normalize_encoding_group(group)
-    assert result == {"tensor": [{"scale": 0.1, "bitwidth": 8}]}
+    normalized = _normalize_encoding_group(group)
+    assert normalized == {"tensor": [{"scale": 0.1, "bitwidth": 8}]}
 
 
 def test_dict_form_list_value():
     group = {"tensor": [{"scale": 0.1}, {"scale": 0.2}]}
-    result = _normalize_encoding_group(group)
-    assert result == {"tensor": [{"scale": 0.1}, {"scale": 0.2}]}
+    normalized = _normalize_encoding_group(group)
+    assert normalized == {"tensor": [{"scale": 0.1}, {"scale": 0.2}]}
 
 
 def test_dict_form_non_dict_entry_raises():
@@ -121,8 +121,8 @@ def test_dict_form_non_dict_entry_raises():
 
 def test_list_form_name_from_item():
     group = [{"name": "tensor", "scale": 0.1}]
-    result = _normalize_encoding_group(group)
-    assert result == {"tensor": [{"scale": 0.1}]}
+    normalized = _normalize_encoding_group(group)
+    assert normalized == {"tensor": [{"scale": 0.1}]}
 
 
 def test_list_form_accumulates_same_name():
@@ -130,8 +130,8 @@ def test_list_form_accumulates_same_name():
         {"name": "tensor", "scale": 0.1},
         {"name": "tensor", "scale": 0.2},
     ]
-    result = _normalize_encoding_group(group)
-    assert result == {"tensor": [{"scale": 0.1}, {"scale": 0.2}]}
+    normalized = _normalize_encoding_group(group)
+    assert normalized == {"tensor": [{"scale": 0.1}, {"scale": 0.2}]}
 
 
 @pytest.mark.parametrize("bad_name", [{}, {"name": ""}, {"name": 5}])

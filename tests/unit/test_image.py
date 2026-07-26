@@ -40,11 +40,6 @@ def _make_img(
     return path
 
 
-# --------------------------------------------------------------------------- #
-# read_image: golden comparisons (reused from the old suite)                  #
-# --------------------------------------------------------------------------- #
-
-
 @pytest.mark.parametrize(
     ("golden", "encoding", "resize"),
     [
@@ -87,11 +82,6 @@ def test_resize_differs_from_crop():
     assert not np.allclose(img, _golden("crop.png"))
 
 
-# --------------------------------------------------------------------------- #
-# read_image: PAD aspect-ratio branches                                       #
-# --------------------------------------------------------------------------- #
-
-
 def test_pad_wide_image():
     # orig.jpg is 640x428 -> wider than square target (orig_ratio > new_ratio).
     img = read_image(
@@ -112,11 +102,6 @@ def test_pad_tall_image(work_dir: Path):
     # Tall image -> left/right columns are the black padding.
     assert np.all(img[:, 0] == 0)
     assert np.all(img[:, -1] == 0)
-
-
-# --------------------------------------------------------------------------- #
-# read_image: shape-length unpacking branches                                 #
-# --------------------------------------------------------------------------- #
 
 
 @pytest.mark.parametrize(
@@ -152,11 +137,6 @@ def test_invalid_shape_raises(work_dir: Path, shape: list[int]):
         read_image(src, shape, Encoding.RGB, ResizeMethod.RESIZE)
 
 
-# --------------------------------------------------------------------------- #
-# read_image: dtype handling                                                  #
-# --------------------------------------------------------------------------- #
-
-
 def test_dtype_cast():
     img = read_image(
         ORIG,
@@ -174,11 +154,6 @@ def test_dtype_default_uint8():
         ORIG, [256, 256, 3], Encoding.RGB, ResizeMethod.RESIZE, transpose=False
     )
     assert img.dtype == np.uint8
-
-
-# --------------------------------------------------------------------------- #
-# read_image: .npy and .raw paths                                             #
-# --------------------------------------------------------------------------- #
 
 
 def test_read_npy(work_dir: Path):
@@ -210,11 +185,6 @@ def test_read_raw_without_data_type_raises(work_dir: Path):
     np.arange(6, dtype=np.uint8).tofile(raw)
     with pytest.raises(ModelconverterException, match="data type"):
         read_image(raw, [2, 3], Encoding.RGB, ResizeMethod.RESIZE)
-
-
-# --------------------------------------------------------------------------- #
-# read_calib_dir                                                              #
-# --------------------------------------------------------------------------- #
 
 
 def test_read_calib_dir_matches_contents():

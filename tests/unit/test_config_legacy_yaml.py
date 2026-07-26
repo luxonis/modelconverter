@@ -10,7 +10,7 @@ import pytest
 
 from modelconverter.utils.config import Config
 from modelconverter.utils.constants import CONFIGS_DIR
-from modelconverter.utils.types import Encoding
+from modelconverter.utils.types import DataType, Encoding
 
 
 def _write_cfg(text: str, name: str = "legacy.yaml") -> Path:
@@ -50,12 +50,14 @@ def test_flat_single_stage_wraps(dummy_onnx: Path):
 
 
 def test_multistage_top_level_extras_propagate(dummy_onnx: Path):
-    # Legacy multistage configs put shared settings at the top level
-    # and expect them fanned out to every stage.
+    # Legacy multistage configs put shared settings at the top level and
+    # expect them fanned out to every stage. `float16` differs from the
+    # model's own `float32`, so finding it on each stage's input proves the
+    # top-level value propagated rather than being read back from the ONNX.
     cfg_path = _write_cfg(
         f"""
         name: legacy_multi
-        data_type: float32
+        data_type: float16
         stages:
           stage_a:
             input_model: {dummy_onnx}
@@ -68,6 +70,8 @@ def test_multistage_top_level_extras_propagate(dummy_onnx: Path):
     )
     cfg = Config.get_config(str(cfg_path), {})
     assert set(cfg.stages) == {"stage_a", "stage_b"}
+    for stage in cfg.stages.values():
+        assert stage.inputs[0].data_type == DataType.FLOAT16
 
 
 def test_disable_onnx_simplification(dummy_onnx: Path):

@@ -51,10 +51,6 @@ from tests.helpers.onnx_factory import (
     standard_dummy_onnx,
 )
 
-# --------------------------------------------------------------------------- #
-# Local helpers                                                               #
-# --------------------------------------------------------------------------- #
-
 
 def _models_dir() -> Path:
     """The (cwd-relative) models directory created by
@@ -100,11 +96,6 @@ def _pt_model() -> Path:
     pt = (_models_dir() / "yolo.pt").resolve()
     pt.write_bytes(b"not-a-real-checkpoint")
     return pt
-
-
-# --------------------------------------------------------------------------- #
-# Config-level validators                                                     #
-# --------------------------------------------------------------------------- #
 
 
 def test_flat_config_wrapped_and_renamed():
@@ -189,11 +180,6 @@ def test_get_stage_config_explicit_key():
     assert config.get_stage_config("s2") is config.stages["s2"]
 
 
-# --------------------------------------------------------------------------- #
-# SingleStageConfig._download_input_model                                     #
-# --------------------------------------------------------------------------- #
-
-
 def test_missing_input_model_raises():
     with pytest.raises(ValueError, match="`input_model` must be provided"):
         Config.get_config(None, {})
@@ -232,11 +218,6 @@ def test_ir_path_extracts_bin_and_xml(
     assert stage.input_model == xml
     assert stage.input_bin == bin_
     assert stage.input_file_type == InputFileType.IR
-
-
-# --------------------------------------------------------------------------- #
-# _extract_bin_xml_from_ir                                                    #
-# --------------------------------------------------------------------------- #
 
 
 @pytest.fixture
@@ -294,11 +275,6 @@ def test_extract_bin_xml_missing_xml_raises_value_error():
         _extract_bin_xml_from_ir(str(bin_))
 
 
-# --------------------------------------------------------------------------- #
-# OutputConfig                                                                #
-# --------------------------------------------------------------------------- #
-
-
 def test_output_default_layout_from_shape():
     out = OutputConfig(name="o", shape=[1, 10])
     assert out.layout == "NC"
@@ -323,11 +299,6 @@ def test_output_layout_length_mismatch_raises():
 def test_output_explicit_layout_uppercased():
     out = OutputConfig(name="o", shape=[1, 10], layout="nc")
     assert out.layout == "NC"
-
-
-# --------------------------------------------------------------------------- #
-# EncodingConfig / InputConfig                                                #
-# --------------------------------------------------------------------------- #
 
 
 def test_encoding_config_defaults():
@@ -459,11 +430,6 @@ def test_requires_onnx_input_modification_properties():
     assert color.is_color_input is True
 
 
-# --------------------------------------------------------------------------- #
-# Calibration configs                                                         #
-# --------------------------------------------------------------------------- #
-
-
 def test_random_defaults():
     cal = RandomCalibrationConfig()
     assert cal.max_images == 20
@@ -509,11 +475,6 @@ def test_link_with_script_file():
     script.write_text("def run_script(outputs):\n    return outputs\n")
     cal = LinkCalibrationConfig(stage="s", script=str(script))
     assert "run_script" in cal.script
-
-
-# --------------------------------------------------------------------------- #
-# Target sub-configs                                                          #
-# --------------------------------------------------------------------------- #
 
 
 def test_superblob_forces_eight_shaves():
@@ -615,11 +576,6 @@ def test_non_fp16_keeps_calibration():
     assert cfg.disable_calibration is False
 
 
-# --------------------------------------------------------------------------- #
-# ONNXOptimizationsConfig                                                     #
-# --------------------------------------------------------------------------- #
-
-
 def test_all_disabled_true():
     cfg = ONNXOptimizationsConfig(
         fuse_add_mul_to_bn=False,
@@ -634,11 +590,6 @@ def test_all_disabled_true():
 
 def test_all_disabled_false():
     assert ONNXOptimizationsConfig().all_disabled() is False
-
-
-# --------------------------------------------------------------------------- #
-# Deprecations / onnx-optimization flags (through the full pipeline)          #
-# --------------------------------------------------------------------------- #
 
 
 def test_disable_flag_warns_and_sets_false():
@@ -733,11 +684,6 @@ def test_flag_false_is_noop():
         {"input_model": str(dummy), "disable_onnx_optimizations": False},
     )
     assert _single_stage(config).onnx_optimizations.all_disabled() is False
-
-
-# --------------------------------------------------------------------------- #
-# SingleStageConfig._validate_model (through the full pipeline)               #
-# --------------------------------------------------------------------------- #
 
 
 def test_input_output_names_inferred_from_metadata():
@@ -923,11 +869,6 @@ def test_yolo_input_shape_as_single_string():
     )
     stage = _single_stage(config)
     assert stage.inputs[0].shape == [256, 256]
-
-
-# --------------------------------------------------------------------------- #
-# ONNX introspection helpers (direct)                                         #
-# --------------------------------------------------------------------------- #
 
 
 def test_node_info_success():

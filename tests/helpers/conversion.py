@@ -17,8 +17,6 @@ __all__ = [
     "write_toy_conv_config",
 ]
 
-# Cheap Hailo settings for a smoke conversion: skip the slow HEF compile and
-# drop optimization/compression so quantizing a tiny net stays fast.
 HAILO_FAST_OPTS = (
     "hailo.compression_level",
     "0",

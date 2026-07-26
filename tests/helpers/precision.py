@@ -22,7 +22,6 @@ from modelconverter.utils.onnx_tools import onnx_attach_normalization_to_inputs
 # everywhere without affecting the numeric result.
 _MAX_ORT_IR_VERSION = 8
 
-# The converted model file to feed the vendor inferer, per platform.
 _MODEL_GLOB = {
     "rvc2": "*.xml",
     "rvc3": "*.xml",

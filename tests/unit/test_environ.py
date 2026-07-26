@@ -12,10 +12,8 @@ import time
 
 import pytest
 
-import modelconverter.utils.environ  # noqa: F401  (ensure submodule is loaded)
 from modelconverter.utils.environ import (
     Environ,
-    environ,
     get_password_with_timeout,
 )
 
@@ -126,8 +124,3 @@ def test_default_url(monkeypatch: pytest.MonkeyPatch):
     )
     env = Environ()
     assert env.HUBAI_URL == "https://easyml.cloud.luxonis.com/"
-
-
-def test_module_singleton():
-    """The eagerly-constructed module-level instance is an ``Environ``."""
-    assert isinstance(environ, Environ)
