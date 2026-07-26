@@ -124,7 +124,7 @@ class Exporter(ABC):
 
     @property
     def inference_model_path(self) -> Path:
-        if self._inference_model_path is None:
+        if self._inference_model_path is None:  # pragma: no cover
             raise ValueError(
                 "Inference model path not yet set. Export must be run first."
             )

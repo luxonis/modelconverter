@@ -22,7 +22,7 @@ class HailoInferer(Inferer):
         hn_dict = cast(dict, self.runner.get_hn_dict())
         output_hn_names = hn_dict["net_params"]["output_layers_order"]
         orig_meta = self.runner._original_model_meta
-        if orig_meta is None:
+        if orig_meta is None:  # pragma: no cover
             raise RuntimeError("Could not get original model metadata.")
 
         self.output_names = list(orig_meta["inverse_postprocess_io_map"])

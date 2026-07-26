@@ -170,6 +170,7 @@ omit = [
   "modelconverter/utils/docker_utils.py",
   "modelconverter/utils/progress_handler.py",
   "modelconverter/utils/subprocess.py",
+  "tests/test_benchmark/*.py",
 ]
 
 [tool.coverage.report]

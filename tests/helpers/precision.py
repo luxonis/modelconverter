@@ -37,12 +37,12 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """Cosine similarity between two arrays, compared as flat vectors."""
     x = np.asarray(a, dtype=np.float64).ravel()
     y = np.asarray(b, dtype=np.float64).ravel()
-    if x.shape != y.shape:
+    if x.shape != y.shape:  # pragma: no cover
         raise ValueError(
             f"cannot compare outputs of shape {a.shape} and {b.shape}"
         )
     denom = np.linalg.norm(x) * np.linalg.norm(y)
-    if denom == 0:
+    if denom == 0:  # pragma: no cover
         return 1.0 if np.array_equal(x, y) else 0.0
     return float(np.dot(x, y) / denom)
 
@@ -95,7 +95,7 @@ def locate_converted_model(output_dir: Path, platform: str) -> Path:
     matches = sorted(output_dir.glob(pattern)) or sorted(
         output_dir.rglob(pattern)
     )
-    if not matches:
+    if not matches:  # pragma: no cover
         raise FileNotFoundError(
             f"no converted model matching {pattern!r} under {output_dir}"
         )

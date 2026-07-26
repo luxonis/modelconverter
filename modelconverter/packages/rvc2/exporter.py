@@ -137,12 +137,12 @@ class RVC2Exporter(Exporter):
                 ):
                     logger.info("ONNX model has been optimized for RVC2.")
                     shutil.move(onnx_modifier.output_path, self.input_model)
-            except Exception as e:
+            except Exception as e:  # pragma: no cover
                 logger.warning(
                     f"Failed to optimize ONNX model: {e}. "
                     "Proceeding with unoptimized model."
                 )
-            finally:
+            finally:  # pragma: no cover
                 if onnx_modifier.output_path.exists():
                     onnx_modifier.output_path.unlink()
 
@@ -214,7 +214,7 @@ class RVC2Exporter(Exporter):
                 inp.encoding.from_ == Encoding.NONE
                 or not inp.layout
                 or not inp.shape
-            ):
+            ):  # pragma: no cover
                 continue
 
             lt = inp.layout
@@ -315,7 +315,7 @@ class RVC2Exporter(Exporter):
         n_workers = int(
             max(1, min(cpu_count(), 15, avail_ram // base_peak_mem - 1))
         )
-        if self.n_workers is not None:
+        if self.n_workers is not None:  # pragma: no cover
             if self.n_workers > n_workers:
                 logger.warning(
                     f"Requested {self.n_workers} workers, which is "

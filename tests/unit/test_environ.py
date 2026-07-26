@@ -53,7 +53,7 @@ class TestGetPasswordWithTimeout:
     ):
         """An exception inside the child process yields ``None``."""
 
-        def boom(service: str, user: str) -> str:
+        def boom(service: str, user: str) -> str:  # pragma: no cover
             raise RuntimeError("no backend")
 
         monkeypatch.setattr(env_mod.keyring, "get_password", boom)
@@ -63,7 +63,7 @@ class TestGetPasswordWithTimeout:
         """A hanging keyring backend is terminated and returns
         ``None``."""
 
-        def slow(service: str, user: str) -> str:
+        def slow(service: str, user: str) -> str:  # pragma: no cover
             time.sleep(30)
             return "never"
 

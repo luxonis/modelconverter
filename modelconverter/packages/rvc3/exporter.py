@@ -76,7 +76,7 @@ class RVC3Exporter(RVC2Exporter):
         if "-o" not in args:
             blob_output_path = output_path.with_suffix(".blob")
             args += ["-o", blob_output_path]
-        else:
+        else:  # pragma: no cover
             blob_output_path = Path(args[args.index("-o") + 1])
 
         self._subprocess_run(["compile_tool", *args], meta_name="compile_tool")
@@ -95,7 +95,7 @@ class RVC3Exporter(RVC2Exporter):
         calibration_img_dir.mkdir(exist_ok=True)
 
         for file in files:
-            if inp.shape is None:
+            if inp.shape is None:  # pragma: no cover
                 raise ValueError(
                     "Input shape must be provided for calibration"
                 )

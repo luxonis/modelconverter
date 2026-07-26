@@ -2,7 +2,6 @@
 archives for the host-side conversion tests."""
 
 import json
-import re
 import tarfile
 from pathlib import Path
 from typing import Any, Literal
@@ -54,25 +53,6 @@ def default_archive_config() -> dict[str, Any]:
     }
 
 
-def set_nested_config_value(
-    config: dict[str, Any], keys: list[str], values: list[Any]
-) -> dict[str, Any]:
-    """Sets dotted ``a.b.0.c`` keys (relative to
-    ``config["model"]``)."""
-    for key, value in zip(keys, values, strict=True):
-        parts = key.split(".")
-        current = config["model"]
-        for part in parts[:-1]:
-            if re.match(r"^\d+$", part):
-                part = int(part)
-            current = current[part]
-        final = parts[-1]
-        if re.match(r"^\d+$", final):
-            final = int(final)
-        current[final] = value
-    return config
-
-
 def write_json(data: dict[str, Any], path: str | Path) -> Path:
     path = Path(path)
     path.write_text(json.dumps(data))
@@ -88,7 +68,7 @@ def write_encodings(data: dict[str, Any], path: str | Path) -> Path:
 def pack_archive(
     tar_path: str | Path,
     model_path: str | Path,
-    config: dict[str, Any] | str | Path,
+    config: dict[str, Any],
     *,
     extra_files: dict[str, str | Path] | None = None,
     mode: Literal["w", "w:xz", "w:gz", "w:bz2"] = "w",
@@ -106,8 +86,6 @@ def pack_archive(
     if isinstance(config, dict):
         config_path = tar_path.parent / "config.json"
         write_json(config, config_path)
-    else:
-        config_path = Path(config)
 
     with tarfile.open(tar_path, mode) as tar:
         tar.add(str(model_path), arcname=model_path.name)

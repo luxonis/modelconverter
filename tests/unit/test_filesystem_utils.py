@@ -38,7 +38,7 @@ def _install_fake_fs(
             instances.append(self)
 
         @staticmethod
-        def split_full_path(url: str) -> tuple[str, str]:
+        def split_full_path(url: str) -> tuple[str, str]:  # pragma: no cover
             if split is not None:
                 return split
             base, _, name = url.rpartition("/")

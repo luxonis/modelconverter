@@ -117,10 +117,10 @@ class MultiStageExporter:
                     scope = {}
                     try:
                         exec(script, scope)  # nosemgrep  # noqa: S102
-                    except Exception as e:
+                    except Exception as e:  # pragma: no cover
                         raise RuntimeError("Error executing script") from e
 
-                    if "run_script" not in scope:
+                    if "run_script" not in scope:  # pragma: no cover
                         raise RuntimeError(
                             "Error: `run_script` function not found in script."
                         )

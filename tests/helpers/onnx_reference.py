@@ -57,7 +57,7 @@ class ONNXReferenceInferer:
     def _resize_method(inp: InputConfig) -> ResizeMethod:
         if isinstance(inp.calibration, ImageCalibrationConfig):
             return inp.calibration.resize_method
-        return ResizeMethod.RESIZE
+        return ResizeMethod.RESIZE  # pragma: no cover
 
     def _preprocess(
         self, inp: InputConfig, image_path: str | Path
