@@ -9,7 +9,6 @@ from typing import Any, Literal
 __all__ = [
     "default_archive_config",
     "pack_archive",
-    "set_nested_config_value",
     "write_encodings",
     "write_json",
 ]
