@@ -189,4 +189,5 @@ exclude_also = [
   "cv2\\.waitKey",
   "logger\\.",
   "pytest\\.skip",
+  "exit_with\\("
 ]

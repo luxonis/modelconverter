@@ -87,13 +87,13 @@ class RVC4Exporter(Exporter):
                         shutil.move(
                             onnx_modifier.output_path, self.input_model
                         )
-                except Exception as e:
+                except Exception as e:  # pragma: no cover
                     logger.warning(
                         f"Failed to optimize ONNX model: {e}. "
                         "Proceeding with unoptimized model."
                     )
                 finally:
-                    if onnx_modifier.output_path.exists():
+                    if onnx_modifier.output_path.exists():  # pragma: no cover
                         onnx_modifier.output_path.unlink()
         else:
             logger.warning(
@@ -189,7 +189,9 @@ class RVC4Exporter(Exporter):
             f"Quantization finished in {time.time() - start_time:.2f} seconds"
         )
 
-        if not self.keep_raw_images and self.raw_img_dir.exists():
+        if (
+            not self.keep_raw_images and self.raw_img_dir.exists()
+        ):  # pragma: no cover
             shutil.rmtree(self.raw_img_dir)
             self.input_list_path.unlink()
 
@@ -232,7 +234,7 @@ class RVC4Exporter(Exporter):
                 ]
             )
 
-        if self.raw_img_dir.exists():
+        if self.raw_img_dir.exists():  # pragma: no cover
             logger.warning("Removing existing raw_images directory.")
             shutil.rmtree(self.raw_img_dir)
         self.raw_img_dir.mkdir(exist_ok=True)

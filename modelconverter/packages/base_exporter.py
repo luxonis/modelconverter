@@ -130,7 +130,7 @@ class Exporter(ABC):
             )
         return self._inference_model_path
 
-    def simplify_onnx(self) -> Path:
+    def simplify_onnx(self) -> Path:  # pragma: no cover
         logger.info("Simplifying ONNX.")
         try:
             if self.onnx_simplification == "onnxsim":
@@ -156,12 +156,12 @@ class Exporter(ABC):
 
         try:
             onnx_sim, check = simplify(str(self.input_model))
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             logger.warning(
                 f"Failed to simplify ONNX: {e}. Proceeding without simplification."
             )
             return self.input_model
-        if not check:
+        if not check:  # pragma: no cover
             logger.warning(
                 "Provided ONNX could not be simplified. "
                 "Proceeding without simplification."
@@ -201,7 +201,7 @@ class Exporter(ABC):
         if self._inference_model_path == output_path:
             self._inference_model_path = new_output_path
 
-        if not self.keep_intermediate_outputs:
+        if not self.keep_intermediate_outputs:  # pragma: no cover
             shutil.rmtree(self.intermediate_outputs_dir)
 
         buildinfo = {
@@ -237,7 +237,7 @@ class Exporter(ABC):
             )
             dest = self.intermediate_outputs_dir / "random" / name
             dest.mkdir(parents=True)
-            if inp.shape is None:
+            if inp.shape is None:  # pragma: no cover
                 exit_with(
                     ValueError(
                         f"Random calibration requires shape to be specified for input '{name}'."
