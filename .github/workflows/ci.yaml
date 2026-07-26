@@ -38,8 +38,8 @@ jobs:
       - name: Run unit tests
         run: |
           python -m pytest tests/unit -n auto \
-            --cov=modelconverter \
-            --cov-report=term-missing --cov-report=xml:coverage-unit.xml
+            --cov --cov-report term-missing \
+            --cov-report xml:coverage-unit.xml
 
       - name: Upload coverage to Codecov
         if: ${{ always() }}
@@ -133,9 +133,8 @@ jobs:
           modelconverter shell "${PACKAGE}" --dev --no-gpu \
             --tool-version "${VERSION}" \
             -c "python -m pytest tests/conversion -m ${PACKAGE} -x \
-                --cov=modelconverter \
-                --cov-report=term-missing \
-                --cov-report=xml:shared_with_container/coverage-${PACKAGE}-${VERSION}.xml"
+                --cov --cov-report term-missing \
+                --cov-report xml:shared_with_container/coverage-${PACKAGE}-${VERSION}.xml"
 
       - name: Upload coverage to Codecov
         if: ${{ always() }}
