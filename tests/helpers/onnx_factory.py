@@ -15,6 +15,7 @@ from onnx import TensorProto, checker, helper
 
 __all__ = [
     "build_onnx",
+    "build_toy_aggregator_onnx",
     "build_toy_integration_onnx",
     "dynamic_batch_onnx",
     "grayscale_onnx",
@@ -154,6 +155,52 @@ def build_toy_integration_onnx(
     )
     # Pin a broadly-supported IR version (the onnx lib may default to one
     # newer than the runtime/vendor tools accept).
+    model.ir_version = 9
+    checker.check_model(model)
+    path = Path(path)
+    onnx.save(model, str(path))
+    return path
+
+
+def build_toy_aggregator_onnx(path: str | Path, *, size: int = 64) -> Path:
+    """A tiny aggregator: the final stage of the toy multistage net.
+
+    Takes two ``[1, 3, size, size]`` inputs (fed at conversion time from two
+    upstream toy stages via linked calibration) and computes a simple
+    ``from_first * from_second + bias`` -> ``[1, 3, size, size]``. Inputs are
+    raw (no preprocessing), so the converted model has no baked normalization.
+    """
+    from_first = helper.make_tensor_value_info(
+        "from_first", TensorProto.FLOAT, [1, 3, size, size]
+    )
+    from_second = helper.make_tensor_value_info(
+        "from_second", TensorProto.FLOAT, [1, 3, size, size]
+    )
+    out = helper.make_tensor_value_info(
+        "out", TensorProto.FLOAT, [1, 3, size, size]
+    )
+    bias = helper.make_tensor(
+        name="bias",
+        data_type=TensorProto.FLOAT,
+        dims=[1, 3, 1, 1],
+        vals=[1.0, 2.0, 3.0],
+    )
+    nodes = [
+        helper.make_node("Mul", ["from_first", "from_second"], ["prod"]),
+        helper.make_node("Add", ["prod", "bias"], ["out"]),
+    ]
+    graph = helper.make_graph(
+        nodes,
+        "ToyAggregatorModel",
+        [from_first, from_second],
+        [out],
+        initializer=[bias],
+    )
+    model = helper.make_model(
+        graph,
+        producer_name="DummyModelProducer",
+        opset_imports=[helper.make_opsetid("", 13)],
+    )
     model.ir_version = 9
     checker.check_model(model)
     path = Path(path)

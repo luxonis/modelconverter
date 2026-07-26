@@ -140,7 +140,14 @@ PRECISIONS: dict[str, list[Precision]] = {
         Precision("fp16", ("rvc4.quantization_mode", "FP16_STANDARD")),
     ],
     "hailo": [
-        Precision("quant", _HAILO_FAST_OPTS),
+        # The per-input mean/scale give the net channels of very different
+        # magnitudes; Hailo's fixed-point quantizer rejects the resulting
+        # dynamic range ("shift delta > 2, cannot quantize").
+        Precision(
+            "quant",
+            _HAILO_FAST_OPTS,
+            xfail="Hailo quantizer cannot handle the toy net's activation range (shift delta)",
+        ),
     ],
 }
 

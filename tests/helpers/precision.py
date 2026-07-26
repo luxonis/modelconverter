@@ -55,6 +55,7 @@ def golden_reference_outputs(
     preprocessing avoids re-deriving the channel-reversal / mean-scale-reversal
     semantics by hand.
     """
+    work_dir.mkdir(parents=True, exist_ok=True)
     golden = onnx_attach_normalization_to_inputs(
         Path(onnx_path), work_dir / "golden.onnx", input_configs
     )

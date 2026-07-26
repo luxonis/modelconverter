@@ -94,6 +94,11 @@ def generate_compose_config(
         volumes.append(f"{cwd / 'tests'}:/app/tests")
     if (cwd / "pyproject.toml").exists():
         volumes.append(f"{cwd / 'pyproject.toml'}:/app/pyproject.toml")
+    # In dev images the package is baked in (`pip install -e .`), so a source
+    # change would otherwise need an image rebuild to take effect. Mount the
+    # host source over it so edits to modelconverter are live in the container.
+    if image.endswith("-dev") and (cwd / "modelconverter").exists():
+        volumes.append(f"{cwd / 'modelconverter'}:/app/modelconverter")
 
     config = {
         "services": {
