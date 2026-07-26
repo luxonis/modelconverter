@@ -12,10 +12,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import onnx
 import onnxruntime as ort
 
 from modelconverter.utils.config import InputConfig
 from modelconverter.utils.onnx_tools import onnx_attach_normalization_to_inputs
+
+# Max ONNX IR version onnxruntime accepts varies by container (e.g. the Hailo
+# 2024.10 image caps at 8). The toy nets are opset 13 (needs IR >= 7), so
+# clamping the golden model to this before the ort session keeps it loadable
+# everywhere without affecting the numeric result.
+_MAX_ORT_IR_VERSION = 8
 
 # The converted model file to feed the vendor inferer, per platform.
 _MODEL_GLOB = {
@@ -59,8 +66,10 @@ def golden_reference_outputs(
     golden = onnx_attach_normalization_to_inputs(
         Path(onnx_path), work_dir / "golden.onnx", input_configs
     )
+    golden_model = onnx.load(str(golden))
+    golden_model.ir_version = min(golden_model.ir_version, _MAX_ORT_IR_VERSION)
     session = ort.InferenceSession(
-        str(golden), providers=["CPUExecutionProvider"]
+        golden_model.SerializeToString(), providers=["CPUExecutionProvider"]
     )
     feed = {
         i.name: np.full(i.shape, value, dtype=np.float32)
