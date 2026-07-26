@@ -48,6 +48,7 @@ from modelconverter.cli.utils import get_configs
 from modelconverter.packages.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Target
+from tests.helpers.conversion import HAILO_FAST_OPTS, assert_produced
 from tests.helpers.onnx_factory import build_toy_integration_onnx
 from tests.helpers.precision import (
     cosine_similarity,
@@ -62,15 +63,6 @@ _SIZE = 64
 _CALIB_VALUE = 100
 
 _THRESHOLD = 0.9
-# Keep the (otherwise very slow) Hailo compilation cheap for a smoke run.
-_HAILO_FAST_OPTS = (
-    "hailo.compression_level",
-    "0",
-    "hailo.optimization_level",
-    "0",
-    "hailo.disable_compilation",
-    "True",
-)
 
 
 @dataclass(frozen=True)
@@ -145,7 +137,7 @@ PRECISIONS: dict[str, list[Precision]] = {
         # dynamic range ("shift delta > 2, cannot quantize").
         Precision(
             "quant",
-            _HAILO_FAST_OPTS,
+            HAILO_FAST_OPTS,
             xfail="Hailo quantizer cannot handle the toy net's activation range (shift delta)",
         ),
     ],
@@ -319,9 +311,7 @@ def test_toy_integration(
         output_dir=output_name,
         to="native",
     )
-    out_dir = OUTPUTS_DIR / output_name
-    assert out_dir.exists(), f"output dir {out_dir} was not created"
-    assert any(out_dir.iterdir()), f"no output produced in {out_dir}"
+    assert_produced(output_name)
 
     # For backends with a comparable golden (rvc2/rvc4), also assert the
     # converted model reproduces the reference outputs.
@@ -348,6 +338,4 @@ def test_rvc2_input_freezing(frozen_toy_config: Path):
         output_dir=output_name,
         to="native",
     )
-    out_dir = OUTPUTS_DIR / output_name
-    assert out_dir.exists(), f"output dir {out_dir} was not created"
-    assert any(out_dir.iterdir()), f"no output produced in {out_dir}"
+    assert_produced(output_name)

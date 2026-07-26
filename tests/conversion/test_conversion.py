@@ -24,24 +24,14 @@ from dataclasses import dataclass, field
 import pytest
 
 from modelconverter.__main__ import convert
-from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Target
+from tests.helpers.conversion import HAILO_FAST_OPTS, assert_produced
 
 GS = "gs://luxonis-test-bucket/modelconverter"
 
 ALL_PLATFORMS = ("rvc2", "rvc3", "rvc4", "hailo")
 # OpenVINO IR (xml+bin) is only supported by the OpenVINO backends.
 IR_PLATFORMS = ("rvc2", "rvc3")
-
-# Keep the (otherwise very slow) Hailo compilation cheap for a smoke run.
-_HAILO_FAST_OPTS = (
-    "hailo.compression_level",
-    "0",
-    "hailo.optimization_level",
-    "0",
-    "hailo.disable_compilation",
-    "True",
-)
 
 
 @dataclass(frozen=True)
@@ -133,22 +123,10 @@ _CASES = [
 ]
 
 
-def _assert_produced(output_name: str, to_format: str) -> None:
-    out_dir = OUTPUTS_DIR / output_name
-    assert out_dir.exists(), f"output dir {out_dir} was not created"
-    if to_format == "nn_archive":
-        produced = list(out_dir.rglob("*.tar.xz")) + list(
-            out_dir.rglob("*.tar")
-        )
-        assert produced, f"no NN archive produced in {out_dir}"
-    else:
-        assert any(out_dir.iterdir()), f"no output produced in {out_dir}"
-
-
 @pytest.mark.parametrize(("platform", "scenario"), _CASES)
 def test_convert(platform: str, scenario: Scenario):
     output_name = f"_{platform}-{scenario.id}"
-    extra = _HAILO_FAST_OPTS if platform == "hailo" else ()
+    extra = HAILO_FAST_OPTS if platform == "hailo" else ()
     convert(
         Target(platform),
         *scenario.opts,
@@ -158,4 +136,4 @@ def test_convert(platform: str, scenario: Scenario):
         to=scenario.to_format,
         main_stage=scenario.main_stage,
     )
-    _assert_produced(output_name, scenario.to_format)
+    assert_produced(output_name, scenario.to_format)

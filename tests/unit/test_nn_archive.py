@@ -44,7 +44,6 @@ from modelconverter.utils.types import DataType, Target
 from tests.helpers.archive_factory import (
     default_archive_config,
     pack_archive,
-    write_encodings,
     write_json,
 )
 from tests.helpers.onnx_factory import (
@@ -213,7 +212,7 @@ class TestProcessNNArchiveEncodings:
 
     def test_custom_encodings_used_for_rvc4(self, work_dir: Path):
         onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
-        enc = write_encodings(self.ENCODINGS, work_dir / "encondings.json")
+        enc = write_json(self.ENCODINGS, work_dir / "encondings.json")
         # NOTE: the source misspells the member as "encondings.json"; we must
         # match that exact name to hit the branch.
         tar = pack_archive(
@@ -229,7 +228,7 @@ class TestProcessNNArchiveEncodings:
 
     def test_encodings_ignored_for_non_rvc4(self, work_dir: Path):
         onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
-        enc = write_encodings(self.ENCODINGS, work_dir / "encondings.json")
+        enc = write_json(self.ENCODINGS, work_dir / "encondings.json")
         tar = pack_archive(
             work_dir / "dummy_model.tar",
             onnx,

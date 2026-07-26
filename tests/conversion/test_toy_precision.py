@@ -34,14 +34,13 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
-import yaml
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
 from modelconverter.packages.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Target
-from tests.helpers.onnx_factory import build_toy_conv_onnx
+from tests.helpers.conversion import write_toy_conv_config
 from tests.helpers.precision import (
     cosine_similarity,
     golden_reference_outputs,
@@ -66,39 +65,9 @@ _PLATFORM_OPTS: dict[str, tuple[str, ...]] = {
 @pytest.fixture(scope="module")
 def toy_conv_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Build the toy conv ONNX + varied calibration dir + config."""
-    workdir = tmp_path_factory.mktemp("toy_precision")
-    onnx_path = workdir / "toy_conv.onnx"
-    build_toy_conv_onnx(onnx_path, size=_SIZE)
-
-    # Varied (random) calibration -> healthy per-tensor quantization ranges.
-    calib_dir = workdir / "calib"
-    calib_dir.mkdir()
-    rng = np.random.default_rng(0)
-    for i in range(16):
-        cv2.imwrite(
-            str(calib_dir / f"{i}.png"),
-            rng.integers(0, 256, (_SIZE, _SIZE, 3), dtype=np.uint8),
-        )
-
-    config = {
-        "input_model": str(onnx_path),
-        "inputs": [
-            {
-                "name": "img",
-                "shape": [1, 3, _SIZE, _SIZE],
-                "data_type": "float32",
-                "mean_values": [128, 128, 128],
-                "scale_values": [58, 58, 58],
-                # Exercise channel reversal on the fidelity path too.
-                "encoding": {"from": "RGB", "to": "BGR"},
-                "calibration": {"path": str(calib_dir), "max_images": 16},
-            }
-        ],
-        "outputs": [{"name": "out"}],
-    }
-    config_path = workdir / "toy_conv.yaml"
-    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
-    return config_path
+    return write_toy_conv_config(
+        tmp_path_factory.mktemp("toy_precision"), size=_SIZE
+    )
 
 
 @pytest.fixture(scope="module")

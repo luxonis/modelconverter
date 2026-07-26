@@ -361,12 +361,15 @@ class TestInputConfigShapeValidators:
         inp = InputConfig(name="i", shape=[1, 3, 64, 64], layout="NCHW")
         assert inp.encoding.from_ == Encoding.RGB
 
-    def test_layout_without_channel_dim(self):
+    def test_multichannel_with_channel_dim_keeps_rgb(self):
+        # "C" present but the channel dim is not 1 -> not grayscale, stays RGB.
         inp = InputConfig(name="i", shape=[1, 10], layout="NC")
-        # "C" is present here; use a layout with no C to hit the early return.
-        inp2 = InputConfig(name="i", shape=[1, 10], layout="NA")
-        assert inp2.encoding.from_ == Encoding.RGB
-        assert inp.encoding.from_ in {Encoding.RGB, Encoding.GRAY}
+        assert inp.encoding.from_ == Encoding.RGB
+
+    def test_layout_without_channel_dim_keeps_rgb(self):
+        # No "C" in the layout -> the grayscale check early-returns, RGB stays.
+        inp = InputConfig(name="i", shape=[1, 10], layout="NA")
+        assert inp.encoding.from_ == Encoding.RGB
 
     def test_dynamic_batch_size_set_to_one(self):
         inp = InputConfig(name="i", shape=[0, 3, 64, 64], layout="NCHW")

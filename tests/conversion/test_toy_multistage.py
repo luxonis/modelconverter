@@ -43,6 +43,7 @@ from modelconverter.packages.getters import get_inferer
 from modelconverter.utils.config import Config
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Target
+from tests.helpers.conversion import HAILO_FAST_OPTS, assert_produced
 from tests.helpers.onnx_factory import (
     build_toy_aggregator_onnx,
     build_toy_integration_onnx,
@@ -66,15 +67,6 @@ MAIN_STAGE = "third"
 _LINK_SCRIPT = (
     "def run_script(outputs):\n"
     "    return outputs['output'] + outputs['pooled']\n"
-)
-
-_HAILO_FAST_OPTS = (
-    "hailo.compression_level",
-    "0",
-    "hailo.optimization_level",
-    "0",
-    "hailo.disable_compilation",
-    "True",
 )
 
 
@@ -206,7 +198,7 @@ _CONVERT_CASES = [
 @pytest.mark.parametrize("platform", _CONVERT_CASES)
 def test_toy_multistage(platform: str, multistage_config: Path):
     output_name = f"_toy-multistage-{platform}"
-    extra = _HAILO_FAST_OPTS if platform == "hailo" else ()
+    extra = HAILO_FAST_OPTS if platform == "hailo" else ()
     convert(
         Target(platform),
         *extra,
@@ -215,9 +207,7 @@ def test_toy_multistage(platform: str, multistage_config: Path):
         to="native",
         main_stage=MAIN_STAGE,
     )
-    out_dir = OUTPUTS_DIR / output_name
-    assert out_dir.exists(), f"output dir {out_dir} was not created"
-    assert any(out_dir.iterdir()), f"no output produced in {out_dir}"
+    assert_produced(output_name)
 
 
 def _golden_pipeline(

@@ -9,7 +9,6 @@ from typing import Any, Literal
 __all__ = [
     "default_archive_config",
     "pack_archive",
-    "write_encodings",
     "write_json",
 ]
 
@@ -58,12 +57,6 @@ def write_json(data: dict[str, Any], path: str | Path) -> Path:
     return path
 
 
-def write_encodings(data: dict[str, Any], path: str | Path) -> Path:
-    path = Path(path)
-    path.write_text(json.dumps(data))
-    return path
-
-
 def pack_archive(
     tar_path: str | Path,
     model_path: str | Path,
@@ -75,16 +68,15 @@ def pack_archive(
     """Packs ``model_path`` + ``config.json`` (+ optional extras) into a
     tar archive.
 
-    @param config: either a config dict (serialized to ``config.json``)
-        or a path to an existing json file.
+    @param config: config dict, serialized to ``config.json`` next to the
+        archive.
     @param extra_files: mapping of ``arcname -> file path`` for extra
         members (e.g. ``encodings.json``, a postprocessor ONNX).
     """
     tar_path = Path(tar_path)
     model_path = Path(model_path)
-    if isinstance(config, dict):
-        config_path = tar_path.parent / "config.json"
-        write_json(config, config_path)
+    config_path = tar_path.parent / "config.json"
+    write_json(config, config_path)
 
     with tarfile.open(tar_path, mode) as tar:
         tar.add(str(model_path), arcname=model_path.name)

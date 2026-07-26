@@ -32,17 +32,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import cv2
-import numpy as np
 import pytest
-import yaml
 
 from modelconverter.__main__ import convert
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Target
-from tests.helpers.onnx_factory import build_toy_conv_onnx
+from tests.helpers.conversion import write_toy_conv_config
 
-_SIZE = 32
 _OUT_CHANNELS = 4
 
 # A custom AIMET-style encodings file. The `weight` param uses per-channel
@@ -100,38 +96,9 @@ def encodings_config(
     the conversion via the ``rvc4.encodings`` override (a path).
     """
     workdir = tmp_path_factory.mktemp("rvc4_encodings")
-    onnx_path = workdir / "toy_conv.onnx"
-    build_toy_conv_onnx(onnx_path, size=_SIZE, out_channels=_OUT_CHANNELS)
-
-    calib_dir = workdir / "calib"
-    calib_dir.mkdir()
-    rng = np.random.default_rng(0)
-    for i in range(16):
-        cv2.imwrite(
-            str(calib_dir / f"{i}.png"),
-            rng.integers(0, 256, (_SIZE, _SIZE, 3), dtype=np.uint8),
-        )
-
+    config_path = write_toy_conv_config(workdir, out_channels=_OUT_CHANNELS)
     encodings_path = workdir / "encodings.json"
     encodings_path.write_text(json.dumps(_ENCODINGS, indent=2))
-
-    config = {
-        "input_model": str(onnx_path),
-        "inputs": [
-            {
-                "name": "img",
-                "shape": [1, 3, _SIZE, _SIZE],
-                "data_type": "float32",
-                "mean_values": [128, 128, 128],
-                "scale_values": [58, 58, 58],
-                "encoding": {"from": "RGB", "to": "BGR"},
-                "calibration": {"path": str(calib_dir), "max_images": 16},
-            }
-        ],
-        "outputs": [{"name": "out"}],
-    }
-    config_path = workdir / "toy_conv.yaml"
-    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
     return config_path, encodings_path
 
 

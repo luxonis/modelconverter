@@ -350,7 +350,7 @@ class RVC2Exporter(Exporter):
             logger.info(f"Compiling {shaves}-shave patch...")
             with SubprocessHandle(
                 ["compile_tool", *args], silent=True
-            ) as handle:  # pragme: no cover
+            ) as handle:  # pragma: no cover
                 while handle.poll() is None:
                     if handle.is_suspended():
                         with lock:
