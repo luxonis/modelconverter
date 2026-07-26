@@ -88,7 +88,7 @@ _PARAMS = [
 
 
 def _main_stage(cfg: Config, case: PrecisionCase) -> SingleStageConfig:
-    if case.main_stage is not None:
+    if case.main_stage is not None:  # pragma: no cover
         return cfg.get_stage_config(case.main_stage)
     return next(iter(cfg.stages.values()))
 

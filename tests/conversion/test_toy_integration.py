@@ -46,7 +46,11 @@ from modelconverter.cli.utils import get_configs
 from modelconverter.packages.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Target
-from tests.helpers.conversion import HAILO_FAST_OPTS, assert_produced
+from tests.helpers.conversion import (
+    HAILO_FAST_OPTS,
+    assert_produced,
+    toy_net_image_inputs,
+)
 from tests.helpers.onnx_factory import build_toy_integration_onnx
 from tests.helpers.precision import (
     cosine_similarity,
@@ -149,35 +153,7 @@ def _write_toy_config(
     # Constant calibration (std=0) so quantization is near-lossless for a
     # constant inference input -- see `_CALIB_VALUE`.
     calib = {"mean": _CALIB_VALUE, "std": 0, "max_images": 8}
-    inputs = [
-        {
-            "name": "bgr",
-            "shape": [1, 3, _SIZE, _SIZE],
-            "data_type": "float32",
-            "mean_values": [10, 20, 30],
-            "scale_values": [2, 4, 8],
-            "encoding": {"from": "BGR", "to": "BGR"},
-            "calibration": calib,
-        },
-        {
-            "name": "rgb",
-            "shape": [1, 3, _SIZE, _SIZE],
-            "data_type": "float32",
-            "mean_values": [5, 6, 7],
-            "scale_values": [3, 2, 1],
-            "encoding": {"from": "RGB", "to": "BGR"},
-            "calibration": calib,
-        },
-        {
-            "name": "gray",
-            "shape": [1, 1, _SIZE, _SIZE],
-            "data_type": "float32",
-            "mean_values": [128],
-            "scale_values": [255],
-            "encoding": "GRAY",
-            "calibration": calib,
-        },
-    ]
+    inputs = toy_net_image_inputs(calib, size=_SIZE)
     if with_flag:
         inputs.append(
             {

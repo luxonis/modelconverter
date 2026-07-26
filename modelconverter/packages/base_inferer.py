@@ -45,7 +45,7 @@ class Inferer(ABC):
             (config.outputs, "output"),
         ]:
             for node in container:
-                if node.shape is None:
+                if node.shape is None:  # type: ignore
                     raise ValueError(
                         f"Shape for {typ_name} '{node.name}' must be provided."
                     )

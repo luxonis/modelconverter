@@ -88,8 +88,6 @@ def _to_nchw(arr: np.ndarray, platform: str) -> np.ndarray:
         return arr
     if arr.ndim == 3:  # HWC
         return arr.transpose(2, 0, 1)[np.newaxis]
-    if arr.ndim == 4:  # NHWC
-        return arr.transpose(0, 3, 1, 2)
     return arr
 
 

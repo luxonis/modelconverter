@@ -425,7 +425,7 @@ class RVC2Exporter(Exporter):
                 superblob_file.write(default_blob_file.read())
 
             patches = sorted(patch2idx.keys(), key=lambda x: patch2idx[x])
-            if not patches:
+            if not patches:  # pragma: no cover
                 raise RuntimeError("No patches found.")
 
             for patch_path in patches:

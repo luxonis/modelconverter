@@ -441,6 +441,28 @@ def _config_from_overrides(dummy_onnx: Path, **overrides: Any) -> Config:
     return Config.get_config(None, opts)
 
 
+def _config_to_nn(
+    config: Config,
+    dummy_onnx: Path,
+    *,
+    orig: NNArchiveConfig | None = None,
+    preprocessing: dict[str, PreprocessingBlock] | None = None,
+    main_stage: str | None = None,
+    target: Target = Target.RVC4,
+) -> NNArchiveConfig:
+    """``modelconverter_config_to_nn`` with the fixed test boilerplate (output
+    name + model path) filled in, exposing only what tests vary."""
+    return modelconverter_config_to_nn(
+        config,
+        Path("out.onnx"),
+        orig,
+        preprocessing or {},
+        main_stage if main_stage is not None else next(iter(config.stages)),
+        dummy_onnx,
+        target,
+    )
+
+
 @pytest.mark.parametrize(
     ("target", "overrides", "expected"),
     [
@@ -491,62 +513,29 @@ def test_precision(
     expected: DataType,
 ):
     config = _config_from_overrides(dummy_onnx, **overrides)
-    main_stage = next(iter(config.stages))
-    nn = modelconverter_config_to_nn(
-        config,
-        Path("out.onnx"),
-        None,
-        {},
-        main_stage,
-        dummy_onnx,
-        target,
-    )
+    nn = _config_to_nn(config, dummy_onnx, target=target)
     assert nn.model.metadata.precision.value == expected.value
 
 
-def test_rvc4_fp16_via_snpe_pairwise_args(dummy_onnx: Path):
+@pytest.mark.parametrize(
+    "onnx_to_dlc_args",
+    [["--float_bitwidth", "16"], ["--float_bitwidth=16"]],
+    ids=["pairwise", "equals"],
+)
+def test_rvc4_fp16_via_snpe_args(
+    dummy_onnx: Path, onnx_to_dlc_args: list[str]
+):
+    """Both the ``--flag value`` and ``--flag=value`` forms select fp16."""
     config = _config_from_overrides(
         dummy_onnx,
         **{
             "rvc4.quantization_mode": "CUSTOM",
-            "rvc4.snpe_onnx_to_dlc_args": ["--float_bitwidth", "16"],
+            "rvc4.snpe_onnx_to_dlc_args": onnx_to_dlc_args,
             "rvc4.snpe_dlc_graph_prepare_args": ["--use_float_io"],
             "rvc4.disable_calibration": True,
         },
     )
-    main_stage = next(iter(config.stages))
-    nn = modelconverter_config_to_nn(
-        config,
-        Path("out.onnx"),
-        None,
-        {},
-        main_stage,
-        dummy_onnx,
-        Target.RVC4,
-    )
-    assert nn.model.metadata.precision.value == DataType.FLOAT16.value
-
-
-def test_rvc4_fp16_via_snpe_equals_args(dummy_onnx: Path):
-    config = _config_from_overrides(
-        dummy_onnx,
-        **{
-            "rvc4.quantization_mode": "CUSTOM",
-            "rvc4.snpe_onnx_to_dlc_args": ["--float_bitwidth=16"],
-            "rvc4.snpe_dlc_graph_prepare_args": ["--use_float_io"],
-            "rvc4.disable_calibration": True,
-        },
-    )
-    main_stage = next(iter(config.stages))
-    nn = modelconverter_config_to_nn(
-        config,
-        Path("out.onnx"),
-        None,
-        {},
-        main_stage,
-        dummy_onnx,
-        Target.RVC4,
-    )
+    nn = _config_to_nn(config, dummy_onnx)
     assert nn.model.metadata.precision.value == DataType.FLOAT16.value
 
 
@@ -568,16 +557,7 @@ def test_output_layout_fallback_on_incompatible_shape(dummy_onnx: Path):
             "outputs.1.name": "output1",
         },
     )
-    main_stage = next(iter(config.stages))
-    nn = modelconverter_config_to_nn(
-        config,
-        Path("out.onnx"),
-        None,
-        {},
-        main_stage,
-        dummy_onnx,
-        Target.RVC4,
-    )
+    nn = _config_to_nn(config, dummy_onnx)
     out0 = next(o for o in nn.model.outputs if o.name == "output0")
     # Fallback default layout for [1, 10].
     assert out0.shape == [1, 10]
@@ -597,16 +577,7 @@ def test_output_default_layout_when_shape_has_zero(dummy_onnx: Path):
             "outputs.1.layout": "NCHW",
         },
     )
-    main_stage = next(iter(config.stages))
-    nn = modelconverter_config_to_nn(
-        config,
-        Path("out.onnx"),
-        None,
-        {},
-        main_stage,
-        dummy_onnx,
-        Target.RVC4,
-    )
+    nn = _config_to_nn(config, dummy_onnx)
     out1 = next(o for o in nn.model.outputs if o.name == "output1")
     assert out1.shape == [1, 5, 5, 5]
     assert len(out1.layout) == 4
@@ -624,16 +595,7 @@ def test_input_default_layout_when_shape_has_zero(dummy_onnx: Path):
             "inputs.1.name": "input1",
         },
     )
-    main_stage = next(iter(config.stages))
-    nn = modelconverter_config_to_nn(
-        config,
-        Path("out.onnx"),
-        None,
-        {},
-        main_stage,
-        dummy_onnx,
-        Target.RVC4,
-    )
+    nn = _config_to_nn(config, dummy_onnx)
     in0 = next(i for i in nn.model.inputs if i.name == "input0")
     # Uses the true metadata shape with a freshly derived layout.
     assert in0.shape == [1, 3, 64, 64]
@@ -642,7 +604,6 @@ def test_input_default_layout_when_shape_has_zero(dummy_onnx: Path):
 
 def test_preprocessing_override_applied(dummy_onnx: Path):
     config = _config_from_overrides(dummy_onnx)
-    main_stage = next(iter(config.stages))
     block = PreprocessingBlock(
         mean=[1, 2, 3],
         scale=[4, 5, 6],
@@ -650,15 +611,7 @@ def test_preprocessing_override_applied(dummy_onnx: Path):
         interleaved_to_planar=False,
         dai_type="RGB888p",
     )
-    nn = modelconverter_config_to_nn(
-        config,
-        Path("out.onnx"),
-        None,
-        {"input0": block},
-        main_stage,
-        dummy_onnx,
-        Target.RVC4,
-    )
+    nn = _config_to_nn(config, dummy_onnx, preprocessing={"input0": block})
     in0 = next(i for i in nn.model.inputs if i.name == "input0")
     assert in0.preprocessing.dai_type == "RGB888p"
 
@@ -678,15 +631,7 @@ def test_multistage_two_stages_sets_postprocessor(dummy_onnx: Path):
     orig.model.heads = [
         Head(parser="Classification", metadata={}, outputs=["output0"])
     ]
-    nn = modelconverter_config_to_nn(
-        config,
-        Path("out.onnx"),
-        orig,
-        {},
-        "main",
-        dummy_onnx,
-        Target.RVC4,
-    )
+    nn = _config_to_nn(config, dummy_onnx, orig=orig, main_stage="main")
     assert nn.model.heads[0].metadata.postprocessor_path == "post.onnx"
 
 
@@ -702,15 +647,7 @@ def test_multistage_without_head_raises(dummy_onnx: Path):
         },
     )
     with pytest.raises(ValueError, match="1 head"):
-        modelconverter_config_to_nn(
-            config,
-            Path("out.onnx"),
-            None,
-            {},
-            "main",
-            dummy_onnx,
-            Target.RVC4,
-        )
+        _config_to_nn(config, dummy_onnx, main_stage="main")
 
 
 def test_more_than_two_stages_raises(dummy_onnx: Path):
@@ -728,15 +665,7 @@ def test_more_than_two_stages_raises(dummy_onnx: Path):
     with pytest.raises(
         NotImplementedError, match="2-stage models are supported"
     ):
-        modelconverter_config_to_nn(
-            config,
-            Path("out.onnx"),
-            None,
-            {},
-            "main",
-            dummy_onnx,
-            Target.RVC4,
-        )
+        _config_to_nn(config, dummy_onnx, main_stage="main")
 
 
 def test_raw_input_default_type_without_orig(dummy_onnx: Path):
@@ -751,16 +680,7 @@ def test_raw_input_default_type_without_orig(dummy_onnx: Path):
             "inputs.1.name": "input1",
         },
     )
-    main_stage = next(iter(config.stages))
-    nn = modelconverter_config_to_nn(
-        config,
-        Path("out.onnx"),
-        None,
-        {},
-        main_stage,
-        dummy_onnx,
-        Target.RVC4,
-    )
+    nn = _config_to_nn(config, dummy_onnx)
     in0 = next(i for i in nn.model.inputs if i.name == "input0")
     assert in0.input_type == InputType.RAW
     assert in0.preprocessing.dai_type is None
@@ -778,21 +698,12 @@ def test_raw_input_preprocessing_preserved_from_orig(dummy_onnx: Path):
             "inputs.1.name": "input1",
         },
     )
-    main_stage = next(iter(config.stages))
     orig = archive_from_model(dummy_onnx)
     orig.model.inputs[0].input_type = InputType.RAW
     orig.model.inputs[0].preprocessing = PreprocessingBlock(
         mean=[9, 9, 9], scale=None
     )
-    nn = modelconverter_config_to_nn(
-        config,
-        Path("out.onnx"),
-        orig,
-        {},
-        main_stage,
-        dummy_onnx,
-        Target.RVC4,
-    )
+    nn = _config_to_nn(config, dummy_onnx, orig=orig)
     in0 = next(i for i in nn.model.inputs if i.name == "input0")
     assert in0.input_type == InputType.RAW
     assert in0.preprocessing.mean == [9, 9, 9]

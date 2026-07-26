@@ -148,8 +148,6 @@ class RVC4Exporter(Exporter):
         if "--input_list" not in args:
             logger.info("Preparing calibration data.")
             calibration_list = self.prepare_calibration_data()
-            if calibration_list is None:
-                return dlc_path
             args.extend(["--input_list", str(calibration_list)])
         else:
             logger.info("Using provided `input_list`.")
@@ -197,7 +195,7 @@ class RVC4Exporter(Exporter):
 
         return quantized_dlc_path
 
-    def prepare_calibration_data(self) -> Path | None:
+    def prepare_calibration_data(self) -> Path:
         class Entry(NamedTuple):
             name: str
             path: Path

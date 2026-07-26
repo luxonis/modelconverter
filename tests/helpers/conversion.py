@@ -9,7 +9,12 @@ import yaml
 from modelconverter.utils.constants import OUTPUTS_DIR
 from tests.helpers.onnx_factory import build_toy_conv_onnx
 
-__all__ = ["HAILO_FAST_OPTS", "assert_produced", "write_toy_conv_config"]
+__all__ = [
+    "HAILO_FAST_OPTS",
+    "assert_produced",
+    "toy_net_image_inputs",
+    "write_toy_conv_config",
+]
 
 # Cheap Hailo settings for a smoke conversion: skip the slow HEF compile and
 # drop optimization/compression so quantizing a tiny net stays fast.
@@ -34,6 +39,44 @@ def assert_produced(output_name: str, to_format: str = "native") -> None:
         assert produced, f"no NN archive produced in {out_dir}"
     else:
         assert any(out_dir.iterdir()), f"no output produced in {out_dir}"
+
+
+def toy_net_image_inputs(calib: dict, *, size: int = 64) -> list[dict]:
+    """The toy integration net's three image inputs (``bgr``/``rgb``/``gray``)
+    with their per-input mean/scale/encoding, all sharing one ``calib`` spec.
+
+    Shared by the toy-integration and toy-multistage conversion tests, which
+    differ only in the calibration (random constant vs. an image directory).
+    """
+    return [
+        {
+            "name": "bgr",
+            "shape": [1, 3, size, size],
+            "data_type": "float32",
+            "mean_values": [10, 20, 30],
+            "scale_values": [2, 4, 8],
+            "encoding": {"from": "BGR", "to": "BGR"},
+            "calibration": calib,
+        },
+        {
+            "name": "rgb",
+            "shape": [1, 3, size, size],
+            "data_type": "float32",
+            "mean_values": [5, 6, 7],
+            "scale_values": [3, 2, 1],
+            "encoding": {"from": "RGB", "to": "BGR"},
+            "calibration": calib,
+        },
+        {
+            "name": "gray",
+            "shape": [1, 1, size, size],
+            "data_type": "float32",
+            "mean_values": [128],
+            "scale_values": [255],
+            "encoding": "GRAY",
+            "calibration": calib,
+        },
+    ]
 
 
 def write_toy_conv_config(

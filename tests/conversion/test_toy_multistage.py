@@ -41,7 +41,11 @@ from modelconverter.packages.getters import get_inferer
 from modelconverter.utils.config import Config
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Target
-from tests.helpers.conversion import HAILO_FAST_OPTS, assert_produced
+from tests.helpers.conversion import (
+    HAILO_FAST_OPTS,
+    assert_produced,
+    toy_net_image_inputs,
+)
 from tests.helpers.onnx_factory import (
     build_toy_aggregator_onnx,
     build_toy_integration_onnx,
@@ -69,43 +73,16 @@ _LINK_SCRIPT = (
 
 
 def _image_inputs(calib_dir: Path) -> list[dict]:
-    """The toy net's three image inputs (per-input mean/scale/encoding).
+    """The toy net's three image inputs, calibrated from an image directory.
 
     Upstream stages need image calibration (a directory) -- the multistage
     exporter copies those images to run the stage's inferer for the linked
     calibration of ``third``. The images are constant so quantization stays
     near-lossless.
     """
-    calib = {"path": str(calib_dir), "max_images": 8}
-    return [
-        {
-            "name": "bgr",
-            "shape": [1, 3, _SIZE, _SIZE],
-            "data_type": "float32",
-            "mean_values": [10, 20, 30],
-            "scale_values": [2, 4, 8],
-            "encoding": {"from": "BGR", "to": "BGR"},
-            "calibration": calib,
-        },
-        {
-            "name": "rgb",
-            "shape": [1, 3, _SIZE, _SIZE],
-            "data_type": "float32",
-            "mean_values": [5, 6, 7],
-            "scale_values": [3, 2, 1],
-            "encoding": {"from": "RGB", "to": "BGR"},
-            "calibration": calib,
-        },
-        {
-            "name": "gray",
-            "shape": [1, 1, _SIZE, _SIZE],
-            "data_type": "float32",
-            "mean_values": [128],
-            "scale_values": [255],
-            "encoding": "GRAY",
-            "calibration": calib,
-        },
-    ]
+    return toy_net_image_inputs(
+        {"path": str(calib_dir), "max_images": 8}, size=_SIZE
+    )
 
 
 @pytest.fixture(scope="module")
