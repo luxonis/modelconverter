@@ -211,7 +211,11 @@ def build_toy_aggregator_onnx(path: str | Path, *, size: int = 64) -> Path:
 
 
 def build_toy_conv_onnx(
-    path: str | Path, *, size: int = 32, out_channels: int = 4
+    path: str | Path,
+    *,
+    size: int = 32,
+    out_channels: int = 4,
+    external_data: bool = False,
 ) -> Path:
     """A tiny single-input conv net for numeric-fidelity (precision) tests.
 
@@ -225,6 +229,13 @@ def build_toy_conv_onnx(
     (``same`` padding) -> ``[1, out_channels, size, size]`` output. The input
     still carries mean/scale (+ optional channel reversal) in the config, so
     the converted model exercises the full baked-preprocessing path.
+
+    With ``external_data=True`` the weights are written to a sibling
+    ``<name>_data`` file instead of being embedded in the ``.onnx`` (the
+    layout ``onnx.save(save_as_external_data=True)`` / modelconverter's
+    ``save_onnx_model`` produce), so a conversion exercises the external-data
+    copy/preserve branches. ``size_threshold=0`` forces even the tiny conv
+    weight out to the sibling file.
     """
     inp = helper.make_tensor_value_info(
         "img", TensorProto.FLOAT, [1, 3, size, size]
@@ -234,13 +245,17 @@ def build_toy_conv_onnx(
     )
     # Deterministic small weights: quantizes cleanly, no host randomness.
     rng = np.random.default_rng(0)
+    weight_values = (
+        rng.standard_normal((out_channels, 3, 3, 3)) * 0.1
+    ).astype(np.float32)
+    # ONNX only moves a tensor's ``raw_data`` to the external file, so the
+    # weight must be stored raw (not in ``float_data``) for external_data.
     weight = helper.make_tensor(
         "weight",
         TensorProto.FLOAT,
         [out_channels, 3, 3, 3],
-        (rng.standard_normal((out_channels, 3, 3, 3)) * 0.1)
-        .astype(np.float32)
-        .ravel(),
+        weight_values.tobytes() if external_data else weight_values.ravel(),
+        raw=external_data,
     )
     node = helper.make_node(
         "Conv",
@@ -260,7 +275,18 @@ def build_toy_conv_onnx(
     model.ir_version = 9
     checker.check_model(model)
     path = Path(path)
-    onnx.save(model, str(path))
+    if external_data:
+        onnx.save(
+            model,
+            str(path),
+            save_as_external_data=True,
+            all_tensors_to_one_file=True,
+            location=f"{path.name}_data",
+            size_threshold=0,
+            convert_attribute=False,
+        )
+    else:
+        onnx.save(model, str(path))
     return path
 
 
