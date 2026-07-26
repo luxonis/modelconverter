@@ -26,119 +26,108 @@ from modelconverter.utils.environ import (
 env_mod = sys.modules["modelconverter.utils.environ"]
 
 
-class TestGetPasswordWithTimeout:
-    """Cover every exit path of the subprocess-guarded keyring
-    lookup."""
-
-    def test_returns_password(self, monkeypatch: pytest.MonkeyPatch):
-        """A fast keyring hit is forwarded back through the queue."""
-        monkeypatch.setattr(
-            env_mod.keyring, "get_password", lambda service, user: "secret"
-        )
-        assert (
-            get_password_with_timeout("ModelConverter", "api_key") == "secret"
-        )
-
-    def test_missing_password_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ):
-        """A ``None`` from keyring propagates as ``None``."""
-        monkeypatch.setattr(
-            env_mod.keyring, "get_password", lambda service, user: None
-        )
-        assert get_password_with_timeout("ModelConverter", "api_key") is None
-
-    def test_keyring_exception_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ):
-        """An exception inside the child process yields ``None``."""
-
-        def boom(service: str, user: str) -> str:  # pragma: no cover
-            raise RuntimeError("no backend")
-
-        monkeypatch.setattr(env_mod.keyring, "get_password", boom)
-        assert get_password_with_timeout("ModelConverter", "api_key") is None
-
-    def test_timeout_returns_none(self, monkeypatch: pytest.MonkeyPatch):
-        """A hanging keyring backend is terminated and returns
-        ``None``."""
-
-        def slow(service: str, user: str) -> str:  # pragma: no cover
-            time.sleep(30)
-            return "never"
-
-        monkeypatch.setattr(env_mod.keyring, "get_password", slow)
-        start = time.monotonic()
-        result = get_password_with_timeout(
-            "ModelConverter", "api_key", timeout=0.2
-        )
-        assert result is None
-        # Must have honoured the short timeout, not the 30s sleep.
-        assert time.monotonic() - start < 5
+def test_returns_password(monkeypatch: pytest.MonkeyPatch):
+    """A fast keyring hit is forwarded back through the queue."""
+    monkeypatch.setattr(
+        env_mod.keyring, "get_password", lambda service, user: "secret"
+    )
+    assert get_password_with_timeout("ModelConverter", "api_key") == "secret"
 
 
-class TestEnviron:
-    """Cover the ``validate_hubai_api_key`` after-validator branches."""
+def test_missing_password_returns_none(monkeypatch: pytest.MonkeyPatch):
+    """A ``None`` from keyring propagates as ``None``."""
+    monkeypatch.setattr(
+        env_mod.keyring, "get_password", lambda service, user: None
+    )
+    assert get_password_with_timeout("ModelConverter", "api_key") is None
 
-    def test_explicit_api_key_kept(self, monkeypatch: pytest.MonkeyPatch):
-        """An explicitly provided key short-circuits the keyring
-        lookup."""
 
-        def fail(*args, **kwargs) -> str:
-            raise AssertionError("keyring must not be consulted")
+def test_keyring_exception_returns_none(monkeypatch: pytest.MonkeyPatch):
+    """An exception inside the child process yields ``None``."""
 
-        monkeypatch.setattr(env_mod, "get_password_with_timeout", fail)
-        env = Environ(HUBAI_API_KEY="explicit-key")
-        assert env.HUBAI_API_KEY == "explicit-key"
+    def boom(service: str, user: str) -> str:  # pragma: no cover
+        raise RuntimeError("no backend")
 
-    def test_keyring_fallback_used(self, monkeypatch: pytest.MonkeyPatch):
-        """With no key set, the keyring value is adopted."""
-        monkeypatch.delenv("HUBAI_API_KEY", raising=False)
-        monkeypatch.setattr(
-            env_mod,
-            "get_password_with_timeout",
-            lambda *args, **kwargs: "from-keyring",
-        )
-        env = Environ()
-        assert env.HUBAI_API_KEY == "from-keyring"
+    monkeypatch.setattr(env_mod.keyring, "get_password", boom)
+    assert get_password_with_timeout("ModelConverter", "api_key") is None
 
-    def test_keyring_returns_none(self, monkeypatch: pytest.MonkeyPatch):
-        """A ``None`` keyring result leaves the key unset."""
-        monkeypatch.delenv("HUBAI_API_KEY", raising=False)
-        monkeypatch.setattr(
-            env_mod,
-            "get_password_with_timeout",
-            lambda *args, **kwargs: None,
-        )
-        env = Environ()
-        assert env.HUBAI_API_KEY is None
 
-    def test_keyring_exception_suppressed(
-        self, monkeypatch: pytest.MonkeyPatch
-    ):
-        """An exception in the fallback is swallowed by ``suppress``."""
-        monkeypatch.delenv("HUBAI_API_KEY", raising=False)
+def test_timeout_returns_none(monkeypatch: pytest.MonkeyPatch):
+    """A hanging keyring backend is terminated and returns ``None``."""
 
-        def boom(*args, **kwargs) -> str:
-            raise RuntimeError("keyring exploded")
+    def slow(service: str, user: str) -> str:  # pragma: no cover
+        time.sleep(30)
+        return "never"
 
-        monkeypatch.setattr(env_mod, "get_password_with_timeout", boom)
-        env = Environ()
-        assert env.HUBAI_API_KEY is None
+    monkeypatch.setattr(env_mod.keyring, "get_password", slow)
+    start = time.monotonic()
+    result = get_password_with_timeout(
+        "ModelConverter", "api_key", timeout=0.2
+    )
+    assert result is None
+    # Must have honoured the short timeout, not the 30s sleep.
+    assert time.monotonic() - start < 5
 
-    def test_default_url(self, monkeypatch: pytest.MonkeyPatch):
-        """The default HubAI URL is exposed when the env var is
-        absent."""
-        monkeypatch.delenv("HUBAI_URL", raising=False)
-        monkeypatch.setattr(
-            env_mod,
-            "get_password_with_timeout",
-            lambda *args, **kwargs: None,
-        )
-        env = Environ()
-        assert env.HUBAI_URL == "https://easyml.cloud.luxonis.com/"
 
-    def test_module_singleton(self):
-        """The eagerly-constructed module-level instance is an
-        ``Environ``."""
-        assert isinstance(environ, Environ)
+def test_explicit_api_key_kept(monkeypatch: pytest.MonkeyPatch):
+    """An explicitly provided key short-circuits the keyring lookup."""
+
+    def fail(*args, **kwargs) -> str:
+        raise AssertionError("keyring must not be consulted")
+
+    monkeypatch.setattr(env_mod, "get_password_with_timeout", fail)
+    env = Environ(HUBAI_API_KEY="explicit-key")
+    assert env.HUBAI_API_KEY == "explicit-key"
+
+
+def test_keyring_fallback_used(monkeypatch: pytest.MonkeyPatch):
+    """With no key set, the keyring value is adopted."""
+    monkeypatch.delenv("HUBAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        env_mod,
+        "get_password_with_timeout",
+        lambda *args, **kwargs: "from-keyring",
+    )
+    env = Environ()
+    assert env.HUBAI_API_KEY == "from-keyring"
+
+
+def test_keyring_returns_none(monkeypatch: pytest.MonkeyPatch):
+    """A ``None`` keyring result leaves the key unset."""
+    monkeypatch.delenv("HUBAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        env_mod,
+        "get_password_with_timeout",
+        lambda *args, **kwargs: None,
+    )
+    env = Environ()
+    assert env.HUBAI_API_KEY is None
+
+
+def test_keyring_exception_suppressed(monkeypatch: pytest.MonkeyPatch):
+    """An exception in the fallback is swallowed by ``suppress``."""
+    monkeypatch.delenv("HUBAI_API_KEY", raising=False)
+
+    def boom(*args, **kwargs) -> str:
+        raise RuntimeError("keyring exploded")
+
+    monkeypatch.setattr(env_mod, "get_password_with_timeout", boom)
+    env = Environ()
+    assert env.HUBAI_API_KEY is None
+
+
+def test_default_url(monkeypatch: pytest.MonkeyPatch):
+    """The default HubAI URL is exposed when the env var is absent."""
+    monkeypatch.delenv("HUBAI_URL", raising=False)
+    monkeypatch.setattr(
+        env_mod,
+        "get_password_with_timeout",
+        lambda *args, **kwargs: None,
+    )
+    env = Environ()
+    assert env.HUBAI_URL == "https://easyml.cloud.luxonis.com/"
+
+
+def test_module_singleton():
+    """The eagerly-constructed module-level instance is an ``Environ``."""
+    assert isinstance(environ, Environ)
