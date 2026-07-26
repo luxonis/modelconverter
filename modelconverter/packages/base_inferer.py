@@ -64,12 +64,7 @@ class Inferer(ABC):
                 else ResizeMethod.RESIZE
                 for inp in config.inputs
             },
-            encoding={
-                inp.name: inp.encoding.to
-                if isinstance(inp.calibration, ImageCalibrationConfig)
-                else Encoding.BGR
-                for inp in config.inputs
-            },
+            encoding={inp.name: inp.encoding.to for inp in config.inputs},
             config=config,
         )
 

@@ -45,7 +45,7 @@ class RVC4Inferer(Inferer):
                 "--output_dir",
                 "output",
             ],
-            silent=True,
+            silent=False,
         )
         out_paths = outputs_path.rglob("*.raw")
         outputs = {}
