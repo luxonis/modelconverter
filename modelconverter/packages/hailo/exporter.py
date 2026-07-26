@@ -215,7 +215,7 @@ class HailoExporter(Exporter):
                 return hn_name, [1, *(params["input_shapes"][0])[1:]]
         raise RuntimeError(
             f"Could not find HN layer name for {name}. This should not happen."
-        )
+        )  # pragma: no cover
 
     def _get_alls(self, runner: ClientRunner) -> str:
         alls = self.config.hailo.alls

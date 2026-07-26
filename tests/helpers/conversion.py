@@ -1,6 +1,7 @@
 """Shared helpers for the host-side conversion tests."""
 
 from pathlib import Path
+from typing import Literal
 
 import cv2
 import numpy as np
@@ -85,15 +86,20 @@ def write_toy_conv_config(
     size: int = 32,
     out_channels: int = 4,
     external_data: bool = False,
+    calibration: Literal["png", "raw", "none"] = "png",
 ) -> Path:
-    """Build the toy conv ONNX + a 16-image calibration dir + a matching
-    conversion config, returning the config's yaml path.
+    """Build the toy conv ONNX + a matching conversion config, returning the
+    config's yaml path.
 
     Shared by the single-input conversion tests (precision, external-data,
-    hailo-compile, rvc4-encodings). The config carries mean/scale + an
+    hailo-compile, rvc4-encodings, ...). The config carries mean/scale + an
     RGB->BGR reversal so the converted model exercises the full baked
-    preprocessing path; the calibration images are random so the per-tensor
-    quantization ranges stay healthy.
+    preprocessing path.
+
+    ``calibration`` selects the 16-sample calibration set: ``"png"`` (random
+    images), ``"raw"`` (``.raw`` files, which SNPE consumes verbatim), or
+    ``"none"`` (no calibration data -- the input falls back to random
+    calibration, e.g. for a ``disable_calibration`` run).
     """
     onnx_path = workdir / "toy_conv.onnx"
     build_toy_conv_onnx(
@@ -103,28 +109,35 @@ def write_toy_conv_config(
         external_data=external_data,
     )
 
-    calib_dir = workdir / "calib"
-    calib_dir.mkdir()
-    rng = np.random.default_rng(0)
-    for i in range(16):
-        cv2.imwrite(
-            str(calib_dir / f"{i}.png"),
-            rng.integers(0, 256, (size, size, 3), dtype=np.uint8),
-        )
+    input_cfg: dict = {
+        "name": "img",
+        "shape": [1, 3, size, size],
+        "data_type": "float32",
+        "mean_values": [128, 128, 128],
+        "scale_values": [58, 58, 58],
+        "encoding": {"from": "RGB", "to": "BGR"},
+    }
+    if calibration != "none":
+        calib_dir = workdir / "calib"
+        calib_dir.mkdir()
+        rng = np.random.default_rng(0)
+        for i in range(16):
+            if calibration == "raw":
+                # SNPE reads `.raw` calibration files verbatim, so write one
+                # correctly-sized NHWC float32 tensor per file.
+                rng.uniform(0, 255, (size, size, 3)).astype(np.float32).tofile(
+                    calib_dir / f"{i}.raw"
+                )
+            else:
+                cv2.imwrite(
+                    str(calib_dir / f"{i}.png"),
+                    rng.integers(0, 256, (size, size, 3), dtype=np.uint8),
+                )
+        input_cfg["calibration"] = {"path": str(calib_dir), "max_images": 16}
 
     config = {
         "input_model": str(onnx_path),
-        "inputs": [
-            {
-                "name": "img",
-                "shape": [1, 3, size, size],
-                "data_type": "float32",
-                "mean_values": [128, 128, 128],
-                "scale_values": [58, 58, 58],
-                "encoding": {"from": "RGB", "to": "BGR"},
-                "calibration": {"path": str(calib_dir), "max_images": 16},
-            }
-        ],
+        "inputs": [input_cfg],
         "outputs": [{"name": "out"}],
     }
     config_path = workdir / "toy_conv.yaml"
