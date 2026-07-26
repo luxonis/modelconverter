@@ -79,10 +79,14 @@ def build_toy_integration_onnx(
         need reversal (config ``RGB`` -> ``BGR``);
       * ``gray`` -- FLOAT ``[1, 1, size, size]`` single-channel input;
       * ``flag`` -- INT64 ``[1]`` scalar control input (only when
-        ``with_flag``), meant to be frozen to a constant at conversion time
-        (the input-freezing path). Freezing is an OpenVINO-MO-only feature
-        and the resulting rank-1 input is rejected by e.g. the Hailo parser,
-        so the shared net omits it and a dedicated RVC2-only test opts in.
+        ``with_flag``), meant to be frozen to a *single* constant at
+        conversion time (the input-freezing path);
+      * ``chan_scale`` -- FLOAT ``[3]`` per-channel input (only when
+        ``with_flag``), meant to be frozen to a *multi-element* constant --
+        the two exercise both frozen-value branches (scalar vs. list).
+        Freezing is an OpenVINO-MO-only feature and these extra inputs are
+        rejected by e.g. the Hailo parser, so the shared net omits them and a
+        dedicated RVC2-only test opts in.
 
     The graph normalizes nothing itself (that is what the baked
     preprocessing is for) -- it just combines the inputs with basic math:
@@ -116,15 +120,24 @@ def build_toy_integration_onnx(
 
     if with_flag:
         flag = helper.make_tensor_value_info("flag", TensorProto.INT64, [1])
-        inputs.append(flag)
-        initializers.append(
+        chan_scale = helper.make_tensor_value_info(
+            "chan_scale", TensorProto.FLOAT, [3]
+        )
+        inputs += [flag, chan_scale]
+        initializers += [
             helper.make_tensor(
                 name="flag_shape",
                 data_type=TensorProto.INT64,
                 dims=[4],
                 vals=[1, 1, 1, 1],
-            )
-        )
+            ),
+            helper.make_tensor(
+                name="chan_scale_shape",
+                data_type=TensorProto.INT64,
+                dims=[4],
+                vals=[1, 3, 1, 1],
+            ),
+        ]
         nodes += [
             helper.make_node("Add", ["sum_rb", "gray"], ["sum_all"]),
             # flag (INT [1]) -> float scalar broadcastable over NCHW, * sum
@@ -132,7 +145,14 @@ def build_toy_integration_onnx(
                 "Cast", ["flag"], ["flag_f"], to=TensorProto.FLOAT
             ),
             helper.make_node("Reshape", ["flag_f", "flag_shape"], ["flag_4d"]),
-            helper.make_node("Mul", ["sum_all", "flag_4d"], ["output"]),
+            helper.make_node("Mul", ["sum_all", "flag_4d"], ["mul_flag"]),
+            # chan_scale (FLOAT [3]) -> per-channel scale broadcast over NCHW
+            helper.make_node(
+                "Reshape",
+                ["chan_scale", "chan_scale_shape"],
+                ["chan_scale_4d"],
+            ),
+            helper.make_node("Mul", ["mul_flag", "chan_scale_4d"], ["output"]),
         ]
     else:
         nodes.append(helper.make_node("Add", ["sum_rb", "gray"], ["output"]))

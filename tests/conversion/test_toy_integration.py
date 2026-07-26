@@ -155,16 +155,26 @@ def _write_toy_config(
     calib = {"mean": _CALIB_VALUE, "std": 0, "max_images": 8}
     inputs = toy_net_image_inputs(calib, size=_SIZE)
     if with_flag:
-        inputs.append(
+        inputs += [
             {
                 "name": "flag",
                 "shape": [1],
                 "data_type": "int64",
-                # Raw (non-image) input; frozen to a constant (RVC2-only).
+                # Raw (non-image) input frozen to a single constant (RVC2-only)
+                # -- the scalar `frozen_value` branch.
                 "encoding": "NONE",
                 "frozen_value": [2],
-            }
-        )
+            },
+            {
+                "name": "chan_scale",
+                "shape": [3],
+                "data_type": "float32",
+                # Frozen to a multi-element constant -- the list `frozen_value`
+                # branch (joined into OpenVINO's `->` syntax).
+                "encoding": "NONE",
+                "frozen_value": [1.0, 2.0, 3.0],
+            },
+        ]
     config = {
         "input_model": str(onnx_path),
         "inputs": inputs,

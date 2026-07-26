@@ -19,6 +19,8 @@ exporter branch the standard 4D ``NCHW`` models miss:
     reshape in ``rvc2/exporter._transform_tflite_to_onnx``.
   * **RVC4 with a rank-3 ``[1, C, D]`` input** -- gets the fallback ``NCD``
     layout, which SNPE rewrites to ``NCF`` (``layout.replace("D", "F")``).
+  * **Hailo full conversion from TFLite** -- exercises the ``is_tflite``
+    channel-axis branch (``inp.shape[-1]`` for NHWC) in ``_get_alls``.
   * **Hailo with ``.npy`` calibration** -- pre-shaped ``(1, C, H, W)`` tensors
     hit the calibration reader's ``NCHW->NHWC`` transpose that ``.png``
     calibration (read as ``HWC``) never reaches.
@@ -32,6 +34,8 @@ Run inside the platform Docker image, e.g.::
 
 from pathlib import Path
 
+import cv2
+import numpy as np
 import pytest
 import yaml
 
@@ -123,6 +127,51 @@ def test_rvc4_ncd_layout(tmp_path: Path):
         "rvc4.disable_calibration",
         "True",
         path=str(onnx_path),
+        output_dir=output_name,
+        to="native",
+    )
+    assert_produced(output_name)
+
+
+@pytest.mark.hailo
+def test_hailo_tflite_conversion(tmp_path: Path):
+    # Full hailo conversion from a TFLite source exercises the `is_tflite`
+    # channel-axis branch in `_get_alls` (`inp.shape[-1]` for the NHWC layout).
+    # The toy graph is a weightless passthrough, on which hailo's quantizer
+    # degenerates (0 dB SNR -> NaN params) if a channel-reversal `bgr_to_rgb`
+    # layer is inserted -- so the config keeps `from == to` (no reversal) and
+    # uses fixed image calibration, leaving a plain normalization + Relu that
+    # quantizes deterministically.
+    tflite_path = build_toy_tflite(tmp_path / "toy.tflite")  # [1, 8, 8, 3]
+    calib_dir = tmp_path / "calib"
+    calib_dir.mkdir()
+    rng = np.random.default_rng(0)
+    for i in range(8):
+        cv2.imwrite(
+            str(calib_dir / f"{i}.png"),
+            rng.integers(0, 256, (8, 8, 3), dtype=np.uint8),
+        )
+    config = {
+        "input_model": str(tflite_path),
+        "inputs": [
+            {
+                "name": "input",
+                "shape": [1, 8, 8, 3],
+                "layout": "NHWC",
+                "data_type": "float32",
+                "encoding": {"from": "RGB", "to": "RGB"},
+                "calibration": {"path": str(calib_dir), "max_images": 8},
+            }
+        ],
+        "outputs": [{"name": "output"}],
+    }
+    config_path = tmp_path / "toy_tflite.yaml"
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+    output_name = "_hailo-tflite"
+    convert(
+        Target.HAILO,
+        *HAILO_FAST_OPTS,
+        path=str(config_path),
         output_dir=output_name,
         to="native",
     )
