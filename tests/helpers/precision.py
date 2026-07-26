@@ -7,8 +7,6 @@ overall scale shifts quantization introduces while still catching a model
 whose response has actually changed.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import numpy as np

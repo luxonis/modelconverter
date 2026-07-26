@@ -27,8 +27,6 @@ Runs inside the RVC4 Docker image::
     modelconverter shell rvc4 --dev -c 'python -m pytest -k rvc4_encodings'
 """
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

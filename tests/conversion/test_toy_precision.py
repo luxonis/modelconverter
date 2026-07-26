@@ -27,8 +27,6 @@ Runs inside the platform Docker image, e.g.::
     modelconverter shell hailo --dev --no-gpu -c 'python -m pytest -k toy_precision'
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import cv2

@@ -23,8 +23,6 @@ Runs inside the platform Docker image, e.g.::
     modelconverter shell rvc4 --dev -c 'python -m pytest -k external_data'
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

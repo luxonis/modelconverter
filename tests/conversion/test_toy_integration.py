@@ -33,8 +33,6 @@ Like the other conversion tests these run inside the platform Docker image
 and only assert a successful conversion, not numerical fidelity.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from pathlib import Path
 

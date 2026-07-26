@@ -18,8 +18,6 @@ Runs inside the Hailo Docker image::
     modelconverter shell hailo --dev --no-gpu -c 'python -m pytest -k hailo_compile'
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

@@ -15,8 +15,6 @@ normalized as ``(x - mean) / scale`` (the exact transform
 ``onnx_tools.add_preprocessing`` inserts, see that function).
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import numpy as np
@@ -48,7 +46,7 @@ class ONNXReferenceInferer:
         self._output_names = [o.name for o in self.session.get_outputs()]
 
     @classmethod
-    def from_stage(cls, stage: SingleStageConfig) -> ONNXReferenceInferer:
+    def from_stage(cls, stage: SingleStageConfig) -> "ONNXReferenceInferer":
         # `get_configs` downloads `input_model` and rewrites it to a local
         # path (see config.SingleStageConfig._download_input_model).
         return cls(Path(stage.input_model), stage)

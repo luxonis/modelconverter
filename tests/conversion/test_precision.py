@@ -28,8 +28,6 @@ destroy numeric fidelity, and a full-optimization Hailo compile is far too
 slow for CI. A Hailo precision check would need a dedicated full-opt run.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final

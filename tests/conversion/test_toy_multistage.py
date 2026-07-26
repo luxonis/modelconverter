@@ -27,8 +27,6 @@ single-stage toy (their preprocessing goes through the golden path and their
 DLC/IR runs on the CI CPU backend).
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import cv2
