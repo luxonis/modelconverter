@@ -12,6 +12,8 @@ conversion tests miss:
   * **Hailo with calibration disabled** -- no calibration data at all; the
     ``_disable_calibration`` branch returns the float ``.har`` directly.
 
+(The toy ``.tflite`` conversion + precision lives in ``test_toy_tflite``.)
+
 Run inside the platform Docker image, e.g.::
 
     modelconverter shell rvc4 --dev -c 'python -m pytest -k raw_calibration'

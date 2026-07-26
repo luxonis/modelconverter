@@ -43,6 +43,7 @@ class HailoInferer(Inferer):
                 encoding=self.encoding[name],
                 resize_method=self.resize_method[name],
                 data_type=self.in_dtypes[name],
+                layout=self.layout.get(name),
             ).transpose(1, 2, 0)[np.newaxis, ...]
             for name, path in inputs.items()
         }
