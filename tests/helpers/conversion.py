@@ -86,7 +86,7 @@ def write_toy_conv_config(
     size: int = 32,
     out_channels: int = 4,
     external_data: bool = False,
-    calibration: Literal["png", "raw", "none"] = "png",
+    calibration: Literal["png", "raw", "npy", "none"] = "png",
 ) -> Path:
     """Build the toy conv ONNX + a matching conversion config, returning the
     config's yaml path.
@@ -97,9 +97,11 @@ def write_toy_conv_config(
     preprocessing path.
 
     ``calibration`` selects the 16-sample calibration set: ``"png"`` (random
-    images), ``"raw"`` (``.raw`` files, which SNPE consumes verbatim), or
-    ``"none"`` (no calibration data -- the input falls back to random
-    calibration, e.g. for a ``disable_calibration`` run).
+    images), ``"raw"`` (``.raw`` files, which SNPE consumes verbatim),
+    ``"npy"`` (pre-shaped ``(1, C, H, W)`` tensors, which hailo's calibration
+    reader returns verbatim and then transposes to NHWC), or ``"none"`` (no
+    calibration data -- the input falls back to random calibration, e.g. for a
+    ``disable_calibration`` run).
     """
     onnx_path = workdir / "toy_conv.onnx"
     build_toy_conv_onnx(
@@ -127,6 +129,14 @@ def write_toy_conv_config(
                 # correctly-sized NHWC float32 tensor per file.
                 rng.uniform(0, 255, (size, size, 3)).astype(np.float32).tofile(
                     calib_dir / f"{i}.raw"
+                )
+            elif calibration == "npy":
+                # A `.npy` is loaded verbatim (no image decode), so a pre-shaped
+                # `(1, C, H, W)` tensor is what reaches hailo's NCHW->NHWC
+                # calibration transpose.
+                np.save(
+                    calib_dir / f"{i}.npy",
+                    rng.uniform(0, 255, (1, 3, size, size)).astype(np.float32),
                 )
             else:
                 cv2.imwrite(

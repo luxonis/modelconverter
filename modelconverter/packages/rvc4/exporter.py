@@ -305,7 +305,10 @@ class RVC4Exporter(Exporter):
         if "--input_layout" not in args:
             for name, inp in self.inputs.items():
                 layout = inp.layout
-                if layout is None:
+                # A converting input always has a shape (read from the model),
+                # and the config derives a layout from any shape, so `layout`
+                # is only ever None for a shapeless input that can't convert.
+                if layout is None:  # pragma: no cover
                     continue
                 if layout in ["NCD", "NDC", "D"]:
                     layout = layout.replace("D", "F")

@@ -16,6 +16,7 @@ from onnx import TensorProto, checker, helper
 
 __all__ = [
     "build_hwc_onnx",
+    "build_ncd_onnx",
     "build_onnx",
     "build_toy_aggregator_onnx",
     "build_toy_conv_onnx",
@@ -308,6 +309,33 @@ def build_hwc_onnx(
     )
     node = helper.make_node("Relu", ["data"], ["out"])
     graph = helper.make_graph([node], "HWCModel", [inp], [out])
+    model = helper.make_model(
+        graph,
+        producer_name="DummyModelProducer",
+        opset_imports=[helper.make_opsetid("", 13)],
+    )
+    model.ir_version = 9
+    checker.check_model(model)
+    path = Path(path)
+    onnx.save(model, str(path))
+    return path
+
+
+def build_ncd_onnx(
+    path: str | Path, *, shape: tuple[int, int, int] = (1, 4, 5)
+) -> Path:
+    """A tiny model whose sole input is a rank-3 tensor with a leading batch
+    dim (default ``[1, 4, 5]``).
+
+    ``make_default_layout`` can't match such a shape to a spatial layout, so it
+    falls back to the generic lettercode ``NCD`` -- which is exactly what
+    SNPE's ``NCD``/``NDC``/``D`` -> ``F`` layout rewrite on the RVC4 path
+    expects. A shape-preserving ``Relu`` keeps it a real op.
+    """
+    inp = helper.make_tensor_value_info("data", TensorProto.FLOAT, list(shape))
+    out = helper.make_tensor_value_info("out", TensorProto.FLOAT, list(shape))
+    node = helper.make_node("Relu", ["data"], ["out"])
+    graph = helper.make_graph([node], "NCDModel", [inp], [out])
     model = helper.make_model(
         graph,
         producer_name="DummyModelProducer",
