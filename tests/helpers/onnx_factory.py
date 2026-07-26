@@ -60,7 +60,9 @@ def build_onnx(
     return path
 
 
-def build_toy_integration_onnx(path: str | Path, *, size: int = 64) -> Path:
+def build_toy_integration_onnx(
+    path: str | Path, *, size: int = 64, with_flag: bool = False
+) -> Path:
     """A tiny multi-input network exercising every conversion feature.
 
     Inputs (each meant to be driven with different mean/scale + encoding
@@ -71,13 +73,17 @@ def build_toy_integration_onnx(path: str | Path, *, size: int = 64) -> Path:
       * ``rgb``  -- FLOAT ``[1, 3, size, size]`` colour input that *does*
         need reversal (config ``RGB`` -> ``BGR``);
       * ``gray`` -- FLOAT ``[1, 1, size, size]`` single-channel input;
-      * ``flag`` -- INT64 ``[1]`` scalar control input, meant to be frozen
-        to a constant at conversion time (input-freezing path).
+      * ``flag`` -- INT64 ``[1]`` scalar control input (only when
+        ``with_flag``), meant to be frozen to a constant at conversion time
+        (the input-freezing path). Freezing is an OpenVINO-MO-only feature
+        and the resulting rank-1 input is rejected by e.g. the Hailo parser,
+        so the shared net omits it and a dedicated RVC2-only test opts in.
 
     The graph normalizes nothing itself (that is what the baked
     preprocessing is for) -- it just combines the inputs with basic math:
-    ``(bgr + rgb + gray) * flag``, plus a channel-wise average, giving two
-    outputs of different rank to exercise multi-output handling:
+    ``(bgr + rgb + gray)`` (``* flag`` when present), plus a channel-wise
+    average, giving two outputs of different rank to exercise multi-output
+    handling:
 
       * ``output`` -- FLOAT ``[1, 3, size, size]``;
       * ``pooled`` -- FLOAT ``[1, 3, 1, 1]``.
@@ -91,7 +97,6 @@ def build_toy_integration_onnx(path: str | Path, *, size: int = 64) -> Path:
     gray = helper.make_tensor_value_info(
         "gray", TensorProto.FLOAT, [1, 1, size, size]
     )
-    flag = helper.make_tensor_value_info("flag", TensorProto.INT64, [1])
     output = helper.make_tensor_value_info(
         "output", TensorProto.FLOAT, [1, 3, size, size]
     )
@@ -99,34 +104,47 @@ def build_toy_integration_onnx(path: str | Path, *, size: int = 64) -> Path:
         "pooled", TensorProto.FLOAT, [1, 3, 1, 1]
     )
 
-    reshape_shape = helper.make_tensor(
-        name="flag_shape",
-        data_type=TensorProto.INT64,
-        dims=[4],
-        vals=[1, 1, 1, 1],
-    )
+    inputs = [bgr, rgb, gray]
+    initializers = []
+    # (bgr + rgb + gray) -- gray broadcasts over the 3 channels
+    nodes = [helper.make_node("Add", ["bgr", "rgb"], ["sum_rb"])]
 
-    nodes = [
-        # flag (INT [1]) -> float scalar broadcastable over NCHW
-        helper.make_node("Cast", ["flag"], ["flag_f"], to=TensorProto.FLOAT),
-        helper.make_node("Reshape", ["flag_f", "flag_shape"], ["flag_4d"]),
-        # (bgr + rgb + gray) -- gray broadcasts over the 3 channels
-        helper.make_node("Add", ["bgr", "rgb"], ["sum_rb"]),
-        helper.make_node("Add", ["sum_rb", "gray"], ["sum_all"]),
-        # * flag  -> primary output
-        helper.make_node("Mul", ["sum_all", "flag_4d"], ["output"]),
-        # channel-wise spatial average -> second output of different rank
+    if with_flag:
+        flag = helper.make_tensor_value_info("flag", TensorProto.INT64, [1])
+        inputs.append(flag)
+        initializers.append(
+            helper.make_tensor(
+                name="flag_shape",
+                data_type=TensorProto.INT64,
+                dims=[4],
+                vals=[1, 1, 1, 1],
+            )
+        )
+        nodes += [
+            helper.make_node("Add", ["sum_rb", "gray"], ["sum_all"]),
+            # flag (INT [1]) -> float scalar broadcastable over NCHW, * sum
+            helper.make_node(
+                "Cast", ["flag"], ["flag_f"], to=TensorProto.FLOAT
+            ),
+            helper.make_node("Reshape", ["flag_f", "flag_shape"], ["flag_4d"]),
+            helper.make_node("Mul", ["sum_all", "flag_4d"], ["output"]),
+        ]
+    else:
+        nodes.append(helper.make_node("Add", ["sum_rb", "gray"], ["output"]))
+
+    # channel-wise spatial average -> second output of different rank
+    nodes.append(
         helper.make_node(
             "ReduceMean", ["output"], ["pooled"], axes=[2, 3], keepdims=1
-        ),
-    ]
+        )
+    )
 
     graph = helper.make_graph(
         nodes,
         "ToyIntegrationModel",
-        [bgr, rgb, gray, flag],
+        inputs,
         [output, pooled],
-        initializer=[reshape_shape],
+        initializer=initializers,
     )
     # opset 13: ReduceMean takes `axes` as an attribute (not an input).
     model = helper.make_model(
