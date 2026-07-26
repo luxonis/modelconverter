@@ -149,26 +149,9 @@ markers = [
 ]
 
 [tool.coverage.run]
-branch = true
-source = ["modelconverter"]
-# Relative paths so the host (Tier-1) and in-container (Tier-2, rooted at
-# /app) coverage reports use matching filenames for Codecov to merge.
+source = ["modelconverter", "tests"]
 relative_files = true
-
-[tool.coverage.report]
-show_missing = true
-exclude_also = [
-  "if TYPE_CHECKING:",
-  "raise NotImplementedError",
-  "@(abc\\.)?abstractmethod",
-  "@overload",
-  "if __name__ == .__main__.:",
-  "(sys\\.)?exit\\(",
-  "pytest\\.skip",
-]
 omit = [
-  # The CLI entrypoint mixes the conversion command with out-of-scope
-  # commands (infer/benchmark/analyze/…); conversion tests still run `convert`.
   "**/__main__.py",
   "modelconverter/utils/onnx_tools.py",
   "modelconverter/utils/onnx_compatibility.py",
@@ -189,5 +172,21 @@ omit = [
   "modelconverter/utils/subprocess.py",
 ]
 
-[tool.coverage.xml]
-output = "coverage.xml"
+[tool.coverage.report]
+exclude_also = [
+  "def __repr__",
+  "def __rich_repr__",
+  "def __str__",
+  "assert",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "except ImportError",
+  "@abstractmethod",
+  "@overload",
+  "(sys\\.)?exit\\(",
+  "exit\\(",
+  "cv2\\.imshow",
+  "cv2\\.waitKey",
+  "logger\\.",
+  "pytest\\.skip",
+]
