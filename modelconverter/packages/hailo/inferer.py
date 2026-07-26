@@ -25,7 +25,11 @@ class HailoInferer(Inferer):
         if orig_meta is None:  # pragma: no cover
             raise RuntimeError("Could not get original model metadata.")
 
-        self.output_names = list(orig_meta["inverse_postprocess_io_map"])
+        # A HAR translated from ONNX carries this postprocess map; one
+        # translated from TFLite does not, so fall back to the output layers.
+        self.output_names = list(
+            orig_meta.get("inverse_postprocess_io_map", [])
+        )
         if len(self.output_names) > 1:
             raise NotImplementedError(
                 "Multiple outputs are not supported at the moment."
