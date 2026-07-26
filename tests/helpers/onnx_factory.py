@@ -15,6 +15,7 @@ from onnx import TensorProto, checker, helper
 
 __all__ = [
     "build_onnx",
+    "build_toy_integration_onnx",
     "dynamic_batch_onnx",
     "grayscale_onnx",
     "intermediate_info_onnx",
@@ -53,6 +54,89 @@ def build_onnx(
 
     graph = helper.make_graph(nodes, "DummyModel", graph_inputs, graph_outputs)
     model = helper.make_model(graph, producer_name=producer)
+    checker.check_model(model)
+    path = Path(path)
+    onnx.save(model, str(path))
+    return path
+
+
+def build_toy_integration_onnx(path: str | Path, *, size: int = 64) -> Path:
+    """A tiny multi-input network exercising every conversion feature.
+
+    Inputs (each meant to be driven with different mean/scale + encoding
+    in the config so the conversion exercises the full preprocessing):
+
+      * ``bgr``  -- FLOAT ``[1, 3, size, size]`` colour input, no channel
+        reversal (config ``BGR`` -> ``BGR``);
+      * ``rgb``  -- FLOAT ``[1, 3, size, size]`` colour input that *does*
+        need reversal (config ``RGB`` -> ``BGR``);
+      * ``gray`` -- FLOAT ``[1, 1, size, size]`` single-channel input;
+      * ``flag`` -- INT64 ``[1]`` scalar control input, meant to be frozen
+        to a constant at conversion time (input-freezing path).
+
+    The graph normalizes nothing itself (that is what the baked
+    preprocessing is for) -- it just combines the inputs with basic math:
+    ``(bgr + rgb + gray) * flag``, plus a channel-wise average, giving two
+    outputs of different rank to exercise multi-output handling:
+
+      * ``output`` -- FLOAT ``[1, 3, size, size]``;
+      * ``pooled`` -- FLOAT ``[1, 3, 1, 1]``.
+    """
+    bgr = helper.make_tensor_value_info(
+        "bgr", TensorProto.FLOAT, [1, 3, size, size]
+    )
+    rgb = helper.make_tensor_value_info(
+        "rgb", TensorProto.FLOAT, [1, 3, size, size]
+    )
+    gray = helper.make_tensor_value_info(
+        "gray", TensorProto.FLOAT, [1, 1, size, size]
+    )
+    flag = helper.make_tensor_value_info("flag", TensorProto.INT64, [1])
+    output = helper.make_tensor_value_info(
+        "output", TensorProto.FLOAT, [1, 3, size, size]
+    )
+    pooled = helper.make_tensor_value_info(
+        "pooled", TensorProto.FLOAT, [1, 3, 1, 1]
+    )
+
+    reshape_shape = helper.make_tensor(
+        name="flag_shape",
+        data_type=TensorProto.INT64,
+        dims=[4],
+        vals=[1, 1, 1, 1],
+    )
+
+    nodes = [
+        # flag (INT [1]) -> float scalar broadcastable over NCHW
+        helper.make_node("Cast", ["flag"], ["flag_f"], to=TensorProto.FLOAT),
+        helper.make_node("Reshape", ["flag_f", "flag_shape"], ["flag_4d"]),
+        # (bgr + rgb + gray) -- gray broadcasts over the 3 channels
+        helper.make_node("Add", ["bgr", "rgb"], ["sum_rb"]),
+        helper.make_node("Add", ["sum_rb", "gray"], ["sum_all"]),
+        # * flag  -> primary output
+        helper.make_node("Mul", ["sum_all", "flag_4d"], ["output"]),
+        # channel-wise spatial average -> second output of different rank
+        helper.make_node(
+            "ReduceMean", ["output"], ["pooled"], axes=[2, 3], keepdims=1
+        ),
+    ]
+
+    graph = helper.make_graph(
+        nodes,
+        "ToyIntegrationModel",
+        [bgr, rgb, gray, flag],
+        [output, pooled],
+        initializer=[reshape_shape],
+    )
+    # opset 13: ReduceMean takes `axes` as an attribute (not an input).
+    model = helper.make_model(
+        graph,
+        producer_name="DummyModelProducer",
+        opset_imports=[helper.make_opsetid("", 13)],
+    )
+    # Pin a broadly-supported IR version (the onnx lib may default to one
+    # newer than the runtime/vendor tools accept).
+    model.ir_version = 9
     checker.check_model(model)
     path = Path(path)
     onnx.save(model, str(path))
