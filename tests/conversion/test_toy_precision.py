@@ -84,9 +84,7 @@ def _to_nchw(arr: np.ndarray, platform: str) -> np.ndarray:
     others already return NCHW. The golden reference is NCHW.
     """
     arr = np.asarray(arr)
-    if platform != "hailo":
-        return arr
-    if arr.ndim == 3:  # HWC
+    if arr.ndim == 3 and platform == "hailo":
         return arr.transpose(2, 0, 1)[np.newaxis]
     return arr
 
