@@ -10,12 +10,14 @@ shape -- this is what makes arbitrary tiny graphs usable as stand-ins.
 
 from pathlib import Path
 
+import numpy as np
 import onnx
 from onnx import TensorProto, checker, helper
 
 __all__ = [
     "build_onnx",
     "build_toy_aggregator_onnx",
+    "build_toy_conv_onnx",
     "build_toy_integration_onnx",
     "dynamic_batch_onnx",
     "grayscale_onnx",
@@ -195,6 +197,60 @@ def build_toy_aggregator_onnx(path: str | Path, *, size: int = 64) -> Path:
         [from_first, from_second],
         [out],
         initializer=[bias],
+    )
+    model = helper.make_model(
+        graph,
+        producer_name="DummyModelProducer",
+        opset_imports=[helper.make_opsetid("", 13)],
+    )
+    model.ir_version = 9
+    checker.check_model(model)
+    path = Path(path)
+    onnx.save(model, str(path))
+    return path
+
+
+def build_toy_conv_onnx(
+    path: str | Path, *, size: int = 32, out_channels: int = 4
+) -> Path:
+    """A tiny single-input conv net for numeric-fidelity (precision) tests.
+
+    Unlike ``build_toy_integration_onnx`` (whose output is essentially the
+    preprocessed input, and whose per-input scale spread makes it impossible
+    for the Hailo quantizer to fit), this has a real ``Conv`` with modest,
+    well-conditioned weights -- so every backend, Hailo included, can quantize
+    it and reproduce the fp32 reference near-losslessly.
+
+    A single ``[1, 3, size, size]`` colour input, deterministic 3x3 ``Conv``
+    (``same`` padding) -> ``[1, out_channels, size, size]`` output. The input
+    still carries mean/scale (+ optional channel reversal) in the config, so
+    the converted model exercises the full baked-preprocessing path.
+    """
+    inp = helper.make_tensor_value_info(
+        "img", TensorProto.FLOAT, [1, 3, size, size]
+    )
+    out = helper.make_tensor_value_info(
+        "out", TensorProto.FLOAT, [1, out_channels, size, size]
+    )
+    # Deterministic small weights: quantizes cleanly, no host randomness.
+    rng = np.random.default_rng(0)
+    weight = helper.make_tensor(
+        "weight",
+        TensorProto.FLOAT,
+        [out_channels, 3, 3, 3],
+        (rng.standard_normal((out_channels, 3, 3, 3)) * 0.1)
+        .astype(np.float32)
+        .ravel(),
+    )
+    node = helper.make_node(
+        "Conv",
+        ["img", "weight"],
+        ["out"],
+        kernel_shape=[3, 3],
+        pads=[1, 1, 1, 1],
+    )
+    graph = helper.make_graph(
+        [node], "ToyConvModel", [inp], [out], initializer=[weight]
     )
     model = helper.make_model(
         graph,

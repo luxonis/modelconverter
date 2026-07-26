@@ -64,7 +64,7 @@ class PrecisionCase:
     platforms: tuple[str, ...] = DEFAULT_PLATFORMS
     """Platforms this case runs on."""
     thresholds: dict[str, float] = field(default_factory=dict)
-    """Per-platform cosine floor overrides (falls back to DEFAULT_THRESHOLDS)."""
+    """Per-platform cosine floor overrides (falls back to DEFAULT_THRESHOLD)."""
     image: Path = TEST_IMAGE
     """Inference input image."""
     main_stage: str | None = None
@@ -129,10 +129,11 @@ def test_precision(platform: str, case: PrecisionCase):
     assert len(reference) == len(converted), (
         f"output count mismatch: {list(reference)} vs {list(converted)}"
     )
+    threshold = case.thresholds.get(platform, DEFAULT_THRESHOLD)
     for (ref_name, ref), conv in zip(
         reference.items(), converted.values(), strict=True
     ):
         cos = cosine_similarity(ref, conv)
-        assert cos >= DEFAULT_THRESHOLD, (
-            f"{platform} {case.id} output {ref_name!r}: cosine {cos:.4f} < {DEFAULT_THRESHOLD}"
+        assert cos >= threshold, (
+            f"{platform} {case.id} output {ref_name!r}: cosine {cos:.4f} < {threshold}"
         )
