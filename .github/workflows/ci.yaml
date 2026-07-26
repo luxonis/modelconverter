@@ -3,7 +3,47 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      ml_ref:
+        description: "luxonis-ml version (branch/tag/SHA)"
+        required: false
+        type: string
+        default: main
+      modelconv_ref:
+        description: "modelconverter version (branch/tag/SHA)"
+        required: false
+        type: string
+        default: main
+  workflow_call:
+    inputs:
+      ml_ref:
+        description: "luxonis-ml version (branch/tag/SHA)"
+        required: false
+        type: string
+        default: main
+      modelconv_ref:
+        description: "modelconverter version (branch/tag/SHA)"
+        required: false
+        type: string
+        default: main
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      AWS_S3_ENDPOINT_URL:
+        required: true
+      CODECOV_TOKEN:
+        description: "Codecov upload token"
+        required: false
+      GCP_CREDENTIALS:
+        description: "Google service-account JSON"
+        required: true
+      HUBAI_API_KEY:
+        required: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,6 +64,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
           persist-credentials: false
 
       - name: Set up Python
@@ -35,7 +77,23 @@ jobs:
       - name: Install package
         run: pip install -e .[dev]
 
+      - name: Install specified LuxonisML
+        if: ${{ inputs.ml_ref != '' }}
+        env:
+          ML_REF: ${{ inputs.ml_ref }}
+        run: |
+          pip uninstall luxonis-ml -y
+          pip install \
+            "luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
+            --upgrade --force-reinstall
+
       - name: Run unit tests
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_S3_ENDPOINT_URL: ${{ secrets.AWS_S3_ENDPOINT_URL }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+          HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
         run: |
           python -m pytest tests/unit -n auto \
             --cov --cov-report term-missing \
@@ -53,7 +111,7 @@ jobs:
           disable_search: true
           handle_no_reports_found: true
 
-      # Kept so update-cov-report.yaml can refresh the main-branch base report.
+      # Keep the report available for CI diagnostics.
       - name: Upload coverage artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -88,6 +146,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
           persist-credentials: false
 
       - name: Set up Docker
@@ -129,10 +189,26 @@ jobs:
           fi
 
       - name: Run integration tests
+        env:
+          ML_REF: ${{ inputs.ml_ref }}
         run: |
+          if [[ -n "${ML_REF}" ]]; then
+            if [[ ! "${ML_REF}" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+              echo "Invalid luxonis-ml ref: ${ML_REF}" >&2
+              exit 1
+            fi
+            ML_INSTALL_COMMAND="pip uninstall luxonis-ml -y && \
+              pip install \
+              \"luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}\" \
+              --upgrade --force-reinstall &&"
+          else
+            ML_INSTALL_COMMAND=""
+          fi
+
           modelconverter shell "${PACKAGE}" --dev --no-gpu \
             --tool-version "${VERSION}" \
-            -c "python -m pytest tests/conversion -m ${PACKAGE} -x \
+            -c "${ML_INSTALL_COMMAND} \
+              python -m pytest tests/conversion -m ${PACKAGE} -x \
                 --cov --cov-report term-missing \
                 --cov-report xml:shared_with_container/coverage-${PACKAGE}-${VERSION}.xml"
 
@@ -148,7 +224,7 @@ jobs:
           disable_search: true
           handle_no_reports_found: true
 
-      # Kept so update-cov-report.yaml can refresh the main-branch base report.
+      # Keep the report available for CI diagnostics.
       - name: Upload coverage artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
