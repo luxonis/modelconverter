@@ -64,16 +64,24 @@ class ONNXReferenceInferer:
         # what the baked reverse-channel step produces inside the converted
         # model. read_image yields CHW float in [0, 255] (no normalization).
         assert inp.shape is not None, f"input {inp.name!r} has no shape"
+        channels_last = bool(inp.layout) and inp.layout[-1] == "C"
         arr = read_image(
             image_path,
             inp.shape,
             inp.encoding.from_,
             self._resize_method(inp),
             data_type=DataType.FLOAT32,
-            transpose=True,
+            transpose=not channels_last,
+            layout=inp.layout,
         ).astype(np.float32)
 
-        channel_axis = 0 if inp.encoding.from_ != Encoding.NONE else None
+        channel_axis = (
+            -1
+            if channels_last
+            else 0
+            if inp.encoding.from_ != Encoding.NONE
+            else None
+        )
         if inp.mean_values is not None and any(inp.mean_values):
             mean = np.asarray(inp.mean_values, dtype=np.float32)
             arr = (

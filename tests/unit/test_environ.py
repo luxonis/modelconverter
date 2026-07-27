@@ -7,6 +7,7 @@ settings model whose ``after`` validator falls back to keyring for
 backend is monkeypatched so no OS credential store is touched.
 """
 
+import multiprocessing
 import sys
 import time
 
@@ -24,6 +25,10 @@ from modelconverter.utils.environ import (
 env_mod = sys.modules["modelconverter.utils.environ"]
 
 
+@pytest.mark.skipif(
+    multiprocessing.get_start_method(allow_none=True) != "fork",
+    reason="keyring subprocess test only works on fork() platforms",
+)
 def test_returns_password(monkeypatch: pytest.MonkeyPatch):
     """A fast keyring hit is forwarded back through the queue."""
     monkeypatch.setattr(

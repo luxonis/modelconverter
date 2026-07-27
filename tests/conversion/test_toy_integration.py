@@ -245,9 +245,8 @@ def _assert_correct(
     )
     converted = inferer.infer(dict.fromkeys(input_configs, image))
 
-    for (ref_name, ref), conv in zip(
-        reference.items(), converted.values(), strict=True
-    ):
+    for ref_name, ref in reference.items():
+        conv = converted[ref_name]
         cos = cosine_similarity(ref, conv)
         assert cos >= floor, (
             f"{target.value} {precision.name} output {ref_name!r}: "

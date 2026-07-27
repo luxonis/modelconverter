@@ -243,17 +243,12 @@ class HailoExporter(Exporter):
                 values_len = inp.shape[1]
 
             assert values_len is not None
-            # Normalization is only defined for 3-channel colour inputs (the
-            # ONNX/OpenVINO paths skip non-3-channel inputs too); building it
-            # for e.g. a 1-channel grayscale input makes the Hailo optimizer
-            # fail with a shape mismatch.
-            if values_len == 3:
-                scale_values = inp.scale_values or [1.0] * values_len
-                mean_values = inp.mean_values or [0.0] * values_len
-                alls.append(
-                    f"normalization_{safe_name} = normalization("
-                    f"{mean_values},{scale_values},{hn_name})"
-                )
+            scale_values = inp.scale_values or [1.0] * values_len
+            mean_values = inp.mean_values or [0.0] * values_len
+            alls.append(
+                f"normalization_{safe_name} = normalization("
+                f"{mean_values},{scale_values},{hn_name})"
+            )
 
             if inp.encoding_mismatch:
                 alls.append(

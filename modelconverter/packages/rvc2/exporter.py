@@ -115,7 +115,7 @@ class RVC2Exporter(Exporter):
                 # Only colour inputs get their channels reversed in the ONNX;
                 # marking non-colour inputs (e.g. grayscale) as BGR is wrong and
                 # later makes their inferer read a 1-channel input as 3-channel.
-                if inp.is_color_input:
+                if inp.is_color_input and inp.encoding_mismatch:
                     inp.encoding.from_ = Encoding.BGR
                     inp.encoding.to = Encoding.BGR
 
