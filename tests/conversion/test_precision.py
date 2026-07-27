@@ -121,13 +121,13 @@ def test_precision(platform: str, case: PrecisionCase):
     )
     converted = inferer.infer({stage.inputs[0].name: case.image})
 
-    assert len(reference) == len(converted), (
-        f"output count mismatch: {list(reference)} vs {list(converted)}"
+    assert set(reference) == set(converted), (
+        f"output names mismatch: {list(reference)} vs {list(converted)}"
     )
     threshold = case.thresholds.get(platform, DEFAULT_THRESHOLD)
-    for (ref_name, ref), conv in zip(
-        reference.items(), converted.values(), strict=True
-    ):
+    for ref_name, ref in reference.items():
+        conv = converted[ref_name]
+        cos = cosine_similarity(ref, conv)
         cos = cosine_similarity(ref, conv)
         assert cos >= threshold, (
             f"{platform} {case.id} output {ref_name!r}: cosine {cos:.4f} < {threshold}"
