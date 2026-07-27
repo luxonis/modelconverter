@@ -32,7 +32,7 @@ from modelconverter.utils.types import DataType, Encoding, ResizeMethod
 class ONNXReferenceInferer:
     """Runs the original ONNX model with the config's preprocessing applied.
 
-    Build with :meth:`from_stage`, then call :meth:`infer` with an image
+    Build with `from_stage`, then call `infer` with an image
     path to get ``{output_name: np.ndarray}`` -- the reference outputs the
     converted model should reproduce.
     """

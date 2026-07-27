@@ -20,8 +20,7 @@ RUN <<EOF
         libcurl4t64     \
         libncurses5     \
         libtinfo5       \
-        llvm-14-runtime \
-        git
+        llvm-14-runtime
 
 EOF
 
@@ -110,8 +109,13 @@ COPY --link docker/rvc4/entrypoint.sh /app/entrypoint.sh
 
 ARG DEV=false
 COPY --link requirements-dev.txt /app/requirements-dev.txt
+COPY --link requirements-eval.txt /app/requirements-eval.txt
 RUN if [ "$DEV" = "true" ]; then \
-        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli; \
+        apt-get update && \
+        apt-get install -y --no-install-recommends git && \
+        rm -rf /var/lib/apt/lists/* && \
+        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli && \
+        pip install --no-cache-dir --no-deps -r /app/requirements-eval.txt; \
     fi
 
 COPY --link modelconverter /app/modelconverter/

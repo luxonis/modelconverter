@@ -10,8 +10,9 @@ fallbacks that path misses:
   * a rank-3 tensor whose layout carries no ``C`` (e.g. a ``TNF`` feature
     map) -- the channels-first heuristic (``shape[0] in {1, 3}``) decides the
     transpose instead;
-  * a tensor that isn't image-like at all (a rank-1 vector, or a batched
-    ``N > 1`` tensor) -- written as a raw ``.npy`` rather than a ``.png``.
+  * a tensor that isn't image-like at all (a rank-1 vector, a batched
+    ``N > 1`` tensor, or an explicitly raw tensor) -- written as a raw
+    ``.npy`` rather than a ``.png``.
 
 Driving the method directly keeps this deterministic and host-side; the
 random pixel values never affect which branch runs.
@@ -28,12 +29,14 @@ from modelconverter.utils.config import InputConfig, RandomCalibrationConfig
 
 
 def _prepare(
-    tmp_path: Path, shape: list[int], layout: str | None
+    tmp_path: Path, shape: list[int], layout: str | None, *, raw: bool = False
 ) -> list[str]:
     """Run the calibration prep for one input, returning the written suffixes."""
     data: dict = {"name": "x", "shape": shape}
     if layout is not None:
         data["layout"] = layout
+    if raw:
+        data["encoding"] = {"from": "NONE", "to": "NONE"}
     inp = InputConfig.model_validate(data)
     inp.calibration = RandomCalibrationConfig(max_images=2)
 
@@ -47,22 +50,28 @@ def _prepare(
 
 
 @pytest.mark.parametrize(
-    ("shape", "layout", "suffix"),
+    ("shape", "layout", "raw", "suffix"),
     [
         # 4D NCHW image: channel axis is known from the layout (the path the
         # conversion tests already cover) -> written as a `.png`.
-        ([1, 3, 8, 8], None, ".png"),
+        ([1, 3, 8, 8], None, False, ".png"),
         # Rank-3 tensor with a C-less layout: the channels-first heuristic
         # (`shape[0] in {1, 3}`) transposes to HWC before the `.png` write.
-        ([3, 4, 5], "TNF", ".png"),
+        ([3, 4, 5], "TNF", False, ".png"),
         # Rank-1 feature vector: not image-like -> raw `.npy`.
-        ([8], None, ".npy"),
+        ([8], None, False, ".npy"),
         # Batched (N > 1) tensor: not image-like -> raw `.npy`.
-        ([2, 3, 8, 8], None, ".npy"),
+        ([2, 3, 8, 8], None, False, ".npy"),
+        # Raw tensors use NumPy even when their rank resembles an image.
+        ([1, 32], "NC", True, ".npy"),
     ],
 )
 def test_random_calibration_output_format(
-    tmp_path: Path, shape: list[int], layout: str | None, suffix: str
+    tmp_path: Path,
+    shape: list[int],
+    layout: str | None,
+    raw: bool,
+    suffix: str,
 ):
     np.random.seed(0)
-    assert _prepare(tmp_path, shape, layout) == [suffix, suffix]
+    assert _prepare(tmp_path, shape, layout, raw=raw) == [suffix, suffix]

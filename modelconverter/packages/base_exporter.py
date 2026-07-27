@@ -249,8 +249,9 @@ class Exporter(ABC):
                 arr = np.clip(arr, calib.min_value, calib.max_value)
 
                 arr = arr.astype(calib.data_type.as_numpy_dtype())
-                if len(arr.shape) in {2, 3} or (
-                    len(arr.shape) in {3, 4} and arr.shape[0] == 1
+                if not inp.is_raw_input and (
+                    len(arr.shape) in {2, 3}
+                    or (len(arr.shape) in {3, 4} and arr.shape[0] == 1)
                 ):
                     layout = inp.layout
                     if arr.shape[0] == 1 and len(arr.shape) > 2:

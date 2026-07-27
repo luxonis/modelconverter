@@ -1,7 +1,7 @@
 """Host-side unit tests for ``modelconverter.utils.environ``.
 
-The module exposes :func:`get_password_with_timeout` (a keyring lookup
-guarded by a subprocess timeout) and the :class:`Environ` pydantic-
+The module exposes `get_password_with_timeout` (a keyring lookup
+guarded by a subprocess timeout) and the `Environ` pydantic-
 settings model whose ``after`` validator falls back to keyring for
 ``HUBAI_API_KEY``. Both are fully reachable host-side; the real keyring
 backend is monkeypatched so no OS credential store is touched.
