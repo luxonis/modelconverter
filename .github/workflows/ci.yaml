@@ -126,6 +126,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - { package: rvc2, version: "2021.4.0", os: ubuntu-latest }
           - { package: rvc2, version: "2022.3.0", os: ubuntu-latest }
           - { package: rvc3, version: "2022.3.0", os: ubuntu-latest }
           - { package: rvc4, version: "2.32.6", os: ubuntu-latest }
