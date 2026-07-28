@@ -86,10 +86,7 @@ def process_nn_archive(
         "outputs": [],
     }
 
-    if (
-        target is Target.RVC4
-        and (p := untar_path / "encondings.json").exists()
-    ):
+    if target is Target.RVC4 and (p := untar_path / "encodings.json").exists():
         logger.info("Using custom `encodings.json` from the NN Archive.")
         main_stage_config["rvc4"] = {
             "encodings": json.loads(p.read_text()),

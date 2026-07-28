@@ -129,7 +129,6 @@ def test_plain_tar(work_dir: Path):
     assert isinstance(config, Config)
     assert isinstance(archive_cfg, NNArchiveConfig)
     assert main_stage in config.stages
-    # Extracted next to MISC_DIR / <stem> (no ".tar" suffix kept).
     assert (MISC_DIR / "dummy_model" / "config.json").exists()
 
 
@@ -141,11 +140,8 @@ def test_tar_xz(work_dir: Path):
         default_archive_config(),
         mode="w:xz",
     )
-    _config, archive_cfg, _main_stage = process_nn_archive(
-        Target.RVC4, tar, None
-    )
+    _, archive_cfg, _ = process_nn_archive(Target.RVC4, tar, None)
     assert archive_cfg is not None
-    # ".tar.xz" -> stem "dummy_model.tar" -> stripped to "dummy_model".
     assert (MISC_DIR / "dummy_model" / "config.json").exists()
 
 
@@ -154,9 +150,7 @@ def test_directory_input(work_dir: Path):
     model_dir.mkdir()
     standard_dummy_onnx(model_dir / "dummy_model.onnx")
     write_json(default_archive_config(), model_dir / "config.json")
-    _config, archive_cfg, _main_stage = process_nn_archive(
-        Target.RVC4, model_dir, None
-    )
+    _, archive_cfg, _ = process_nn_archive(Target.RVC4, model_dir, None)
     assert archive_cfg is not None
 
 
@@ -172,9 +166,7 @@ def test_unsafe_members_are_skipped(work_dir: Path):
         default_archive_config(),
         extra_files={"../evil.txt": evil, "/abs.txt": absolute},
     )
-    _config, archive_cfg, _main_stage = process_nn_archive(
-        Target.RVC4, tar, None
-    )
+    _, archive_cfg, _ = process_nn_archive(Target.RVC4, tar, None)
     assert archive_cfg is not None
     untar = MISC_DIR / "dummy_model"
     # Traversal members are dropped, safe ones extracted.
@@ -207,35 +199,27 @@ ENCODINGS = {
 
 def test_custom_encodings_used_for_rvc4(work_dir: Path):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
-    enc = write_json(ENCODINGS, work_dir / "encondings.json")
-    # NOTE: the source misspells the member as "encondings.json"; we must
-    # match that exact name to hit the branch.
+    enc = write_json(ENCODINGS, work_dir / "encodings.json")
     tar = pack_archive(
         work_dir / "dummy_model.tar",
         onnx,
         default_archive_config(),
-        extra_files={"encondings.json": enc},
+        extra_files={"encodings.json": enc},
     )
-    config, _archive_cfg, main_stage = process_nn_archive(
-        Target.RVC4, tar, None
-    )
+    config, _, main_stage = process_nn_archive(Target.RVC4, tar, None)
     assert config.stages[main_stage].rvc4.encodings is not None
 
 
 def test_encodings_ignored_for_non_rvc4(work_dir: Path):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
-    enc = write_json(ENCODINGS, work_dir / "encondings.json")
+    enc = write_json(ENCODINGS, work_dir / "encodings.json")
     tar = pack_archive(
         work_dir / "dummy_model.tar",
         onnx,
         default_archive_config(),
-        extra_files={"encondings.json": enc},
+        extra_files={"encodings.json": enc},
     )
-    config, _archive_cfg, main_stage = process_nn_archive(
-        Target.RVC2, tar, None
-    )
-    # The packed encodings file is only consumed on the RVC4 path; for RVC2
-    # it is ignored and the archive still parses into a usable stage.
+    config, _, main_stage = process_nn_archive(Target.RVC2, tar, None)
     assert main_stage in config.stages
 
 
@@ -374,7 +358,7 @@ def test_raw_input_keeps_none_encoding(work_dir: Path):
         },
         input_type="raw",
     )
-    config, archive_cfg, _main = process_nn_archive(Target.RVC4, tar, None)
+    config, archive_cfg, _ = process_nn_archive(Target.RVC4, tar, None)
     assert archive_cfg.model.inputs[0].input_type == InputType.RAW
     inp = _stage_input(config)
     # Non-image input -> no mean/scale defaults filled.
@@ -405,9 +389,7 @@ def test_postprocessor_path_adds_stage(work_dir: Path):
         config_dict,
         extra_files={"post.onnx": post},
     )
-    config, _archive_cfg, main_stage = process_nn_archive(
-        Target.RVC4, tar, None
-    )
+    config, _, main_stage = process_nn_archive(Target.RVC4, tar, None)
     # Two stages: the main model plus the postprocessor.
     assert len(config.stages) == 2
     assert main_stage in config.stages
@@ -852,7 +834,7 @@ def test_find_archive_input_found_and_missing(dummy_onnx: Path):
     assert find_archive_input(archive, "nope") is None
 
 
-def _prepare_output(dummy_onnx: Path, name: str) -> Path:
+def _prepare_output(name: str) -> Path:
     out_dir = OUTPUTS_DIR / name
     out_dir.mkdir(parents=True, exist_ok=True)
     write_json({}, out_dir / "buildinfo.json")
@@ -860,7 +842,7 @@ def _prepare_output(dummy_onnx: Path, name: str) -> Path:
 
 
 def test_single_model_roundtrip(dummy_onnx: Path):
-    out_dir = _prepare_output(dummy_onnx, "single")
+    out_dir = _prepare_output("single")
     out_model = out_dir / "output.onnx"
     shutil.copy(dummy_onnx, out_model)
     config = _config_from_overrides(dummy_onnx)
@@ -879,15 +861,13 @@ def test_single_model_roundtrip(dummy_onnx: Path):
     assert archive.exists()
     assert archive.name.endswith(".rvc4.tar.xz")
     # Re-parsing the produced archive must succeed.
-    reparsed, archive_cfg, _main = process_nn_archive(
-        Target.RVC4, archive, None
-    )
+    reparsed, archive_cfg, _ = process_nn_archive(Target.RVC4, archive, None)
     assert archive_cfg is not None
     assert isinstance(reparsed, Config)
 
 
 def test_multiple_models_use_stage_name(dummy_onnx: Path):
-    out_dir = _prepare_output(dummy_onnx, "multi")
+    out_dir = _prepare_output("multi")
     out_a = out_dir / "a.onnx"
     out_b = out_dir / "b.onnx"
     shutil.copy(dummy_onnx, out_a)

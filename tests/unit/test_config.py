@@ -205,9 +205,7 @@ def test_onnx_path_resolved_absolute():
     assert stage.input_bin is None
 
 
-def test_ir_path_extracts_bin_and_xml(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
+def test_ir_path_extracts_bin_and_xml(monkeypatch: pytest.MonkeyPatch):
     """The IR branch splits the ``.xml``/``.bin`` pair; ``get_metadata``
     is stubbed so no OpenVINO runtime is needed."""
     xml = (_models_dir() / "model.xml").resolve()
