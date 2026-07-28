@@ -175,13 +175,10 @@ def _lazy_eval_components(
 
 def _image_shape(stage: SingleStageConfig) -> tuple[int, int]:
     """Return the configured NCHW input height and width."""
-    if len(stage.inputs) != 1:
-        raise ValueError(
-            "real-model evaluation supports exactly one image input"
-        )
+    assert len(stage.inputs) == 1
     input_cfg = stage.inputs[0]
-    if input_cfg.shape is None or input_cfg.layout != "NCHW":
-        raise ValueError("real-model evaluation requires a shaped NCHW input")
+    assert input_cfg.shape is not None
+    assert input_cfg.layout == "NCHW"
     return input_cfg.shape[2], input_cfg.shape[3]
 
 
@@ -234,10 +231,7 @@ def _calibration_images() -> list[Path]:
     paths = sorted(
         image_directory.glob("*.png"), key=lambda path: int(path.stem)
     )
-    if not paths:
-        raise FileNotFoundError(
-            f"LDF calibration did not materialize any images in {image_directory}"
-        )
+    assert paths
     return paths
 
 
@@ -292,11 +286,8 @@ def test_real_model_task_metrics(
     cfg, _, _ = get_configs(target, str(source_archive), [])
     stage_name, stage = next(iter(cfg.stages.items()))
     height, width = _image_shape(stage)
-    if (height, width) != (288, 512):
-        raise ValueError(
-            f"{case.id} input shape {(height, width)} does not match the "
-            "shared fixture loader shape (288, 512)"
-        )
+    assert (height, width) == (288, 512)
+
     loader = fixture_dataset
 
     output_name = sanitize_net_name(f"eval_{platform}_{case.id}")
@@ -316,13 +307,12 @@ def test_real_model_task_metrics(
             config.name: index
             for index, config in enumerate(post_stage.inputs)
         }
-        try:
-            prototypes_index = post_input_indices["prototypes"]
-            coeffs_index = post_input_indices["coeffs"]
-        except KeyError as exc:
-            raise ValueError(
-                f"{case.id} postprocessor is missing input {exc.args[0]!r}"
-            ) from exc
+        assert "prototypes" in post_input_indices
+        assert "coeffs" in post_input_indices
+
+        prototypes_index = post_input_indices["prototypes"]
+        coeffs_index = post_input_indices["coeffs"]
+
         calibration_options.extend(
             [
                 f"stages.{post_stage_name}.inputs.{prototypes_index}.name",
@@ -348,11 +338,7 @@ def test_real_model_task_metrics(
             to="native",
         )
         calibration_images = _calibration_images()
-        if len(calibration_images) != len(loader):
-            raise ValueError(
-                "LDF calibration image count does not match the evaluation "
-                f"loader ({len(calibration_images)} != {len(loader)})"
-            )
+        assert len(calibration_images) == len(loader)
 
         model_path = locate_converted_model(
             OUTPUTS_DIR / output_name, platform
