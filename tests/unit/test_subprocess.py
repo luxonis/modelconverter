@@ -60,7 +60,7 @@ def test_missing_command_is_reported():
         pytest.raises(subprocess.SubprocessError, match="not found"),
         SubprocessHandle(["definitely-not-a-command"]),
     ):
-        pass
+        pass  # pragma: no cover
 
 
 def test_subprocess_run_collects_cleaned_output():
