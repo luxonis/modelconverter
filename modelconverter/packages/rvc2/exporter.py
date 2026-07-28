@@ -91,7 +91,8 @@ class RVC2Exporter(Exporter):
                     if len(inp.frozen_value) == 1:
                         value = inp.frozen_value[0]
                     else:
-                        value = f"{_lst_join(inp.frozen_value)}"
+                        sep = " " if OV_2021 else ","
+                        value = f"{_lst_join(inp.frozen_value, sep)}"
                     inp_str += f"->{value}"
             args.extend(["--input", inp_str])
 
