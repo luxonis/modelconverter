@@ -130,6 +130,21 @@ def test_shape_branches(
     assert img.shape == expected_shape
 
 
+def test_layout_drives_image_dimensions(work_dir: Path):
+    src = _make_img(work_dir / "src.png", size=(64, 48))
+
+    img = read_image(
+        src,
+        [1, 3, 48, 64],
+        Encoding.RGB,
+        ResizeMethod.RESIZE,
+        transpose=False,
+        layout="NCHW",
+    )
+
+    assert img.shape == (48, 64, 3)
+
+
 @pytest.mark.parametrize("shape", [[1], [1, 2, 3, 4, 5]])
 def test_invalid_shape_raises(work_dir: Path, shape: list[int]):
     src = _make_img(work_dir / "src.png")
