@@ -14,6 +14,13 @@ class RVC2Inferer(Inferer):
         self.bin_path = self.model_path.with_suffix(".bin")
         ie = IECore()
         net = ie.read_network(model=self.xml_path, weights=self.bin_path)
+        for name, input_info in net.input_info.items():
+            shape = list(input_info.input_data.shape)
+            if self.in_shapes.get(name) == shape:
+                continue
+            self.in_shapes[name] = shape
+            if len(shape) == 4:
+                self.layout[name] = "NCHW" if shape[1] in {1, 3, 4} else "NHWC"
         self.exec_net = ie.load_network(network=net, device_name="CPU")
 
     def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
@@ -21,7 +28,7 @@ class RVC2Inferer(Inferer):
         for name, path in inputs.items():
             layout = self.layout.get(name)
             channels_last = bool(layout) and layout[-1] == "C"
-            arr_inputs[name] = read_image(
+            image = read_image(
                 path,
                 shape=self.in_shapes[name],
                 encoding=self.encoding[name],
@@ -32,4 +39,7 @@ class RVC2Inferer(Inferer):
                 transpose=not channels_last,
                 layout=layout,
             )
+            if image.ndim == len(self.in_shapes[name]) - 1:
+                image = image[np.newaxis, ...]
+            arr_inputs[name] = image
         return self.exec_net.infer(inputs=arr_inputs)

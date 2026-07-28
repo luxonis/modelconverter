@@ -8,8 +8,9 @@ path -- ``tflite2onnx`` (rvc2/rvc3) and ``snpe-tflite-to-dlc`` (rvc4).
 a raw image round-trips to a (channel-permuted, quantized) copy of itself.
 Comparing the *sorted* output values to the sorted reference is robust to each
 backend's output layout / channel order while still catching quantization
-error. A TFLite graph is NHWC, which the vendor inferers now feed correctly
-(see ``read_image``'s ``layout``).
+error. TFLite sources are NHWC, while the RVC2/RVC3 conversion path produces
+an NCHW OpenVINO artifact; the inferer reads the artifact's actual input
+shape before preparing the image.
 
 Hailo is intentionally left out: its quantizer only flakily handles this
 weightless pass-through (the ``bgr_to_rgb`` layer degenerates to 0 dB SNR and
