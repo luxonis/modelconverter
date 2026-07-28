@@ -1,6 +1,6 @@
 # Common parameters
 
-input_model: "s3://luxonis-test-bucket/modelconverter-test/resnet18-simplified.bin"
+input_model: "gs://luxonis-test-bucket/modelconverter/models/resnet18.xml"
 
 mean_values: "imagenet"
 scale_values: "imagenet"
