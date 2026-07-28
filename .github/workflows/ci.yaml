@@ -122,8 +122,9 @@ jobs:
 
   integration:
     name: ${{ matrix.package }} ${{ matrix.version }}
+    needs: unit
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - { package: rvc2, version: "2021.4.0", os: ubuntu-latest }
