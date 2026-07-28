@@ -475,6 +475,9 @@ def docker_exec(
                     # Lets the in-container test suite auto-select this
                     # platform's conversion tests (see tests/conftest.py).
                     "MODELCONVERTER_TARGET": target,
+                    # Lets conversion fixtures select tool-version-specific
+                    # test assets.
+                    "MODELCONVERTER_TARGET_VERSION": version,
                 },
             ).encode()
         )

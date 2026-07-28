@@ -119,7 +119,7 @@ def _scenario_options(platform: str, scenario: Scenario) -> tuple[str, ...]:
     if scenario.id != "ir-to-archive":
         return scenario.opts
 
-    version = os.environ["VERSION"].replace(".", "_")
+    version = os.environ["MODELCONVERTER_TARGET_VERSION"].replace(".", "_")
     model = f"{IR_MODELS}/resnet18_{platform}_{version}.xml"
     return (*scenario.opts, "input_model", model)
 
