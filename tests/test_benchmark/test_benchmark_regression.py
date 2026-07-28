@@ -34,6 +34,8 @@ def _build_fps_benchmark_data(
     benchmark_camera: Any,
     testbed_name: str | None,
     depthai_version: str | None,
+    modelconverter_git_ref: str | None,
+    modelconverter_git_sha: str | None,
     actual_fps: float,
     expected_fps: float,
     tolerance_low: float,
@@ -72,6 +74,8 @@ def _build_fps_benchmark_data(
             {"name": "camera_revision", "value": benchmark_camera.revision},
             {"name": "server_os", "value": server_os},
             {"name": "depthai_version", "value": depthai_version},
+            {"name": "modelconverter_git_ref", "value": modelconverter_git_ref},
+            {"name": "modelconverter_git_sha", "value": modelconverter_git_sha},
             {"name": "device_ip", "value": benchmark_device_ip},
         ],
         "fields": [
@@ -97,6 +101,8 @@ def _write_fps_benchmark_result(
     benchmark_camera: Any,
     testbed_name: str | None,
     depthai_version: str | None,
+    modelconverter_git_ref: str | None,
+    modelconverter_git_sha: str | None,
     actual_fps: float,
     expected_fps: float,
     tolerance_low: float,
@@ -115,6 +121,8 @@ def _write_fps_benchmark_result(
         benchmark_camera=benchmark_camera,
         testbed_name=testbed_name,
         depthai_version=depthai_version,
+        modelconverter_git_ref=modelconverter_git_ref,
+        modelconverter_git_sha=modelconverter_git_sha,
         actual_fps=actual_fps,
         expected_fps=expected_fps,
         tolerance_low=tolerance_low,
@@ -210,6 +218,8 @@ def test_benchmark_fps(
     influx_bucket: str | None,
     influx_token: str | None,
     depthai_version: str | None,
+    modelconverter_git_ref: str | None,
+    modelconverter_git_sha: str | None,
     hil_testbed: Any,
 ) -> None:
     model_config = _targets_data[benchmark_target][model_slug]
@@ -260,6 +270,8 @@ def test_benchmark_fps(
         benchmark_camera=benchmark_camera,
         testbed_name=hil_testbed.config.name,
         depthai_version=depthai_version,
+        modelconverter_git_ref=modelconverter_git_ref,
+        modelconverter_git_sha=modelconverter_git_sha,
         actual_fps=actual_fps,
         expected_fps=expected_fps,
         tolerance_low=tolerance_low,
@@ -275,4 +287,44 @@ def test_benchmark_fps(
         f"actual={actual_fps:.2f}, expected={expected_fps:.2f} "
         f"(deviation: {deviation_pct:+.1f}%, "
         f"allowed range: [{fps_min:.2f}, {fps_max:.2f}])"
+    )
+
+
+def test_build_fps_benchmark_data_includes_modelconverter_git_metadata() -> None:
+    class FakeCamera:
+        name = "oak-test"
+        mxid = "mxid-123"
+        model = "OAK-4"
+        revision = "R1"
+        hostname = "192.168.1.10"
+
+        def get_os_version(self) -> str:
+            return "1.2.3"
+
+    benchmark_data = _build_fps_benchmark_data(
+        bucket="fps_metrics",
+        token="token",
+        model_slug="luxonis/example-model",
+        benchmark_target="rvc4",
+        benchmark_run_id="run-123",
+        benchmark_camera=FakeCamera(),
+        testbed_name="tb-1",
+        depthai_version="3.8.0",
+        modelconverter_git_ref="feature/add-tags",
+        modelconverter_git_sha="0123456789abcdef0123456789abcdef01234567",
+        actual_fps=30.0,
+        expected_fps=30.0,
+        tolerance_low=0.1,
+        tolerance_high=0.1,
+        fps_min=27.0,
+        fps_max=33.0,
+        deviation_pct=0.0,
+        success=True,
+    )
+
+    tags = {tag["name"]: tag["value"] for tag in benchmark_data["tags"]}
+    assert tags["modelconverter_git_ref"] == "feature/add-tags"
+    assert (
+        tags["modelconverter_git_sha"]
+        == "0123456789abcdef0123456789abcdef01234567"
     )

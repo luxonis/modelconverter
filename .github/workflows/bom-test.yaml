@@ -30,6 +30,8 @@ env:
   LUXONIS_TELEMETRY_ENABLED: "false"
   DISTINCT_ID: ${{ github.event.inputs.distinct_id }}
   DEPTHAI_VERSION: ${{ github.event.inputs.depthai_version }}
+  MODELCONVERTER_GIT_REF: ${{ github.ref_name }}
+  MODELCONVERTER_GIT_SHA: ${{ github.sha }}
   OS_VERSION: ${{ github.event.inputs.os_version }}
   HIL_FRAMEWORK_TOKEN: ${{ secrets.HIL_FRAMEWORK_TOKEN }}
   HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
@@ -88,6 +90,8 @@ jobs:
           : "${INFLUX_BUCKET:?INFLUX_BUCKET must be set by the workflow}"
 
           REMOTE_CMD="cd /tmp/modelconverter && \
+            MODELCONVERTER_GIT_REF=\"$MODELCONVERTER_GIT_REF\" \
+            MODELCONVERTER_GIT_SHA=\"$MODELCONVERTER_GIT_SHA\" \
             ./tests/test_benchmark/run_hil_tests.sh \
               \"$HUBAI_API_KEY\" \
               \"$HIL_FRAMEWORK_TOKEN\" \

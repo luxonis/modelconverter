@@ -5,6 +5,8 @@ from hil_framework.lib_testbed.config.Config import Config
 from hil_framework.lib_testbed.utils.Testbed import Testbed
 
 INFLUX_BUCKET = "fps_metrics"
+MODELCONVERTER_GIT_REF_ENV = "MODELCONVERTER_GIT_REF"
+MODELCONVERTER_GIT_SHA_ENV = "MODELCONVERTER_GIT_SHA"
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -91,3 +93,13 @@ def influx_bucket() -> str:
 @pytest.fixture(scope="session")
 def influx_token() -> str | None:
     return os.environ.get("INFLUX_TOKEN")
+
+
+@pytest.fixture(scope="session")
+def modelconverter_git_ref() -> str | None:
+    return os.environ.get(MODELCONVERTER_GIT_REF_ENV)
+
+
+@pytest.fixture(scope="session")
+def modelconverter_git_sha() -> str | None:
+    return os.environ.get(MODELCONVERTER_GIT_SHA_ENV)
