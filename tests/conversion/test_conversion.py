@@ -20,6 +20,7 @@ with calibration.
 """
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 import pytest
 
@@ -40,7 +41,7 @@ class Scenario:
     """Human-readable scenario id (used in the test id / output dir)."""
     path: str
     """Input path/URL: an NN archive (.tar.xz), a config (.yaml) or an IR."""
-    to_format: str
+    to_format: Literal["native", "nn_archive"]
     """Output format: ``nn_archive`` or ``native``."""
     platforms: tuple[str, ...] = ALL_PLATFORMS
     """Platforms this scenario applies to."""

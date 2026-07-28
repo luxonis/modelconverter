@@ -55,12 +55,12 @@ FROM_NUMPY_DTYPE_CASES = [
 
 @pytest.mark.parametrize(("dtype", "expected"), FROM_NUMPY_DTYPE_CASES)
 def test_from_numpy_dtype_supported(dtype: type, expected: DataType):
-    assert DataType.from_numpy_dtype(dtype) is expected
+    assert DataType.from_numpy_dtype(np.dtype(dtype)) is expected
 
 
 def test_from_numpy_dtype_unsupported():
     with pytest.raises(ValueError, match="Unsupported numpy"):
-        DataType.from_numpy_dtype(np.complex128)
+        DataType.from_numpy_dtype(np.dtype(np.complex128))
 
 
 FROM_IR_IE_DTYPE_CASES = [

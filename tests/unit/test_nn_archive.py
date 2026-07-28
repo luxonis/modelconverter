@@ -53,6 +53,11 @@ from tests.helpers.onnx_factory import (
 )
 
 
+def _input_config(**data: Any) -> InputConfig:
+    """Validate raw user configuration through Pydantic's public API."""
+    return InputConfig.model_validate(data)
+
+
 def _single_input_archive_config(
     preprocessing: dict[str, Any],
     *,
@@ -530,6 +535,7 @@ def test_output_layout_fallback_on_incompatible_shape(dummy_onnx: Path):
     out0 = next(o for o in nn.model.outputs if o.name == "output0")
     # Fallback default layout for [1, 10].
     assert out0.shape == [1, 10]
+    assert out0.layout is not None
     assert len(out0.layout) == 2
 
 
@@ -549,6 +555,7 @@ def test_output_default_layout_when_shape_has_zero(dummy_onnx: Path):
     nn = _config_to_nn(config, dummy_onnx)
     out1 = next(o for o in nn.model.outputs if o.name == "output1")
     assert out1.shape == [1, 5, 5, 5]
+    assert out1.layout is not None
     assert len(out1.layout) == 4
 
 
@@ -598,9 +605,15 @@ def test_multistage_two_stages_sets_postprocessor(dummy_onnx: Path):
     )
     orig = archive_from_model(dummy_onnx)
     orig.model.heads = [
-        Head(parser="Classification", metadata={}, outputs=["output0"])
+        Head(
+            name="head",
+            parser="Classification",
+            metadata={},  # type: ignore
+            outputs=["output0"],
+        )
     ]
     nn = _config_to_nn(config, dummy_onnx, orig=orig, main_stage="main")
+    assert nn.model.heads is not None
     assert nn.model.heads[0].metadata.postprocessor_path == "post.onnx"
 
 
@@ -670,7 +683,11 @@ def test_raw_input_preprocessing_preserved_from_orig(dummy_onnx: Path):
     orig = archive_from_model(dummy_onnx)
     orig.model.inputs[0].input_type = InputType.RAW
     orig.model.inputs[0].preprocessing = PreprocessingBlock(
-        mean=[9, 9, 9], scale=None
+        mean=[9, 9, 9],
+        scale=None,
+        reverse_channels=None,
+        interleaved_to_planar=None,
+        dai_type=None,
     )
     nn = _config_to_nn(config, dummy_onnx, orig=orig)
     in0 = next(i for i in nn.model.inputs if i.name == "input0")
@@ -751,7 +768,7 @@ def test_rvc4_default(dummy_onnx: Path):
 
 
 def test_raw():
-    inp = InputConfig(
+    inp = _input_config(
         name="x",
         shape=[1, 3, 64, 64],
         layout="NCHW",
@@ -768,7 +785,7 @@ def test_raw():
 
 
 def test_image_float16_interleaved_with_mean_scale():
-    inp = InputConfig(
+    inp = _input_config(
         name="x",
         shape=[1, 3, 64, 64],
         layout="NHWC",
@@ -786,7 +803,7 @@ def test_image_float16_interleaved_with_mean_scale():
 
 
 def test_image_uint8_planar_without_mean_scale():
-    inp = InputConfig(
+    inp = _input_config(
         name="x",
         shape=[1, 3, 64, 64],
         layout="NCHW",
@@ -829,7 +846,9 @@ def test_find_archive_input_none_cfg():
 
 def test_find_archive_input_found_and_missing(dummy_onnx: Path):
     archive = archive_from_model(dummy_onnx)
-    assert find_archive_input(archive, "input0").name == "input0"
+    found_input = find_archive_input(archive, "input0")
+    assert found_input is not None
+    assert found_input.name == "input0"
     assert find_archive_input(archive, "nope") is None
 
 

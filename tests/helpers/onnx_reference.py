@@ -110,4 +110,7 @@ class ONNXReferenceInferer:
             )
         }
         outputs = self.session.run(self._output_names, feed)
-        return dict(zip(self._output_names, outputs, strict=True))
+        return {
+            name: np.asarray(output)
+            for name, output in zip(self._output_names, outputs, strict=True)
+        }

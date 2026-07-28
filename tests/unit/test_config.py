@@ -9,6 +9,7 @@ through the full ``Config.get_config`` pipeline.
 
 import json
 from pathlib import Path
+from typing import Any
 
 import onnx
 import pytest
@@ -50,6 +51,16 @@ from tests.helpers.onnx_factory import (
     intermediate_info_onnx,
     standard_dummy_onnx,
 )
+
+
+def _input_config(**data: Any) -> InputConfig:
+    """Validate raw user configuration through Pydantic's public API."""
+    return InputConfig.model_validate(data)
+
+
+def _rvc4_config(**data: Any) -> RVC4Config:
+    """Validate raw user configuration through Pydantic's public API."""
+    return RVC4Config.model_validate(data)
 
 
 def _models_dir() -> Path:
@@ -308,13 +319,13 @@ def test_encoding_config_defaults():
 
 
 def test_encoding_config_alias():
-    enc = EncodingConfig(**{"from": "BGR", "to": "RGB"})
+    enc = EncodingConfig.model_validate({"from": "BGR", "to": "RGB"})
     assert enc.from_ == Encoding.BGR
     assert enc.to == Encoding.RGB
 
 
 def test_input_encoding_none_defaults_to_rgb_bgr():
-    inp = InputConfig(name="i", encoding=None)
+    inp = _input_config(name="i", encoding=None)
     assert (inp.encoding.from_, inp.encoding.to) == (
         Encoding.RGB,
         Encoding.BGR,
@@ -322,7 +333,7 @@ def test_input_encoding_none_defaults_to_rgb_bgr():
 
 
 def test_input_encoding_empty_dict_defaults():
-    inp = InputConfig(name="i", encoding={})
+    inp = _input_config(name="i", encoding={})
     assert (inp.encoding.from_, inp.encoding.to) == (
         Encoding.RGB,
         Encoding.BGR,
@@ -330,17 +341,17 @@ def test_input_encoding_empty_dict_defaults():
 
 
 def test_input_encoding_string_sets_both():
-    inp = InputConfig(name="i", encoding="RGB")
+    inp = _input_config(name="i", encoding="RGB")
     assert inp.encoding.from_ == inp.encoding.to == Encoding.RGB
 
 
 def test_input_encoding_gray_from_forces_gray_gray():
-    inp = InputConfig(name="i", encoding={"from": "GRAY", "to": "BGR"})
+    inp = _input_config(name="i", encoding={"from": "GRAY", "to": "BGR"})
     assert inp.encoding.from_ == inp.encoding.to == Encoding.GRAY
 
 
 def test_input_encoding_gray_to_forces_gray_gray():
-    inp = InputConfig(name="i", encoding={"from": "RGB", "to": "GRAY"})
+    inp = _input_config(name="i", encoding={"from": "RGB", "to": "GRAY"})
     assert inp.encoding.from_ == inp.encoding.to == Encoding.GRAY
 
 
@@ -377,17 +388,17 @@ def test_no_layout_short_circuits_grayscale():
 
 
 def test_named_mean_values():
-    inp = InputConfig(name="i", mean_values="imagenet")
+    inp = _input_config(name="i", mean_values="imagenet")
     assert inp.mean_values == [123.675, 116.28, 103.53]
 
 
 def test_named_scale_values():
-    inp = InputConfig(name="i", scale_values="imagenet")
+    inp = _input_config(name="i", scale_values="imagenet")
     assert inp.scale_values == [58.395, 57.12, 57.375]
 
 
 def test_scalar_broadcast():
-    inp = InputConfig(name="i", mean_values=127)
+    inp = _input_config(name="i", mean_values=127)
     assert inp.mean_values == [127, 127, 127]
 
 
@@ -402,31 +413,31 @@ def test_none_stays_none():
 
 
 def test_encoding_mismatch_requires():
-    inp = InputConfig(name="i", encoding={"from": "RGB", "to": "BGR"})
+    inp = _input_config(name="i", encoding={"from": "RGB", "to": "BGR"})
     assert inp.requires_onnx_input_modification() is True
 
 
 def test_reverse_only_ignores_normalization():
-    inp = InputConfig(name="i", encoding="RGB", mean_values=[1, 2, 3])
+    inp = _input_config(name="i", encoding="RGB", mean_values=[1, 2, 3])
     assert inp.requires_onnx_input_modification(reverse_only=True) is False
 
 
 def test_normalization_requires():
-    inp = InputConfig(name="i", encoding="RGB", scale_values=[2, 2, 2])
+    inp = _input_config(name="i", encoding="RGB", scale_values=[2, 2, 2])
     assert inp.requires_onnx_input_modification() is True
 
 
 def test_no_modification_needed():
-    inp = InputConfig(name="i", encoding="RGB")
+    inp = _input_config(name="i", encoding="RGB")
     assert inp.requires_onnx_input_modification() is False
 
 
 def test_requires_onnx_input_modification_properties():
-    raw = InputConfig(name="i", encoding="NONE")
+    raw = _input_config(name="i", encoding="NONE")
     assert raw.is_raw_input is True
     assert raw.is_color_input is False
     assert raw.encoding_mismatch is False
-    color = InputConfig(name="i", encoding="RGB")
+    color = _input_config(name="i", encoding="RGB")
     assert color.is_color_input is True
 
 
@@ -440,7 +451,7 @@ def test_random_defaults():
 def test_image_calibration_local_dir(tmp_path: Path):
     data_dir = tmp_path / "calib"
     data_dir.mkdir()
-    cal = ImageCalibrationConfig(path=str(data_dir))
+    cal = ImageCalibrationConfig.model_validate({"path": str(data_dir)})
     assert cal.path == data_dir
     assert cal.resize_method == ResizeMethod.RESIZE
 
@@ -451,7 +462,7 @@ def test_image_calibration_none_path_rejected():
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        ImageCalibrationConfig(path=None)
+        ImageCalibrationConfig.model_validate({"path": None})
 
 
 def test_link_requires_output_or_script():
@@ -474,6 +485,7 @@ def test_link_with_script_file():
     script = (_models_dir() / "post.py").resolve()
     script.write_text("def run_script(outputs):\n    return outputs\n")
     cal = LinkCalibrationConfig(stage="s", script=str(script))
+    assert cal.script is not None
     assert "run_script" in cal.script
 
 
@@ -512,12 +524,14 @@ def test_target_config_dispatch():
 
 
 def test_is_symmetric_json_serialization():
-    encodings = Encodings(
-        activation_encodings={
-            "a": [{"bitwidth": 8, "is_symmetric": True}],
-            "b": [{"bitwidth": 8}],
+    encodings = Encodings.model_validate(
+        {
+            "activation_encodings": {
+                "a": [{"bitwidth": 8, "is_symmetric": True}],
+                "b": [{"bitwidth": 8}],
+            },
+            "param_encodings": {},
         },
-        param_encodings={},
     )
     dumped = encodings.model_dump(mode="json")
     assert dumped["activation_encodings"]["a"][0]["is_symmetric"] == "True"
@@ -526,12 +540,12 @@ def test_is_symmetric_json_serialization():
 
 def test_encodings_from_json_string():
     payload = json.dumps({"activation_encodings": {}, "param_encodings": {}})
-    cfg = RVC4Config(encodings=payload)
+    cfg = _rvc4_config(encodings=payload)
     assert isinstance(cfg.encodings, Encodings)
 
 
 def test_encodings_from_dict():
-    cfg = RVC4Config(
+    cfg = _rvc4_config(
         encodings={"activation_encodings": {}, "param_encodings": {}}
     )
     assert isinstance(cfg.encodings, Encodings)
@@ -542,7 +556,7 @@ def test_encodings_from_path():
     enc_file.write_text(
         json.dumps({"activation_encodings": {}, "param_encodings": {}})
     )
-    cfg = RVC4Config(encodings=str(enc_file))
+    cfg = _rvc4_config(encodings=str(enc_file))
     assert isinstance(cfg.encodings, Encodings)
 
 
@@ -551,7 +565,7 @@ def test_quantization_overrides_extracted():
     enc_file.write_text(
         json.dumps({"activation_encodings": {}, "param_encodings": {}})
     )
-    cfg = RVC4Config(
+    cfg = _rvc4_config(
         snpe_onnx_to_dlc_args=["--quantization_overrides", str(enc_file)]
     )
     assert cfg.snpe_onnx_to_dlc_args == []
@@ -560,7 +574,7 @@ def test_quantization_overrides_extracted():
 
 def test_quantization_overrides_conflict_raises():
     with pytest.raises(ValueError, match="Cannot specify both"):
-        RVC4Config(
+        _rvc4_config(
             snpe_onnx_to_dlc_args=["--quantization_overrides", "x.json"],
             encodings={"activation_encodings": {}, "param_encodings": {}},
         )
@@ -804,7 +818,9 @@ def test_top_level_and_input_calibration_merged(tmp_path: Path):
     assert cal0.path == data_dir
     assert cal0.max_images == 7
     # input1 inherits only the top-level path.
-    assert stage.inputs[1].calibration.max_images == -1
+    cal1 = stage.inputs[1].calibration
+    assert isinstance(cal1, ImageCalibrationConfig)
+    assert cal1.max_images == -1
 
 
 def test_disable_calibration_fans_out_to_all_targets():

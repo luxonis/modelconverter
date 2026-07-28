@@ -133,6 +133,7 @@ def _lazy_eval_components(
     list[tuple[str, Callable[[], Any]]],
     Callable[..., Any],
     Callable[..., Any],
+    Callable[..., Any],
 ]:
     """Load Luxonis Eval only in the selected RVC2/RVC4 test cases."""
     pytest.importorskip(

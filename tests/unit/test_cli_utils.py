@@ -217,7 +217,9 @@ def test_image_input_float16_channel_type(dummy_onnx: Path):
         data_type="float16",
     )
     _cfg, preprocessing = extract_preprocessing(cfg)
-    assert preprocessing["input0"].dai_type.startswith("RGBF16F16F16")
+    dai_type = preprocessing["input0"].dai_type
+    assert dai_type is not None
+    assert dai_type.startswith("RGBF16F16F16")
 
 
 class _FakeRequest:
