@@ -44,6 +44,7 @@ from modelconverter.utils.types import Target
 from tests.helpers.data import TEST_IMAGE
 from tests.helpers.onnx_reference import ONNXReferenceInferer
 from tests.helpers.precision import cosine_similarity, locate_converted_model
+from tests.helpers.target_options import target_options
 
 GS = "gs://luxonis-test-bucket/modelconverter"
 
@@ -100,17 +101,19 @@ def _main_stage(cfg: Config, case: PrecisionCase) -> SingleStageConfig:
 @pytest.mark.parametrize(("platform", "case"), _PARAMS)
 def test_precision(platform: str, case: PrecisionCase):
     target = Target(platform)
+    options = target_options(target)
     output_name = sanitize_net_name(f"prec_{platform}_{case.id}")
 
     convert(
         target,
+        *options,
         path=case.config,
         output_dir=output_name,
         to="native",
         main_stage=case.main_stage,
     )
 
-    cfg, _, _ = get_configs(target, case.config, [])
+    cfg, _, _ = get_configs(target, case.config, list(options))
     stage = _main_stage(cfg, case)
     model_path = locate_converted_model(OUTPUTS_DIR / output_name, platform)
 

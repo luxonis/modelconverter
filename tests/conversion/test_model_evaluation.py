@@ -32,6 +32,7 @@ from modelconverter.utils.types import Target
 from tests.helpers.evaluation import assert_quality, ordered_outputs
 from tests.helpers.onnx_reference import ONNXReferenceInferer
 from tests.helpers.precision import locate_converted_model
+from tests.helpers.target_options import target_options
 
 COCO_SAMPLE_FIXTURE = (
     "gs://luxonis-test-bucket/luxonis-ml-test-data/coco_sample.zip"
@@ -279,11 +280,12 @@ def test_real_model_task_metrics(
         get_metric_ctx,
     ) = _lazy_eval_components(case)
     target = Target(platform)
+    options = target_options(target)
     source_archive = _download_source_model(
         case.instance_id, tmp_path / "models"
     )
 
-    cfg, _, _ = get_configs(target, str(source_archive), [])
+    cfg, _, _ = get_configs(target, str(source_archive), list(options))
     stage_name, stage = next(iter(cfg.stages.items()))
     height, width = _image_shape(stage)
     assert (height, width) == (288, 512)
@@ -292,6 +294,7 @@ def test_real_model_task_metrics(
 
     output_name = sanitize_net_name(f"eval_{platform}_{case.id}")
     calibration_options = [
+        *options,
         f"stages.{stage_name}.calibration.path",
         CALIBRATION_SPEC,
         f"stages.{stage_name}.calibration.max_images",

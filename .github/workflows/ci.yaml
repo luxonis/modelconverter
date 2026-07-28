@@ -207,15 +207,10 @@ jobs:
             ML_INSTALL_COMMAND=""
           fi
 
-          PYTEST_MARKERS="${PACKAGE}"
-          if [[ "${PACKAGE}" = "rvc2" && "${VERSION}" = "2021.4.0" ]]; then
-            PYTEST_MARKERS="${PACKAGE} and not real_model"
-          fi
-
           modelconverter shell "${PACKAGE}" --dev --no-gpu \
             --tool-version "${VERSION}" \
             -c "${ML_INSTALL_COMMAND} \
-              python -m pytest tests/conversion -m '${PYTEST_MARKERS}' -x \
+              python -m pytest tests/conversion -m '${PACKAGE}' -x \
                 --cov --cov-report term-missing \
                 --cov-report xml:shared_with_container/coverage-${PACKAGE}-${VERSION}.xml"
 
