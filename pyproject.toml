@@ -147,6 +147,7 @@ markers = [
   "rvc3: RVC3 conversion tests",
   "rvc4: RVC4 conversion tests",
   "hailo: Hailo conversion tests",
+  "real_model: real-model precision and task-metric regression tests",
 ]
 
 [tool.coverage.run]

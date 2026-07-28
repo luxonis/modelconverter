@@ -268,6 +268,7 @@ _PARAMS = [
 ]
 
 
+@pytest.mark.real_model
 @pytest.mark.parametrize(("platform", "case"), _PARAMS)
 def test_real_model_task_metrics(
     platform: str,
