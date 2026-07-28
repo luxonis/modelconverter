@@ -19,6 +19,7 @@ linked calibration); a raw zoo multistage archive cannot be converted
 with calibration.
 """
 
+import os
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -33,6 +34,7 @@ GS = "gs://luxonis-test-bucket/modelconverter"
 ALL_PLATFORMS = ("rvc2", "rvc3", "rvc4", "hailo")
 # OpenVINO IR (xml+bin) is only supported by the OpenVINO backends.
 IR_PLATFORMS = ("rvc2", "rvc3")
+IR_MODELS = f"{GS}/models"
 
 
 @dataclass(frozen=True)
@@ -112,6 +114,16 @@ def _marks(platform: str, scenario: Scenario) -> list:
     return marks
 
 
+def _scenario_options(platform: str, scenario: Scenario) -> tuple[str, ...]:
+    """Return conversion overrides for a platform-specific scenario."""
+    if scenario.id != "ir-to-archive":
+        return scenario.opts
+
+    version = os.environ["VERSION"].replace(".", "_")
+    model = f"{IR_MODELS}/resnet18_{platform}_{version}.xml"
+    return (*scenario.opts, "input_model", model)
+
+
 _CASES = [
     pytest.param(
         platform,
@@ -130,7 +142,7 @@ def test_convert(platform: str, scenario: Scenario):
     extra = HAILO_FAST_OPTS if platform == "hailo" else ()
     convert(
         Target(platform),
-        *scenario.opts,
+        *_scenario_options(platform, scenario),
         *extra,
         path=scenario.path,
         output_dir=output_name,
