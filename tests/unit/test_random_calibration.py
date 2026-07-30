@@ -1,21 +1,13 @@
 """Random-calibration data prep for unusual input shapes / layouts.
 
-``Exporter._prepare_random_calibration_data`` writes one calibration sample
-per input, picking a ``.png`` for image-like tensors and a ``.npy`` for the
-rest, and transposing channels-first data to channels-last for the image
-writer. The standard 4D ``NCHW`` inputs the conversion tests use only reach
-the "channel axis known from the layout" path; these cases cover the
-fallbacks that path misses:
+``Exporter._prepare_random_calibration_data`` writes one sample per input,
+picking a ``.png`` for image-like tensors and a ``.npy`` for the rest, and
+transposing channels-first data for the image writer. The 4D ``NCHW`` inputs the
+conversion tests use only reach the "channel axis known from the layout" path;
+the cases below cover the fallbacks it misses.
 
-  * a rank-3 tensor whose layout carries no ``C`` (e.g. a ``TNF`` feature
-    map) -- the channels-first heuristic (``shape[0] in {1, 3}``) decides the
-    transpose instead;
-  * a tensor that isn't image-like at all (a rank-1 vector, a batched
-    ``N > 1`` tensor, or an explicitly raw tensor) -- written as a raw
-    ``.npy`` rather than a ``.png``.
-
-Driving the method directly keeps this deterministic and host-side; the
-random pixel values never affect which branch runs.
+Driving the method directly keeps this deterministic and host-side -- the random
+pixel values never affect which branch runs.
 """
 
 from pathlib import Path

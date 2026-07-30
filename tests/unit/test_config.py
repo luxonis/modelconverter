@@ -1,10 +1,8 @@
 """Host-side unit tests for ``modelconverter.utils.config``.
 
-Everything runs without network, cloud, Docker or vendor tooling. Tiny
-dummy ONNX models are built on the fly (see
-``tests/helpers/onnx_factory``) and the sub-config validators are
-exercised both directly (by constructing the pydantic models) and
-through the full ``Config.get_config`` pipeline.
+No network, cloud, Docker or vendor tooling. The sub-config validators are
+exercised both directly, by constructing the pydantic models, and through the
+full ``Config.get_config`` pipeline.
 """
 
 import json
@@ -14,6 +12,7 @@ from typing import Any
 import onnx
 import pytest
 from onnx import TensorProto, checker, helper
+from pydantic import ValidationError
 
 from modelconverter.utils import config as config_module
 from modelconverter.utils.config import (
@@ -457,8 +456,6 @@ def test_image_calibration_local_dir(tmp_path: Path):
 def test_image_calibration_none_path_rejected():
     # The ``None`` short-circuit runs, then the required ``Path`` field
     # rejects the resulting ``None``.
-    from pydantic import ValidationError
-
     with pytest.raises(ValidationError):
         ImageCalibrationConfig.model_validate({"path": None})
 

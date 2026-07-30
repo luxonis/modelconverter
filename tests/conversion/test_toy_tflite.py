@@ -1,24 +1,20 @@
 """Toy TFLite conversion + precision.
 
-A hand-built single-op ``.tflite`` (see ``tests/helpers/tflite_factory``) is
-converted on rvc2/rvc3/rvc4, exercising each backend's distinct TFLite entry
-path -- ``tflite2onnx`` (rvc2/rvc3) and ``snpe-tflite-to-dlc`` (rvc4).
+A hand-built single-op ``.tflite`` is converted on rvc2/rvc3/rvc4, exercising each
+backend's distinct TFLite entry path -- ``tflite2onnx`` (rvc2/rvc3) and
+``snpe-tflite-to-dlc`` (rvc4).
 
-**Precision**: the model has no weights and no baked math beyond a ``Relu``, so
-a raw image round-trips to a (channel-permuted, quantized) copy of itself.
-Comparing the *sorted* output values to the sorted reference is robust to each
-backend's output layout / channel order while still catching quantization
-error. TFLite sources are NHWC, while the RVC2/RVC3 conversion path produces
-an NCHW OpenVINO artifact; the inferer reads the artifact's actual input
-shape before preparing the image.
+The model has no weights and no math beyond a ``Relu``, so a raw image
+round-trips to a channel-permuted, quantized copy of itself. Comparing the
+*sorted* output values to the sorted reference is robust to each backend's output
+layout and channel order while still catching quantization error.
 
-Hailo is intentionally left out: its quantizer only flakily handles this
-weightless pass-through (the ``bgr_to_rgb`` layer degenerates to 0 dB SNR and
-sometimes yields NaN params, depending on the random calibration), so a hailo
-case here would be flaky rather than a dependable pass or fail. A dependable
-hailo TFLite test would need a non-degenerate (weighted) model.
+Hailo is left out: its quantizer only flakily handles this weightless
+pass-through (the ``bgr_to_rgb`` layer degenerates to 0 dB SNR and sometimes
+yields NaN params), so a hailo case here would be neither a dependable pass nor a
+dependable fail. That would need a weighted model.
 
-Runs inside the platform Docker image, e.g.::
+Run inside the platform Docker image, e.g.::
 
     modelconverter shell rvc4 --dev -c 'python -m pytest -k toy_tflite'
 """
@@ -35,19 +31,18 @@ from modelconverter.packages.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Target
 from tests.helpers.conversion import assert_produced
+from tests.helpers.platforms import platform_params
 from tests.helpers.precision import cosine_similarity, locate_converted_model
 from tests.helpers.tflite_factory import build_toy_tflite
 
 PLATFORMS = ("rvc2", "rvc3", "rvc4")
 _THRESHOLD = 0.9
-# Three distinct, positive channel values inside the default random-calibration
-# range (mean 127.5, std 35). Positive so the Relu is a clean identity, and
+# Three distinct channel values inside the default random-calibration range
+# (mean 127.5, std 35). Positive so the Relu is a clean identity, and
 # well-separated so the quantizers keep them apart.
 _CHANNEL_VALUES = (90, 130, 170)
 
-_PARAMS = [
-    pytest.param(p, marks=getattr(pytest.mark, p), id=p) for p in PLATFORMS
-]
+_PARAMS = platform_params(PLATFORMS)
 
 
 @pytest.fixture(scope="module")
@@ -60,8 +55,7 @@ def toy_tflite(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def solid_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """An 8x8 image with a distinct constant value per channel."""
     path = tmp_path_factory.mktemp("toy_tflite_img") / "solid.png"
-    img = np.full((8, 8, 3), _CHANNEL_VALUES, dtype=np.uint8)
-    cv2.imwrite(str(path), img)
+    cv2.imwrite(str(path), np.full((8, 8, 3), _CHANNEL_VALUES, dtype=np.uint8))
     return path
 
 

@@ -1,28 +1,24 @@
 """RVC4 conversion driven by a custom ``encodings.json``.
 
-The unit tests cover *parsing* a custom ``encodings.json`` (``rvc4.encodings``
-accepting an inline dict / JSON string / path, the per-channel expansion,
-the ``--quantization_overrides`` extraction). What they cannot cover, being
-host-only, is the RVC4 **exporter** actually consuming those encodings and
-the two related SNPE knobs -- so this e2e fills that gap. It converts the toy
-conv net with:
+The unit tests cover *parsing* a custom ``encodings.json`` -- ``rvc4.encodings``
+accepting an inline dict / JSON string / path, the per-channel expansion, the
+``--quantization_overrides`` extraction. Being host-only, they cannot cover the
+RVC4 exporter actually consuming those encodings, nor the two related SNPE knobs,
+so this e2e converts the toy conv net with:
 
-  * a custom ``encodings.json`` (a per-channel ``param`` encoding for the
-    conv weight + an ``activation`` encoding) referenced by path, which drives
-    ``RVC4Exporter.generate_io_encodings`` -> ``snpe-onnx-to-dlc
-    --quantization_overrides`` and ``snpe-dlc-quant --override_params``
-    (``rvc4/exporter.py`` lines 180-181, 267-279, 335-343);
-  * ``use_per_row_quantization`` -> ``snpe-dlc-quant
-    --use_per_row_quantization`` (default off, so otherwise never exercised);
+  * a custom ``encodings.json`` referenced by path, driving
+    ``generate_io_encodings`` -> ``snpe-onnx-to-dlc --quantization_overrides``
+    and ``snpe-dlc-quant --override_params``;
+  * ``use_per_row_quantization`` -> ``snpe-dlc-quant --use_per_row_quantization``
+    (off by default, so otherwise never exercised);
   * a non-default ``htp_socs`` -> ``snpe-dlc-graph-prepare --htp_socs``.
 
-It asserts a quantized ``.dlc`` is produced. ``generate_io_encodings``
-normalizes the *exposed* input/output activation encodings to default int8
-IO regardless of what we pass, so the custom values mainly exercise the
-internal-tensor / param path; the point here is the exporter code, not
-numeric fidelity.
+``generate_io_encodings`` normalizes the *exposed* input/output activation
+encodings to default int8 IO whatever we pass, so the custom values mainly
+exercise the internal-tensor / param path. The point is the exporter code, not
+numeric fidelity, so asserting a quantized ``.dlc`` is produced is enough.
 
-Runs inside the RVC4 Docker image::
+Run inside the RVC4 Docker image::
 
     modelconverter shell rvc4 --dev -c 'python -m pytest -k rvc4_encodings'
 """
@@ -33,40 +29,30 @@ from pathlib import Path
 import pytest
 
 from modelconverter.__main__ import convert
-from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Target
-from tests.helpers.conversion import write_toy_conv_config
+from tests.helpers.conversion import (
+    assert_produced_suffix,
+    write_toy_conv_config,
+)
 
 _OUT_CHANNELS = 4
 
-# A custom AIMET-style encodings file. The `weight` param uses per-channel
-# vectors (one entry per output channel) so parsing also exercises the
-# per-channel expansion; `img`/`out` activations are normalized to int8 IO
-# by the exporter but still drive the --quantization_overrides path.
+_INT8_ACTIVATION = {
+    "bitwidth": 8,
+    "dtype": "int",
+    "is_symmetric": "False",
+    "min": 0.0,
+    "max": 255.0,
+    "scale": 1.0,
+    "offset": 0,
+}
+
+# An AIMET-style encodings file. The `weight` param uses per-channel vectors (one
+# entry per output channel) so parsing also exercises the per-channel expansion.
 _ENCODINGS = {
     "activation_encodings": {
-        "img": [
-            {
-                "bitwidth": 8,
-                "dtype": "int",
-                "is_symmetric": "False",
-                "min": 0.0,
-                "max": 255.0,
-                "scale": 1.0,
-                "offset": 0,
-            }
-        ],
-        "out": [
-            {
-                "bitwidth": 8,
-                "dtype": "int",
-                "is_symmetric": "False",
-                "min": 0.0,
-                "max": 255.0,
-                "scale": 1.0,
-                "offset": 0,
-            }
-        ],
+        "img": [_INT8_ACTIVATION],
+        "out": [_INT8_ACTIVATION],
     },
     "param_encodings": {
         "weight": [
@@ -88,11 +74,6 @@ _ENCODINGS = {
 def encodings_config(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> tuple[Path, Path]:
-    """Toy conv ONNX + calibration + config, and a sibling ``encodings.json``.
-
-    Returns ``(config_path, encodings_path)``; the encodings file is passed to
-    the conversion via the ``rvc4.encodings`` override (a path).
-    """
     workdir = tmp_path_factory.mktemp("rvc4_encodings")
     config_path = write_toy_conv_config(workdir, out_channels=_OUT_CHANNELS)
     encodings_path = workdir / "encodings.json"
@@ -104,11 +85,10 @@ def encodings_config(
 def test_rvc4_encodings(encodings_config: tuple[Path, Path]):
     config_path, encodings_path = encodings_config
     output_name = "_rvc4-encodings"
+    # `ast.literal_eval` parses the list/bool opts; the path string for
+    # `rvc4.encodings` falls through as-is.
     convert(
         Target.RVC4,
-        # Custom encodings.json (by path) + per-row quantization + a
-        # non-default HTP SoC. `ast.literal_eval` parses the list/bool opts;
-        # the path string falls through as-is for `rvc4.encodings`.
         "rvc4.encodings",
         str(encodings_path),
         "rvc4.use_per_row_quantization",
@@ -123,8 +103,4 @@ def test_rvc4_encodings(encodings_config: tuple[Path, Path]):
         output_dir=output_name,
         to="native",
     )
-
-    out_dir = OUTPUTS_DIR / output_name
-    assert out_dir.exists(), f"output dir {out_dir} was not created"
-    dlcs = list(out_dir.glob("*.dlc")) or list(out_dir.rglob("*.dlc"))
-    assert dlcs, f"no converted .dlc produced in {out_dir}"
+    assert_produced_suffix(output_name, ".dlc")

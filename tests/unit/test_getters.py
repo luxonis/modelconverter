@@ -1,15 +1,11 @@
 """Host-side unit tests for ``modelconverter.packages.getters``.
 
-``getters`` is pure dispatch: each factory imports a backend class
-lazily and constructs it. The concrete backends live in vendor-heavy
-modules (RVC2/RVC3 need ``tflite2onnx``/``openvino``, Hailo needs
-``hailo_sdk_client``) that are *omitted* from the coverage target, so
-the success branches are exercised by injecting a lightweight fake
-backend module into ``sys.modules`` for the path the factory imports
-from. The RVC4 exporter, whose module imports cleanly host-side, is
-additionally constructed for real as a smoke test. The cheap ``raise``
-branches (unsupported analyzer/visualizer targets, unimplemented Hailo
-benchmark) are covered directly.
+``getters`` is pure dispatch: each factory lazily imports a backend class and
+constructs it. Those backends live in vendor-heavy modules (RVC2/RVC3 need
+``tflite2onnx``/``openvino``, Hailo needs ``hailo_sdk_client``), so the success
+branches are covered by injecting a fake backend module into ``sys.modules`` at
+the path the factory imports from. The RVC4 exporter imports cleanly host-side,
+so it also gets a real-construction smoke test.
 """
 
 import sys

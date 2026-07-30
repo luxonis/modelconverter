@@ -1,12 +1,8 @@
 """Host-side unit tests for ``modelconverter.utils.nn_archive``.
 
-Everything here runs without network, cloud, Docker or vendor tooling:
-tiny dummy ONNX models and hand-crafted NN-archive ``config.json`` files
-are built on the fly (see ``tests/helpers``), and absolute paths make
-``resolve_path`` short-circuit on ``Path.exists()`` so nothing is ever
-downloaded. The autouse ``_isolate_cwd`` fixture re-roots every relative
-``shared_with_container/*`` dir into the test's own ``tmp_path``, so the
-suite is safe under ``pytest -n auto``.
+No network, cloud, Docker or vendor tooling: the dummy ONNX models and NN-archive
+``config.json`` files are built on the fly, and absolute paths make
+``resolve_path`` short-circuit on ``Path.exists()`` so nothing is downloaded.
 """
 
 import shutil

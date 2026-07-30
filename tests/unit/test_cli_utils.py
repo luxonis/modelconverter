@@ -4,7 +4,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from requests.exceptions import HTTPError
 
+from modelconverter.cli import utils as cli_utils
 from modelconverter.cli.utils import (
     ModelType,
     extract_preprocessing,
@@ -236,28 +238,23 @@ class _FakeRequest:
 
 
 def test_found_public(monkeypatch: pytest.MonkeyPatch):
-    import modelconverter.cli.utils as cli_utils
-
-    fake = _FakeRequest([[{"id": "abc123"}]])
-    monkeypatch.setattr(cli_utils, "Request", fake)
+    monkeypatch.setattr(
+        cli_utils, "Request", _FakeRequest([[{"id": "abc123"}]])
+    )
     assert slug_to_id("my-model", "models") == "abc123"
 
 
 def test_http_error_then_found_private(monkeypatch: pytest.MonkeyPatch):
-    from requests.exceptions import HTTPError
-
-    import modelconverter.cli.utils as cli_utils
-
-    # public lookup errors (suppressed) -> private lookup succeeds.
-    fake = _FakeRequest([HTTPError("boom"), [{"id": "priv"}]])
-    monkeypatch.setattr(cli_utils, "Request", fake)
+    # The public lookup errors (suppressed), then the private one succeeds.
+    monkeypatch.setattr(
+        cli_utils,
+        "Request",
+        _FakeRequest([HTTPError("boom"), [{"id": "priv"}]]),
+    )
     assert slug_to_id("my-model", "modelVersions") == "priv"
 
 
 def test_not_found_raises(monkeypatch: pytest.MonkeyPatch):
-    import modelconverter.cli.utils as cli_utils
-
-    fake = _FakeRequest([[], []])
-    monkeypatch.setattr(cli_utils, "Request", fake)
+    monkeypatch.setattr(cli_utils, "Request", _FakeRequest([[], []]))
     with pytest.raises(ValueError, match="not found"):
         slug_to_id("missing", "models")

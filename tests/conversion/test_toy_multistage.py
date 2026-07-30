@@ -1,30 +1,24 @@
 """Toy multistage conversion + correctness tests.
 
-Builds a small, fully-controllable multistage network out of the toy pieces:
+A small, fully-controllable multistage net built from the toy pieces::
 
-    first  (toy net)  ->\
-                         > third (aggregator: from_first * from_second + bias)
+    first  (toy net)  ->\\
+                         > third (from_first * from_second + bias)
     second (toy net)  ->/
 
-``third``'s two inputs are produced by *linked calibration* from the two
-upstream stages, exercising BOTH linking options modelconverter supports:
+``third``'s two inputs come from *linked calibration*, covering both linking
+options: ``from_first`` from a direct output link, ``from_second`` from a script
+that combines ``second``'s two outputs. Stage order in the config is topological,
+so the upstream stages are converted before ``third``'s linked calibration runs
+their inferers.
 
-  * ``from_first``  <- ``{stage: first, output: output}``  (direct output link)
-  * ``from_second`` <- ``{stage: second, script: ...}``    (script transform)
+Conversion is checked on every platform; correctness against an fp32 golden
+pipeline on rvc2/rvc4, matching the single-stage toy -- their preprocessing goes
+through the golden path and their DLC/IR runs on the CI CPU backend.
 
-The script combines ``second``'s two outputs (``output + pooled``). Stage
-order in the config is topological (first, second, third) so the upstream
-stages are converted before ``third``'s linked calibration runs their
-inferers.
-
-Tests run inside the platform Docker image, e.g.::
+Run inside the platform Docker image, e.g.::
 
     modelconverter shell rvc4 --dev -c 'python -m pytest -k toy_multistage'
-
-Conversion is checked on every platform (default tool-version); correctness
-(vs an fp32 golden pipeline) is checked on rvc2/rvc4, matching the
-single-stage toy (their preprocessing goes through the golden path and their
-DLC/IR runs on the CI CPU backend).
 """
 
 from pathlib import Path
@@ -33,7 +27,6 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 import pytest
-import yaml
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
@@ -45,11 +38,13 @@ from tests.helpers.conversion import (
     HAILO_FAST_OPTS,
     assert_produced,
     toy_net_image_inputs,
+    write_config,
 )
 from tests.helpers.onnx_factory import (
     build_toy_aggregator_onnx,
     build_toy_integration_onnx,
 )
+from tests.helpers.platforms import platform_params
 from tests.helpers.precision import (
     cosine_similarity,
     golden_reference_outputs,
@@ -60,42 +55,32 @@ _SIZE = 64
 _CALIB_VALUE = 100
 _THRESHOLD = 0.9
 
-ALL_PLATFORMS = ("rvc2", "rvc3", "rvc4", "hailo")
 CORRECTNESS_PLATFORMS = ("rvc2", "rvc4")
 MAIN_STAGE = "third"
 
-# Linked-calibration script for `from_second`: combines both of `second`'s
-# outputs. `run_script(outputs)` receives {output_name: array} for one sample.
+# Linked-calibration script for `from_second`. `run_script(outputs)` receives
+# {output_name: array} for one sample.
 _LINK_SCRIPT = (
     "def run_script(outputs):\n"
     "    return outputs['output'] + outputs['pooled']\n"
 )
 
-
-def _image_inputs(calib_dir: Path) -> list[dict]:
-    """The toy net's three image inputs, calibrated from an image directory.
-
-    Upstream stages need image calibration (a directory) -- the multistage
-    exporter copies those images to run the stage's inferer for the linked
-    calibration of ``third``. The images are constant so quantization stays
-    near-lossless.
-    """
-    return toy_net_image_inputs(
-        {"path": str(calib_dir), "max_images": 8}, size=_SIZE
-    )
+_CONVERT_XFAILS = {
+    "rvc3": "RVC3 quantization does not support multi-input models",
+    "hailo": "Hailo quantizer cannot handle the toy net's activation range",
+}
 
 
 @pytest.fixture(scope="module")
 def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Build the toy multistage ONNX stages + config; return the config path."""
     workdir = tmp_path_factory.mktemp("toy_multistage")
-    first = workdir / "first.onnx"
-    second = workdir / "second.onnx"
-    third = workdir / "third.onnx"
-    build_toy_integration_onnx(first, size=_SIZE)
-    build_toy_integration_onnx(second, size=_SIZE)
-    build_toy_aggregator_onnx(third, size=_SIZE)
+    first = build_toy_integration_onnx(workdir / "first.onnx", size=_SIZE)
+    second = build_toy_integration_onnx(workdir / "second.onnx", size=_SIZE)
+    third = build_toy_aggregator_onnx(workdir / "third.onnx", size=_SIZE)
 
+    # Upstream stages need image calibration (a directory): the multistage
+    # exporter copies those images to run each stage's inferer for `third`'s
+    # linked calibration. Constant images keep quantization near-lossless.
     calib_dir = workdir / "calib"
     calib_dir.mkdir()
     for i in range(8):
@@ -104,73 +89,51 @@ def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
             np.full((_SIZE, _SIZE, 3), _CALIB_VALUE, dtype=np.uint8),
         )
 
-    outputs = [{"name": "output"}, {"name": "pooled"}]
-    config = {
-        "name": "toy_multistage",
-        "stages": {
-            "first": {
-                "input_model": str(first),
-                "inputs": _image_inputs(calib_dir),
-                "outputs": outputs,
-            },
-            "second": {
-                "input_model": str(second),
-                "inputs": _image_inputs(calib_dir),
-                "outputs": outputs,
-            },
-            "third": {
-                "input_model": str(third),
-                "inputs": [
-                    {
-                        "name": "from_first",
-                        "encoding": "NONE",
-                        "calibration": {"stage": "first", "output": "output"},
-                    },
-                    {
-                        "name": "from_second",
-                        "encoding": "NONE",
-                        "calibration": {
-                            "stage": "second",
-                            "script": _LINK_SCRIPT,
+    def toy_stage(model: Path) -> dict:
+        return {
+            "input_model": str(model),
+            "inputs": toy_net_image_inputs(
+                {"path": str(calib_dir), "max_images": 8}, size=_SIZE
+            ),
+            "outputs": [{"name": "output"}, {"name": "pooled"}],
+        }
+
+    return write_config(
+        workdir,
+        "toy_multistage",
+        {
+            "name": "toy_multistage",
+            "stages": {
+                "first": toy_stage(first),
+                "second": toy_stage(second),
+                "third": {
+                    "input_model": str(third),
+                    "inputs": [
+                        {
+                            "name": "from_first",
+                            "encoding": "NONE",
+                            "calibration": {
+                                "stage": "first",
+                                "output": "output",
+                            },
                         },
-                    },
-                ],
-                "outputs": [{"name": "out"}],
+                        {
+                            "name": "from_second",
+                            "encoding": "NONE",
+                            "calibration": {
+                                "stage": "second",
+                                "script": _LINK_SCRIPT,
+                            },
+                        },
+                    ],
+                    "outputs": [{"name": "out"}],
+                },
             },
         },
-    }
-    config_path = workdir / "toy_multistage.yaml"
-    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
-    return config_path
-
-
-# Platforms that cannot convert this multistage net, and why.
-_CONVERT_XFAIL = {
-    "rvc3": "RVC3 quantization does not support multi-input models",
-    "hailo": "Hailo quantizer cannot handle the toy net's activation range (shift delta)",
-}
-_CONVERT_CASES = [
-    pytest.param(
-        platform,
-        marks=[getattr(pytest.mark, platform)]
-        + (
-            [
-                pytest.mark.xfail(
-                    reason=_CONVERT_XFAIL[platform],
-                    strict=True,
-                    raises=SystemExit,
-                )
-            ]
-            if platform in _CONVERT_XFAIL
-            else []
-        ),
-        id=platform,
     )
-    for platform in ALL_PLATFORMS
-]
 
 
-@pytest.mark.parametrize("platform", _CONVERT_CASES)
+@pytest.mark.parametrize("platform", platform_params(xfails=_CONVERT_XFAILS))
 def test_toy_multistage(platform: str, multistage_config: Path):
     output_name = f"_toy-multistage-{platform}"
     extra = HAILO_FAST_OPTS if platform == "hailo" else ()
@@ -190,10 +153,9 @@ def _golden_pipeline(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Fp32 reference for the whole pipeline on the constant input.
 
-    Returns ``(final_out, from_first, from_second)`` -- the fp32 upstream
-    tensors that feed ``third`` (the same ones the converted ``third`` gets),
-    and ``third``'s fp32 output. ``third`` has no preprocessing, so its golden
-    is a plain onnxruntime run.
+    Returns ``third``'s fp32 output plus the two fp32 upstream tensors that feed
+    it -- the same ones the converted ``third`` gets. ``third`` has no
+    preprocessing, so its golden is a plain onnxruntime run.
     """
     first, second, third = (
         cfg.stages["first"],
@@ -215,22 +177,16 @@ def _golden_pipeline(
     from_first = g_first["output"]
     from_second = g_second["output"] + g_second["pooled"]  # the link script
 
-    sess = ort.InferenceSession(
+    session = ort.InferenceSession(
         str(third.input_model), providers=["CPUExecutionProvider"]
     )
-    (out,) = sess.run(
+    (out,) = session.run(
         ["out"], {"from_first": from_first, "from_second": from_second}
     )
     return np.asarray(out), from_first, from_second
 
 
-@pytest.mark.parametrize(
-    "platform",
-    [
-        pytest.param(p, marks=getattr(pytest.mark, p), id=p)
-        for p in CORRECTNESS_PLATFORMS
-    ],
-)
+@pytest.mark.parametrize("platform", platform_params(CORRECTNESS_PLATFORMS))
 def test_toy_multistage_precision(platform: str, multistage_config: Path):
     target = Target(platform)
     output_name = f"_toy-multistage-prec-{platform}"
@@ -250,18 +206,18 @@ def test_toy_multistage_precision(platform: str, multistage_config: Path):
     # Feed the converted `third` the same fp32 upstream tensors as the golden.
     # The vendor inferer reads a `.npy` verbatim, so it must already be in the
     # layout that backend expects: SNPE (rvc4) consumes NHWC, OpenVINO (rvc2)
-    # NCHW. `from_*_arr` is NCHW [1, C, H, W].
-    from_first = work / "from_first.npy"
-    from_second = work / "from_second.npy"
-
-    def _as_input(arr: np.ndarray) -> np.ndarray:
+    # NCHW, and `from_*_arr` is NCHW.
+    def as_input(arr: np.ndarray) -> np.ndarray:
         return arr[0].transpose(1, 2, 0) if platform == "rvc4" else arr
 
-    np.save(from_first, _as_input(from_first_arr))
-    np.save(from_second, _as_input(from_second_arr))
+    from_first = work / "from_first.npy"
+    from_second = work / "from_second.npy"
+    np.save(from_first, as_input(from_first_arr))
+    np.save(from_second, as_input(from_second_arr))
 
-    third_dir = OUTPUTS_DIR / output_name / "third"
-    model_path = locate_converted_model(third_dir, platform)
+    model_path = locate_converted_model(
+        OUTPUTS_DIR / output_name / "third", platform
+    )
     inferer = get_inferer(
         target,
         str(model_path),

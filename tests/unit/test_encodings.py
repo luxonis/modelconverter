@@ -1,11 +1,10 @@
 """Unit tests for ``modelconverter.utils.encodings``.
 
-Quantization encodings arrive from AIMET in several shapes -- keyed by
-tensor name or as a flat list, per-tensor or per-channel, with the short
-``bw``/``is_sym`` aliases or the long spellings -- and all of them have
-to collapse into the same ``Encodings`` model. The cases below pin the
-individual normalisation rules; the properties at the bottom assert the
-invariants that hold for every combination of them.
+Quantization encodings arrive from AIMET in several shapes -- keyed by tensor name
+or as a flat list, per-tensor or per-channel, with the short ``bw``/``is_sym``
+aliases or the long spellings -- and all have to collapse into the same
+``Encodings`` model. The cases below pin the individual normalisation rules; the
+properties at the bottom assert the invariants that hold across combinations.
 """
 
 import json

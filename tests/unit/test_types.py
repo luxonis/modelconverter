@@ -1,14 +1,13 @@
 """Host-side unit tests for ``modelconverter.utils.types``.
 
-``DataType`` is mostly a bundle of lookup tables between vendor dtype
-spellings. The tables below describe every ``from_*`` converter in one
-place -- its accepted spellings, a value it must reject and the error it
-must raise -- so a new backend is a single table entry rather than a new
-pair of near-identical test functions.
+``DataType`` is mostly lookup tables between vendor dtype spellings, so
+``CONVERTERS`` below describes every ``from_*`` converter in one place -- its
+accepted spellings, a value it must reject, the error it must raise. A new
+backend is then one table entry rather than another pair of near-identical tests.
 
-``from_dai_dtype`` and ``from_tensorflow_dtype`` stay separate: the
-former needs ``depthai`` imported lazily (so a missing wheel fails one
-test rather than collection), the latter a faked ``tflite`` module.
+``from_dai_dtype`` and ``from_tensorflow_dtype`` stay separate: the former imports
+``depthai`` lazily so a missing wheel fails one test rather than collection, the
+latter needs a faked ``tflite`` module.
 """
 
 import re

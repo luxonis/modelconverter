@@ -1,9 +1,8 @@
 """Shared ``hypothesis`` strategies for the host-side unit tests.
 
-The strategies stay deliberately small (few dimensions, short names,
-tiny images): every property built on them is about bookkeeping --
-shapes, layouts, key sets, file counts -- so large values would only
-buy runtime.
+Deliberately small (few dimensions, short names, tiny images): every property
+built on them is about bookkeeping -- shapes, layouts, key sets, file counts --
+so larger values would only buy runtime.
 """
 
 import string
@@ -67,9 +66,13 @@ _ENCODING_FIELDS = {
     "max": _finite_floats,
 }
 
-# Keys ``_normalize_encoding_item`` is expected to fold away: the two
-# short aliases and anything outside ``ALLOWED_ENCODING_KEYS``.
-_ALIAS_FIELDS = {
+# Scalar fields, in draw order. The trailing four are what
+# ``_normalize_encoding_item`` is expected to fold away: the two short aliases
+# and anything outside ``ALLOWED_ENCODING_KEYS``.
+_SCALAR_FIELDS = {
+    "bitwidth": st.sampled_from([4, 8, 16, 32]),
+    "is_symmetric": st.booleans(),
+    "dtype": st.sampled_from(["int", "INT", "float", "Float"]),
     "bw": st.sampled_from([4, 8, 16, 32]),
     "is_sym": st.booleans(),
     "name": tensor_names,
@@ -83,11 +86,10 @@ def encoding_items(
 ) -> dict[str, Any]:
     """A single raw quantization-encoding entry.
 
-    Values are valid for ``QuantizationOverridesItem`` so the same
-    strategy drives both the private normalisation helpers and the
-    public ``parse_encodings`` entry point. When ``vector_length`` is
-    given, every per-channel field is drawn as a list of that length --
-    mismatched lengths are a rejected input, covered by its own test.
+    Values are valid for ``QuantizationOverridesItem``, so one strategy drives
+    both the private normalisation helpers and the public ``parse_encodings``.
+    With ``vector_length``, every per-channel field is drawn as a list of that
+    length -- mismatched lengths are a rejected input with its own test.
     """
     item: dict[str, Any] = {}
     for key, values in _ENCODING_FIELDS.items():
@@ -103,14 +105,7 @@ def encoding_items(
             else draw(values)
         )
 
-    if draw(st.booleans()):
-        item["bitwidth"] = draw(st.sampled_from([4, 8, 16, 32]))
-    if draw(st.booleans()):
-        item["is_symmetric"] = draw(st.booleans())
-    if draw(st.booleans()):
-        item["dtype"] = draw(st.sampled_from(["int", "INT", "float", "Float"]))
-
-    for key, values in _ALIAS_FIELDS.items():
+    for key, values in _SCALAR_FIELDS.items():
         if draw(st.booleans()):
             item[key] = draw(values)
     return item

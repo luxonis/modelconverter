@@ -1,31 +1,17 @@
-"""Conversion *precision* tests -- "does the converted model still behave
-like the original".
+"""Conversion precision tests -- "does the converted model still behave like the
+original".
 
-For each case we convert a model to a native model file, then run inference
-twice on the same image:
+Each case converts a model, then runs inference twice on the same image: the
+original ONNX via onnxruntime with the config's preprocessing applied by hand
+(``ONNXReferenceInferer``), and the converted model via its vendor inferer, which
+is fed the raw image and normalizes internally. A faithful conversion keeps every
+output's cosine similarity above a per-platform floor -- quantizing backends
+(rvc3/rvc4) legitimately diverge more than fp16 (rvc2).
 
-  * the **original** ONNX via onnxruntime, with the config's preprocessing
-    applied by hand (``ONNXReferenceInferer``) -- the reference;
-  * the **converted** model via its vendor inferer (``get_inferer``), which
-    is fed the raw image and normalizes internally.
+Adding a model is one ``PrecisionCase`` entry; nothing here is model-specific.
 
-A faithful conversion keeps every output's cosine similarity to the
-reference above a per-platform floor. Quantizing backends (rvc3/rvc4)
-legitimately diverge more than fp16 (rvc2), hence the per-platform values.
-
-Adding a model is one ``PrecisionCase`` entry in ``CASES`` -- nothing here
-is model-specific. Give it a config whose ``input_model`` is an ONNX (the
-reference is onnxruntime), and optionally override the per-platform
-thresholds or the input image.
-
-Like the conversion tests these run *inside* the platform Docker image
-(``modelconverter shell <platform> --dev -c pytest ...``), so each case
-carries its platform marker and ``-m rvc2`` runs only the rvc2 ones.
-
-Hailo is intentionally excluded by default: the cheap smoke settings the
-conversion tests use (``disable_compilation`` + optimization level 0)
-destroy numeric fidelity, and a full-optimization Hailo compile is far too
-slow for CI. A Hailo precision check would need a dedicated full-opt run.
+Hailo is excluded: the cheap smoke settings the conversion tests use destroy
+numeric fidelity, and a full-optimization Hailo compile is far too slow for CI.
 """
 
 from dataclasses import dataclass, field
@@ -37,7 +23,6 @@ import pytest
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
 from modelconverter.packages.getters import get_inferer
-from modelconverter.utils.config import Config, SingleStageConfig
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.general import sanitize_net_name
 from modelconverter.utils.types import Target
@@ -49,24 +34,18 @@ from tests.helpers.target_options import target_options
 GS = "gs://luxonis-test-bucket/modelconverter"
 
 DEFAULT_PLATFORMS = ("rvc2", "rvc3", "rvc4")
-
 DEFAULT_THRESHOLD: Final[float] = 0.8
 
 
 @dataclass(frozen=True)
 class PrecisionCase:
     id: str
-    """Human-readable case id (used in the test id / output dir)."""
+    # A config (or archive) whose `input_model` is the reference ONNX.
     config: str
-    """Config (or archive) whose ``input_model`` is the reference ONNX."""
     platforms: tuple[str, ...] = DEFAULT_PLATFORMS
-    """Platforms this case runs on."""
+    # Per-platform cosine floors, falling back to DEFAULT_THRESHOLD.
     thresholds: dict[str, float] = field(default_factory=dict)
-    """Per-platform cosine floor overrides (falls back to DEFAULT_THRESHOLD)."""
     image: Path = TEST_IMAGE
-    """Inference input image."""
-    main_stage: str | None = None
-    """Main stage name (only needed for multistage configs)."""
 
 
 CASES: list[PrecisionCase] = [
@@ -78,7 +57,6 @@ CASES: list[PrecisionCase] = [
     ),
 ]
 
-
 _PARAMS = [
     pytest.param(
         platform,
@@ -89,12 +67,6 @@ _PARAMS = [
     for case in CASES
     for platform in case.platforms
 ]
-
-
-def _main_stage(cfg: Config, case: PrecisionCase) -> SingleStageConfig:
-    if case.main_stage is not None:  # pragma: no cover
-        return cfg.get_stage_config(case.main_stage)
-    return next(iter(cfg.stages.values()))
 
 
 @pytest.mark.real_model
@@ -110,18 +82,19 @@ def test_precision(platform: str, case: PrecisionCase):
         path=case.config,
         output_dir=output_name,
         to="native",
-        main_stage=case.main_stage,
     )
 
     cfg, _, _ = get_configs(target, case.config, list(options))
-    stage = _main_stage(cfg, case)
+    stage = next(iter(cfg.stages.values()))
     model_path = locate_converted_model(OUTPUTS_DIR / output_name, platform)
 
     reference = ONNXReferenceInferer.from_stage(stage).infer(case.image)
-
-    dest = OUTPUTS_DIR / f"{output_name}_infer"
     inferer = get_inferer(
-        target, str(model_path), case.image.parent, dest, stage
+        target,
+        str(model_path),
+        case.image.parent,
+        OUTPUTS_DIR / f"{output_name}_infer",
+        stage,
     )
     converted = inferer.infer({stage.inputs[0].name: case.image})
 
@@ -129,10 +102,9 @@ def test_precision(platform: str, case: PrecisionCase):
         f"output names mismatch: {list(reference)} vs {list(converted)}"
     )
     threshold = case.thresholds.get(platform, DEFAULT_THRESHOLD)
-    for ref_name, ref in reference.items():
-        conv = converted[ref_name]
-        cos = cosine_similarity(ref, conv)
-        cos = cosine_similarity(ref, conv)
+    for name, ref in reference.items():
+        cos = cosine_similarity(ref, converted[name])
         assert cos >= threshold, (
-            f"{platform} {case.id} output {ref_name!r}: cosine {cos:.4f} < {threshold}"
+            f"{platform} {case.id} output {name!r}: "
+            f"cosine {cos:.4f} < {threshold}"
         )

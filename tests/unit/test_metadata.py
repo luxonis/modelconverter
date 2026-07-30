@@ -1,17 +1,11 @@
 """Host-side unit tests for ``modelconverter.utils.metadata``.
 
-Only two of the five ``get_metadata`` backends are exercisable without
-vendor tooling:
-
-* ``_get_metadata_onnx`` -- ``onnx`` is installed, so it is covered fully.
-* ``_get_metadata_dlc`` via a ``.csv`` path -- the parser reads a
-  pre-generated ``snpe-dlc-info`` CSV, so everything except the
-  ``snpe-dlc-info`` subprocess branch is reachable with a crafted file.
-
-The IR (``openvino``), TFLite (``tflite``) and Hailo (``hailo_sdk_client``)
-backends import vendor libraries that are absent host-side; the tests
-below assert only that ``get_metadata`` *dispatches* to them (raising an
-``ImportError``), leaving their bodies for Tier-2 coverage.
+Two of the five ``get_metadata`` backends work without vendor tooling: the ONNX
+one, and the DLC one via a ``.csv`` path (the parser reads a pre-generated
+``snpe-dlc-info`` CSV, so everything but the subprocess branch is reachable with
+a crafted file). The IR, TFLite and Hailo backends import vendor libraries that
+are absent host-side, so the tests below only assert that ``get_metadata``
+dispatches to them, leaving their bodies to the conversion tests.
 """
 
 import sys

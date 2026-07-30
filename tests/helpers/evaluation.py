@@ -1,8 +1,8 @@
-"""Helpers for real-model quality regression tests.
+"""Helpers for the real-model quality regression tests.
 
-These helpers deliberately keep Luxonis Eval as an external test dependency.
-ModelConverter only supplies conversion and native inference; Luxonis Eval
-parses the raw outputs and calculates the task metrics.
+Luxonis Eval stays an external test dependency: modelconverter only supplies
+conversion and native inference, Luxonis Eval parses the raw outputs and
+calculates the task metrics.
 """
 
 from collections.abc import Iterable

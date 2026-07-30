@@ -11,19 +11,16 @@ setup_logging()
 
 settings.register_profile(
     "modelconverter",
-    # A property test must never be the reason a green build turns red:
-    # `derandomize` pins the example stream so every run — and every CI
-    # re-run — tries exactly the same inputs, and dropping the example
-    # database keeps that true on a fresh checkout.
+    # A property test must never be why a green build turns red: pin the example
+    # stream and drop the example database, so every run and every CI re-run
+    # tries exactly the same inputs, fresh checkout included.
     derandomize=True,
     database=None,
-    # Timing decides nothing here; the properties are about shapes, key
-    # sets and file bookkeeping, all of which get slow under `-n auto`
-    # or a cold FS without being wrong.
+    # The properties are all about shapes, key sets and file bookkeeping, none of
+    # which get wrong under `-n auto` or a cold FS -- only slow.
     deadline=None,
-    # Some properties need a scratch directory. Reusing one `tmp_path`
-    # across the examples of a single test is intentional — each example
-    # overwrites the files it reads back.
+    # Reusing one `tmp_path` across a test's examples is intentional; each
+    # example overwrites the files it reads back.
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 settings.load_profile("modelconverter")

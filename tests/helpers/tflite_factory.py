@@ -16,8 +16,6 @@ _RELU = 19  # BuiltinOperator.RELU
 _FLOAT32 = 0  # TensorType.FLOAT32
 _TFLITE_SCHEMA_VERSION = 3
 
-__all__ = ["build_toy_tflite"]
-
 
 def _int_vector(b: flatbuffers.Builder, values: list[int]) -> int:
     b.StartVector(4, len(values), 4)
