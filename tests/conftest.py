@@ -1,11 +1,32 @@
 import os
 
 import pytest
+from hypothesis import HealthCheck, settings
 from luxonis_ml.utils import setup_logging
 
 os.environ.setdefault("LUXONIS_TELEMETRY_ENABLED", "false")
 
 setup_logging()
+
+
+settings.register_profile(
+    "modelconverter",
+    # A property test must never be the reason a green build turns red:
+    # `derandomize` pins the example stream so every run — and every CI
+    # re-run — tries exactly the same inputs, and dropping the example
+    # database keeps that true on a fresh checkout.
+    derandomize=True,
+    database=None,
+    # Timing decides nothing here; the properties are about shapes, key
+    # sets and file bookkeeping, all of which get slow under `-n auto`
+    # or a cold FS without being wrong.
+    deadline=None,
+    # Some properties need a scratch directory. Reusing one `tmp_path`
+    # across the examples of a single test is intentional — each example
+    # overwrites the files it reads back.
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+settings.load_profile("modelconverter")
 
 
 _PLATFORM_MARKERS = frozenset({"rvc2", "rvc3", "rvc4", "hailo"})

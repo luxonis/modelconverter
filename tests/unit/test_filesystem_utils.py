@@ -7,6 +7,8 @@ the suite never touches the network or any cloud credentials.
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from modelconverter.utils import filesystem_utils as fsu
 from modelconverter.utils.constants import SHARED_DIR
@@ -63,16 +65,16 @@ def _install_fake_fs(
     return instances
 
 
-def test_file():
-    assert fsu.get_protocol("/data/model.onnx") == "file"
-
-
-def test_s3():
-    assert fsu.get_protocol("s3://bucket/model.onnx") == "s3"
-
-
-def test_gs():
-    assert fsu.get_protocol("gs://bucket/model.onnx") == "gcs"
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("/data/model.onnx", "file"),
+        ("s3://bucket/model.onnx", "s3"),
+        ("gs://bucket/model.onnx", "gcs"),
+    ],
+)
+def test_get_protocol(url: str, expected: str):
+    assert fsu.get_protocol(url) == expected
 
 
 def test_existing_absolute_file(work_dir: Path):
@@ -193,3 +195,33 @@ def test_upload_dir(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
     fs = instances[0]
     assert fs.put_dir_calls == [(local, "d")]
     assert fs.put_file_calls == []
+
+
+@given(
+    available=st.integers(min_value=0, max_value=8),
+    max_files=st.integers(min_value=-1, max_value=10),
+)
+def test_directory_download_respects_max_files(
+    work_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    available: int,
+    max_files: int,
+):
+    """``max_files`` caps the fetch; a negative value means "all".
+
+    Calibration downloads lean on this to pull a handful of images out
+    of a bucket holding thousands, so both the cutoff and the
+    unlimited case have to be exact.
+    """
+    monkeypatch.delenv("MODELCONVERTER_UNSAFE_CACHE", raising=False)
+    walk = tuple(f"d/f{i}.jpg" for i in range(available))
+    instances = _install_fake_fs(
+        monkeypatch, is_dir=True, walk=walk, split=("s3://b", "d")
+    )
+
+    fsu.download_from_remote("s3://b/d", work_dir, max_files=max_files)
+
+    expected = available if max_files < 0 else min(max_files, available)
+    assert [remote for remote, _ in instances[0].get_file_calls] == list(
+        walk[:expected]
+    )

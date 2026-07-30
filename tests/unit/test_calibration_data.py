@@ -5,10 +5,13 @@ network access or cloud credentials are ever required.
 """
 
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from modelconverter.utils import calibration_data as cd
 from modelconverter.utils.constants import CALIBRATION_DIR, SHARED_DIR
@@ -22,20 +25,44 @@ def _touch_img(directory: Path, name: str = "img.png") -> Path:
     return path
 
 
-def test_slice_with_max_images(work_dir: Path):
-    d = work_dir / "imgs"
-    d.mkdir()
-    for i in range(3):
-        (d / f"{i}.png").write_bytes(b"x")
-    assert len(cd.read_img_dir(d, max_images=2)) == 2
+def _img_dir(root: Path, count: int) -> Path:
+    """A directory holding ``count`` (empty) calibration images."""
+    directory = root / "imgs"
+    directory.mkdir(exist_ok=True)
+    for path in directory.iterdir():
+        path.unlink()
+    for i in range(count):
+        (directory / f"{i}.png").write_bytes(b"x")
+    return directory
 
 
-def test_all_when_negative(work_dir: Path):
-    d = work_dir / "imgs"
-    d.mkdir()
-    for i in range(3):
-        (d / f"{i}.png").write_bytes(b"x")
-    assert len(cd.read_img_dir(d, max_images=-1)) == 3
+@pytest.fixture
+def fake_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Callable[[Path], None]:
+    """Make ``download_from_remote`` yield a prepared local path."""
+
+    def install(target: Path) -> None:
+        monkeypatch.setattr(
+            cd,
+            "download_from_remote",
+            lambda string, dest, max_images=-1: target,
+        )
+
+    return install
+
+
+@given(
+    available=st.integers(min_value=1, max_value=8),
+    max_images=st.integers(min_value=-1, max_value=10),
+)
+def test_read_img_dir_respects_max_images(
+    work_dir: Path, available: int, max_images: int
+):
+    """``max_images`` truncates the listing; negative means "all"."""
+    directory = _img_dir(work_dir, available)
+    expected = available if max_images < 0 else min(max_images, available)
+    assert len(cd.read_img_dir(directory, max_images)) == expected
 
 
 def test_no_images_exits(work_dir: Path):
@@ -84,44 +111,32 @@ def _make_zip(work_dir: Path) -> Path:
     return zip_path
 
 
-def test_zip_extracts(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
-    zip_path = _make_zip(work_dir)
-    monkeypatch.setattr(
-        cd,
-        "download_from_remote",
-        lambda string, dest, max_images=-1: zip_path,
-    )
+def test_zip_extracts(work_dir: Path, fake_download: Callable[[Path], None]):
+    fake_download(_make_zip(work_dir))
     result = cd._get_from_remote("s3://b/data.zip", CALIBRATION_DIR)
     assert result == CALIBRATION_DIR / "data"
     assert (result / "img.png").exists()
 
 
 def test_zip_removes_existing_extract_dir(
-    work_dir: Path, monkeypatch: pytest.MonkeyPatch
+    work_dir: Path, fake_download: Callable[[Path], None]
 ):
-    zip_path = _make_zip(work_dir)
+    fake_download(_make_zip(work_dir))
     # Pre-create the extraction target to hit the rmtree branch.
     stale = CALIBRATION_DIR / "data"
     stale.mkdir(parents=True)
     (stale / "stale.txt").write_text("x")
-    monkeypatch.setattr(
-        cd,
-        "download_from_remote",
-        lambda string, dest, max_images=-1: zip_path,
-    )
     result = cd._get_from_remote("s3://b/data.zip", CALIBRATION_DIR)
     assert result == CALIBRATION_DIR / "data"
     assert not (result / "stale.txt").exists()
 
 
-def test_non_zip_passthrough(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_non_zip_passthrough(
+    work_dir: Path, fake_download: Callable[[Path], None]
+):
     target = work_dir / "plain"
     _touch_img(target)
-    monkeypatch.setattr(
-        cd,
-        "download_from_remote",
-        lambda string, dest, max_images=-1: target,
-    )
+    fake_download(target)
     assert cd._get_from_remote("s3://b/plain", CALIBRATION_DIR) == target
 
 
@@ -144,14 +159,10 @@ def test_existing_file_raises(work_dir: Path):
         cd.download_calibration_data(str(f))
 
 
-def test_remote_branch(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_remote_branch(work_dir: Path, fake_download: Callable[[Path], None]):
     target = work_dir / "remote"
     _touch_img(target)
-    monkeypatch.setattr(
-        cd,
-        "download_from_remote",
-        lambda string, dest, max_images=-1: target,
-    )
+    fake_download(target)
     assert cd.download_calibration_data("s3://b/remote") == target
 
 

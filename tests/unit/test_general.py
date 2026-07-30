@@ -1,11 +1,24 @@
 """Unit tests for ``modelconverter.utils.general``."""
 
+import re
+from pathlib import Path
+
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from modelconverter.utils.general import (
     _normalize_underscores,
     sanitize_net_name,
 )
+
+# Printable ASCII except "/" (the two ranges skip 0x2F), minus the two
+# components ``PurePath`` folds away -- "." and ".." are a question
+# about paths, not about naming.
+_names = st.from_regex(r"[ -.0-~]{1,12}", fullmatch=True).filter(
+    lambda part: part not in {".", ".."}
+)
+_paths = st.lists(_names, min_size=1, max_size=3).map("/".join)
 
 
 @pytest.mark.parametrize(
@@ -61,3 +74,50 @@ def test_sanitize(name: str, with_suffix: bool, expected: str):
 
 def test_default_with_suffix_is_false():
     assert sanitize_net_name("foo@bar.onnx") == "foo_bar_onnx"
+
+
+# --- Properties -----------------------------------------------------
+#
+# Sanitized names end up as filenames inside the conversion containers
+# and as node names in the produced archives, so the guarantees below
+# have to hold for every name a user can type, not just the shapes the
+# cases above enumerate.
+
+
+@given(value=st.text(alphabet="_ab", max_size=12))
+def test_underscore_runs_always_collapse(value: str):
+    collapsed = _normalize_underscores(value)
+    assert "__" not in collapsed
+    assert _normalize_underscores(collapsed) == collapsed
+
+
+@given(name=_paths, with_suffix=st.booleans())
+def test_sanitizing_is_idempotent(name: str, with_suffix: bool):
+    once = sanitize_net_name(name, with_suffix=with_suffix)
+    assert sanitize_net_name(once, with_suffix=with_suffix) == once
+
+
+@given(name=_paths)
+def test_sanitized_basename_is_a_safe_identifier(name: str):
+    """Nothing but ``[A-Za-z0-9_-]`` survives in the basename."""
+    sanitized = sanitize_net_name(name)
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", Path(sanitized).name)
+
+
+@given(name=_paths)
+def test_with_suffix_preserves_the_extension_verbatim(name: str):
+    """``with_suffix=True`` sanitizes the stem and nothing else.
+
+    Conversion dispatches on the extension, so rewriting it would send
+    a model down the wrong backend.
+    """
+    sanitized = sanitize_net_name(name, with_suffix=True)
+    assert Path(sanitized).suffix == Path(name).suffix
+    assert re.fullmatch(r"[A-Za-z0-9_-]*", Path(sanitized).stem)
+
+
+@given(name=_paths, with_suffix=st.booleans())
+def test_only_the_basename_is_rewritten(name: str, with_suffix: bool):
+    """A model kept in a directory stays in that directory."""
+    sanitized = sanitize_net_name(name, with_suffix=with_suffix)
+    assert Path(sanitized).parent == Path(name).parent
