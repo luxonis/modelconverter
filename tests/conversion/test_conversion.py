@@ -20,6 +20,7 @@ from modelconverter.__main__ import convert
 from modelconverter.utils.types import Target
 from tests.helpers.conversion import HAILO_FAST_OPTS, assert_produced
 from tests.helpers.platforms import ALL_PLATFORMS, platform_marks
+from tests.helpers.target_options import target_options
 
 GS = "gs://luxonis-test-bucket/modelconverter"
 
@@ -103,11 +104,13 @@ _CASES = [
 
 @pytest.mark.parametrize(("platform", "scenario"), _CASES)
 def test_convert(platform: str, scenario: Scenario):
+    target = Target(platform)
     output_name = f"_{platform}-{scenario.id}"
     extra = HAILO_FAST_OPTS if platform == "hailo" else ()
     convert(
-        Target(platform),
+        target,
         *_scenario_options(platform, scenario),
+        *target_options(target),
         *extra,
         path=scenario.path,
         output_dir=output_name,

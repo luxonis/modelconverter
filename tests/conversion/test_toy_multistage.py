@@ -50,6 +50,7 @@ from tests.helpers.precision import (
     golden_reference_outputs,
     locate_converted_model,
 )
+from tests.helpers.target_options import target_options
 
 _SIZE = 64
 _CALIB_VALUE = 100
@@ -135,10 +136,12 @@ def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.mark.parametrize("platform", platform_params(xfails=_CONVERT_XFAILS))
 def test_toy_multistage(platform: str, multistage_config: Path):
+    target = Target(platform)
     output_name = f"_toy-multistage-{platform}"
     extra = HAILO_FAST_OPTS if platform == "hailo" else ()
     convert(
-        Target(platform),
+        target,
+        *target_options(target),
         *extra,
         path=str(multistage_config),
         output_dir=output_name,
@@ -189,9 +192,11 @@ def _golden_pipeline(
 @pytest.mark.parametrize("platform", platform_params(CORRECTNESS_PLATFORMS))
 def test_toy_multistage_precision(platform: str, multistage_config: Path):
     target = Target(platform)
+    options = target_options(target)
     output_name = f"_toy-multistage-prec-{platform}"
     convert(
         target,
+        *options,
         path=str(multistage_config),
         output_dir=output_name,
         to="native",
@@ -200,7 +205,7 @@ def test_toy_multistage_precision(platform: str, multistage_config: Path):
 
     work = OUTPUTS_DIR / f"{output_name}_work"
     work.mkdir(parents=True, exist_ok=True)
-    cfg, _, _ = get_configs(target, str(multistage_config), [])
+    cfg, _, _ = get_configs(target, str(multistage_config), list(options))
     golden, from_first_arr, from_second_arr = _golden_pipeline(cfg, work)
 
     # Feed the converted `third` the same fp32 upstream tensors as the golden.

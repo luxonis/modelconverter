@@ -24,6 +24,7 @@ from tests.helpers.conversion import (
     write_toy_conv_config,
 )
 from tests.helpers.onnx_factory import build_relu_onnx
+from tests.helpers.target_options import target_options
 from tests.helpers.tflite_factory import build_toy_tflite
 
 
@@ -78,7 +79,11 @@ def test_rvc2_hwc_input(tmp_path: Path):
     )
     output_name = "_rvc2-hwc"
     convert(
-        Target.RVC2, path=str(config_path), output_dir=output_name, to="native"
+        Target.RVC2,
+        *target_options(Target.RVC2),
+        path=str(config_path),
+        output_dir=output_name,
+        to="native",
     )
     assert_produced(output_name)
 
@@ -90,7 +95,11 @@ def test_rvc2_tflite_hwc_input(tmp_path: Path):
     tflite_path = build_toy_tflite(tmp_path / "hwc.tflite", shape=(8, 8, 3))
     output_name = "_rvc2-tflite-hwc"
     convert(
-        Target.RVC2, path=str(tflite_path), output_dir=output_name, to="native"
+        Target.RVC2,
+        *target_options(Target.RVC2),
+        path=str(tflite_path),
+        output_dir=output_name,
+        to="native",
     )
     assert_produced(output_name)
 

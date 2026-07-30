@@ -186,16 +186,13 @@ _PARAMS = [
 ]
 
 
-@pytest.mark.real_model
 @pytest.mark.parametrize(("platform", "case"), _PARAMS)
 def test_real_model_task_metrics(
     platform: str, case: EvaluationCase, tmp_path: Path, coco_sample: Any
 ) -> None:
     """Converted native outputs retain source quality on labelled COCO data."""
-    pytest.importorskip(
-        "luxonis_eval",
-        reason="install requirements-eval.txt to run real-model metric tests",
-    )
+    # Imported here, not at module level: the rvc3/hailo jobs collect this module
+    # too, and only the rvc2/rvc4 dev images carry `requirements-eval.txt`.
     from hubai_sdk import HubAIClient
     from luxonis_eval.metrics import (
         BboxMeanAveragePrecision,

@@ -33,6 +33,7 @@ from modelconverter.utils.types import Target
 from tests.helpers.conversion import assert_produced
 from tests.helpers.platforms import platform_params
 from tests.helpers.precision import cosine_similarity, locate_converted_model
+from tests.helpers.target_options import target_options
 from tests.helpers.tflite_factory import build_toy_tflite
 
 PLATFORMS = ("rvc2", "rvc3", "rvc4")
@@ -61,9 +62,11 @@ def solid_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.mark.parametrize("platform", _PARAMS)
 def test_toy_tflite_conversion(platform: str, toy_tflite: Path):
+    target = Target(platform)
     output_name = f"_toy-tflite-{platform}"
     convert(
-        Target(platform),
+        target,
+        *target_options(target),
         path=str(toy_tflite),
         output_dir=output_name,
         to="native",
@@ -76,12 +79,21 @@ def test_toy_tflite_precision(
     platform: str, toy_tflite: Path, solid_image: Path
 ):
     target = Target(platform)
+    options = target_options(target)
     output_name = f"_toy-tflite-prec-{platform}"
-    convert(target, path=str(toy_tflite), output_dir=output_name, to="native")
+    convert(
+        target,
+        *options,
+        path=str(toy_tflite),
+        output_dir=output_name,
+        to="native",
+    )
 
     # A bare model path is not a config file -- pass it as an `input_model`
     # override with `path=None`, exactly as `convert` does internally.
-    cfg, _, _ = get_configs(target, None, ["input_model", str(toy_tflite)])
+    cfg, _, _ = get_configs(
+        target, None, ["input_model", str(toy_tflite), *options]
+    )
     stage = next(iter(cfg.stages.values()))
     model_path = locate_converted_model(OUTPUTS_DIR / output_name, platform)
     inferer = get_inferer(

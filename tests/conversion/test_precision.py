@@ -69,7 +69,6 @@ _PARAMS = [
 ]
 
 
-@pytest.mark.real_model
 @pytest.mark.parametrize(("platform", "case"), _PARAMS)
 def test_precision(platform: str, case: PrecisionCase):
     target = Target(platform)

@@ -33,6 +33,7 @@ from tests.helpers.precision import (
     golden_reference_outputs,
     locate_converted_model,
 )
+from tests.helpers.target_options import target_options
 
 _SIZE = 32
 # Constant the fidelity comparison runs on, inside the calibration range so the
@@ -77,7 +78,7 @@ def test_toy_precision(
     platform: str, toy_conv_config: Path, constant_image: Path
 ):
     target = Target(platform)
-    opts = _PLATFORM_OPTS.get(platform, ())
+    opts = (*target_options(target), *_PLATFORM_OPTS.get(platform, ()))
     output_name = f"_toy-prec-{platform}"
 
     convert(

@@ -40,6 +40,10 @@ from tests.helpers.precision import (
     golden_reference_outputs,
     locate_converted_model,
 )
+from tests.helpers.target_options import (
+    superblob_skip_reason,
+    target_options,
+)
 
 _SIZE = 64
 # Constant pixel value used for BOTH calibration and the correctness input, so
@@ -54,17 +58,26 @@ class Precision:
     opts: tuple[str, ...] = ()
     # Reason, if this precision is a known failure for the platform.
     xfail: str | None = None
+    # Reason, if the current tool version cannot run this precision at all.
+    skip: str | None = None
     # Cosine floor, if this precision also gets the fidelity check. Only
     # rvc2/rvc4 can: their preprocessing goes through the same transform as the
     # golden reference, so the outputs are directly comparable.
     correctness: float | None = None
 
 
+# These two cases own the RVC2 superblob decision explicitly, so unlike the other
+# conversion tests they do not take `target_options` -- where superblob is too
+# slow to compile the dedicated case is skipped, rather than quietly flipped to
+# `False`, which would just duplicate `blob`.
 PRECISIONS: dict[str, list[Precision]] = {
     "rvc2": [
         Precision("blob", ("rvc2.superblob", "False"), correctness=_THRESHOLD),
         Precision(
-            "superblob", ("rvc2.superblob", "True"), correctness=_THRESHOLD
+            "superblob",
+            ("rvc2.superblob", "True"),
+            skip=superblob_skip_reason(),
+            correctness=_THRESHOLD,
         ),
     ],
     "rvc3": [
@@ -218,7 +231,7 @@ _CASES = [
     pytest.param(
         platform,
         precision,
-        marks=platform_marks(platform, precision.xfail),
+        marks=platform_marks(platform, precision.xfail, precision.skip),
         id=f"{platform}-{precision.name}",
     )
     for platform, precisions in PRECISIONS.items()
@@ -266,6 +279,7 @@ def test_rvc2_input_freezing(frozen_toy_config: Path):
     output_name = "_toy-rvc2-frozen"
     convert(
         Target.RVC2,
+        *target_options(Target.RVC2),
         path=str(frozen_toy_config),
         output_dir=output_name,
         to="native",
