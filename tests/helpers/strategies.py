@@ -8,7 +8,16 @@ so larger values would only buy runtime.
 import string
 from typing import Any
 
+from hypothesis import HealthCheck, settings
 from hypothesis import strategies as st
+
+# ``work_dir`` and ``monkeypatch`` are function-scoped, so Hypothesis hands the
+# same one to every example of a test instead of a fresh one. A handful of
+# tests want exactly that -- each example overwrites the files it reads back --
+# and mark themselves with this; anywhere else the health check still fires.
+reuses_function_fixtures = settings(
+    suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
 
 # ``make_default_layout`` labels dimensions from a 26-letter alphabet, so
 # ranks beyond that have no layout to produce. Stopping well short keeps

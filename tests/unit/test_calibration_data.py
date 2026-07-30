@@ -16,6 +16,7 @@ from hypothesis import strategies as st
 from modelconverter.utils import calibration_data as cd
 from modelconverter.utils.constants import CALIBRATION_DIR, SHARED_DIR
 from modelconverter.utils.exceptions import ModelconverterException
+from tests.helpers.strategies import reuses_function_fixtures
 
 
 def _touch_img(directory: Path, name: str = "img.png") -> Path:
@@ -52,6 +53,7 @@ def fake_download(
     return install
 
 
+@reuses_function_fixtures
 @given(
     available=st.integers(min_value=1, max_value=8),
     max_images=st.integers(min_value=-1, max_value=10),

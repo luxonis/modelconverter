@@ -16,7 +16,7 @@ from PIL import Image
 from modelconverter.utils.exceptions import ModelconverterException
 from modelconverter.utils.image import read_calib_dir, read_image
 from modelconverter.utils.types import DataType, Encoding, ResizeMethod
-from tests.helpers.strategies import image_sizes
+from tests.helpers.strategies import image_sizes, reuses_function_fixtures
 
 # Absolute so the autouse cwd-isolation fixture cannot break the path.
 DATA_DIR = (
@@ -246,6 +246,7 @@ NUMERIC_DATA_TYPES = [
 ]
 
 
+@reuses_function_fixtures
 @given(
     source=image_sizes,
     target=image_sizes,
@@ -280,6 +281,7 @@ def test_output_geometry_matches_the_requested_shape(
     )
 
 
+@reuses_function_fixtures
 @given(
     source=image_sizes,
     target=image_sizes,
@@ -301,6 +303,7 @@ def test_requested_data_type_is_always_honoured(
     assert img.dtype == data_type.as_numpy_dtype()
 
 
+@reuses_function_fixtures
 @given(source=image_sizes, target=image_sizes)
 def test_pad_centres_the_image_and_keeps_its_aspect_ratio(
     work_dir: Path, source: tuple[int, int], target: tuple[int, int]
@@ -341,6 +344,7 @@ def test_pad_centres_the_image_and_keeps_its_aspect_ratio(
     )
 
 
+@reuses_function_fixtures
 @given(source=image_sizes, target=image_sizes)
 def test_crop_takes_the_centre_of_the_source(
     work_dir: Path, source: tuple[int, int], target: tuple[int, int]
@@ -372,6 +376,7 @@ def test_crop_takes_the_centre_of_the_source(
     assert np.array_equal(img, expected)
 
 
+@reuses_function_fixtures
 @given(
     source=image_sizes,
     target=image_sizes,

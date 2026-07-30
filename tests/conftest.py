@@ -1,7 +1,7 @@
 import os
 
 import pytest
-from hypothesis import HealthCheck, settings
+from hypothesis import settings
 from luxonis_ml.utils import setup_logging
 
 os.environ.setdefault("LUXONIS_TELEMETRY_ENABLED", "false")
@@ -19,9 +19,6 @@ settings.register_profile(
     # The properties are all about shapes, key sets and file bookkeeping, none of
     # which get wrong under `-n auto` or a cold FS -- only slow.
     deadline=None,
-    # Reusing one `tmp_path` across a test's examples is intentional; each
-    # example overwrites the files it reads back.
-    suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 settings.load_profile("modelconverter")
 

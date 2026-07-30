@@ -12,6 +12,7 @@ from hypothesis import strategies as st
 
 from modelconverter.utils import filesystem_utils as fsu
 from modelconverter.utils.constants import SHARED_DIR
+from tests.helpers.strategies import reuses_function_fixtures
 
 
 def _install_fake_fs(
@@ -197,6 +198,7 @@ def test_upload_dir(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
     assert fs.put_file_calls == []
 
 
+@reuses_function_fixtures
 @given(
     available=st.integers(min_value=0, max_value=8),
     max_files=st.integers(min_value=-1, max_value=10),

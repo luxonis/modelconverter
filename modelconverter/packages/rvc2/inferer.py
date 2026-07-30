@@ -14,10 +14,12 @@ class RVC2Inferer(Inferer):
         self.bin_path = self.model_path.with_suffix(".bin")
         ie = IECore()
         net = ie.read_network(model=self.xml_path, weights=self.bin_path)
+        # Both the shape and the layout come from the IR. The config describes
+        # the original model, whose layout the conversion need not keep, and
+        # `read_image` reads the one through the other -- taking a shape here
+        # and a layout there would feed the network a transposed image.
         for name, input_info in net.input_info.items():
             shape = list(input_info.input_data.shape)
-            if self.in_shapes.get(name) == shape:
-                continue
             self.in_shapes[name] = shape
             if len(shape) == 4:
                 self.layout[name] = "NCHW" if shape[1] in {1, 3, 4} else "NHWC"
