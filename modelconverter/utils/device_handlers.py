@@ -1,4 +1,5 @@
 import re
+import shutil
 import subprocess
 from abc import ABC, abstractmethod
 
@@ -177,7 +178,10 @@ class AdbHandler(DeviceHandler):
     """Device handler implementation based on Android Debug Bridge."""
 
     def __init__(
-        self, device_id: str | None = None, silent: bool = True
+        self,
+        device_id: str | None = None,
+        device_ip: str | None = None,
+        silent: bool = True,
     ) -> None:
         """Initialize an ADB handler for the target device.
 
@@ -186,6 +190,8 @@ class AdbHandler(DeviceHandler):
 
         @param device_id: Optional ADB device identifier.
         @type device_id: str | None
+        @param device_ip: Optional device IP for ADB-over-TCP connection.
+        @type device_ip: str | None
         @param silent: If C{True}, suppress command logging.
         @type silent: bool
         @raises RuntimeError: If device enumeration fails or no
@@ -193,7 +199,7 @@ class AdbHandler(DeviceHandler):
         @raises ValueError: If the specified device is not connected.
         """
         super().__init__(silent)
-        device_id = self._check_adb_connection(device_id)
+        device_id = self._check_adb_connection(device_id, device_ip)
         self._device_args = ["-s", device_id] if device_id else []
 
     @override
@@ -230,26 +236,44 @@ class AdbHandler(DeviceHandler):
     ) -> tuple[int, str, str]:
         return self.run("push", src, dst, check=check)
 
-    def _check_adb_connection(self, device_id: str | None) -> str:
+    def _list_adb_devices(self) -> list[str]:
+        result = subprocess.run(
+            ["adb", "devices"], check=False, capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            raise RuntimeError("Unable to verify device ID")
+        pattern = re.compile(r"^(\S+)\s+device$", re.MULTILINE)
+        return pattern.findall(result.stdout)
+
+    def _check_adb_connection(
+        self, device_id: str | None, device_ip: str | None
+    ) -> str:
         """Validate ADB connectivity and resolve the device ID.
 
         @param device_id: Requested device identifier, or C{None} to
             auto-select the first connected device.
         @type device_id: str | None
+        @param device_ip: Optional device IP for ADB-over-TCP connection.
+        @type device_ip: str | None
         @return: Resolved connected device identifier.
         @rtype: str
         @raises RuntimeError: If device enumeration fails or no device
             is connected.
         @raises ValueError: If the requested device is not connected.
         """
-        result = subprocess.run(
-            ["adb", "devices"], check=False, capture_output=True
-        )
-        if result.returncode == 0:
-            pattern = re.compile(r"^(\w+)\s+device$", re.MULTILINE)
-            devices = pattern.findall(result.stdout.decode())
-        else:
-            raise RuntimeError("Unable to verify device ID")
+        if shutil.which("adb") is None:
+            raise RuntimeError("ADB is not installed.")
+
+        devices = self._list_adb_devices()
+        if device_ip is not None:
+            subprocess.run(
+                ["adb", "connect", device_ip], check=False, capture_output=True
+            )
+            devices = self._list_adb_devices()
+            for device in devices:
+                if device == device_ip or device.startswith(f"{device_ip}:"):
+                    logger.info(f"Using ADB-over-TCP device: {device}")
+                    return device
 
         if device_id is None:
             if len(devices) == 0:
@@ -272,7 +296,7 @@ def create_handler(
     device_ip: str | None, device_adb_id: str | None
 ) -> DeviceHandler:
     try:
-        handler = AdbHandler(device_adb_id)
+        handler = AdbHandler(device_adb_id, device_ip=device_ip)
     except Exception:
         if device_ip is not None:
             handler = SSHHandler(device_ip)
