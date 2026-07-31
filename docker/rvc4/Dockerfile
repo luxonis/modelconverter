@@ -21,6 +21,7 @@ RUN <<EOF
         libncurses5     \
         libtinfo5       \
         llvm-19-runtime \
+        openssh-client  \
         git
 
 EOF
