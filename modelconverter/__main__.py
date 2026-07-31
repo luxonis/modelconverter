@@ -62,6 +62,11 @@ docker_parameters = Group.create_ordered(
 docker_commands = Group.create_ordered("Docker Commands")
 device_commands = Group.create_ordered("Device Commands")
 
+COMMAND_TARGETS = {
+    "analyze": Target.RVC4,
+    "visualize": Target.RVC4,
+}
+
 OptsType: TypeAlias = Annotated[
     list[str] | None, Parameter(json_list=False, json_dict=False)
 ]
@@ -651,8 +656,13 @@ def launcher(
         return command(*bound.args, **bound.kwargs)
 
     tag = "dev" if dev else "latest"
-
-    target = bound.arguments["target"]
+    target = bound.arguments.get("target")
+    if target is None and tokens:
+        target = COMMAND_TARGETS.get(tokens[0])
+    if target is None:
+        raise ValueError(
+            "Unable to determine the target platform for this command."
+        )
 
     if dev:
         version = tool_version or get_default_target_version(target.value)
