@@ -41,10 +41,11 @@ class RVC4Analyzer(Analyzer):
             ]
             input_matcher = self._prepare_input_matcher()
             dlc_matcher = self._prepare_raw_inputs(input_matcher, np.float32)
+            output_dir = f"/data/modelconverter/{self.model_name}/output"
 
             output_dir = Path(
                 self._run_dlc(
-                    f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float",
+                    f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --output_dir {output_dir} --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float",
                     prepare_debug_dirs=True,
                 )
             )
@@ -508,10 +509,11 @@ class RVC4Analyzer(Analyzer):
     def analyze_layer_cycles(self) -> None:
         input_matcher = self._prepare_input_matcher()
         _ = self._prepare_raw_inputs(input_matcher)
+        output_dir = f"/data/modelconverter/{self.model_name}/output"
 
         logger.info("Running DLC model to analyze layer cycles.")
         output_dir = self._run_dlc(
-            f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_auto",
+            f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --output_dir {output_dir} --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_auto",
             prepare_debug_dirs=False,
         )
 
