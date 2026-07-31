@@ -21,6 +21,8 @@ from modelconverter.utils import constants, create_handler, subprocess_run
 
 
 class RVC4Analyzer(Analyzer):
+    SUPPORTED_INPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".npy")
+
     def __init__(
         self,
         device_ip: str | None,
@@ -103,11 +105,20 @@ class RVC4Analyzer(Analyzer):
 
     def _prepare_input_matcher(self) -> dict[str, dict[str, str]]:
         image_names = {
-            k: sorted(Path(v).glob("*")) for k, v in self.image_dirs.items()
+            k: sorted(
+                path
+                for path in Path(v).glob("*")
+                if path.suffix.lower() in self.SUPPORTED_INPUT_SUFFIXES
+            )
+            for k, v in self.image_dirs.items()
         }
         if len({len(v) for v in image_names.values()}) != 1:
             raise ValueError(
                 "All input dirs must have the same number of input images"
+            )
+        if any(len(v) == 0 for v in image_names.values()):
+            raise ValueError(
+                "Input dirs must contain at least one supported image or .npy file."
             )
 
         input_matcher = {}
@@ -135,11 +146,9 @@ class RVC4Analyzer(Analyzer):
             input_row = ""
             dlc_matcher[sample_id] = f"Result_{result_index}"
             for input_name, img_path in input_dict.items():
-                if not img_path.endswith((".png", ".jpg", ".jpeg", ".npy")):
-                    continue
                 img_name = Path(img_path).stem
                 width_height = self.input_sizes[input_name][1:3][::-1]
-                if img_path.endswith(
+                if img_path.lower().endswith(
                     ".npy"
                 ):  # expects numpy array to already be in correct format
                     raw_image = cast(np.ndarray, np.load(img_path)).astype(
@@ -340,11 +349,8 @@ class RVC4Analyzer(Analyzer):
         for i, input_dict in input_matcher.items():
             onnx_input_dict = {}
             for input_name, img_path in input_dict.items():
-                if not img_path.endswith((".png", ".jpg", ".jpeg", ".npy")):
-                    continue
-
                 shape = onnx_input_shapes[input_name][2:][::-1]
-                if img_path.endswith(".npy"):
+                if img_path.lower().endswith(".npy"):
                     image = np.load(img_path)
                     if image.shape != tuple(shape):
                         raise ValueError(
