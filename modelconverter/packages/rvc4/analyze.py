@@ -16,7 +16,7 @@ from loguru import logger
 from PIL import Image
 
 from modelconverter.packages.base_analyze import Analyzer
-from modelconverter.packages.rvc4.device_info import get_device_info
+from modelconverter.packages.rvc4.benchmark import get_device_info
 from modelconverter.utils import constants, create_handler, subprocess_run
 
 class RVC4Analyzer(Analyzer):
