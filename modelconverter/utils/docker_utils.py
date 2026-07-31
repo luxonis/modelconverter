@@ -157,6 +157,8 @@ def docker_build(
     if target == "rvc4" and bare_tag != "dev":
         build_dir = prepare_build_environemnt(target, version)
     else:
+        if target == "rvc4":
+            ensure_rvc4_snpe_archive(version, Path("docker", "extra_packages"))
         build_dir = Path()
 
     tag = f"{tag_version}-{bare_tag}"
@@ -206,19 +208,24 @@ def prepare_build_environemnt(
     ) as z:
         z.extractall(build_path)
 
-    if (p := Path("docker", "extra_packages", f"snpe-{version}.zip")).exists():
-        shutil.copy(p, build_path / f"modelconverter-{__version__}-beta" / p)
-
-    elif not (build_path / f"modelconverter-{__version__}-beta" / p).exists():
-        download_snpe_archive(
-            version,
-            build_path
-            / f"modelconverter-{__version__}-beta"
-            / "docker"
-            / "extra_packages",
-        )
+    src_archive = ensure_rvc4_snpe_archive(
+        version, Path("docker", "extra_packages")
+    )
+    dest_archive = (
+        build_path / f"modelconverter-{__version__}-beta" / src_archive
+    )
+    if not dest_archive.exists():
+        dest_archive.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(src_archive, dest_archive)
 
     return build_path / f"modelconverter-{__version__}-beta"
+
+
+def ensure_rvc4_snpe_archive(version: str, dest: Path) -> Path:
+    archive_path = dest / f"snpe-{semver.finalize_version(version)}.zip"
+    if archive_path.exists():
+        return archive_path
+    return download_snpe_archive(version, dest)
 
 
 def download_snpe_archive(version: str, dest: Path) -> Path:
