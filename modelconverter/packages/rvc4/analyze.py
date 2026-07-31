@@ -27,6 +27,9 @@ def device_id_to_adb_id(device_id: str) -> str:
 
 
 def resolve_adb_id_from_ip(device_ip: str) -> str | None:
+    if shutil.which("adb") is None:
+        return None
+
     subprocess.run(
         ["adb", "connect", device_ip], check=False, capture_output=True
     )
