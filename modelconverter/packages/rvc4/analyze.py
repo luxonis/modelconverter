@@ -29,10 +29,12 @@ class RVC4Analyzer(Analyzer):
         device_id: str | None,
         dlc_model_path: str,
         image_dirs: dict[str, str],
+        image_subset: int | None = None,
     ):
         super().__init__(dlc_model_path, image_dirs)
         _, device_adb_id = get_device_info(device_ip, device_id)
         self.handler = create_handler(device_ip, device_adb_id)
+        self.image_subset = image_subset
 
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
         onnx_all_layers = self._add_outputs_to_all_layers(str(onnx_model_path))
@@ -112,6 +114,10 @@ class RVC4Analyzer(Analyzer):
             )
             for k, v in self.image_dirs.items()
         }
+        if self.image_subset is not None:
+            image_names = {
+                k: paths[: self.image_subset] for k, paths in image_names.items()
+            }
         if len({len(v) for v in image_names.values()}) != 1:
             raise ValueError(
                 "All input dirs must have the same number of input images"
