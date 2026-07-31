@@ -39,23 +39,56 @@ class RVC4Analyzer(Analyzer):
             self._debug_output_paths = [
                 layer.name for layer in session.get_outputs()
             ]
+            output_names = [layer.name for layer in session.get_outputs()]
+            layer_names = self._replace_bad_layer_names(output_names)
+            onnx_input_shapes = {
+                input_metadata.name: input_metadata.shape
+                for input_metadata in session.get_inputs()
+            }
             input_matcher = self._prepare_input_matcher()
-            dlc_matcher = self._prepare_raw_inputs(input_matcher, np.float32)
-            output_dir = f"/data/modelconverter/{self.model_name}/output"
-
-            output_dir = Path(
-                self._run_dlc(
-                    f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --output_dir {output_dir} --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float",
-                    prepare_debug_dirs=True,
-                )
+            statistics = []
+            device_output_dir = (
+                f"/data/modelconverter/{self.model_name}/output"
             )
-            dlc_matcher = {k: output_dir / v for k, v in dlc_matcher.items()}
 
-            self._flatten_dlc_outputs(dlc_matcher)
-            self._compare_to_onnx(onnx_all_layers, input_matcher, dlc_matcher)
+            for sample_id, input_dict in input_matcher.items():
+                logger.info(
+                    f"Analyzing sample {sample_id + 1}/{len(input_matcher)}."
+                )
+                chunk_input_matcher = {sample_id: input_dict}
+                dlc_matcher = self._prepare_raw_inputs(
+                    chunk_input_matcher, np.float32
+                )
 
-            self._cleanup_dlc_outputs()
+                output_dir = Path(
+                    self._run_dlc(
+                        f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --output_dir {device_output_dir} --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float",
+                        prepare_debug_dirs=True,
+                    )
+                )
+                dlc_matcher = {
+                    k: output_dir / v for k, v in dlc_matcher.items()
+                }
+
+                self._flatten_dlc_outputs(dlc_matcher)
+                statistics.extend(
+                    self._collect_comparison_statistics(
+                        session,
+                        output_names,
+                        layer_names,
+                        onnx_input_shapes,
+                        chunk_input_matcher,
+                        dlc_matcher,
+                    )
+                )
+                self._cleanup_dlc_outputs()
+
+            self._write_layer_comparison_csv(statistics, layer_names)
         finally:
+            try:
+                self._cleanup_dlc_outputs()
+            except Exception:
+                logger.debug("Failed to clean up intermediate DLC outputs.")
             onnx_all_layers.unlink(missing_ok=True)
 
     def _resize_image(
@@ -96,9 +129,11 @@ class RVC4Analyzer(Analyzer):
 
         input_list = ""
         dlc_matcher = {}
-        for i, input_dict in input_matcher.items():
+        for result_index, (sample_id, input_dict) in enumerate(
+            input_matcher.items()
+        ):
             input_row = ""
-            dlc_matcher[i] = "Result_" + str(i)
+            dlc_matcher[sample_id] = f"Result_{result_index}"
             for input_name, img_path in input_dict.items():
                 if not img_path.endswith((".png", ".jpg", ".jpeg", ".npy")):
                     continue
@@ -229,7 +264,7 @@ class RVC4Analyzer(Analyzer):
                     raise
 
                 logger.warning(
-                    "SNPE reported missing output directories; creating them and retrying inference."
+                    "SNPE failed while writing an output file; recreating parent directories and retrying inference."
                 )
                 self._ensure_output_dirs(missing_dirs)
 
@@ -291,24 +326,17 @@ class RVC4Analyzer(Analyzer):
 
         raise ValueError(f"Cannot align shapes: {src.shape} -> {target_shape}")
 
-    def _compare_to_onnx(
+    def _collect_comparison_statistics(
         self,
-        onnx_all_layers: Path,
+        session: rt.InferenceSession,
+        output_names: list[str],
+        layer_names: list[str],
+        onnx_input_shapes: dict[str, list[int | str | None]],
         input_matcher: dict[str, dict[str, str]],
         dlc_matcher: dict[str, Path],
-    ) -> None:
+    ) -> list[list]:
         logger.info("Comparing ONNX and DLC layer outputs.")
-        session = rt.InferenceSession(onnx_all_layers)
-        output_names = [layer.name for layer in session.get_outputs()]
-
-        layer_names = self._replace_bad_layer_names(output_names)
-
         statistics = []
-        onnx_input_shapes = {}
-        logger.info("Inferencing ONNX model.")
-        for input_metadata in session.get_inputs():
-            onnx_input_shapes[input_metadata.name] = input_metadata.shape
-
         for i, input_dict in input_matcher.items():
             onnx_input_dict = {}
             for input_name, img_path in input_dict.items():
@@ -358,6 +386,11 @@ class RVC4Analyzer(Analyzer):
                 )
                 statistics.append([layer_name, *layer_stats])
 
+        return statistics
+
+    def _write_layer_comparison_csv(
+        self, statistics: list[list], layer_names: list[str]
+    ) -> None:
         output_dir = f"{constants.OUTPUTS_DIR!s}/analysis/{self.model_name}"
         stats_df = pl.DataFrame(
             statistics,
