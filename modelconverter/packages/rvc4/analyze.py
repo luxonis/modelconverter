@@ -168,13 +168,69 @@ class RVC4Analyzer(Analyzer):
                     )
                     output_dirs.add(parent_dir)
 
-        sorted_dirs = sorted(output_dirs)
+        self._ensure_output_dirs(sorted(output_dirs))
+
+    def _ensure_output_dirs(self, output_dirs: list[str]) -> None:
         chunk_size = 64
-        for i in range(0, len(sorted_dirs), chunk_size):
+        for i in range(0, len(output_dirs), chunk_size):
             mkdir_args = " ".join(
-                shlex.quote(path) for path in sorted_dirs[i : i + chunk_size]
+                shlex.quote(path) for path in output_dirs[i : i + chunk_size]
             )
             self.handler.shell(f"mkdir -p {mkdir_args}")
+
+    def _extract_missing_output_dirs(self, stderr: str) -> list[str]:
+        work_dir = f"/data/modelconverter/{self.model_name}"
+        output_root = posixpath.join(work_dir, "output")
+        missing_dirs: list[str] = []
+        seen_dirs: set[str] = set()
+
+        for line in stderr.splitlines():
+            if "Failed to write data to:" not in line:
+                continue
+
+            raw_path = line.split("Failed to write data to:", maxsplit=1)[
+                1
+            ].strip()
+            if not raw_path:
+                continue
+
+            if posixpath.isabs(raw_path):
+                resolved_path = posixpath.normpath(raw_path)
+            else:
+                resolved_path = posixpath.normpath(
+                    posixpath.join(work_dir, raw_path)
+                )
+
+            parent_dir = posixpath.dirname(resolved_path)
+            if not parent_dir.startswith(f"{output_root}/"):
+                continue
+
+            if parent_dir in seen_dirs:
+                continue
+
+            seen_dirs.add(parent_dir)
+            missing_dirs.append(parent_dir)
+
+        return missing_dirs
+
+    def _execute_dlc_command(
+        self, command: str, *, max_missing_output_dir_retries: int = 3
+    ) -> None:
+        work_dir = f"/data/modelconverter/{self.model_name}"
+        for attempt in range(max_missing_output_dir_retries + 1):
+            try:
+                self.handler.shell(f"cd {work_dir} && {command}")
+                return
+            except subprocess.CalledProcessError as e:
+                stderr = e.stderr.decode(errors="ignore") if e.stderr else ""
+                missing_dirs = self._extract_missing_output_dirs(stderr)
+                if not missing_dirs or attempt >= max_missing_output_dir_retries:
+                    raise
+
+                logger.warning(
+                    "SNPE reported missing output directories; creating them and retrying inference."
+                )
+                self._ensure_output_dirs(missing_dirs)
 
     def _add_outputs_to_all_layers(self, onnx_file_path: str) -> Path:
         onnx_path = Path(onnx_file_path)
@@ -377,9 +433,7 @@ class RVC4Analyzer(Analyzer):
                 f"rm -rf /data/modelconverter/{self.model_name}/output"
             )
             self._prepare_output_dirs(debug=prepare_debug_dirs)
-            self.handler.shell(
-                f"cd /data/modelconverter/{self.model_name} && {command}"
-            )
+            self._execute_dlc_command(command)
 
             target_dir = constants.OUTPUTS_DIR / "analysis" / self.model_name
             if (target_dir / "output").exists():
