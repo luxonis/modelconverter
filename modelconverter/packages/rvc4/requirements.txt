@@ -1,5 +1,6 @@
 tflite
 psutil
+depthai
 numpy<2
 polars
 pytest # this is actually required by snpe packages

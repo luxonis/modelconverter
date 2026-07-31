@@ -1,6 +1,5 @@
 import os
 import posixpath
-import re
 import shlex
 import shutil
 import subprocess
@@ -17,44 +16,8 @@ from loguru import logger
 from PIL import Image
 
 from modelconverter.packages.base_analyze import Analyzer
+from modelconverter.packages.rvc4.device_info import get_device_info
 from modelconverter.utils import constants, create_handler, subprocess_run
-
-
-def device_id_to_adb_id(device_id: str) -> str:
-    if device_id.isdigit():
-        return format(int(device_id), "x")
-    return device_id.encode("ascii").hex()
-
-
-def resolve_adb_id_from_ip(device_ip: str) -> str | None:
-    if shutil.which("adb") is None:
-        return None
-
-    subprocess.run(
-        ["adb", "connect", device_ip], check=False, capture_output=True
-    )
-    result = subprocess.run(
-        ["adb", "devices"], check=False, capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        return None
-
-    pattern = re.compile(r"^(\S+)\s+device$", re.MULTILINE)
-    for adb_id in pattern.findall(result.stdout):
-        if adb_id == device_ip or adb_id.startswith(f"{device_ip}:"):
-            return adb_id
-    return None
-
-
-def get_analysis_device_info(
-    device_ip: str | None, device_id: str | None
-) -> tuple[str | None, str | None]:
-    if device_id:
-        return device_ip, device_id_to_adb_id(device_id)
-    if device_ip:
-        return device_ip, resolve_adb_id_from_ip(device_ip)
-    return None, None
-
 
 class RVC4Analyzer(Analyzer):
     def __init__(
@@ -65,7 +28,7 @@ class RVC4Analyzer(Analyzer):
         image_dirs: dict[str, str],
     ):
         super().__init__(dlc_model_path, image_dirs)
-        _, device_adb_id = get_analysis_device_info(device_ip, device_id)
+        _, device_adb_id = get_device_info(device_ip, device_id)
         self.handler = create_handler(device_ip, device_adb_id)
 
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:

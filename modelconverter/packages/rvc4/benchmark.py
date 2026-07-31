@@ -734,3 +734,4 @@ def get_device_info(
             inferred_device_id = device.getDeviceId()
             return device_ip, device_id_to_adb_id(inferred_device_id)
     return None, None
+
