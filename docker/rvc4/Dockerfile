@@ -72,7 +72,7 @@ ENV VERSION=${VERSION}
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --fix-missing openssh-client
+RUN apt-get update && apt-get install -y --fix-missing openssh-client adb
 RUN pip install --upgrade pip
 
 COPY --link --from=base /opt/ /opt/
