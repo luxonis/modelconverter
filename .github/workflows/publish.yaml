@@ -2,6 +2,17 @@ name: Publish images
 
 on:
   workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to publish, comma-separated (rvc2, rvc3, rvc4, hailo). Empty publishes all."
+        required: false
+        type: string
+        default: ""
+      tool_versions:
+        description: "Tool versions to publish, comma-separated (e.g. 2022.3.0,2.41.0). Empty publishes all."
+        required: false
+        type: string
+        default: ""
   release:
     types: [published]
 
@@ -15,61 +26,36 @@ env:
   GAR_STEM: us-central1-docker.pkg.dev/easyml-394818
 
 jobs:
+  # Selects which of the `.github/matrix.json` entries get published. Without
+  # dispatch inputs that is every entry.
+  resolve-matrix:
+    name: Resolve matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.resolve.outputs.include }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Resolve matrix
+        id: resolve
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+          TOOL_VERSIONS: ${{ inputs.tool_versions }}
+        run: |
+          INCLUDE=$(.github/scripts/resolve-matrix.sh "${PLATFORMS}" "${TOOL_VERSIONS}")
+          echo "include=${INCLUDE}" >> "$GITHUB_OUTPUT"
+
   publish:
     name: ${{ matrix.package }} ${{ matrix.version }}
+    needs: resolve-matrix
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # `default` is the version that also receives the bare `:latest` tag.
-          - {
-              package: rvc2,
-              version: "2021.4.0",
-              default: "2022.3.0",
-              os: ubuntu-latest,
-            }
-          - {
-              package: rvc2,
-              version: "2022.3.0",
-              default: "2022.3.0",
-              os: ubuntu-latest,
-            }
-          - {
-              package: rvc3,
-              version: "2022.3.0",
-              default: "2022.3.0",
-              os: ubuntu-latest,
-            }
-          - {
-              package: rvc4,
-              version: "2.32.6",
-              default: "2.41.0",
-              os: ubuntu-latest,
-            }
-          - {
-              package: rvc4,
-              version: "2.41.0",
-              default: "2.41.0",
-              os: ubuntu-latest,
-            }
-          - {
-              package: hailo,
-              version: "2024.10",
-              default: "2025.04",
-              os: ubuntu-22.04-4core,
-            }
-          - {
-              package: hailo,
-              version: "2025.01",
-              default: "2025.04",
-              os: ubuntu-22.04-4core,
-            }
-          - {
-              package: hailo,
-              version: "2025.04",
-              default: "2025.04",
-              os: ubuntu-22.04-4core,
-            }
+        # `default` is the version that also receives the bare `:latest` tag.
+        include: ${{ fromJSON(needs.resolve-matrix.outputs.include) }}
     runs-on: ${{ matrix.os }}
     env:
       PACKAGE: ${{ matrix.package }}

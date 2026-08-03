@@ -7,6 +7,16 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      platforms:
+        description: "Platforms to test, comma-separated (rvc2, rvc3, rvc4, hailo). Empty tests all."
+        required: false
+        type: string
+        default: ""
+      tool_versions:
+        description: "Tool versions to test, comma-separated (e.g. 2022.3.0,2.41.0). Empty tests all."
+        required: false
+        type: string
+        default: ""
       ml_ref:
         description: "luxonis-ml version (branch/tag/SHA)"
         required: false
@@ -19,6 +29,16 @@ on:
         default: main
   workflow_call:
     inputs:
+      platforms:
+        description: "Platforms to test, comma-separated (rvc2, rvc3, rvc4, hailo). Empty tests all."
+        required: false
+        type: string
+        default: ""
+      tool_versions:
+        description: "Tool versions to test, comma-separated (e.g. 2022.3.0,2.41.0). Empty tests all."
+        required: false
+        type: string
+        default: ""
       ml_ref:
         description: "luxonis-ml version (branch/tag/SHA)"
         required: false
@@ -120,21 +140,59 @@ jobs:
           path: coverage-unit.xml
           if-no-files-found: ignore
 
+  # Selects which of the `.github/matrix.json` entries the integration tests run
+  # on: the platforms a pull request touches, or the dispatch inputs if given.
+  # Everything else runs the full matrix.
+  resolve-matrix:
+    name: Resolve matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.resolve.outputs.include }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
+          # Needed to diff the pull request against its base.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve matrix
+        id: resolve
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+          TOOL_VERSIONS: ${{ inputs.tool_versions }}
+          # Empty unless this is a pull request against this repository. A
+          # `workflow_call` carries the *caller's* pull request context, whose
+          # commits do not exist here, so it always tests the full matrix.
+          BASE_SHA: ${{ !inputs.modelconv_ref && github.event.pull_request.base.sha || '' }}
+        run: |
+          if [ -n "${BASE_SHA}" ] && [ -z "${PLATFORMS}" ]; then
+            CHANGED=$(git diff --name-only "${BASE_SHA}...HEAD")
+            echo "Changed files:"
+            echo "${CHANGED}"
+
+            PLATFORMS=$(.github/scripts/changed-platforms.sh <<<"${CHANGED}")
+            if [ -z "${PLATFORMS}" ]; then
+              echo "No platform code changed, skipping the integration tests."
+              echo "include=[]" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Affected platforms: ${PLATFORMS}"
+          fi
+
+          INCLUDE=$(.github/scripts/resolve-matrix.sh "${PLATFORMS}" "${TOOL_VERSIONS}")
+          echo "include=${INCLUDE}" >> "$GITHUB_OUTPUT"
+
   integration:
     name: ${{ matrix.package }} ${{ matrix.version }}
-    needs: unit
+    needs: [unit, resolve-matrix]
+    if: ${{ needs.resolve-matrix.outputs.include != '[]' }}
     strategy:
       fail-fast: true
       matrix:
-        include:
-          - { package: rvc2, version: "2021.4.0", os: ubuntu-latest }
-          - { package: rvc2, version: "2022.3.0", os: ubuntu-latest }
-          - { package: rvc3, version: "2022.3.0", os: ubuntu-latest }
-          - { package: rvc4, version: "2.32.6", os: ubuntu-latest }
-          - { package: rvc4, version: "2.41.0", os: ubuntu-latest }
-          - { package: hailo, version: "2024.10", os: ubuntu-22.04-4core }
-          - { package: hailo, version: "2025.01", os: ubuntu-22.04-4core }
-          - { package: hailo, version: "2025.04", os: ubuntu-22.04-4core }
+        include: ${{ fromJSON(needs.resolve-matrix.outputs.include) }}
     runs-on: ${{ matrix.os }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
