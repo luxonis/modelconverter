@@ -22,10 +22,16 @@ trap 'forward_signal TERM' TERM
 trap 'forward_signal INT' INT
 trap 'forward_signal HUP' HUP
 
+# The child runs asynchronously so the traps above stay responsive while it
+# works. Bash then applies two defaults we have to undo: an asynchronous
+# command gets its stdin redirected from /dev/null (hence `<&0`), and, with job
+# control off, its SIGINT/SIGQUIT set to SIG_IGN. SIG_IGN survives execve and
+# CPython only installs its own handler when it inherits SIG_DFL, so without the
+# `trap -` reset a forwarded Ctrl-C would be silently ignored by the converter.
 if [[ $# -eq 0 ]]; then
-    /bin/bash <&0 &
+    ( trap - INT QUIT; exec /bin/bash ) <&0 &
 else
-    modelconverter "$@" &
+    ( trap - INT QUIT; exec modelconverter "$@" ) <&0 &
 fi
 child_pid=$!
 

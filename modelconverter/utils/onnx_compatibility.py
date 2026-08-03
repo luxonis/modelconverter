@@ -64,29 +64,49 @@ def save_onnx_model(
 
     onnx.save(model, str(output_path))
 
-def get_external_data_path(model_path: str | Path) -> Path | None:
+
+def get_external_data_paths(model_path: str | Path) -> list[Path]:
+    """Returns every companion file holding the model's external tensor
+    data.
+
+    A model saved with ``all_tensors_to_one_file=False`` keeps one file
+    per tensor, so there is not necessarily just one.
+    """
     model_path = Path(model_path)
     model = onnx.load(str(model_path), load_external_data=False)
     model_dir = model_path.parent.resolve()
 
     tensors = list(model.graph.initializer)
     tensors.extend(
-        sparse_tensor.values for sparse_tensor in model.graph.sparse_initializer
+        sparse_tensor.values
+        for sparse_tensor in model.graph.sparse_initializer
     )
     tensors.extend(
-        sparse_tensor.indices for sparse_tensor in model.graph.sparse_initializer
+        sparse_tensor.indices
+        for sparse_tensor in model.graph.sparse_initializer
     )
+
+    paths: list[Path] = []
     for tensor in tensors:
-        if uses_external_data(tensor):
-            location = ExternalDataInfo(tensor).location
-            if location:
-                candidate = (model_path.parent / location).resolve()
-                try:
-                    candidate.relative_to(model_dir)
-                except ValueError as exc:
-                    raise ValueError(
-                        "ONNX external data location must stay within the "
-                        f"model directory: {location}"
-                    ) from exc
-                return candidate
-    return None
+        if not uses_external_data(tensor):
+            continue
+        location = ExternalDataInfo(tensor).location
+        if not location:
+            continue
+        candidate = (model_path.parent / location).resolve()
+        try:
+            candidate.relative_to(model_dir)
+        except ValueError as exc:
+            raise ValueError(
+                "ONNX external data location must stay within the "
+                f"model directory: {location}"
+            ) from exc
+        if candidate not in paths:
+            paths.append(candidate)
+    return paths
+
+
+def get_external_data_path(model_path: str | Path) -> Path | None:
+    """Returns the first companion file holding external tensor data, if
+    any."""
+    return next(iter(get_external_data_paths(model_path)), None)

@@ -51,7 +51,7 @@ from modelconverter.utils.constants import (
     get_cache_dir,
 )
 from modelconverter.utils.general import sanitize_net_name
-from modelconverter.utils.input_staging import stage_inputs
+from modelconverter.utils.input_staging import path_flags_for, stage_inputs
 from modelconverter.utils.nn_archive import generate_archive
 from modelconverter.utils.telemetry import (
     COMMAND_EVENT,
@@ -726,13 +726,21 @@ _CACHE_SUBDIR_DESCRIPTIONS = {
 
 def _dir_stats(path: Path) -> tuple[int, int]:
     """Returns the total size (bytes) and number of files under
-    ``path``."""
+    ``path``.
+
+    Entries that cannot be stat'ed are skipped: a container run killed
+    before its entrypoint could chown the mounts back leaves root-owned
+    files behind, and reporting on the cache must not be what breaks.
+    """
     size = 0
     count = 0
     for f in path.rglob("*"):
-        if f.is_file():
-            size += f.stat().st_size
-            count += 1
+        try:
+            if f.is_file():
+                size += f.stat().st_size
+                count += 1
+        except OSError:
+            continue
     return size, count
 
 
@@ -825,7 +833,21 @@ def cache_clean(
         ):
             console.print("Cache clean cancelled.")
             return
-        shutil.rmtree(root)
+        # Never abort part-way through: files left root-owned by a container
+        # that was killed before its entrypoint could chown the mounts back
+        # would otherwise leave the cache half-deleted.
+        shutil.rmtree(root, ignore_errors=True)
+        if root.exists():
+            remaining, _ = _dir_stats(root)
+            console.print(
+                f"Cleared what could be removed from [cyan]{root}[/] "
+                f"([green]{_human_size(size - remaining)}[/] freed, "
+                f"[yellow]{_human_size(remaining)}[/] left). The remaining "
+                "files are owned by another user, most likely written by a "
+                "container that was killed before it could hand them back. "
+                f"Remove them with [bold]sudo rm -rf {root}[/]."
+            )
+            return
         console.print(
             f":wastebasket:  Cleared cache at [cyan]{root}[/] "
             f"(freed [green]{_human_size(size)}[/])."
@@ -942,7 +964,7 @@ def launcher(
         # Copy user-provided inputs into the hidden cache (which is the only
         # host directory mounted into the container) and rewrite the tokens to
         # their container-side paths.
-        staged_tokens = stage_inputs(list(tokens))
+        staged_tokens = stage_inputs(list(tokens), path_flags_for(command))
 
         docker_exec(
             target.value,

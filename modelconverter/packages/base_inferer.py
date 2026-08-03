@@ -8,12 +8,18 @@ import numpy as np
 from loguru import logger
 from typing_extensions import Self
 
-from modelconverter.utils import resolve_path
+from modelconverter.utils import ModelconverterException, resolve_path
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
 )
 from modelconverter.utils.types import DataType, Encoding, ResizeMethod
+
+# Marks a directory as holding inference results. `dest` now lives under the
+# host's `./output`, so a rerun may only clear a directory it produced itself;
+# anything else there (a previous conversion's results, say) is not ours to
+# delete.
+RESULTS_MARKER = ".modelconverter_inference"
 
 
 @dataclass
@@ -31,9 +37,18 @@ class Inferer(ABC):
 
     def __post_init__(self):
         if self.dest.exists():
+            if not (self.dest / RESULTS_MARKER).exists() and any(
+                self.dest.iterdir()
+            ):
+                raise ModelconverterException(
+                    f"Refusing to overwrite '{self.dest}': it is not empty "
+                    "and does not hold inference results. Pass a different "
+                    "`--output-dir`."
+                )
             logger.debug(f"Removing existing directory {self.dest}.")
             shutil.rmtree(self.dest)
         self.dest.mkdir(parents=True, exist_ok=True)
+        (self.dest / RESULTS_MARKER).touch()
         self.setup()
 
     @classmethod

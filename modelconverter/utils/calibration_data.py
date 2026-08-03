@@ -11,8 +11,8 @@ from .constants import CALIBRATION_DIR, LOADERS
 from .exceptions import ModelconverterException, exit_with
 from .filesystem_utils import (
     download_from_remote,
-    get_input_base,
     get_protocol,
+    resolve_input_path,
 )
 from .image import read_calib_dir
 
@@ -73,7 +73,7 @@ def download_calibration_data(string: str, max_images: int = -1) -> Path:
 
     path = Path(string).expanduser()
     if not path.exists():
-        path = get_input_base() / string
+        path = resolve_input_path(string) or path
     if path.exists():
         if path.is_dir():
             return path

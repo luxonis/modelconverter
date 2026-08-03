@@ -6,6 +6,7 @@ import sys
 import tempfile
 import zipfile
 from contextlib import suppress
+from functools import cache
 from pathlib import Path
 from typing import Literal
 from urllib.error import HTTPError, URLError
@@ -32,6 +33,7 @@ from modelconverter.utils.target_versions import (
 from modelconverter.utils.telemetry import telemetry_environment
 
 
+@cache
 def is_rootless_docker() -> bool:
     """Returns whether the active Docker daemon runs in rootless mode.
 
@@ -39,14 +41,22 @@ def is_rootless_docker() -> bool:
     invoking host user, so files written by the container come out owned
     by the host user and must NOT be chowned (doing so would map them to
     an unmapped sub-uid, showing up as ``nobody`` on the host).
+
+    The answer cannot change within a run, so it is cached: this is a
+    round-trip to the daemon on a path that would otherwise take it once
+    per generated compose config.
     """
     try:
         out = subprocess.check_output(
             [docker_bin(), "info", "-f", "{{json .SecurityOptions}}"],
             text=True,
             stderr=subprocess.DEVNULL,
+            # A `DOCKER_HOST` pointing at an unreachable daemon must not hang
+            # the conversion; assuming a rootful daemon is the safe default.
+            timeout=30,
         )
-    except (subprocess.SubprocessError, OSError):
+    # `docker_bin` raises RuntimeError when docker is not installed at all.
+    except (subprocess.SubprocessError, OSError, RuntimeError):
         return False
     return "rootless" in out
 

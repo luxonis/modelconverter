@@ -1,12 +1,62 @@
 import os
+import shutil
+import signal
 import subprocess
 import time
 from pathlib import Path
 
+import pytest
 
+ENTRYPOINT = Path(__file__).parents[2] / "docker" / "rvc2" / "entrypoint.sh"
+
+# The entrypoint is a bash script with a `#!/bin/bash` shebang. That path is
+# guaranteed inside the image but not on every developer machine, so the tests
+# invoke it through whichever bash is on PATH instead of relying on the shebang.
+_BASH = shutil.which("bash")
+
+pytestmark = pytest.mark.skipif(_BASH is None, reason="bash is not available")
+
+BASH = _BASH or "bash"
+
+
+def _fake_modelconverter(tmp_path: Path, body: str) -> dict[str, str]:
+    """Puts a fake ``modelconverter`` on PATH and returns the
+    environment to run the entrypoint with."""
+    executable = tmp_path / "modelconverter"
+    executable.write_text(f"#!/usr/bin/env bash\n{body}")
+    executable.chmod(0o755)
+    return {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+
+
+def _wait_for(path: Path, timeout: float = 5) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if path.exists():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_entrypoint_gives_the_command_a_real_stdin(tmp_path: Path) -> None:
+    env = _fake_modelconverter(tmp_path, 'read -r line\nexit "$line"\n')
+
+    result = subprocess.run(
+        [BASH, str(ENTRYPOINT), "convert", "rvc2"],
+        input="7\n",
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 7
+
+
+@pytest.mark.skipif(
+    not Path("/bin/bash").exists(), reason="/bin/bash is not available"
+)
 def test_entrypoint_keeps_interactive_shell_stdin() -> None:
     result = subprocess.run(
-        ["docker/rvc2/entrypoint.sh"],
+        [BASH, str(ENTRYPOINT)],
         input="exit 7\n",
         text=True,
         check=False,
@@ -15,39 +65,34 @@ def test_entrypoint_keeps_interactive_shell_stdin() -> None:
     assert result.returncode == 7
 
 
-def test_entrypoint_forwards_sigterm_and_waits_for_child_cleanup(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("sent", "exit_code"), [(signal.SIGTERM, 42), (signal.SIGINT, 130)]
+)
+def test_entrypoint_forwards_signals_and_waits_for_child_cleanup(
+    tmp_path: Path, sent: signal.Signals, exit_code: int
 ) -> None:
+    signal_name = sent.name.removeprefix("SIG")
     signal_file = tmp_path / "signal"
     ready_file = tmp_path / "ready"
-    executable = tmp_path / "modelconverter"
-    executable.write_text(
-        "#!/bin/bash\n"
-        "trap 'printf TERM > \"$SIGNAL_FILE\"; exit 42' TERM\n"
+    env = _fake_modelconverter(
+        tmp_path,
+        f"trap 'printf {signal_name} > \"$SIGNAL_FILE\"; exit {exit_code}' "
+        f"{signal_name}\n"
         'printf ready > "$READY_FILE"\n'
-        "while true; do sleep 0.05; done\n"
+        "while true; do sleep 0.05; done\n",
     )
-    executable.chmod(0o755)
-    env = {
-        **os.environ,
-        "PATH": f"{tmp_path}:{os.environ['PATH']}",
-        "READY_FILE": str(ready_file),
-        "SIGNAL_FILE": str(signal_file),
-    }
+    env |= {"READY_FILE": str(ready_file), "SIGNAL_FILE": str(signal_file)}
 
     process = subprocess.Popen(
-        ["docker/rvc2/entrypoint.sh", "convert", "rvc2"],
+        [BASH, str(ENTRYPOINT), "convert", "rvc2"],
         env=env,
     )
     try:
-        deadline = time.monotonic() + 5
-        while not ready_file.exists() and time.monotonic() < deadline:
-            time.sleep(0.01)
-        assert ready_file.exists()
+        assert _wait_for(ready_file)
 
-        process.terminate()
-        assert process.wait(timeout=5) == 42
-        assert signal_file.read_text() == "TERM"
+        process.send_signal(sent)
+        assert process.wait(timeout=5) == exit_code
+        assert signal_file.read_text() == signal_name
     finally:
         if process.poll() is None:
             process.kill()

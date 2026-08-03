@@ -1,4 +1,6 @@
 import shutil
+import subprocess
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -36,6 +38,29 @@ def _external_onnx(path: Path) -> Path:
     return external_data
 
 
+def _multi_file_external_onnx(path: Path) -> list[Path]:
+    """Saves a model whose tensors each land in their own companion
+    file."""
+    tensors = [
+        numpy_helper.from_array(
+            np.asarray([1.0, 2.0], dtype=np.float32), name="first"
+        ),
+        numpy_helper.from_array(
+            np.asarray([3.0, 4.0], dtype=np.float32), name="second"
+        ),
+    ]
+    graph = helper.make_graph([], "external", [], [], tensors)
+    model = helper.make_model(graph)
+    onnx.save_model(
+        model,
+        path,
+        save_as_external_data=True,
+        all_tensors_to_one_file=False,
+        size_threshold=0,
+    )
+    return sorted(p for p in path.parent.iterdir() if p != path)
+
+
 def test_stages_onnx_external_data(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -46,7 +71,7 @@ def test_stages_onnx_external_data(
     monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged_tokens = input_staging.stage_inputs(
-        ["--model-path", str(model_path)]
+        ["--model-path", str(model_path)], {"--model-path"}
     )
 
     staged_model = _host_staged_path(staged_tokens[1], cache_dir)
@@ -54,6 +79,27 @@ def test_stages_onnx_external_data(
     assert staged_model.with_name(external_data.name).read_bytes() == (
         external_data.read_bytes()
     )
+
+
+def test_stages_every_external_data_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    model_path = tmp_path / "models" / "model.onnx"
+    model_path.parent.mkdir()
+    external_data = _multi_file_external_onnx(model_path)
+    assert len(external_data) > 1
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    staged_tokens = input_staging.stage_inputs(
+        ["--model-path", str(model_path)], {"--model-path"}
+    )
+
+    staged_model = _host_staged_path(staged_tokens[1], cache_dir)
+    for data_path in external_data:
+        assert staged_model.with_name(data_path.name).read_bytes() == (
+            data_path.read_bytes()
+        )
 
 
 def test_stages_and_rewrites_absolute_config_paths(
@@ -92,7 +138,9 @@ def test_stages_and_rewrites_absolute_config_paths(
     )
     monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
-    staged_tokens = input_staging.stage_inputs(["--config", str(config_path)])
+    staged_tokens = input_staging.stage_inputs(
+        ["--config", str(config_path)], {"--config"}
+    )
 
     staged_config = _host_staged_path(staged_tokens[1], cache_dir)
     rewritten = yaml.safe_load(staged_config.read_text())
@@ -110,6 +158,226 @@ def test_stages_and_rewrites_absolute_config_paths(
         staged_config.with_name(relative_model.name).read_bytes()
         == b"relative"
     )
+
+
+def test_output_destinations_are_left_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    destination = tmp_path / "nas"
+    destination.mkdir()
+    model = tmp_path / "models" / "model.onnx"
+    model.parent.mkdir()
+    model.write_bytes(b"model")
+
+    config_path = config_dir / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "input_model": str(model),
+                "output_remote_url": str(destination),
+                "intermediate_outputs_remote_url": str(destination),
+            }
+        )
+    )
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    staged_tokens = input_staging.stage_inputs(
+        ["--config", str(config_path)], {"--config"}
+    )
+
+    rewritten = yaml.safe_load(
+        _host_staged_path(staged_tokens[1], cache_dir).read_text()
+    )
+    assert rewritten["input_model"].startswith(
+        f"{CONTAINER_SHARED_DIR}/inputs/"
+    )
+    assert rewritten["output_remote_url"] == str(destination)
+    assert rewritten["intermediate_outputs_remote_url"] == str(destination)
+
+
+def test_bare_names_are_not_mistaken_for_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    monkeypatch.chdir(tmp_path)
+    # Both a config-override value and the subcommand itself collide with a
+    # directory in the working directory.
+    (tmp_path / "resnet18").mkdir()
+    (tmp_path / "convert").mkdir()
+    tokens = ["convert", "rvc4", "name", "resnet18"]
+
+    assert input_staging.stage_inputs(tokens, {"--path"}) == tokens
+    assert not cache_dir.exists()
+
+
+def test_relative_paths_are_still_staged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "calibration").mkdir()
+    (tmp_path / "calibration" / "image.jpg").write_bytes(b"image")
+
+    staged_tokens = input_staging.stage_inputs(
+        ["convert", "rvc4", "calibration.path", "./calibration"], {"--path"}
+    )
+
+    assert staged_tokens[3].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
+
+
+def test_staging_a_config_next_to_the_cache_does_not_recurse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    cache_dir = home / ".cache" / "modelconverter"
+    # An earlier run already populated the cache that now sits inside the
+    # directory being staged.
+    (cache_dir / "inputs" / "old").mkdir(parents=True)
+    (cache_dir / "inputs" / "old" / "junk.bin").write_bytes(b"junk")
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    (home / "model.onnx").write_bytes(b"model")
+    config_path = home / "config.yaml"
+    config_path.write_text(yaml.safe_dump({"input_model": "model.onnx"}))
+
+    staged_tokens = input_staging.stage_inputs(
+        ["--path", str(config_path)], {"--path"}
+    )
+
+    staged_config = _host_staged_path(staged_tokens[1], cache_dir)
+    assert (staged_config.parent / "model.onnx").read_bytes() == b"model"
+    assert not (staged_config.parent / ".cache").exists()
+
+
+def test_unusable_files_do_not_abort_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    (config_dir / "model.onnx").write_bytes(b"model")
+    (config_dir / "dangling").symlink_to(tmp_path / "nowhere")
+    config_path = config_dir / "config.yaml"
+    config_path.write_text(yaml.safe_dump({"input_model": "model.onnx"}))
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    staged_tokens = input_staging.stage_inputs(
+        ["--path", str(config_path)], {"--path"}
+    )
+
+    staged_config = _host_staged_path(staged_tokens[1], cache_dir)
+    assert (staged_config.parent / "model.onnx").read_bytes() == b"model"
+    assert not (staged_config.parent / "dangling").exists()
+
+
+def test_directory_digest_covers_symlinked_subdirectories(
+    tmp_path: Path,
+) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "image.jpg").write_bytes(b"first")
+    src = tmp_path / "configs"
+    src.mkdir()
+    (src / "data").symlink_to(data, target_is_directory=True)
+
+    before = input_staging._hash_dir(src)
+    (data / "image.jpg").write_bytes(b"second version")
+    after = input_staging._hash_dir(src)
+
+    assert before != after
+
+
+def test_restaging_a_changed_directory_replaces_the_previous_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    inputs_dir = cache_dir / "inputs"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    src = tmp_path / "calibration"
+    src.mkdir()
+    (src / "image.jpg").write_bytes(b"first")
+
+    first = input_staging._stage_dir(src, inputs_dir)
+    # The run that staged the first copy has exited, dropping its claim.
+    for marker in first.parent.glob(f"{input_staging._IN_USE_PREFIX}*"):
+        marker.unlink()
+
+    (src / "image.jpg").write_bytes(b"second version")
+    second = input_staging._stage_dir(src, inputs_dir)
+
+    assert first != second
+    assert not first.exists()
+    assert (second / "image.jpg").read_bytes() == b"second version"
+    assert [entry.name for entry in inputs_dir.iterdir()] == [
+        second.parent.name
+    ]
+
+
+def test_staged_copies_still_in_use_are_not_pruned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    inputs_dir = cache_dir / "inputs"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    src = tmp_path / "calibration"
+    src.mkdir()
+    (src / "image.jpg").write_bytes(b"first")
+
+    first = input_staging._stage_dir(src, inputs_dir)
+    # Stand in for a container still reading the first copy: this process
+    # claimed it, and `_stage_dir` registers that claim under its own pid.
+    assert list(first.parent.glob(f"{input_staging._IN_USE_PREFIX}*"))
+
+    (src / "image.jpg").write_bytes(b"second version")
+    second = input_staging._stage_dir(src, inputs_dir)
+
+    assert first != second
+    assert (first / "image.jpg").read_bytes() == b"first"
+    assert (second / "image.jpg").read_bytes() == b"second version"
+
+
+def test_staged_copies_claimed_by_dead_processes_are_pruned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    inputs_dir = cache_dir / "inputs"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    src = tmp_path / "calibration"
+    src.mkdir()
+    (src / "image.jpg").write_bytes(b"first")
+
+    first = input_staging._stage_dir(src, inputs_dir)
+    # Re-stamp the claim with a pid that is guaranteed not to be running.
+    dead_pid = subprocess.Popen([sys.executable, "-c", ""])
+    dead_pid.wait()
+    for marker in first.parent.glob(f"{input_staging._IN_USE_PREFIX}*"):
+        marker.unlink()
+    (first.parent / f"{input_staging._IN_USE_PREFIX}{dead_pid.pid}").touch()
+
+    (src / "image.jpg").write_bytes(b"second version")
+    second = input_staging._stage_dir(src, inputs_dir)
+
+    assert first != second
+    assert not first.exists()
+    assert (second / "image.jpg").read_bytes() == b"second version"
+
+
+def test_path_flags_come_from_the_command_signature() -> None:
+    from modelconverter.__main__ import convert, infer
+
+    assert input_staging.path_flags_for(convert) == {"--path"}
+    assert input_staging.path_flags_for(infer) == {
+        "--config",
+        "--input-path",
+        "--model-path",
+        "--path",
+    }
 
 
 def test_interrupted_file_copy_does_not_publish_partial_cache_entry(
@@ -171,12 +439,14 @@ def test_interrupted_directory_copy_does_not_publish_partial_entry(
     inputs_dir = tmp_path / "cache" / "inputs"
     expected = inputs_dir / input_staging._hash_dir(src) / src.name
 
-    def interrupt_copytree(source: Path, dest: Path) -> None:
-        Path(dest).mkdir()
-        (Path(dest) / "image.jpg").write_bytes(b"partial")
+    def interrupt_copy(
+        files: list[input_staging._InputFile], dest: Path
+    ) -> None:
+        dest.mkdir(parents=True)
+        (dest / "image.jpg").write_bytes(b"partial")
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(shutil, "copytree", interrupt_copytree)
+    monkeypatch.setattr(input_staging, "_copy_input_files", interrupt_copy)
 
     with pytest.raises(KeyboardInterrupt):
         input_staging._stage_dir(src, inputs_dir)
@@ -194,13 +464,15 @@ def test_concurrent_directory_staging_publishes_one_complete_entry(
     (src / "two.jpg").write_bytes(b"two")
     inputs_dir = tmp_path / "cache" / "inputs"
     barrier = threading.Barrier(2)
-    real_copytree = shutil.copytree
+    real_copy = input_staging._copy_input_files
 
-    def synchronized_copytree(source: Path, dest: Path) -> Path:
+    def synchronized_copy(
+        files: list[input_staging._InputFile], dest: Path
+    ) -> None:
         barrier.wait(timeout=5)
-        return real_copytree(source, dest)
+        real_copy(files, dest)
 
-    monkeypatch.setattr(shutil, "copytree", synchronized_copytree)
+    monkeypatch.setattr(input_staging, "_copy_input_files", synchronized_copy)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(
