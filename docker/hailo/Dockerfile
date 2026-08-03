@@ -24,7 +24,11 @@ RUN <<EOF
     # plugin archive and falls back to an isolated build that crashes on
     # missing pkg_resources.
     pip install --no-cache-dir "pip==25.0.1"
-    pip install -r requirements.txt --no-cache-dir
+    # The suite's TensorFlow is built against the NumPy 1.x ABI. Nothing in
+    # `requirements.txt` bounds NumPy from above, so pip installs NumPy 2 over
+    # it and the DALI TF plugin below stops building ("_ARRAY_API not found",
+    # "compiled with NumPy 2.0").
+    pip install -r requirements.txt --no-cache-dir "numpy<2"
     python - <<PY
 from urllib.request import urlretrieve
 
