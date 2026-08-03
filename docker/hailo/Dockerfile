@@ -14,7 +14,12 @@ ENV IN_DOCKER=
 WORKDIR /app
 
 COPY --link requirements.txt requirements.txt
+COPY --link docker/hailo/constraints.txt constraints.txt
 COPY --link modelconverter/packages/hailo/requirements.txt requirements-hailo.txt
+
+# Holds NumPy on 1.x for every pip run in this image, including the ones CI
+# makes inside the running container. See `docker/hailo/constraints.txt`.
+ENV PIP_CONSTRAINT=/app/constraints.txt
 
 RUN <<EOF
 
