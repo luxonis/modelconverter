@@ -12,6 +12,7 @@ import shutil
 import signal
 import subprocess
 import time
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,10 @@ _BASH = shutil.which("bash")
 pytestmark = pytest.mark.skipif(_BASH is None, reason="bash is not available")
 
 BASH = _BASH or "bash"
+
+# An entrypoint that stops forwarding a signal or handing over its stdin must
+# fail the test run rather than block it.
+TIMEOUT = 5
 
 
 @pytest.fixture
@@ -76,6 +81,7 @@ def test_entrypoint_gives_the_command_a_real_stdin(
         text=True,
         env=env,
         check=False,
+        timeout=TIMEOUT,
     )
 
     assert result.returncode == 7
@@ -93,6 +99,7 @@ def test_entrypoint_keeps_interactive_shell_stdin(
         text=True,
         env=_entrypoint_env(tmp_path, "exit 1\n"),
         check=False,
+        timeout=TIMEOUT,
     )
 
     assert result.returncode == 7
@@ -116,16 +123,24 @@ def test_entrypoint_forwards_signals_and_waits_for_child_cleanup(
     )
     env |= {"READY_FILE": str(ready_file), "SIGNAL_FILE": str(signal_file)}
 
+    # The entrypoint runs the converter as a background child, so killing the
+    # entrypoint alone would leave that child spinning. Its own session makes
+    # the pair killable as one group.
     process = subprocess.Popen(
         [BASH, str(entrypoint), "convert", "rvc2"],
         env=env,
+        start_new_session=True,
     )
     try:
         assert _wait_for(ready_file)
 
         process.send_signal(sent)
-        assert process.wait(timeout=5) == exit_code
+        assert process.wait(timeout=TIMEOUT) == exit_code
         assert signal_file.read_text() == signal_name
     finally:
+        # Only while the process is unreaped, so the pid cannot have been
+        # recycled into an unrelated group by the time it is signalled.
         if process.poll() is None:
-            process.kill()
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
