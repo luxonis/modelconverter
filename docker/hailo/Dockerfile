@@ -60,6 +60,7 @@ COPY --link pyproject.toml /app/pyproject.toml
 RUN pip install -e . --no-deps --no-cache-dir
 
 COPY --link docker/hailo/entrypoint.sh /app/entrypoint.sh
+COPY --link docker/entrypoint_common.sh /app/entrypoint_common.sh
 
 RUN <<EOF
 

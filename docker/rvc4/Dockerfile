@@ -106,6 +106,7 @@ COPY --link --from=base \
 
 
 COPY --link docker/rvc4/entrypoint.sh /app/entrypoint.sh
+COPY --link docker/entrypoint_common.sh /app/entrypoint_common.sh
 COPY --link modelconverter /app/modelconverter/
 COPY --link pyproject.toml /app/pyproject.toml
 

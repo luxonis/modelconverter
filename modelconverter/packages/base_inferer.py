@@ -37,6 +37,11 @@ class Inferer(ABC):
 
     def __post_init__(self):
         if self.dest.exists():
+            if not self.dest.is_dir():
+                raise ModelconverterException(
+                    f"Refusing to overwrite '{self.dest}': it is not a "
+                    "directory. Pass a different `--output-dir`."
+                )
             if not (self.dest / RESULTS_MARKER).exists() and any(
                 self.dest.iterdir()
             ):

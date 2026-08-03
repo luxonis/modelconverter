@@ -130,6 +130,7 @@ RUN pip install -e . --no-deps
 
 # The RVC2 entrypoint is used for RVC3 as well
 COPY --link docker/rvc2/entrypoint.sh /app/entrypoint.sh
+COPY --link docker/entrypoint_common.sh /app/entrypoint_common.sh
 COPY --link docker/scripts/mo /usr/local/bin/mo
 COPY --link docker/scripts/pot /usr/local/bin/pot
 COPY --link docker/scripts/compile_tool /usr/local/bin/compile_tool

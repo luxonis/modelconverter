@@ -1,15 +1,17 @@
 """Host-side staging of user-provided inputs into the hidden cache.
 
-The conversion runs inside a Docker container that only has the cache directory
-bind-mounted (at ``/app/shared_with_container``). To let users reference input
-files by *any* path on their machine, the launcher copies every file/directory
-passed on the CLI into the cache (keyed by a content hash for de-duplication)
-and rewrites the corresponding CLI token to the container-side cache path.
+The conversion runs inside a Docker container that only has the cache
+directory bind-mounted (at ``/app/shared_with_container``). To let users
+reference input files by *any* path on their machine, the launcher
+copies every file/directory passed on the CLI into the cache (keyed by a
+content hash for de-duplication) and rewrites the corresponding CLI
+token to the container-side cache path.
 
-Files referenced *inside* a config file are not visible as CLI tokens, so when
-a config file is passed we stage its whole containing directory; the container
-then resolves the config's relative references against that copied directory
-(see ``modelconverter.utils.filesystem_utils.set_input_base``).
+Files referenced *inside* a config file are not visible as CLI tokens,
+so a config is parsed instead: every local path it names is staged on
+its own and the staged copy of the config points at the container-side
+locations. Only the files the conversion actually needs are copied,
+whatever the config happens to sit next to.
 """
 
 import atexit
@@ -54,16 +56,23 @@ _KNOWN_EXTS = {
 
 _CONFIG_EXTS = {".yaml", ".yml"}
 
-# Config keys naming an output *destination* rather than an input. Staging one
-# would redirect the results into the throwaway cache directory.
-_DESTINATION_KEYS = {
-    "output_remote_url",
-    "intermediate_outputs_remote_url",
-    "output_dir",
+# Config fields holding a local path, mapped to the parent key they must
+# appear under (``None`` for any). Taken from the config schema rather than
+# from the shape of the value, so a string that merely happens to name an
+# existing file -- a stage called after a directory, say -- is left alone.
+_PATH_FIELDS: dict[str, frozenset[str] | None] = {
+    # `modelconverter.utils.config.SingleStageConfig`
+    "input_model": None,
+    "input_bin": None,
+    # `ImageCalibrationConfig.path`, `LinkCalibrationConfig.script`
+    "path": frozenset({"calibration"}),
+    "script": frozenset({"calibration"}),
+    # `RVC4Config.encodings`
+    "encodings": frozenset({"rvc4"}),
 }
 
-# Never copied along when a config's whole parent directory is staged:
-# repository metadata is not a model input and would dominate the copy.
+# Never copied along when a directory is staged: repository metadata is not a
+# model input and would dominate the copy.
 _IGNORED_DIR_NAMES = {".git"}
 
 
@@ -191,14 +200,10 @@ def _stage_value(value: str, inputs_dir: Path) -> str | None:
         dest = _stage_dir(src, inputs_dir)
         return _to_container(dest)
 
-    # Config file: stage the whole containing directory so its relative
-    # references resolve alongside it, then stage and rewrite absolute local
-    # references which may live anywhere on the host.
+    # Config file: stage the files it references, wherever they live.
     if src.suffix.lower() in _CONFIG_EXTS:
-        parent_dest = _stage_dir(src.parent, inputs_dir)
-        config_dest = parent_dest / src.name
-        _rewrite_absolute_config_paths(src, config_dest, inputs_dir)
-        return _to_container(config_dest)
+        dest = _stage_config(src, inputs_dir)
+        return _to_container(dest)
 
     # OpenVINO IR: stage the `.xml`/`.bin` pair together.
     if src.suffix.lower() in {".xml", ".bin"}:
@@ -239,7 +244,13 @@ def _stage_ir_pair(src: Path, inputs_dir: Path) -> Path:
 def _stage_onnx(src: Path, inputs_dir: Path) -> Path:
     # A model saved with `all_tensors_to_one_file=False` has one companion
     # file per tensor, so every location has to be staged, not just the first.
-    external_data = [p for p in get_external_data_paths(src) if p.exists()]
+    try:
+        external_data = [p for p in get_external_data_paths(src) if p.exists()]
+    except Exception as exc:
+        # Staging must not be the thing that reports a broken model: copy it
+        # and let the conversion fail with a message about the model itself.
+        logger.debug(f"Could not read external data locations of {src}: {exc}")
+        return _stage_file(src, inputs_dir)
 
     digest = _hash_files([src, *external_data])
     hash_dir = inputs_dir / digest
@@ -294,19 +305,130 @@ def _publish_directory(src: Path, dest: Path) -> None:
             raise
 
 
-def _rewrite_absolute_config_paths(
-    src: Path, dest: Path, inputs_dir: Path
-) -> None:
-    """Stage absolute local paths in a YAML config and rewrite its
-    copy."""
-    data = yaml.safe_load(src.read_text())
-    rewritten, changed = _rewrite_absolute_paths(data, inputs_dir)
-    if changed:
-        _atomic_write_text(dest, yaml.safe_dump(rewritten, sort_keys=False))
+def _stage_config(src: Path, inputs_dir: Path) -> Path:
+    """Stages a YAML config together with the files it references.
+
+    Each local path named by the config is staged on its own and the
+    staged copy points at the container-side location, so a config is
+    never a reason to copy the directory it happens to live in.
+    """
+    try:
+        data = yaml.safe_load(src.read_text())
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        # Not a config we can read. Hand it over as-is and let the container
+        # report what is wrong with it.
+        return _stage_file(src, inputs_dir)
+
+    rewritten, changed = _rewrite_config_paths(data, src.parent, inputs_dir)
+    if not changed:
+        return _stage_file(src, inputs_dir)
+    return _stage_config_text(
+        yaml.safe_dump(rewritten, sort_keys=False), src.name, inputs_dir
+    )
+
+
+def _stage_config_text(content: str, name: str, inputs_dir: Path) -> Path:
+    """Publishes a rewritten config, keyed by a digest of its own text.
+
+    The rewritten paths carry the digests of everything the config
+    references, so a change to any input yields a new entry instead of
+    overwriting one a concurrent run may still be reading.
+    """
+    digest = hashlib.sha256(content.encode()).hexdigest()[:16]
+    dest = inputs_dir / digest / name
+    if not dest.exists():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(dest, content)
+    return dest
+
+
+def _rewrite_config_paths(
+    value: Any,
+    config_dir: Path,
+    inputs_dir: Path,
+    key: str | None = None,
+    parent: str | None = None,
+) -> tuple[Any, bool]:
+    """Stages the local paths ``value`` names and returns it with those
+    references replaced by their container-side paths."""
+    if isinstance(value, dict):
+        changed = False
+        rewritten = {}
+        for item_key, item in value.items():
+            rewritten[item_key], item_changed = _rewrite_config_paths(
+                value=item,
+                config_dir=config_dir,
+                inputs_dir=inputs_dir,
+                key=item_key,
+                parent=key,
+            )
+            changed |= item_changed
+        return rewritten, changed
+
+    if isinstance(value, list):
+        changed = False
+        rewritten_list = []
+        # A list does not introduce a key of its own: an entry of `inputs`
+        # is still reached under the key `inputs`.
+        for item in value:
+            new_item, item_changed = _rewrite_config_paths(
+                value=item,
+                config_dir=config_dir,
+                inputs_dir=inputs_dir,
+                key=key,
+                parent=parent,
+            )
+            rewritten_list.append(new_item)
+            changed |= item_changed
+        return rewritten_list, changed
+
+    if not isinstance(value, str) or not _is_path_field(key, parent):
+        return value, False
+
+    staged = _stage_config_reference(value, config_dir, inputs_dir)
+    if staged is None:
+        return value, False
+    return staged, True
+
+
+def _is_path_field(key: str | None, parent: str | None) -> bool:
+    if key is None or key not in _PATH_FIELDS:
+        return False
+    parents = _PATH_FIELDS[key]
+    return parents is None or parent in parents
+
+
+def _stage_config_reference(
+    value: str, config_dir: Path, inputs_dir: Path
+) -> str | None:
+    """Stages one path referenced by a config, or returns ``None``.
+
+    Relative references are resolved the way the container resolves
+    them: against the config file's directory first, then against the
+    default root (see
+    L{modelconverter.utils.filesystem_utils.get_input_bases}). A
+    reference that exists under neither is left untouched so the config
+    validation can report it.
+    """
+    if get_protocol(value) != "file":
+        return None
+
+    candidate = Path(value).expanduser()
+    if candidate.is_absolute():
+        bases = [candidate]
     else:
-        # The cached directory may have been used for a previously rewritten
-        # config. Restore the source verbatim when no references are rewritten.
-        _atomic_copy_file(src, dest)
+        bases = [config_dir / candidate, Path.cwd() / candidate]
+
+    for base in bases:
+        if not base.exists():
+            continue
+        if base.is_file() and base.suffix.lower() in _CONFIG_EXTS:
+            # No config field points at another config, so a YAML reached from
+            # inside one is data. Staging it as such also keeps a config that
+            # names itself from recursing forever.
+            return _to_container(_stage_file(base.resolve(), inputs_dir))
+        return _stage_value(str(base), inputs_dir)
+    return None
 
 
 def _atomic_write_text(dest: Path, content: str) -> None:
@@ -322,42 +444,8 @@ def _atomic_write_text(dest: Path, content: str) -> None:
         tmp.unlink(missing_ok=True)
 
 
-def _rewrite_absolute_paths(value: Any, inputs_dir: Path) -> tuple[Any, bool]:
-    if isinstance(value, dict):
-        changed = False
-        rewritten = {}
-        for key, item in value.items():
-            # An output destination is not an input: staging it would send the
-            # results into the cache instead of where the user asked for them.
-            if key in _DESTINATION_KEYS:
-                rewritten[key] = item
-                continue
-            new_item, item_changed = _rewrite_absolute_paths(item, inputs_dir)
-            rewritten[key] = new_item
-            changed |= item_changed
-        return rewritten, changed
-
-    if isinstance(value, list):
-        changed = False
-        rewritten_list = []
-        for item in value:
-            new_item, item_changed = _rewrite_absolute_paths(item, inputs_dir)
-            rewritten_list.append(new_item)
-            changed |= item_changed
-        return rewritten_list, changed
-
-    if isinstance(value, str):
-        path = Path(value).expanduser()
-        if path.is_absolute() and path.exists():
-            staged = _stage_value(value, inputs_dir)
-            if staged is not None:
-                return staged, True
-
-    return value, False
-
-
-# Warn when a single staged directory is larger than this (e.g. a config file
-# that happens to live in a big folder, whose whole parent gets copied).
+# Warn when a single staged directory is larger than this (a calibration
+# dataset pointed at a whole photo library, say).
 _LARGE_DIR_BYTES = 1024**3  # 1 GiB
 
 # Written next to a staged directory to record the source it was copied from,
@@ -380,9 +468,9 @@ def _excluded_dirs() -> set[Path]:
     """Absolute directories that must never be copied into the cache.
 
     The cache is the copy *destination*, so a source containing it (a
-    config kept in ``$HOME``, say) would otherwise make the copy recurse
-    into its own output. ``./output`` is separately mounted into the
-    container and accumulates the results of every previous run.
+    directory under ``$HOME``, say) would otherwise make the copy
+    recurse into its own output. ``./output`` is separately mounted into
+    the container and accumulates the results of every previous run.
     """
     return {
         get_cache_dir().resolve(),
@@ -444,9 +532,8 @@ def _stage_dir(src: Path, inputs_dir: Path) -> Path:
         if size > _LARGE_DIR_BYTES:
             logger.warning(
                 f"Caching a large directory {src} ({_human_size(size)}). "
-                "Local files referenced by a config are resolved relative to "
-                "the config file, so its whole directory is copied. Consider "
-                "keeping configs in a dedicated folder. Run "
+                "The conversion runs in a container that only sees the cache, "
+                "so every input directory is copied into it. Run "
                 "`modelconverter cache clean` to reclaim space."
             )
         _log_copy(src, size)
@@ -469,11 +556,11 @@ def _stage_dir(src: Path, inputs_dir: Path) -> Path:
 def _copy_input_files(files: list[_InputFile], dest: Path) -> None:
     """Copies the enumerated files under ``dest``.
 
-    A config's whole parent directory is staged, so it routinely holds
-    files that have nothing to do with the model -- root-owned leftovers
-    of an earlier container run, for instance. Failing the conversion
-    over one of those would be worse than leaving it out; if it really
-    was an input, the container reports it as missing.
+    A staged directory routinely holds files that have nothing to do
+    with the model -- root-owned leftovers of an earlier container run,
+    for instance. Failing the conversion over one of those would be
+    worse than leaving it out; if it really was an input, the container
+    reports it as missing.
     """
     dest.mkdir(parents=True, exist_ok=True)
     for file in files:

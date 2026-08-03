@@ -744,6 +744,22 @@ def _dir_stats(path: Path) -> tuple[int, int]:
     return size, count
 
 
+def _cache_entries(root: Path) -> list[Path] | None:
+    """Returns the cache's top-level entries, or ``None`` if the cache
+    root itself cannot be read.
+
+    A container killed before its entrypoint could chown the mounts back
+    can leave the cache root owned by another user, which is precisely
+    the situation these commands exist to report on and recover from.
+    """
+    if not root.exists():
+        return []
+    try:
+        return sorted(root.iterdir(), key=lambda p: p.name)
+    except OSError:
+        return None
+
+
 def _human_size(num: float) -> str:
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
         if num < 1024:
@@ -759,7 +775,22 @@ def cache_info() -> None:
     console = Console()
     root = get_cache_dir()
 
-    if not root.exists() or not any(root.iterdir()):
+    entries = _cache_entries(root)
+    if entries is None:
+        console.print(
+            Panel(
+                f"The cache at [cyan]{root}[/] cannot be read. It is owned "
+                "by another user, most likely written by a container that "
+                "was killed before it could hand it back.\nRemove it with "
+                f"[bold]sudo rm -rf {root}[/].",
+                title="[bold]ModelConverter cache[/]",
+                border_style="yellow",
+                expand=False,
+            )
+        )
+        return
+
+    if not entries:
         console.print(
             Panel(
                 f"The cache is empty.\nLocation: [cyan]{root}[/]",
@@ -778,12 +809,15 @@ def cache_info() -> None:
 
     total_size = 0
     total_files = 0
-    for entry in sorted(root.iterdir(), key=lambda p: p.name):
+    for entry in entries:
         if entry.is_dir():
             size, count = _dir_stats(entry)
             description = _CACHE_SUBDIR_DESCRIPTIONS.get(entry.name, "")
         else:
-            size, count = entry.stat().st_size, 1
+            try:
+                size, count = entry.stat().st_size, 1
+            except OSError:
+                size, count = 0, 1
             description = ""
         total_size += size
         total_files += count
@@ -826,7 +860,9 @@ def cache_clean(
     """
     console = Console()
     root = get_cache_dir()
-    if root.exists() and any(root.iterdir()):
+    # A root that cannot even be listed still has something to clean.
+    entries = _cache_entries(root)
+    if entries is None or entries:
         size, _ = _dir_stats(root)
         if not yes and not Confirm.ask(
             f"Clear the entire ModelConverter cache at [cyan]{root}[/]?"

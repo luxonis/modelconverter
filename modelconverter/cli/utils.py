@@ -88,6 +88,10 @@ def get_configs(
         L{NNArchiveConfig} and the main stage key.
     """
     opts = opts or []
+    # `infer` parses a second config after `convert` has returned, in the same
+    # process. Start from the default base so a directory left behind by the
+    # previous config cannot resolve this one's relative paths.
+    set_input_base(None)
     if isinstance(opts, list):
         if len(opts) % 2 != 0:
             raise ValueError(

@@ -319,10 +319,12 @@ by **any path on your machine** (relative or absolute) — or by a remote URL
 - **Inputs** you pass on the CLI are copied into a hidden, auto-managed cache
   (`${XDG_CACHE_HOME:-~/.cache}/modelconverter`) so the container can read them.
   Identical files are de-duplicated by content hash and reused across runs.
-- When you pass a **config file**, the files it references internally
-  (calibration data, quantization scripts, encodings, `.bin`) are resolved
-  **relative to the config file's directory**, so keep them next to the config
-  (or use remote URLs / absolute paths).
+- When you pass a **config file**, the local files it references internally
+  (model, calibration data, quantization script, encodings, `.bin`) are staged
+  alongside it. Relative references are resolved **relative to the config
+  file's directory**; absolute paths and remote URLs work from anywhere. Only
+  the files the config actually names are copied, never the directory it
+  happens to live in.
 - **Outputs** are written to an `output/` directory in your current working
   directory, owned by you (not `root`):
 

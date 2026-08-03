@@ -9,6 +9,7 @@ from modelconverter.utils.config import generate_renamed_onnx
 from modelconverter.utils.onnx_compatibility import (
     ensure_onnx_helper_compatibility,
     get_external_data_path,
+    get_external_data_paths,
     save_onnx_model,
 )
 from modelconverter.utils.types import DataType
@@ -121,3 +122,39 @@ def test_onnx_graphsurgeon_imports_with_onnx_121():
     import onnx_graphsurgeon as gs
 
     assert gs is not None
+
+
+def test_external_data_paths_cover_subgraph_initializers(tmp_path: Path):
+    import onnx
+    from onnx.external_data_helper import set_external_data
+
+    model_path = tmp_path / "model.onnx"
+    external_data = tmp_path / "subgraph_weights.bin"
+    weights = np.asarray([1.0, 2.0], dtype=np.float32)
+    external_data.write_bytes(weights.tobytes())
+
+    tensor = numpy_helper.from_array(weights, name="weights")
+    set_external_data(tensor, location=external_data.name)
+    tensor.ClearField("raw_data")
+    tensor.data_location = TensorProto.EXTERNAL
+
+    # The tensor lives in the body of an `If`, not in the top-level graph.
+    branch = helper.make_graph(
+        [],
+        "branch",
+        [],
+        [helper.make_tensor_value_info("weights", TensorProto.FLOAT, [2])],
+        [tensor],
+    )
+    node = helper.make_node(
+        "If", ["cond"], ["out"], then_branch=branch, else_branch=branch
+    )
+    graph = helper.make_graph(
+        [node],
+        "outer",
+        [helper.make_tensor_value_info("cond", TensorProto.BOOL, [])],
+        [helper.make_tensor_value_info("out", TensorProto.FLOAT, [2])],
+    )
+    onnx.save(helper.make_model(graph), model_path)
+
+    assert get_external_data_paths(model_path) == [external_data]

@@ -5,6 +5,11 @@ from typing import Final
 from luxonis_ml.utils.registry import Registry
 
 
+def in_docker() -> bool:
+    """Whether this process runs inside a modelconverter container."""
+    return "IN_DOCKER" in os.environ
+
+
 def get_cache_dir() -> Path:
     """Returns the hidden, auto-managed cache directory used for staged
     inputs and remote downloads.
@@ -21,7 +26,7 @@ def get_cache_dir() -> Path:
 # outputs are written to a dedicated mount that maps back to `./output` on the
 # host. Outside the container (native runs, host-only commands, tests) we use
 # the on-disk cache directory and a local `./output` directory.
-_IN_DOCKER: Final[bool] = "IN_DOCKER" in os.environ
+_IN_DOCKER: Final[bool] = in_docker()
 
 CONTAINER_SHARED_DIR: Final[Path] = Path("/app/shared_with_container")
 
@@ -55,4 +60,5 @@ __all__ = [
     "OUTPUTS_DIR",
     "SHARED_DIR",
     "get_cache_dir",
+    "in_docker",
 ]

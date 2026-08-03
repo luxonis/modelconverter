@@ -26,21 +26,29 @@ from modelconverter import __version__
 from modelconverter.utils.constants import (
     CONTAINER_SHARED_DIR,
     get_cache_dir,
+    in_docker,
 )
 from modelconverter.utils.target_versions import (
     get_default_target_version,
 )
 from modelconverter.utils.telemetry import telemetry_environment
 
+UserNamespaceMode = Literal["rootless", "userns", "rootful", "unknown"]
+
 
 @cache
-def is_rootless_docker() -> bool:
-    """Returns whether the active Docker daemon runs in rootless mode.
+def docker_user_namespace_mode() -> UserNamespaceMode:
+    """Returns how the active Docker daemon maps the container's root
+    user onto the host.
 
-    In rootless mode the container's root user is already mapped to the
-    invoking host user, so files written by the container come out owned
-    by the host user and must NOT be chowned (doing so would map them to
-    an unmapped sub-uid, showing up as ``nobody`` on the host).
+    - ``rootless``: the daemon itself runs as the invoking user, so
+      container root is already that user.
+    - ``userns``: the daemon runs as root with user-namespace remapping,
+      so container root is a subordinate uid that cannot even be chowned
+      to the host user from inside the container.
+    - ``rootful``: container root is host root, so what the container
+      writes has to be handed back to the invoking user.
+    - ``unknown``: the daemon could not be asked.
 
     The answer cannot change within a run, so it is cached: this is a
     round-trip to the daemon on a path that would otherwise take it once
@@ -52,13 +60,17 @@ def is_rootless_docker() -> bool:
             text=True,
             stderr=subprocess.DEVNULL,
             # A `DOCKER_HOST` pointing at an unreachable daemon must not hang
-            # the conversion; assuming a rootful daemon is the safe default.
+            # the conversion.
             timeout=30,
         )
     # `docker_bin` raises RuntimeError when docker is not installed at all.
     except (subprocess.SubprocessError, OSError, RuntimeError):
-        return False
-    return "rootless" in out
+        return "unknown"
+    if "rootless" in out:
+        return "rootless"
+    if "userns" in out:
+        return "userns"
+    return "rootful"
 
 
 def get_docker_client_from_active_context() -> docker.DockerClient:
@@ -115,9 +127,18 @@ def generate_compose_config(
     # Pass the host user's identity so the container can chown the outputs and
     # cache back to the invoking user on exit (see docker/*/entrypoint.sh).
     # `getuid`/`getgid` are POSIX-only; on other platforms chowning is neither
-    # possible nor necessary. In rootless Docker the container root is already
-    # mapped to the host user, so chowning would instead break ownership.
-    if hasattr(os, "getuid") and not is_rootless_docker():
+    # possible nor necessary. Under a user-namespace daemon it is either
+    # unnecessary (rootless: container root already *is* the host user) or
+    # impossible (userns remap: the host user is not mapped into the
+    # container), and doing it anyway hands the files to an unmapped sub-uid.
+    namespace_mode = docker_user_namespace_mode()
+    if namespace_mode == "unknown":
+        logger.warning(
+            "Could not determine the Docker daemon's user-namespace mode; "
+            "assuming a rootful daemon. If the outputs come out owned by "
+            "another user, unset HOST_UID/HOST_GID and check `docker info`."
+        )
+    if hasattr(os, "getuid") and namespace_mode in {"rootful", "unknown"}:
         environment["HOST_UID"] = str(os.getuid())
         environment["HOST_GID"] = str(os.getgid())
     if extra_environment:
@@ -159,10 +180,6 @@ def generate_compose_config(
         config["services"]["modelconverter"]["runtime"] = "nvidia"
 
     return yaml.dump(config)
-
-
-def in_docker() -> bool:
-    return "IN_DOCKER" in os.environ
 
 
 def check_docker() -> None:

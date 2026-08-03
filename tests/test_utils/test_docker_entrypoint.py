@@ -1,3 +1,12 @@
+"""Tests for the container entrypoint.
+
+The signal, stdin and ownership handling lives in
+``docker/entrypoint_common.sh``, which every target entrypoint sources;
+running the RVC2 one therefore exercises the logic of all of them. The
+other targets add environment setup that only exists inside their image
+(SNPE, Hailo), so they cannot be run here.
+"""
+
 import os
 import shutil
 import signal
@@ -7,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-ENTRYPOINT = Path(__file__).parents[2] / "docker" / "rvc2" / "entrypoint.sh"
+DOCKER_DIR = Path(__file__).parents[2] / "docker"
 
 # The entrypoint is a bash script with a `#!/bin/bash` shebang. That path is
 # guaranteed inside the image but not on every developer machine, so the tests
@@ -19,13 +28,32 @@ pytestmark = pytest.mark.skipif(_BASH is None, reason="bash is not available")
 BASH = _BASH or "bash"
 
 
-def _fake_modelconverter(tmp_path: Path, body: str) -> dict[str, str]:
+@pytest.fixture
+def entrypoint(tmp_path: Path) -> Path:
+    """Lays the entrypoint out the way the image does, with the shared
+    part next to it."""
+    app = tmp_path / "app"
+    app.mkdir()
+    shutil.copy(DOCKER_DIR / "rvc2" / "entrypoint.sh", app / "entrypoint.sh")
+    shutil.copy(
+        DOCKER_DIR / "entrypoint_common.sh", app / "entrypoint_common.sh"
+    )
+    return app / "entrypoint.sh"
+
+
+def _entrypoint_env(tmp_path: Path, body: str) -> dict[str, str]:
     """Puts a fake ``modelconverter`` on PATH and returns the
     environment to run the entrypoint with."""
     executable = tmp_path / "modelconverter"
     executable.write_text(f"#!/usr/bin/env bash\n{body}")
     executable.chmod(0o755)
-    return {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+    # A developer who followed the docker-compose instructions has these
+    # exported; the entrypoint would then try to chown paths that only exist
+    # inside the image.
+    env.pop("HOST_UID", None)
+    env.pop("HOST_GID", None)
+    return env
 
 
 def _wait_for(path: Path, timeout: float = 5) -> bool:
@@ -37,11 +65,13 @@ def _wait_for(path: Path, timeout: float = 5) -> bool:
     return False
 
 
-def test_entrypoint_gives_the_command_a_real_stdin(tmp_path: Path) -> None:
-    env = _fake_modelconverter(tmp_path, 'read -r line\nexit "$line"\n')
+def test_entrypoint_gives_the_command_a_real_stdin(
+    tmp_path: Path, entrypoint: Path
+) -> None:
+    env = _entrypoint_env(tmp_path, 'read -r line\nexit "$line"\n')
 
     result = subprocess.run(
-        [BASH, str(ENTRYPOINT), "convert", "rvc2"],
+        [BASH, str(entrypoint), "convert", "rvc2"],
         input="7\n",
         text=True,
         env=env,
@@ -54,11 +84,14 @@ def test_entrypoint_gives_the_command_a_real_stdin(tmp_path: Path) -> None:
 @pytest.mark.skipif(
     not Path("/bin/bash").exists(), reason="/bin/bash is not available"
 )
-def test_entrypoint_keeps_interactive_shell_stdin() -> None:
+def test_entrypoint_keeps_interactive_shell_stdin(
+    tmp_path: Path, entrypoint: Path
+) -> None:
     result = subprocess.run(
-        [BASH, str(ENTRYPOINT)],
+        [BASH, str(entrypoint)],
         input="exit 7\n",
         text=True,
+        env=_entrypoint_env(tmp_path, "exit 1\n"),
         check=False,
     )
 
@@ -69,12 +102,12 @@ def test_entrypoint_keeps_interactive_shell_stdin() -> None:
     ("sent", "exit_code"), [(signal.SIGTERM, 42), (signal.SIGINT, 130)]
 )
 def test_entrypoint_forwards_signals_and_waits_for_child_cleanup(
-    tmp_path: Path, sent: signal.Signals, exit_code: int
+    tmp_path: Path, entrypoint: Path, sent: signal.Signals, exit_code: int
 ) -> None:
     signal_name = sent.name.removeprefix("SIG")
     signal_file = tmp_path / "signal"
     ready_file = tmp_path / "ready"
-    env = _fake_modelconverter(
+    env = _entrypoint_env(
         tmp_path,
         f"trap 'printf {signal_name} > \"$SIGNAL_FILE\"; exit {exit_code}' "
         f"{signal_name}\n"
@@ -84,7 +117,7 @@ def test_entrypoint_forwards_signals_and_waits_for_child_cleanup(
     env |= {"READY_FILE": str(ready_file), "SIGNAL_FILE": str(signal_file)}
 
     process = subprocess.Popen(
-        [BASH, str(ENTRYPOINT), "convert", "rvc2"],
+        [BASH, str(entrypoint), "convert", "rvc2"],
         env=env,
     )
     try:

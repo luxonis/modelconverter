@@ -1,4 +1,5 @@
 from .calibration_data import download_calibration_data
+from .constants import in_docker
 from .device_handlers import (
     AdbHandler,
     DeviceHandler,
@@ -14,7 +15,6 @@ from .docker_utils import (
     get_container_memory_limit,
     get_docker_image,
     get_local_docker_image,
-    in_docker,
 )
 from .environ import environ
 from .exceptions import (

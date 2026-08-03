@@ -102,14 +102,16 @@ def test_stages_every_external_data_file(
         )
 
 
+def _staged_content(staged: str, cache_dir: Path) -> bytes:
+    return _host_staged_path(staged, cache_dir).read_bytes()
+
+
 def test_stages_and_rewrites_absolute_config_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cache_dir = tmp_path / "cache"
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
-    relative_model = config_dir / "relative.onnx"
-    relative_model.write_bytes(b"relative")
 
     absolute_model = tmp_path / "models" / "absolute.onnx"
     absolute_model.parent.mkdir()
@@ -129,9 +131,16 @@ def test_stages_and_rewrites_absolute_config_paths(
             {
                 "input_model": str(absolute_model),
                 "calibration": {"path": str(calibration)},
-                "script": str(script),
+                "inputs": [
+                    {
+                        "name": "images",
+                        "calibration": {
+                            "stage": "first",
+                            "script": str(script),
+                        },
+                    }
+                ],
                 "rvc4": {"encodings": str(encodings)},
-                "relative_model": relative_model.name,
                 "remote_model": "s3://bucket/model.onnx",
             }
         )
@@ -144,19 +153,238 @@ def test_stages_and_rewrites_absolute_config_paths(
 
     staged_config = _host_staged_path(staged_tokens[1], cache_dir)
     rewritten = yaml.safe_load(staged_config.read_text())
-    for key in ("input_model", "script"):
-        assert rewritten[key].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
-    assert rewritten["calibration"]["path"].startswith(
-        f"{CONTAINER_SHARED_DIR}/inputs/"
-    )
-    assert rewritten["rvc4"]["encodings"].startswith(
-        f"{CONTAINER_SHARED_DIR}/inputs/"
-    )
-    assert rewritten["relative_model"] == relative_model.name
-    assert rewritten["remote_model"] == "s3://bucket/model.onnx"
+    assert _staged_content(rewritten["input_model"], cache_dir) == b"model"
     assert (
-        staged_config.with_name(relative_model.name).read_bytes()
-        == b"relative"
+        _staged_content(
+            rewritten["inputs"][0]["calibration"]["script"], cache_dir
+        )
+        == b"print('calibrate')"
+    )
+    assert _staged_content(rewritten["rvc4"]["encodings"], cache_dir) == b"{}"
+    staged_calibration = _host_staged_path(
+        rewritten["calibration"]["path"], cache_dir
+    )
+    assert (staged_calibration / "image.jpg").read_bytes() == b"image"
+    assert rewritten["remote_model"] == "s3://bucket/model.onnx"
+
+
+def test_stages_and_rewrites_relative_config_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    config_dir = tmp_path / "configs"
+    (config_dir / "calibration_data").mkdir(parents=True)
+    (config_dir / "model.onnx").write_bytes(b"model")
+    (config_dir / "calibration_data" / "image.jpg").write_bytes(b"image")
+    (config_dir / "script.py").write_text("print('calibrate')")
+
+    config_path = config_dir / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "stages": {
+                    "first": {
+                        "input_model": "model.onnx",
+                        "calibration": {"path": "calibration_data"},
+                    },
+                    "second": {
+                        "input_model": "model.onnx",
+                        "inputs": [
+                            {
+                                "name": "images",
+                                "calibration": {
+                                    "stage": "first",
+                                    "script": "script.py",
+                                },
+                            }
+                        ],
+                    },
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    # The config directory is not the working directory: relative references
+    # have to resolve against the config file itself.
+    monkeypatch.chdir(tmp_path)
+
+    staged_tokens = input_staging.stage_inputs(
+        ["--path", str(config_path)], {"--path"}
+    )
+
+    rewritten = yaml.safe_load(
+        _host_staged_path(staged_tokens[1], cache_dir).read_text()
+    )
+    stages = rewritten["stages"]
+    assert (
+        _staged_content(stages["first"]["input_model"], cache_dir) == b"model"
+    )
+    calibration = _host_staged_path(
+        stages["first"]["calibration"]["path"], cache_dir
+    )
+    assert (calibration / "image.jpg").read_bytes() == b"image"
+    assert (
+        _staged_content(
+            stages["second"]["inputs"][0]["calibration"]["script"], cache_dir
+        )
+        == b"print('calibrate')"
+    )
+
+
+def test_only_config_references_are_staged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    (config_dir / "model.onnx").write_bytes(b"model")
+    # A config routinely sits in a directory holding much more than the
+    # conversion needs; none of it may end up in the cache.
+    (config_dir / "unrelated.bin").write_bytes(b"unrelated")
+    (config_dir / "notes").mkdir()
+    (config_dir / "notes" / "todo.txt").write_text("todo")
+
+    config_path = config_dir / "config.yaml"
+    config_path.write_text(yaml.safe_dump({"input_model": "model.onnx"}))
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    input_staging.stage_inputs(["--path", str(config_path)], {"--path"})
+
+    staged_names = {
+        path.name for path in cache_dir.rglob("*") if path.is_file()
+    }
+    assert staged_names == {"config.yaml", "model.onnx"}
+
+
+def test_stages_the_openvino_bin_alongside_the_xml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    ir_dir = tmp_path / "ir"
+    ir_dir.mkdir()
+    (ir_dir / "model.xml").write_bytes(b"xml")
+    (ir_dir / "model.bin").write_bytes(b"weights")
+
+    config_path = config_dir / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "input_model": str(ir_dir / "model.xml"),
+                "input_bin": str(ir_dir / "model.bin"),
+            }
+        )
+    )
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    staged_tokens = input_staging.stage_inputs(
+        ["--path", str(config_path)], {"--path"}
+    )
+
+    rewritten = yaml.safe_load(
+        _host_staged_path(staged_tokens[1], cache_dir).read_text()
+    )
+    staged_xml = _host_staged_path(rewritten["input_model"], cache_dir)
+    assert staged_xml.read_bytes() == b"xml"
+    assert staged_xml.with_suffix(".bin").read_bytes() == b"weights"
+    assert _staged_content(rewritten["input_bin"], cache_dir) == b"weights"
+
+
+def test_missing_config_references_are_left_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump({"input_model": "nowhere.onnx"}))
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    staged_tokens = input_staging.stage_inputs(
+        ["--path", str(config_path)], {"--path"}
+    )
+
+    rewritten = yaml.safe_load(
+        _host_staged_path(staged_tokens[1], cache_dir).read_text()
+    )
+    assert rewritten["input_model"] == "nowhere.onnx"
+
+
+def test_non_path_fields_are_never_staged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"model")
+    # A stage named after a directory that exists next to the config.
+    (tmp_path / "resnet18").mkdir()
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {"name": "resnet18", "stages": {"resnet18": {"input_model": None}}}
+        )
+    )
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    monkeypatch.chdir(tmp_path)
+
+    staged_tokens = input_staging.stage_inputs(
+        ["--path", str(config_path)], {"--path"}
+    )
+
+    rewritten = yaml.safe_load(
+        _host_staged_path(staged_tokens[1], cache_dir).read_text()
+    )
+    assert rewritten["name"] == "resnet18"
+
+
+def test_a_config_naming_itself_terminates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump({"input_model": "config.yaml"}))
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    staged_tokens = input_staging.stage_inputs(
+        ["--path", str(config_path)], {"--path"}
+    )
+
+    rewritten = yaml.safe_load(
+        _host_staged_path(staged_tokens[1], cache_dir).read_text()
+    )
+    assert _staged_content(rewritten["input_model"], cache_dir) == (
+        config_path.read_bytes()
+    )
+
+
+def test_restaging_a_changed_reference_keeps_the_previous_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"first")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump({"input_model": "model.onnx"}))
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    first = input_staging.stage_inputs(
+        ["--path", str(config_path)], {"--path"}
+    )
+    model.write_bytes(b"second")
+    second = input_staging.stage_inputs(
+        ["--path", str(config_path)], {"--path"}
+    )
+
+    # A published entry is keyed by its own content, so the copy a concurrent
+    # run may still be reading is never rewritten in place.
+    assert first[1] != second[1]
+    assert (
+        _staged_content(
+            yaml.safe_load(_host_staged_path(first[1], cache_dir).read_text())[
+                "input_model"
+            ],
+            cache_dir,
+        )
+        == b"first"
     )
 
 
@@ -230,7 +458,7 @@ def test_relative_paths_are_still_staged(
     assert staged_tokens[3].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
 
 
-def test_staging_a_config_next_to_the_cache_does_not_recurse(
+def test_staging_a_directory_holding_the_cache_does_not_recurse(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     home = tmp_path / "home"
@@ -241,39 +469,34 @@ def test_staging_a_config_next_to_the_cache_does_not_recurse(
     (cache_dir / "inputs" / "old").mkdir(parents=True)
     (cache_dir / "inputs" / "old" / "junk.bin").write_bytes(b"junk")
     monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
-
-    (home / "model.onnx").write_bytes(b"model")
-    config_path = home / "config.yaml"
-    config_path.write_text(yaml.safe_dump({"input_model": "model.onnx"}))
+    (home / "image.jpg").write_bytes(b"image")
 
     staged_tokens = input_staging.stage_inputs(
-        ["--path", str(config_path)], {"--path"}
+        ["--input-path", str(home)], {"--input-path"}
     )
 
-    staged_config = _host_staged_path(staged_tokens[1], cache_dir)
-    assert (staged_config.parent / "model.onnx").read_bytes() == b"model"
-    assert not (staged_config.parent / ".cache").exists()
+    staged_dir = _host_staged_path(staged_tokens[1], cache_dir)
+    assert (staged_dir / "image.jpg").read_bytes() == b"image"
+    assert not (staged_dir / ".cache").exists()
 
 
 def test_unusable_files_do_not_abort_staging(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cache_dir = tmp_path / "cache"
-    config_dir = tmp_path / "configs"
-    config_dir.mkdir()
-    (config_dir / "model.onnx").write_bytes(b"model")
-    (config_dir / "dangling").symlink_to(tmp_path / "nowhere")
-    config_path = config_dir / "config.yaml"
-    config_path.write_text(yaml.safe_dump({"input_model": "model.onnx"}))
+    calibration = tmp_path / "calibration"
+    calibration.mkdir()
+    (calibration / "image.jpg").write_bytes(b"image")
+    (calibration / "dangling").symlink_to(tmp_path / "nowhere")
     monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged_tokens = input_staging.stage_inputs(
-        ["--path", str(config_path)], {"--path"}
+        ["--input-path", str(calibration)], {"--input-path"}
     )
 
-    staged_config = _host_staged_path(staged_tokens[1], cache_dir)
-    assert (staged_config.parent / "model.onnx").read_bytes() == b"model"
-    assert not (staged_config.parent / "dangling").exists()
+    staged_dir = _host_staged_path(staged_tokens[1], cache_dir)
+    assert (staged_dir / "image.jpg").read_bytes() == b"image"
+    assert not (staged_dir / "dangling").exists()
 
 
 def test_directory_digest_covers_symlinked_subdirectories(

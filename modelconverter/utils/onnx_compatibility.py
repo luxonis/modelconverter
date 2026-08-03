@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from pathlib import Path
 
 import ml_dtypes
@@ -65,6 +66,23 @@ def save_onnx_model(
     onnx.save(model, str(output_path))
 
 
+def _iter_tensors(graph: onnx.GraphProto) -> Iterator[onnx.TensorProto]:
+    """Yields every initializer of ``graph``, including those of the
+    subgraphs nested in its nodes (the bodies of ``If``, ``Loop``,
+    ``Scan``, ...), which may hold external data of their own."""
+    yield from graph.initializer
+    for sparse_tensor in graph.sparse_initializer:
+        yield sparse_tensor.values
+        yield sparse_tensor.indices
+
+    for node in graph.node:
+        for attribute in node.attribute:
+            if attribute.HasField("g"):
+                yield from _iter_tensors(attribute.g)
+            for subgraph in attribute.graphs:
+                yield from _iter_tensors(subgraph)
+
+
 def get_external_data_paths(model_path: str | Path) -> list[Path]:
     """Returns every companion file holding the model's external tensor
     data.
@@ -76,18 +94,8 @@ def get_external_data_paths(model_path: str | Path) -> list[Path]:
     model = onnx.load(str(model_path), load_external_data=False)
     model_dir = model_path.parent.resolve()
 
-    tensors = list(model.graph.initializer)
-    tensors.extend(
-        sparse_tensor.values
-        for sparse_tensor in model.graph.sparse_initializer
-    )
-    tensors.extend(
-        sparse_tensor.indices
-        for sparse_tensor in model.graph.sparse_initializer
-    )
-
     paths: list[Path] = []
-    for tensor in tensors:
+    for tensor in _iter_tensors(model.graph):
         if not uses_external_data(tensor):
             continue
         location = ExternalDataInfo(tensor).location

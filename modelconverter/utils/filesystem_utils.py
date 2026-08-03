@@ -4,7 +4,7 @@ from pathlib import Path
 
 from luxonis_ml.utils import LuxonisFileSystem
 
-from modelconverter.utils.constants import SHARED_DIR
+from modelconverter.utils.constants import SHARED_DIR, in_docker
 
 # Base directory against which relative local paths are resolved when they do
 # not exist as-is. It is set to the directory of the active config file while
@@ -33,7 +33,7 @@ def get_input_bases() -> list[Path]:
     storage lands in the cache, so the paths it references relative to the
     shared root would otherwise stop resolving.
     """
-    default = SHARED_DIR if "IN_DOCKER" in os.environ else Path.cwd()
+    default = SHARED_DIR if in_docker() else Path.cwd()
     base = _input_base.get()
     if base is None or base == default:
         return [default]

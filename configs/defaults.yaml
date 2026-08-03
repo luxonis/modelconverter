@@ -40,8 +40,8 @@ stages:
       resize_method: RESIZE
 
       # For multi-stage models, the calibration can be an output of a previous stage.
-      # The `link` section specifies how to use the outputs from the previous stage.
-      # link:
+      # The fields below are siblings of `path` under `calibration` and specify
+      # how to use the outputs from the previous stage.
 
       # Name of the stage to link to. Required.
       # stage: ~
@@ -166,7 +166,6 @@ stages:
       compression_level: 2
 
       # Batch size for the calibration.
-      # batch_size: 8
       batch_size: 8
 
       # Stop after quantization. Used in tests.
