@@ -116,22 +116,26 @@ jobs:
           HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
         run: |
           python -m pytest tests/unit -n auto \
+            --junitxml junit-unit.xml -o junit_family=legacy \
             --cov --cov-report term-missing \
             --cov-report xml:coverage-unit.xml
 
-      - name: Upload coverage to Codecov
+      - name: Upload test results to Codecov
         if: ${{ always() }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage-unit.xml
+          report_type: test_results
+          files: junit-unit.xml
           flags: unit
           name: unit
           fail_ci_if_error: false
           disable_search: true
           handle_no_reports_found: true
 
-      # Keep the report available for CI diagnostics.
+      # The coverage itself is uploaded by the `coverage` job, once every test
+      # job has finished. The artifact is what that job collects, and it keeps
+      # the report available for CI diagnostics.
       - name: Upload coverage artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -269,22 +273,27 @@ jobs:
             --tool-version "${VERSION}" \
             -c "${ML_INSTALL_COMMAND} \
               python -m pytest tests/conversion -m '${PACKAGE}' -x \
+                --junitxml shared_with_container/junit-${PACKAGE}-${VERSION}.xml \
+                -o junit_family=legacy \
                 --cov --cov-report term-missing \
                 --cov-report xml:shared_with_container/coverage-${PACKAGE}-${VERSION}.xml"
 
-      - name: Upload coverage to Codecov
+      - name: Upload test results to Codecov
         if: ${{ always() }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: shared_with_container/coverage-${{ matrix.package }}-${{ matrix.version }}.xml
-          flags: conversion-${{ matrix.package }}
+          report_type: test_results
+          files: shared_with_container/junit-${{ matrix.package }}-${{ matrix.version }}.xml
+          flags: conversion
           name: conversion-${{ matrix.package }}-${{ matrix.version }}
           fail_ci_if_error: false
           disable_search: true
           handle_no_reports_found: true
 
-      # Keep the report available for CI diagnostics.
+      # The coverage itself is uploaded by the `coverage` job, once every test
+      # job has finished. The artifact is what that job collects, and it keeps
+      # the report available for CI diagnostics.
       - name: Upload coverage artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -292,3 +301,80 @@ jobs:
           name: coverage-conversion-${{ matrix.package }}-${{ matrix.version }}
           path: shared_with_container/coverage-${{ matrix.package }}-${{ matrix.version }}.xml
           if-no-files-found: ignore
+
+  # Codecov evaluates the commit every time a report arrives, so uploading from
+  # the test jobs themselves makes it judge the run against whichever reports
+  # happen to have landed and report a coverage drop that is not real. The
+  # reports are collected from the artifacts and uploaded here instead, once
+  # every test job has finished.
+  coverage:
+    name: Upload coverage
+    needs: [unit, integration]
+    if: ${{ always() && needs.unit.result == 'success' && (needs.integration.result == 'success' || needs.integration.result == 'skipped') }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      # Required by codecov-action, it builds the path-fixing file network
+      # from the checked out repository.
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
+          persist-credentials: false
+
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: coverage-*
+          path: coverage
+          merge-multiple: true
+
+      - name: Collect coverage files
+        id: coverage-files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # `download-artifact` leaves the directory out entirely when nothing
+          # matched, and a bare `find` failure hides why.
+          mkdir -p coverage
+
+          unit=$(find coverage -type f -name 'coverage-unit.xml' | sort | paste -sd, -)
+          if [[ -z "$unit" ]]; then
+            echo "No unit coverage report found" >&2
+            exit 1
+          fi
+
+          # Whatever is left comes from a `tests/conversion` run inside one of
+          # the platform images. Empty when the integration tests were skipped.
+          conversion=$(find coverage -type f -name 'coverage-*.xml' \
+            ! -name 'coverage-unit.xml' | sort | paste -sd, -)
+
+          echo "unit=$unit" >> "$GITHUB_OUTPUT"
+          echo "conversion=$conversion" >> "$GITHUB_OUTPUT"
+
+      - name: Upload unit coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ steps.coverage-files.outputs.unit }}
+          flags: unit
+          name: unit
+          fail_ci_if_error: false
+          disable_search: true
+
+      - name: Upload conversion coverage to Codecov
+        if: ${{ steps.coverage-files.outputs.conversion != '' }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ steps.coverage-files.outputs.conversion }}
+          flags: conversion
+          name: conversion
+          fail_ci_if_error: false
+          disable_search: true
