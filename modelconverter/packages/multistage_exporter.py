@@ -91,7 +91,10 @@ class MultiStageExporter:
                     path=dest_dir / stage_output
                 )
             elif script is not None:
-                output_dirs = list(map(str, dest_dir.iterdir()))
+                # One directory per model output. The inferer also leaves a
+                # marker file in there to recognize its own results, so take
+                # only the directories.
+                output_dirs = [p for p in dest_dir.iterdir() if p.is_dir()]
                 dest = (
                     self.intermediate_outputs_dir
                     / "inference_output"
@@ -103,12 +106,10 @@ class MultiStageExporter:
                 (
                     self.intermediate_outputs_dir / stage / "script.py"
                 ).write_text(script)
-                for i, file in enumerate(Path(output_dirs[0]).iterdir()):
+                for i, file in enumerate(output_dirs[0].iterdir()):
                     outputs = {
-                        Path(out_name).name: np.load(
-                            Path(out_name) / file.name
-                        )
-                        for out_name in output_dirs
+                        out_dir.name: np.load(out_dir / file.name)
+                        for out_dir in output_dirs
                     }
 
                     # The calibration script is trusted (it comes from the
