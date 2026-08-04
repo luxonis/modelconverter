@@ -16,7 +16,8 @@ import shutil
 import signal
 import subprocess
 import time
-from contextlib import suppress
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 import pytest
@@ -65,6 +66,38 @@ def _entrypoint_env(tmp_path: Path, body: str) -> dict[str, str]:
     return env
 
 
+@contextmanager
+def _entrypoint_process(
+    entrypoint: Path,
+    *args: str,
+    env: dict[str, str],
+    stdin: bool = False,
+) -> Generator[subprocess.Popen, None, None]:
+    """Runs the entrypoint and leaves nothing of it behind.
+
+    The entrypoint runs the converter as a background child, so killing
+    the entrypoint alone -- all a timeout does -- would leave that child
+    spinning for the rest of the test session. Its own session makes the
+    pair killable as one group.
+    """
+    process = subprocess.Popen(
+        [BASH, str(entrypoint), *args],
+        env=env,
+        text=True,
+        stdin=subprocess.PIPE if stdin else None,
+        start_new_session=True,
+    )
+    try:
+        yield process
+    finally:
+        # Only while the process is unreaped, so the pid cannot have been
+        # recycled into an unrelated group by the time it is signalled.
+        if process.poll() is None:
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+
+
 def _wait_for(path: Path, timeout: float = 5) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -79,16 +112,12 @@ def test_entrypoint_gives_the_command_a_real_stdin(
 ) -> None:
     env = _entrypoint_env(tmp_path, 'read -r line\nexit "$line"\n')
 
-    result = subprocess.run(
-        [BASH, str(entrypoint), "convert", "rvc2"],
-        input="7\n",
-        text=True,
-        env=env,
-        check=False,
-        timeout=TIMEOUT,
-    )
+    with _entrypoint_process(
+        entrypoint, "convert", "rvc2", env=env, stdin=True
+    ) as process:
+        process.communicate("7\n", timeout=TIMEOUT)
 
-    assert result.returncode == 7
+    assert process.returncode == 7
 
 
 @pytest.mark.skipif(
@@ -97,16 +126,12 @@ def test_entrypoint_gives_the_command_a_real_stdin(
 def test_entrypoint_keeps_interactive_shell_stdin(
     tmp_path: Path, entrypoint: Path
 ) -> None:
-    result = subprocess.run(
-        [BASH, str(entrypoint)],
-        input="exit 7\n",
-        text=True,
-        env=_entrypoint_env(tmp_path, "exit 1\n"),
-        check=False,
-        timeout=TIMEOUT,
-    )
+    with _entrypoint_process(
+        entrypoint, env=_entrypoint_env(tmp_path, "exit 1\n"), stdin=True
+    ) as process:
+        process.communicate("exit 7\n", timeout=TIMEOUT)
 
-    assert result.returncode == 7
+    assert process.returncode == 7
 
 
 @pytest.mark.parametrize(
@@ -127,24 +152,11 @@ def test_entrypoint_forwards_signals_and_waits_for_child_cleanup(
     )
     env |= {"READY_FILE": str(ready_file), "SIGNAL_FILE": str(signal_file)}
 
-    # The entrypoint runs the converter as a background child, so killing the
-    # entrypoint alone would leave that child spinning. Its own session makes
-    # the pair killable as one group.
-    process = subprocess.Popen(
-        [BASH, str(entrypoint), "convert", "rvc2"],
-        env=env,
-        start_new_session=True,
-    )
-    try:
+    with _entrypoint_process(
+        entrypoint, "convert", "rvc2", env=env
+    ) as process:
         assert _wait_for(ready_file)
 
         process.send_signal(sent)
         assert process.wait(timeout=TIMEOUT) == exit_code
         assert signal_file.read_text() == signal_name
-    finally:
-        # Only while the process is unreaped, so the pid cannot have been
-        # recycled into an unrelated group by the time it is signalled.
-        if process.poll() is None:
-            with suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
