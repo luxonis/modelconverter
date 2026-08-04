@@ -655,9 +655,37 @@ def test_path_flags_come_from_the_command_signature() -> None:
     assert input_staging.path_flags_for(infer) == {
         "--config",
         "--input-path",
+        "--input_path",
         "--model-path",
+        "--model_path",
         "--path",
     }
+
+
+def test_stages_the_underscored_spelling_of_a_path_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cyclopts accepts an option spelled either way, so a path given as
+    ``--model_path`` must be staged like one given as ``--model-path``.
+
+    Left unstaged it would reach the container as a host path that only
+    exists outside it.
+    """
+    from modelconverter.__main__ import infer
+
+    cache_dir = tmp_path / "cache"
+    model_path = tmp_path / "model.dlc"
+    model_path.write_bytes(b"model")
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    staged_tokens = input_staging.stage_inputs(
+        ["--model_path", str(model_path)], input_staging.path_flags_for(infer)
+    )
+
+    assert staged_tokens[1] != str(model_path)
+    assert _host_staged_path(staged_tokens[1], cache_dir).read_bytes() == (
+        model_path.read_bytes()
+    )
 
 
 def test_interrupted_file_copy_does_not_publish_partial_cache_entry(

@@ -27,7 +27,8 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
     - [Building the Images](#building-the-images)
     - [Local Image Tagging and CLI Usage](#local-image-tagging-and-cli-usage)
     - [GPU Support](#gpu-support)
-  - [Sharing Files](#sharing-files)
+  - [Inputs, Outputs and the Cache](#inputs-outputs-and-the-cache)
+    - [Managing the cache](#managing-the-cache)
   - [Running ModelConverter](#running-modelconverter)
     - [Available CLI Options](#available-cli-options)
     - [Handling Large ONNX Files (Exceeding 2GB)](#handling-large-onnx-files-exceeding-2gb)
@@ -475,7 +476,7 @@ modelconverter convert rvc3 --path configs/resnet18.yaml \
 Specify all options via the command line without a config file:
 
 ```bash
-modelconverter convert rvc2 --path models/yolov6n.onnx \
+modelconverter convert rvc2 --path path/to/yolov6n.onnx \
                         scale_values "[255,255,255]" \
                         inputs.0.encoding.from RGB \
                         inputs.0.encoding.to BGR \
@@ -579,9 +580,9 @@ To run the inference, use:
 
 ```bash
 modelconverter infer rvc4 \
-  --model_path <path_to_model.dlc> \
+  --model-path <path_to_model.dlc> \
   --output-dir <output_dir_name> \
-  --input_path <input_path>
+  --input-path <input_path> \
   --path <path_to_config.yaml>
 ```
 

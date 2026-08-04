@@ -88,12 +88,20 @@ def path_flags_for(command: Callable[..., Any] | None) -> set[str]:
     except (TypeError, ValueError):
         return set()
 
-    return {
-        f"--{name.replace('_', '-')}"
-        for name, parameter in parameters.items()
-        if parameter.kind is not parameter.POSITIONAL_ONLY
-        and _is_path_parameter(name, parameter.annotation)
-    }
+    flags: set[str] = set()
+    for name, parameter in parameters.items():
+        if parameter.kind is parameter.POSITIONAL_ONLY:
+            continue
+        if not _is_path_parameter(name, parameter.annotation):
+            continue
+        # Cyclopts accepts an option under both its dashed and its underscored
+        # spelling, so a path passed as `--model_path` has to be staged just
+        # like one passed as `--model-path`. Recognising only the dashed form
+        # would let the other one through as a host path the container cannot
+        # resolve.
+        flags.add(f"--{name.replace('_', '-')}")
+        flags.add(f"--{name}")
+    return flags
 
 
 def _is_path_parameter(name: str, annotation: Any) -> bool:
