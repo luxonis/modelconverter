@@ -22,7 +22,7 @@ def test_target_options(
     target: Target,
     version: str,
     expected: tuple[str, ...],
-) -> None:
+):
     monkeypatch.setenv("MODELCONVERTER_TARGET_VERSION", version)
 
     assert target_options(target) == expected
@@ -34,7 +34,7 @@ def test_target_options(
 )
 def test_superblob_skip_reason(
     monkeypatch: pytest.MonkeyPatch, version: str, skipped: bool
-) -> None:
+):
     monkeypatch.setenv("MODELCONVERTER_TARGET_VERSION", version)
 
     assert (superblob_skip_reason() is not None) is skipped
@@ -42,7 +42,7 @@ def test_superblob_skip_reason(
 
 def test_no_target_version_keeps_superblob(
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
+):
     """Outside a conversion container nothing is forced off.
 
     Host-side runs have no ``MODELCONVERTER_TARGET_VERSION``, and defaulting to

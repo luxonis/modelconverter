@@ -47,22 +47,22 @@ def _single_stage_config(dummy_onnx: Path, **overrides) -> Config:
         (".pth", ModelType.PYTORCH),
     ],
 )
-def test_from_suffix(suffix: str, expected: ModelType):
+def test_model_type_from_suffix(suffix: str, expected: ModelType):
     assert ModelType.from_suffix(suffix) == expected
 
 
-def test_from_suffix_unsupported():
+def test_model_type_from_unsupported_suffix():
     with pytest.raises(ValueError, match="Unsupported model format"):
         ModelType.from_suffix(".foo")
 
 
-def test_default_name():
+def test_output_dir_default_name():
     out = get_output_dir_name(Target.RVC4, "my_model", None)
     assert out.parent == OUTPUTS_DIR
     assert out.name.startswith("my_model_to_rvc4_")
 
 
-def test_explicit_and_existing_removed():
+def test_output_dir_explicit_and_existing_is_wiped():
     existing = OUTPUTS_DIR / "custom"
     existing.mkdir(parents=True, exist_ok=True)
     (existing / "stale.txt").write_text("stale")
@@ -72,7 +72,7 @@ def test_explicit_and_existing_removed():
     assert not (OUTPUTS_DIR / "custom" / "stale.txt").exists()
 
 
-def test_explicit_non_existing_kept():
+def test_output_dir_explicit_and_missing_is_kept():
     # output_dir provided but does not exist -> the rmtree branch is skipped.
     out = get_output_dir_name(Target.RVC2, "model", "fresh")
     assert out == OUTPUTS_DIR / "fresh"
@@ -84,7 +84,7 @@ def test_init_dirs():
         assert d.is_dir()
 
 
-def test_single_stage_from_opts(dummy_onnx: Path):
+def test_get_configs_single_stage_from_opts(dummy_onnx: Path):
     cfg, archive_cfg, main_stage = get_configs(
         Target.RVC4,
         None,
@@ -94,7 +94,7 @@ def test_single_stage_from_opts(dummy_onnx: Path):
     assert main_stage == next(iter(cfg.stages))
 
 
-def test_opts_as_dict(dummy_onnx: Path):
+def test_get_configs_opts_as_dict(dummy_onnx: Path):
     cfg, archive_cfg, main_stage = get_configs(
         Target.RVC4,
         None,
@@ -104,12 +104,12 @@ def test_opts_as_dict(dummy_onnx: Path):
     assert main_stage in cfg.stages
 
 
-def test_odd_number_of_opts(dummy_onnx: Path):
+def test_get_configs_odd_number_of_opts_raises(dummy_onnx: Path):
     with pytest.raises(ValueError, match="Invalid number of overrides"):
         get_configs(Target.RVC4, None, ["input_model"])
 
 
-def test_multistage_yolov8_seg_main_stage(dummy_onnx: Path):
+def test_get_configs_multistage_yolov8_seg_main_stage(dummy_onnx: Path):
     cfg_yaml = (
         "name: multi\n"
         "stages:\n"
@@ -127,7 +127,7 @@ def test_multistage_yolov8_seg_main_stage(dummy_onnx: Path):
     assert main_stage == "yolov8n_seg"
 
 
-def test_from_nn_archive(work_dir: Path):
+def test_get_configs_from_nn_archive(work_dir: Path):
     onnx_path = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     archive = pack_archive(
         work_dir / "dummy_model.tar",
@@ -139,7 +139,7 @@ def test_from_nn_archive(work_dir: Path):
     assert main_stage in cfg.stages
 
 
-def test_multistage_without_seg_stage(dummy_onnx: Path):
+def test_get_configs_multistage_without_seg_stage(dummy_onnx: Path):
     # >1 stage but no yolov8-seg stage -> the detection loop finishes
     # without a break and main_stage stays None.
     cfg_yaml = (
@@ -159,7 +159,7 @@ def test_multistage_without_seg_stage(dummy_onnx: Path):
     assert main_stage is None
 
 
-def test_multistage_raises(dummy_onnx: Path):
+def test_extract_preprocessing_rejects_multistage(dummy_onnx: Path):
     cfg_yaml = (
         "name: multi\n"
         "stages:\n"
@@ -237,14 +237,14 @@ class _FakeRequest:
         return resp
 
 
-def test_found_public(monkeypatch: pytest.MonkeyPatch):
+def test_slug_to_id_found_public(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         cli_utils, "Request", _FakeRequest([[{"id": "abc123"}]])
     )
     assert slug_to_id("my-model", "models") == "abc123"
 
 
-def test_http_error_then_found_private(monkeypatch: pytest.MonkeyPatch):
+def test_slug_to_id_falls_back_to_private(monkeypatch: pytest.MonkeyPatch):
     # The public lookup errors (suppressed), then the private one succeeds.
     monkeypatch.setattr(
         cli_utils,
@@ -254,7 +254,7 @@ def test_http_error_then_found_private(monkeypatch: pytest.MonkeyPatch):
     assert slug_to_id("my-model", "modelVersions") == "priv"
 
 
-def test_not_found_raises(monkeypatch: pytest.MonkeyPatch):
+def test_slug_to_id_not_found_raises(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(cli_utils, "Request", _FakeRequest([[], []]))
     with pytest.raises(ValueError, match="not found"):
         slug_to_id("missing", "models")

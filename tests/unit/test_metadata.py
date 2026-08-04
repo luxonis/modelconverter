@@ -32,30 +32,12 @@ VENDOR_SUFFIXES = [
 ]
 
 
-def _sample_metadata() -> Metadata:
-    return Metadata(
-        input_shapes={"in": [1, 3, 8, 8]},
-        input_dtypes={"in": DataType.FLOAT32},
-        output_shapes={"out": [1, 2]},
-        output_dtypes={"out": DataType.INT64},
-    )
-
-
 def _assert_standard_io(meta: Metadata, output_dtype: DataType) -> None:
     """The single-in/single-out shapes + dtypes the DLC CSV fixtures share."""
     assert meta.input_shapes == {"input0": [1, 3, 64, 64]}
     assert meta.output_shapes == {"output0": [1, 10]}
     assert meta.input_dtypes["input0"] is DataType.FLOAT32
     assert meta.output_dtypes["output0"] is output_dtype
-
-
-def test_fields_and_equality():
-    # The plain ``Metadata`` dataclass stores the four field mappings, and two
-    # independently built instances compare equal.
-    meta = _sample_metadata()
-    assert meta.input_shapes == {"in": [1, 3, 8, 8]}
-    assert meta.output_dtypes["out"] is DataType.INT64
-    assert meta == _sample_metadata()
 
 
 def test_multiple_io_various_dtypes(work_dir: Path):

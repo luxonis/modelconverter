@@ -17,10 +17,10 @@ from tests.helpers.strategies import reuses_function_fixtures
 
 def _install_fake_fs(
     monkeypatch: pytest.MonkeyPatch,
+    split: tuple[str, str],
     *,
     is_dir: bool = False,
     walk: tuple[str, ...] = (),
-    split: tuple[str, str] | None = None,
 ) -> list:
     """Patch ``filesystem_utils.LuxonisFileSystem`` with a fake.
 
@@ -41,11 +41,8 @@ def _install_fake_fs(
             instances.append(self)
 
         @staticmethod
-        def split_full_path(url: str) -> tuple[str, str]:  # pragma: no cover
-            if split is not None:
-                return split
-            base, _, name = url.rpartition("/")
-            return base, name
+        def split_full_path(url: str) -> tuple[str, str]:
+            return split
 
         def is_directory(self, remote_path: str) -> bool:
             return is_dir
@@ -78,13 +75,13 @@ def test_get_protocol(url: str, expected: str):
     assert fsu.get_protocol(url) == expected
 
 
-def test_existing_absolute_file(work_dir: Path):
+def test_resolve_path_keeps_an_existing_absolute_path(work_dir: Path):
     f = work_dir / "model.onnx"
     f.write_text("x")
     assert fsu.resolve_path(str(f), work_dir) == f
 
 
-def test_shared_dir_fallback(work_dir: Path):
+def test_resolve_path_falls_back_to_the_shared_dir(work_dir: Path):
     target = SHARED_DIR / "misc" / "cfg.yaml"
     target.write_text("x")
     # ``misc/cfg.yaml`` does not exist under cwd, but does under
@@ -93,12 +90,14 @@ def test_shared_dir_fallback(work_dir: Path):
     assert resolved == SHARED_DIR / "misc" / "cfg.yaml"
 
 
-def test_missing_raises(work_dir: Path):
+def test_resolve_path_missing_raises(work_dir: Path):
     with pytest.raises(ValueError, match="does not exist"):
         fsu.resolve_path("nope.onnx", work_dir)
 
 
-def test_remote_branch(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_resolve_path_downloads_a_remote_url(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
     downloaded = work_dir / "downloaded.onnx"
     downloaded.write_text("x")
     monkeypatch.setattr(
@@ -110,31 +109,29 @@ def test_remote_branch(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
     assert resolved == downloaded
 
 
-def test_single_file(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
-    instances = _install_fake_fs(
-        monkeypatch, is_dir=False, split=("s3://b", "model.onnx")
-    )
+def test_download_single_file(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
+    instances = _install_fake_fs(monkeypatch, ("s3://b", "model.onnx"))
     result = fsu.download_from_remote("s3://b/model.onnx", work_dir)
     expected = work_dir / "model.onnx"
     assert result == expected
     assert instances[0].get_file_calls == [("model.onnx", str(expected))]
 
 
-def test_dest_as_str(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
-    _install_fake_fs(monkeypatch, is_dir=False, split=("s3://b", "model.onnx"))
+def test_download_accepts_a_str_destination(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _install_fake_fs(monkeypatch, ("s3://b", "model.onnx"))
     result = fsu.download_from_remote("s3://b/model.onnx", str(work_dir))
     assert result == work_dir / "model.onnx"
 
 
-def test_single_file_cached_skips(
+def test_download_single_file_uses_the_cache(
     work_dir: Path, monkeypatch: pytest.MonkeyPatch
 ):
     # local_path exists and the unsafe-cache flag is set -> no fetch.
     (work_dir / "model.onnx").write_text("cached")
     monkeypatch.setenv("MODELCONVERTER_UNSAFE_CACHE", "1")
-    instances = _install_fake_fs(
-        monkeypatch, is_dir=False, split=("s3://b", "model.onnx")
-    )
+    instances = _install_fake_fs(monkeypatch, ("s3://b", "model.onnx"))
     result = fsu.download_from_remote("s3://b/model.onnx", work_dir)
     assert result == work_dir / "model.onnx"
     assert instances[0].get_file_calls == []
@@ -146,7 +143,7 @@ def test_directory_with_max_files_cutoff(
     monkeypatch.delenv("MODELCONVERTER_UNSAFE_CACHE", raising=False)
     walk = ("d/f0.jpg", "d/f1.jpg", "d/f2.jpg")
     instances = _install_fake_fs(
-        monkeypatch, is_dir=True, walk=walk, split=("s3://b", "d")
+        monkeypatch, ("s3://b", "d"), is_dir=True, walk=walk
     )
     result = fsu.download_from_remote("s3://b/d", work_dir, max_files=2)
     local_path = work_dir / "d"
@@ -159,26 +156,28 @@ def test_directory_with_max_files_cutoff(
     ]
 
 
-def test_directory_cached_skips(
+def test_download_directory_uses_the_cache(
     work_dir: Path, monkeypatch: pytest.MonkeyPatch
 ):
     (work_dir / "d").mkdir()
     monkeypatch.setenv("MODELCONVERTER_UNSAFE_CACHE", "1")
     instances = _install_fake_fs(
         monkeypatch,
+        ("s3://b", "d"),
         is_dir=True,
         walk=("d/f0.jpg", "d/f1.jpg"),
-        split=("s3://b", "d"),
     )
     result = fsu.download_from_remote("s3://b/d", work_dir)
     assert result == work_dir / "d"
     assert instances[0].get_file_calls == []
 
 
-def test_upload_file(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_upload_file_to_remote(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
     local = work_dir / "model.onnx"
     local.write_text("x")
-    instances = _install_fake_fs(monkeypatch, split=("s3://b", "model.onnx"))
+    instances = _install_fake_fs(monkeypatch, ("s3://b", "model.onnx"))
     fsu.upload_to_remote(
         str(local), "s3://b/model.onnx", put_file_plugin="plug"
     )
@@ -188,10 +187,10 @@ def test_upload_file(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
     assert fs.put_dir_calls == []
 
 
-def test_upload_dir(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_upload_dir_to_remote(work_dir: Path, monkeypatch: pytest.MonkeyPatch):
     local = work_dir / "d"
     local.mkdir()
-    instances = _install_fake_fs(monkeypatch, split=("s3://b", "d"))
+    instances = _install_fake_fs(monkeypatch, ("s3://b", "d"))
     fsu.upload_to_remote(local, "s3://b/d")
     fs = instances[0]
     assert fs.put_dir_calls == [(local, "d")]
@@ -218,7 +217,7 @@ def test_directory_download_respects_max_files(
     monkeypatch.delenv("MODELCONVERTER_UNSAFE_CACHE", raising=False)
     walk = tuple(f"d/f{i}.jpg" for i in range(available))
     instances = _install_fake_fs(
-        monkeypatch, is_dir=True, walk=walk, split=("s3://b", "d")
+        monkeypatch, ("s3://b", "d"), is_dir=True, walk=walk
     )
 
     fsu.download_from_remote("s3://b/d", work_dir, max_files=max_files)

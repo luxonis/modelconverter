@@ -230,12 +230,10 @@ def test_read_calib_dir_empty(work_dir: Path):
     assert read_calib_dir(empty) == []
 
 
-# --- Properties -----------------------------------------------------
-#
 # Calibration data is fed to the vendor quantizers as a raw buffer, so a
-# single off-by-one in any of the three resize paths corrupts every
-# sample without raising anything. The properties below fix the output
-# geometry for arbitrary source and target sizes.
+# single off-by-one in any of the three resize paths corrupts every sample
+# without raising anything. The properties below fix the output geometry for
+# arbitrary source and target sizes.
 
 NUMERIC_DATA_TYPES = [
     DataType.UINT8,

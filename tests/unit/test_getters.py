@@ -124,7 +124,7 @@ def test_get_inferer_dispatch(
     inferer = getters.get_inferer(target, "cfg")
     assert isinstance(inferer, _Recorder)
     # Inferers are built through the ``from_config`` classmethod.
-    assert inferer.via_from_config is True
+    assert inferer.via_from_config
 
 
 GET_BENCHMARK_FAKE_CASES = [

@@ -394,51 +394,51 @@ def test_named_scale_values():
     assert inp.scale_values == [58.395, 57.12, 57.375]
 
 
-def test_scalar_broadcast():
+def test_scalar_mean_value_broadcasts_over_channels():
     inp = _input_config(name="i", mean_values=127)
     assert inp.mean_values == [127, 127, 127]
 
 
-def test_list_passthrough():
+def test_explicit_scale_values_pass_through():
     inp = InputConfig(name="i", scale_values=[1.0, 2.0, 3.0])
     assert inp.scale_values == [1.0, 2.0, 3.0]
 
 
-def test_none_stays_none():
+def test_unset_mean_values_stay_none():
     inp = InputConfig(name="i", mean_values=None)
     assert inp.mean_values is None
 
 
-def test_encoding_mismatch_requires():
+def test_encoding_mismatch_requires_onnx_modification():
     inp = _input_config(name="i", encoding={"from": "RGB", "to": "BGR"})
-    assert inp.requires_onnx_input_modification() is True
+    assert inp.requires_onnx_input_modification()
 
 
-def test_reverse_only_ignores_normalization():
+def test_reverse_only_ignores_mean_and_scale():
     inp = _input_config(name="i", encoding="RGB", mean_values=[1, 2, 3])
-    assert inp.requires_onnx_input_modification(reverse_only=True) is False
+    assert not inp.requires_onnx_input_modification(reverse_only=True)
 
 
-def test_normalization_requires():
+def test_normalization_requires_onnx_modification():
     inp = _input_config(name="i", encoding="RGB", scale_values=[2, 2, 2])
-    assert inp.requires_onnx_input_modification() is True
+    assert inp.requires_onnx_input_modification()
 
 
-def test_no_modification_needed():
+def test_plain_input_needs_no_onnx_modification():
     inp = _input_config(name="i", encoding="RGB")
-    assert inp.requires_onnx_input_modification() is False
+    assert not inp.requires_onnx_input_modification()
 
 
-def test_requires_onnx_input_modification_properties():
+def test_raw_and_colour_input_properties():
     raw = _input_config(name="i", encoding="NONE")
-    assert raw.is_raw_input is True
-    assert raw.is_color_input is False
-    assert raw.encoding_mismatch is False
+    assert raw.is_raw_input
+    assert not raw.is_color_input
+    assert not raw.encoding_mismatch
     color = _input_config(name="i", encoding="RGB")
-    assert color.is_color_input is True
+    assert color.is_color_input
 
 
-def test_random_defaults():
+def test_random_calibration_defaults():
     cal = RandomCalibrationConfig()
     assert cal.max_images == 20
     assert cal.mean == 127.5
@@ -577,15 +577,15 @@ def test_quantization_overrides_conflict_raises():
 
 def test_fp16_disables_calibration():
     cfg = RVC4Config(quantization_mode=QuantizationMode.FP16_STD)
-    assert cfg.disable_calibration is True
+    assert cfg.disable_calibration
 
 
 def test_non_fp16_keeps_calibration():
     cfg = RVC4Config(quantization_mode=QuantizationMode.INT8_STD)
-    assert cfg.disable_calibration is False
+    assert not cfg.disable_calibration
 
 
-def test_all_disabled_true():
+def test_all_disabled_with_every_optimization_off():
     cfg = ONNXOptimizationsConfig(
         fuse_add_mul_to_bn=False,
         fuse_comb_add_mul_to_conv=False,
@@ -594,14 +594,14 @@ def test_all_disabled_true():
         substitute_sub_with_add=False,
         substitute_div_with_mul=False,
     )
-    assert cfg.all_disabled() is True
+    assert cfg.all_disabled()
 
 
-def test_all_disabled_false():
-    assert ONNXOptimizationsConfig().all_disabled() is False
+def test_all_disabled_false_by_default():
+    assert not ONNXOptimizationsConfig().all_disabled()
 
 
-def test_disable_flag_warns_and_sets_false():
+def test_disable_onnx_simplification_warns_and_disables():
     dummy = _dummy()
     with pytest.warns(DeprecationWarning, match="disable_onnx_simplification"):
         config = Config.get_config(
@@ -627,7 +627,7 @@ def test_onnx_simplification_deprecation_conflict_raises():
         )
 
 
-def test_disable_flag_false_is_noop():
+def test_disable_onnx_simplification_false_is_a_noop():
     dummy = _dummy()
     config = Config.get_config(
         None,
@@ -637,27 +637,27 @@ def test_disable_flag_false_is_noop():
 
 
 @pytest.mark.parametrize("value", ["all", True])
-def test_enabled(value: str | bool):
+def test_onnx_optimizations_enabling_values(value: str | bool):
     config = Config.get_config(
         None, {"input_model": str(_dummy()), "onnx_optimizations": value}
     )
-    assert _single_stage(config).onnx_optimizations.all_disabled() is False
+    assert not _single_stage(config).onnx_optimizations.all_disabled()
 
 
 @pytest.mark.parametrize("value", ["none", False, None])
-def test_disabled(value: str | bool | None):
+def test_onnx_optimizations_disabling_values(value: str | bool | None):
     config = Config.get_config(
         None, {"input_model": str(_dummy()), "onnx_optimizations": value}
     )
-    assert _single_stage(config).onnx_optimizations.all_disabled() is True
+    assert _single_stage(config).onnx_optimizations.all_disabled()
 
 
-def test_absent_uses_default():
+def test_onnx_optimizations_default_to_enabled():
     config = Config.get_config(None, {"input_model": str(_dummy())})
-    assert _single_stage(config).onnx_optimizations.all_disabled() is False
+    assert not _single_stage(config).onnx_optimizations.all_disabled()
 
 
-def test_deprecated_flag_warns_and_disables():
+def test_disable_onnx_optimizations_warns_and_disables():
     dummy = _dummy()
     with pytest.warns(DeprecationWarning, match="disable_onnx_optimizations"):
         config = Config.get_config(
@@ -667,7 +667,7 @@ def test_deprecated_flag_warns_and_disables():
                 "disable_onnx_optimizations": True,
             },
         )
-    assert _single_stage(config).onnx_optimizations.all_disabled() is True
+    assert _single_stage(config).onnx_optimizations.all_disabled()
 
 
 def test_disable_onnx_optimizations_deprecation_conflict_raises():
@@ -686,13 +686,13 @@ def test_disable_onnx_optimizations_deprecation_conflict_raises():
         )
 
 
-def test_flag_false_is_noop():
+def test_disable_onnx_optimizations_false_is_a_noop():
     dummy = _dummy()
     config = Config.get_config(
         None,
         {"input_model": str(dummy), "disable_onnx_optimizations": False},
     )
-    assert _single_stage(config).onnx_optimizations.all_disabled() is False
+    assert not _single_stage(config).onnx_optimizations.all_disabled()
 
 
 def test_input_output_names_inferred_from_metadata():
@@ -830,11 +830,11 @@ def test_disable_calibration_fans_out_to_all_targets():
         },
     )
     stage = _single_stage(config)
-    assert stage.rvc2.disable_calibration is True
-    assert stage.rvc3.disable_calibration is True
-    assert stage.rvc4.disable_calibration is True
+    assert stage.rvc2.disable_calibration
+    assert stage.rvc3.disable_calibration
+    assert stage.rvc4.disable_calibration
     assert stage.rvc4.optimization_level == 3
-    assert stage.hailo.disable_calibration is True
+    assert stage.hailo.disable_calibration
 
 
 def test_default_yolo_input_shape():

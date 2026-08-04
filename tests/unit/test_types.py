@@ -11,8 +11,10 @@ latter needs a faked ``tflite`` module.
 """
 
 import re
+import sys
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 from typing import Any, NamedTuple
 
 import numpy as np
@@ -242,15 +244,12 @@ class _FakeTensorType:
 def fake_tflite(monkeypatch: pytest.MonkeyPatch) -> None:
     """Inject a fake ``tflite`` package so the import inside
     ``from_tensorflow_dtype`` resolves without the real dependency."""
-    import sys
-    import types as _types
-
-    tflite_mod = _types.ModuleType("tflite")
-    tensortype_mod = _types.ModuleType("tflite.TensorType")
-    tensortype_mod.TensorType = _FakeTensorType  # type: ignore[attr-defined]
-    tflite_mod.TensorType = tensortype_mod  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "tflite", tflite_mod)
-    monkeypatch.setitem(sys.modules, "tflite.TensorType", tensortype_mod)
+    tflite = ModuleType("tflite")
+    tensor_type = ModuleType("tflite.TensorType")
+    tensor_type.TensorType = _FakeTensorType  # type: ignore[attr-defined]
+    tflite.TensorType = tensor_type  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "tflite", tflite)
+    monkeypatch.setitem(sys.modules, "tflite.TensorType", tensor_type)
 
 
 FROM_TENSORFLOW_DTYPE_CASES = [

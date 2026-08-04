@@ -76,12 +76,9 @@ def test_default_with_suffix_is_false():
     assert sanitize_net_name("foo@bar.onnx") == "foo_bar_onnx"
 
 
-# --- Properties -----------------------------------------------------
-#
-# Sanitized names end up as filenames inside the conversion containers
-# and as node names in the produced archives, so the guarantees below
-# have to hold for every name a user can type, not just the shapes the
-# cases above enumerate.
+# Sanitized names end up as filenames inside the conversion containers and as
+# node names in the produced archives, so the guarantees below have to hold for
+# every name a user can type, not just the shapes the cases above enumerate.
 
 
 @given(value=st.text(alphabet="_ab", max_size=12))

@@ -67,34 +67,34 @@ def test_read_img_dir_respects_max_images(
     assert len(cd.read_img_dir(directory, max_images)) == expected
 
 
-def test_no_images_exits(work_dir: Path):
+def test_read_img_dir_with_no_images_exits(work_dir: Path):
     d = work_dir / "empty"
     d.mkdir()
     with pytest.raises(SystemExit):
         cd.read_img_dir(d, max_images=-1)
 
 
-def test_single_nested_recursion(work_dir: Path):
+def test_content_root_descends_through_single_subdirs(work_dir: Path):
     root = work_dir / "root"
     leaf = root / "a" / "b"
     _touch_img(leaf)
     assert cd._find_content_root(root) == leaf
 
 
-def test_files_at_top_level_stop(work_dir: Path):
+def test_content_root_stops_at_top_level_files(work_dir: Path):
     root = work_dir / "root"
     _touch_img(root)
     assert cd._find_content_root(root) == root
 
 
-def test_multiple_subdirs_stop(work_dir: Path):
+def test_content_root_stops_at_a_fork(work_dir: Path):
     root = work_dir / "root"
     (root / "a").mkdir(parents=True)
     (root / "b").mkdir(parents=True)
     assert cd._find_content_root(root) == root
 
 
-def test_ignored_entries(work_dir: Path):
+def test_content_root_skips_dotfiles_and_macosx(work_dir: Path):
     root = work_dir / "root"
     (root / "__MACOSX").mkdir(parents=True)
     (root / ".hidden").write_text("x")
@@ -113,14 +113,16 @@ def _make_zip(work_dir: Path) -> Path:
     return zip_path
 
 
-def test_zip_extracts(work_dir: Path, fake_download: Callable[[Path], None]):
+def test_remote_zip_is_extracted(
+    work_dir: Path, fake_download: Callable[[Path], None]
+):
     fake_download(_make_zip(work_dir))
     result = cd._get_from_remote("s3://b/data.zip", CALIBRATION_DIR)
     assert result == CALIBRATION_DIR / "data"
     assert (result / "img.png").exists()
 
 
-def test_zip_removes_existing_extract_dir(
+def test_remote_zip_replaces_a_stale_extract_dir(
     work_dir: Path, fake_download: Callable[[Path], None]
 ):
     fake_download(_make_zip(work_dir))
@@ -133,7 +135,7 @@ def test_zip_removes_existing_extract_dir(
     assert not (result / "stale.txt").exists()
 
 
-def test_non_zip_passthrough(
+def test_remote_dir_is_used_as_is(
     work_dir: Path, fake_download: Callable[[Path], None]
 ):
     target = work_dir / "plain"
@@ -142,54 +144,57 @@ def test_non_zip_passthrough(
     assert cd._get_from_remote("s3://b/plain", CALIBRATION_DIR) == target
 
 
-def test_local_existing_dir(work_dir: Path):
+def test_local_dir_is_used_as_is(work_dir: Path):
     d = work_dir / "calib"
     d.mkdir()
     assert cd.download_calibration_data(str(d)) == Path(str(d))
 
 
-def test_shared_dir_fallback():
+def test_calibration_dir_falls_back_to_the_shared_dir():
     (SHARED_DIR / "calibdir").mkdir(parents=True)
     result = cd.download_calibration_data("calibdir")
     assert result == SHARED_DIR / "calibdir"
 
 
-def test_existing_file_raises(work_dir: Path):
+def test_calibration_path_must_be_a_directory(work_dir: Path):
     f = work_dir / "notadir"
     f.write_text("x")
     with pytest.raises(ModelconverterException, match="not a directory"):
         cd.download_calibration_data(str(f))
 
 
-def test_remote_branch(work_dir: Path, fake_download: Callable[[Path], None]):
+def test_calibration_data_downloaded_from_remote(
+    work_dir: Path, fake_download: Callable[[Path], None]
+):
     target = work_dir / "remote"
     _touch_img(target)
     fake_download(target)
     assert cd.download_calibration_data("s3://b/remote") == target
 
 
-def test_ldf_two_part(monkeypatch: pytest.MonkeyPatch):
+@pytest.fixture
+def recorded_ldf(monkeypatch: pytest.MonkeyPatch) -> list:
+    """Replace ``load_from_ldf``, recording the arguments it is given."""
     calls: list = []
-    monkeypatch.setattr(
-        cd,
-        "load_from_ldf",
-        lambda *a: calls.append(a) or Path("out"),
-    )
+
+    def record(*args) -> Path:
+        calls.append(args)
+        return Path("out")
+
+    monkeypatch.setattr(cd, "load_from_ldf", record)
+    return calls
+
+
+def test_ldf_two_part(recorded_ldf: list):
     assert cd.download_calibration_data("dataset:train") == Path("out")
     # The two-part `match` case calls load_from_ldf with two positional
     # args (loader_plugin defaults inside load_from_ldf).
-    assert calls == [("dataset", "train")]
+    assert recorded_ldf == [("dataset", "train")]
 
 
-def test_ldf_three_part(monkeypatch: pytest.MonkeyPatch):
-    calls: list = []
-    monkeypatch.setattr(
-        cd,
-        "load_from_ldf",
-        lambda *a: calls.append(a) or Path("out"),
-    )
+def test_ldf_three_part(recorded_ldf: list):
     assert cd.download_calibration_data("dataset:train:plug") == Path("out")
-    assert calls == [("dataset", "train", "plug")]
+    assert recorded_ldf == [("dataset", "train", "plug")]
 
 
 def test_ldf_malformed_one_part():
@@ -221,7 +226,7 @@ def test_dataset_loader_writes_images(monkeypatch: pytest.MonkeyPatch):
     assert (result / "1.png").exists()
 
 
-def test_multi_input_raises(monkeypatch: pytest.MonkeyPatch):
+def test_multi_input_dataset_raises(monkeypatch: pytest.MonkeyPatch):
     loader = _FakeLoader([({"a": 1}, None)])
     monkeypatch.setattr(cd, "LuxonisDataset", lambda name: None)
     monkeypatch.setattr(cd, "LuxonisLoader", lambda dataset, view: loader)
@@ -229,7 +234,9 @@ def test_multi_input_raises(monkeypatch: pytest.MonkeyPatch):
         cd.load_from_ldf("myset", "train")
 
 
-def test_loader_plugin_branch(monkeypatch: pytest.MonkeyPatch):
+def test_loader_plugin_replaces_the_default_loader(
+    monkeypatch: pytest.MonkeyPatch,
+):
     img = np.zeros((2, 2, 3), dtype=np.uint8)
     loader = _FakeLoader([(img, None)])
 

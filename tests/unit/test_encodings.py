@@ -39,7 +39,9 @@ from tests.helpers.strategies import (
         ([], []),
     ],
 )
-def test_scalarize(value: float | list[float], expected: float | list[float]):
+def test_scalarize_encoding_value(
+    value: float | list[float], expected: float | list[float]
+):
     assert _scalarize_encoding_value(value) == expected
 
 

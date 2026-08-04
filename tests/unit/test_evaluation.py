@@ -11,7 +11,7 @@ from tests.helpers.evaluation import (
 )
 
 
-def test_ordered_outputs_uses_configured_order() -> None:
+def test_ordered_outputs_uses_configured_order():
     first = np.array([1])
     second = np.array([2])
 
@@ -22,19 +22,19 @@ def test_ordered_outputs_uses_configured_order() -> None:
     assert ordered == [first, second]
 
 
-def test_ordered_outputs_rejects_mismatch() -> None:
+def test_ordered_outputs_rejects_mismatch():
     with pytest.raises(ValueError, match=r"missing=.*second"):
         ordered_outputs({"first": np.array([1])}, ["first", "second"])
 
 
-def test_require_resize_rejects_pad() -> None:
+def test_require_resize_rejects_pad():
     require_resize(ResizeMethod.RESIZE)
 
     with pytest.raises(ValueError, match="resize_method=RESIZE"):
         require_resize(ResizeMethod.PAD)
 
 
-def test_assert_quality_checks_source_floor_and_drop() -> None:
+def test_assert_quality_checks_source_floor_and_drop():
     assert_quality(
         {"AP": 0.40, "AP50": 0.60},
         {"AP": 0.38, "AP50": 0.59},

@@ -20,6 +20,13 @@ def _command(code: str) -> list[str]:
     return [sys.executable, "-c", code]
 
 
+def _attached(process: Mock) -> SubprocessHandle:
+    """A handle whose psutil process is the given mock."""
+    handle = SubprocessHandle(["command"])
+    handle._ps_proc = process
+    return handle
+
+
 @pytest.mark.parametrize(
     ("peak_memory", "expected"),
     [
@@ -117,49 +124,82 @@ def test_timeout_terminates_process_and_preserves_output():
     assert exc_info.value.stderr == b"stderr"
 
 
-def test_process_control_and_memory_helpers(monkeypatch: pytest.MonkeyPatch):
-    handle = SubprocessHandle(["command"])
+def test_is_suspended_follows_the_process_status():
     process = Mock()
-    process.memory_info.return_value = SimpleNamespace(rss=10)
-    child = Mock()
-    child.memory_info.return_value = SimpleNamespace(rss=5)
-    missing_child = Mock()
-    missing_child.memory_info.side_effect = psutil.NoSuchProcess(1)
-    process.children.return_value = [child, missing_child]
-    handle._ps_proc = process
+    process.status.return_value = psutil.STATUS_RUNNING
+    handle = _attached(process)
 
-    assert handle.is_suspended() is False
+    assert not handle.is_suspended()
+
     process.status.return_value = psutil.STATUS_STOPPED
-    assert handle.is_suspended() is True
+    assert handle.is_suspended()
+
+
+def test_suspend_and_resume_reach_the_process():
+    process = Mock()
+    handle = _attached(process)
+
     handle.suspend()
     handle.resume()
-    assert handle.current_memory() == 15
 
-    process.memory_info.side_effect = psutil.NoSuchProcess(1)
-    assert handle.current_memory() == 0
-    process.memory_info.side_effect = None
-    monkeypatch.setattr(handle, "current_memory", lambda: 20)
-    handle.monitor_memory(interval=0)
-    assert handle.peak_mem == 20
-    monkeypatch.setattr(
-        handle,
-        "current_memory",
-        Mock(side_effect=psutil.NoSuchProcess(1)),
-    )
-    handle.monitor_memory(interval=0)
+    process.suspend.assert_called_once()
+    process.resume.assert_called_once()
 
 
 def test_process_control_ignores_disappearing_process():
-    handle = SubprocessHandle(["command"])
     process = Mock()
     process.status.side_effect = psutil.NoSuchProcess(1)
     process.suspend.side_effect = psutil.NoSuchProcess(1)
     process.resume.side_effect = psutil.NoSuchProcess(1)
-    handle._ps_proc = process
+    handle = _attached(process)
 
-    assert handle.is_suspended() is False
+    assert not handle.is_suspended()
     handle.suspend()
     handle.resume()
+
+
+def test_current_memory_includes_the_children():
+    process = Mock()
+    process.memory_info.return_value = SimpleNamespace(rss=10)
+    child = Mock()
+    child.memory_info.return_value = SimpleNamespace(rss=5)
+    # A child that exits mid-walk is skipped, not fatal to the whole sum.
+    gone = Mock()
+    gone.memory_info.side_effect = psutil.NoSuchProcess(1)
+    process.children.return_value = [child, gone]
+
+    assert _attached(process).current_memory() == 15
+
+
+def test_current_memory_of_a_dead_process_is_zero():
+    process = Mock()
+    process.memory_info.side_effect = psutil.NoSuchProcess(1)
+
+    assert _attached(process).current_memory() == 0
+
+
+def test_monitor_memory_keeps_the_peak(monkeypatch: pytest.MonkeyPatch):
+    handle = SubprocessHandle(["command"])
+
+    monkeypatch.setattr(handle, "current_memory", lambda: 20)
+    handle.monitor_memory(interval=0)
+    monkeypatch.setattr(handle, "current_memory", lambda: 5)
+    handle.monitor_memory(interval=0)
+
+    assert handle.peak_mem == 20
+
+
+def test_monitor_memory_survives_a_dead_process(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    handle = SubprocessHandle(["command"])
+    monkeypatch.setattr(
+        handle, "current_memory", Mock(side_effect=psutil.NoSuchProcess(1))
+    )
+
+    handle.monitor_memory(interval=0)
+
+    assert handle.peak_mem == 0
 
 
 def test_wait_uses_handle_timeout():

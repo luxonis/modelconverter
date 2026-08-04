@@ -114,7 +114,7 @@ def _stage_input(config: Config) -> InputConfig:
     return next(iter(config.stages.values())).inputs[0]
 
 
-def test_plain_tar(work_dir: Path):
+def test_process_plain_tar(work_dir: Path):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     tar = pack_archive(
         work_dir / "dummy_model.tar", onnx, default_archive_config()
@@ -128,7 +128,7 @@ def test_plain_tar(work_dir: Path):
     assert (MISC_DIR / "dummy_model" / "config.json").exists()
 
 
-def test_tar_xz(work_dir: Path):
+def test_process_tar_xz(work_dir: Path):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     tar = pack_archive(
         work_dir / "dummy_model.tar.xz",
@@ -141,7 +141,7 @@ def test_tar_xz(work_dir: Path):
     assert (MISC_DIR / "dummy_model" / "config.json").exists()
 
 
-def test_directory_input(work_dir: Path):
+def test_process_already_extracted_directory(work_dir: Path):
     model_dir = work_dir / "unpacked"
     model_dir.mkdir()
     standard_dummy_onnx(model_dir / "dummy_model.onnx")
@@ -463,7 +463,7 @@ def _config_to_nn(
         (Target.HAILO, {}, DataType.INT8),
     ],
 )
-def test_precision(
+def test_archive_precision_per_target(
     dummy_onnx: Path,
     target: Target,
     overrides: dict[str, Any],
@@ -745,7 +745,7 @@ def test_rvc4_default(dummy_onnx: Path):
     )
 
 
-def test_raw():
+def test_raw_input_preprocessing_is_all_none():
     inp = _input_config(
         name="x",
         shape=[1, 3, 64, 64],
