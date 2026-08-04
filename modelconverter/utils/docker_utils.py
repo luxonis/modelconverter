@@ -78,17 +78,33 @@ def generate_compose_config(
         "LUXONISML_BUCKET": environ.LUXONISML_BUCKET or "",
         "TF_CPP_MIN_LOG_LEVEL": "3",
         "GOOGLE_APPLICATION_CREDENTIALS": "/run/secrets/gcp-credentials",
+        # Forwarded so the in-container test suite can fetch model-zoo
+        # archives from HubAI.
+        "HUBAI_API_KEY": os.getenv("HUBAI_API_KEY", ""),
     }
     if extra_environment:
         environment.update(extra_environment)
+
+    cwd = Path.cwd().absolute()
+    volumes = [f"{cwd / 'shared_with_container'}:/app/shared_with_container"]
+    # Mount the test suite (excluded from the image via .dockerignore) so a
+    # dev container can run it, e.g.
+    # `modelconverter shell <t> --dev -c "pytest -m <t>"`.
+    if (cwd / "tests").exists():
+        volumes.append(f"{cwd / 'tests'}:/app/tests")
+    if (cwd / "pyproject.toml").exists():
+        volumes.append(f"{cwd / 'pyproject.toml'}:/app/pyproject.toml")
+    # In dev images the package is baked in (`pip install -e .`), so a source
+    # change would otherwise need an image rebuild to take effect. Mount the
+    # host source over it so edits to modelconverter are live in the container.
+    if image.endswith("-dev") and (cwd / "modelconverter").exists():
+        volumes.append(f"{cwd / 'modelconverter'}:/app/modelconverter")
 
     config = {
         "services": {
             "modelconverter": {
                 "environment": environment,
-                "volumes": [
-                    f"{Path.cwd().absolute() / 'shared_with_container'}:/app/shared_with_container"
-                ],
+                "volumes": volumes,
                 "secrets": ["gcp-credentials"],
                 "image": image,
                 "entrypoint": "/app/entrypoint.sh",
@@ -178,6 +194,10 @@ def docker_build(
     ]
     if version is not None:
         args += ["--build-arg", f"VERSION={version}"]
+    if bare_tag == "dev":
+        # Dev images also carry the test/coverage tooling so the suite can be
+        # run inside the container (e.g. `modelconverter shell <t> --dev -c pytest`).
+        args += ["--build-arg", "DEV=true"]
     result = subprocess.run(args, check=False)
     if result.returncode != 0:
         raise RuntimeError("Failed to build the docker image")
@@ -450,7 +470,15 @@ def docker_exec(
                 gpu=use_gpu and target == "hailo",
                 memory=memory,
                 cpus=cpus,
-                extra_environment=telemetry_environment(),
+                extra_environment={
+                    **telemetry_environment(),
+                    # Lets the in-container test suite auto-select this
+                    # platform's conversion tests (see tests/conftest.py).
+                    "MODELCONVERTER_TARGET": target,
+                    # Lets conversion fixtures select tool-version-specific
+                    # test assets.
+                    "MODELCONVERTER_TARGET_VERSION": version,
+                },
             ).encode()
         )
 

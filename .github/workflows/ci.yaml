@@ -1,0 +1,378 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to test, comma-separated (rvc2, rvc3, rvc4, hailo). Empty tests all."
+        required: false
+        type: string
+        default: ""
+      tool_versions:
+        description: "Tool versions to test, comma-separated (e.g. 2022.3.0,2.41.0). Empty tests all."
+        required: false
+        type: string
+        default: ""
+      ml_ref:
+        description: "luxonis-ml version (branch/tag/SHA)"
+        required: false
+        type: string
+        default: main
+      modelconv_ref:
+        description: "modelconverter version (branch/tag/SHA)"
+        required: false
+        type: string
+        default: main
+  workflow_call:
+    inputs:
+      platforms:
+        description: "Platforms to test, comma-separated (rvc2, rvc3, rvc4, hailo). Empty tests all."
+        required: false
+        type: string
+        default: ""
+      tool_versions:
+        description: "Tool versions to test, comma-separated (e.g. 2022.3.0,2.41.0). Empty tests all."
+        required: false
+        type: string
+        default: ""
+      ml_ref:
+        description: "luxonis-ml version (branch/tag/SHA)"
+        required: false
+        type: string
+        default: main
+      modelconv_ref:
+        description: "modelconverter version (branch/tag/SHA)"
+        required: false
+        type: string
+        default: main
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      AWS_S3_ENDPOINT_URL:
+        required: true
+      CODECOV_TOKEN:
+        description: "Codecov upload token"
+        required: false
+      GCP_CREDENTIALS:
+        description: "Google service-account JSON"
+        required: true
+      HUBAI_API_KEY:
+        required: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  LUXONIS_TELEMETRY_ENABLED: "false"
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install package
+        run: pip install -e .[dev]
+
+      - name: Install specified LuxonisML
+        if: ${{ inputs.ml_ref != '' }}
+        env:
+          ML_REF: ${{ inputs.ml_ref }}
+        run: |
+          pip uninstall luxonis-ml -y
+          pip install \
+            "luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
+            --upgrade --force-reinstall
+
+      - name: Run unit tests
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_S3_ENDPOINT_URL: ${{ secrets.AWS_S3_ENDPOINT_URL }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+          HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
+        run: |
+          python -m pytest tests/unit -n auto \
+            --junitxml junit-unit.xml -o junit_family=legacy \
+            --cov --cov-report term-missing \
+            --cov-report xml:coverage-unit.xml
+
+      - name: Upload test results to Codecov
+        if: ${{ always() }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          report_type: test_results
+          files: junit-unit.xml
+          flags: unit
+          name: unit
+          fail_ci_if_error: false
+          disable_search: true
+          handle_no_reports_found: true
+
+      # The coverage itself is uploaded by the `coverage` job, once every test
+      # job has finished. The artifact is what that job collects, and it keeps
+      # the report available for CI diagnostics.
+      - name: Upload coverage artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coverage-unit
+          path: coverage-unit.xml
+          if-no-files-found: ignore
+
+  # Selects which of the `.github/matrix.json` entries the integration tests run
+  # on: the platforms a pull request touches, or the dispatch inputs if given.
+  # Everything else runs the full matrix.
+  resolve-matrix:
+    name: Resolve matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.resolve.outputs.include }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
+          # Needed to diff the pull request against its base.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve matrix
+        id: resolve
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+          TOOL_VERSIONS: ${{ inputs.tool_versions }}
+          # Empty unless this is a pull request against this repository. A
+          # `workflow_call` carries the *caller's* pull request context, whose
+          # commits do not exist here, so it always tests the full matrix.
+          BASE_SHA: ${{ !inputs.modelconv_ref && github.event.pull_request.base.sha || '' }}
+        run: |
+          if [ -n "${BASE_SHA}" ] && [ -z "${PLATFORMS}" ]; then
+            CHANGED=$(git diff --name-only "${BASE_SHA}...HEAD")
+            echo "Changed files:"
+            echo "${CHANGED}"
+
+            PLATFORMS=$(.github/scripts/changed-platforms.sh <<<"${CHANGED}")
+            if [ -z "${PLATFORMS}" ]; then
+              echo "No platform code changed, skipping the integration tests."
+              echo "include=[]" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Affected platforms: ${PLATFORMS}"
+          fi
+
+          INCLUDE=$(.github/scripts/resolve-matrix.sh "${PLATFORMS}" "${TOOL_VERSIONS}")
+          echo "include=${INCLUDE}" >> "$GITHUB_OUTPUT"
+
+  integration:
+    name: ${{ matrix.package }} ${{ matrix.version }}
+    needs: [unit, resolve-matrix]
+    if: ${{ needs.resolve-matrix.outputs.include != '[]' }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include: ${{ fromJSON(needs.resolve-matrix.outputs.include) }}
+    runs-on: ${{ matrix.os }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_S3_ENDPOINT_URL: ${{ secrets.AWS_S3_ENDPOINT_URL }}
+      HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
+      PACKAGE: ${{ matrix.package }}
+      VERSION: ${{ matrix.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
+          persist-credentials: false
+
+      - name: Set up Docker
+        uses: crazy-max/ghaction-setup-docker@6d7cfa65f60a9dda7b46e5513fa982536f3c9877
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install package (host CLI)
+        run: pip install -e .
+
+      - name: Authenticate to Google Cloud
+        id: google-auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          token_format: access_token
+
+      - name: Prepare build dependencies
+        env:
+          GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
+        run: |
+          mkdir -p docker/extra_packages
+          if [ "${PACKAGE}" = "rvc4" ]; then
+              gcloud storage cp \
+                "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
+                "docker/extra_packages/snpe-${VERSION}.zip"
+          elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
+              gcloud storage cp \
+                "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
+                "docker/extra_packages/openvino-${VERSION}.tar.gz"
+          elif [ "${PACKAGE}" = "hailo" ]; then
+              gcloud storage cp \
+                "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
+              docker load -i "hailo-${VERSION}.tar.gz"
+          fi
+
+      - name: Run integration tests
+        env:
+          ML_REF: ${{ inputs.ml_ref }}
+        run: |
+          if [[ -n "${ML_REF}" ]]; then
+            if [[ ! "${ML_REF}" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+              echo "Invalid luxonis-ml ref: ${ML_REF}" >&2
+              exit 1
+            fi
+            ML_INSTALL_COMMAND="pip uninstall luxonis-ml -y && \
+              pip install \
+              \"luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}\" \
+              --upgrade --force-reinstall &&"
+          else
+            ML_INSTALL_COMMAND=""
+          fi
+
+          modelconverter shell "${PACKAGE}" --dev --no-gpu \
+            --tool-version "${VERSION}" \
+            -c "${ML_INSTALL_COMMAND} \
+              python -m pytest tests/conversion -m '${PACKAGE}' -x \
+                --junitxml shared_with_container/junit-${PACKAGE}-${VERSION}.xml \
+                -o junit_family=legacy \
+                --cov --cov-report term-missing \
+                --cov-report xml:shared_with_container/coverage-${PACKAGE}-${VERSION}.xml"
+
+      - name: Upload test results to Codecov
+        if: ${{ always() }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          report_type: test_results
+          files: shared_with_container/junit-${{ matrix.package }}-${{ matrix.version }}.xml
+          flags: conversion
+          name: conversion-${{ matrix.package }}-${{ matrix.version }}
+          fail_ci_if_error: false
+          disable_search: true
+          handle_no_reports_found: true
+
+      # The coverage itself is uploaded by the `coverage` job, once every test
+      # job has finished. The artifact is what that job collects, and it keeps
+      # the report available for CI diagnostics.
+      - name: Upload coverage artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coverage-conversion-${{ matrix.package }}-${{ matrix.version }}
+          path: shared_with_container/coverage-${{ matrix.package }}-${{ matrix.version }}.xml
+          if-no-files-found: ignore
+
+  # Codecov evaluates the commit every time a report arrives, so uploading from
+  # the test jobs themselves makes it judge the run against whichever reports
+  # happen to have landed and report a coverage drop that is not real. The
+  # reports are collected from the artifacts and uploaded here instead, once
+  # every test job has finished.
+  coverage:
+    name: Upload coverage
+    needs: [unit, integration]
+    if: ${{ always() && needs.unit.result == 'success' && (needs.integration.result == 'success' || needs.integration.result == 'skipped') }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      # Required by codecov-action, it builds the path-fixing file network
+      # from the checked out repository.
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
+          persist-credentials: false
+
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: coverage-*
+          path: coverage
+          merge-multiple: true
+
+      - name: Collect coverage files
+        id: coverage-files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # `download-artifact` leaves the directory out entirely when nothing
+          # matched, and a bare `find` failure hides why.
+          mkdir -p coverage
+
+          unit=$(find coverage -type f -name 'coverage-unit.xml' | sort | paste -sd, -)
+          if [[ -z "$unit" ]]; then
+            echo "No unit coverage report found" >&2
+            exit 1
+          fi
+
+          # Whatever is left comes from a `tests/conversion` run inside one of
+          # the platform images. Empty when the integration tests were skipped.
+          conversion=$(find coverage -type f -name 'coverage-*.xml' \
+            ! -name 'coverage-unit.xml' | sort | paste -sd, -)
+
+          echo "unit=$unit" >> "$GITHUB_OUTPUT"
+          echo "conversion=$conversion" >> "$GITHUB_OUTPUT"
+
+      - name: Upload unit coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ steps.coverage-files.outputs.unit }}
+          flags: unit
+          name: unit
+          fail_ci_if_error: false
+          disable_search: true
+
+      - name: Upload conversion coverage to Codecov
+        if: ${{ steps.coverage-files.outputs.conversion != '' }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ steps.coverage-files.outputs.conversion }}
+          flags: conversion
+          name: conversion
+          fail_ci_if_error: false
+          disable_search: true

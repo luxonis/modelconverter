@@ -434,7 +434,7 @@ class SingleStageConfig(BaseModelExtraForbid):
             return self.rvc2
         if target == Target.RVC3:
             return self.rvc3
-        if target == Target.RVC4:
+        if target == Target.RVC4:  # pragma: no branch
             return self.rvc4
 
     @model_validator(mode="before")

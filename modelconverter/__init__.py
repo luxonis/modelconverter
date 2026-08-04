@@ -12,9 +12,9 @@ def load_put_file_plugins() -> None:
     """Registers any external put file plugins."""
     eps = entry_points()
     put_file_plugins = eps.select(group="put_file_plugins")
-    for entry_point in put_file_plugins:
+    for entry_point in put_file_plugins:  # pragma: no cover
         plugin_class = entry_point.load()
-        PUT_FILE_REGISTRY.register_module(module=plugin_class)
+        PUT_FILE_REGISTRY.register(module=plugin_class)
 
 
 load_put_file_plugins()

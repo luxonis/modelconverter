@@ -1,0 +1,50 @@
+[
+  {
+    "package": "rvc2",
+    "version": "2021.4.0",
+    "default": "2022.3.0",
+    "os": "ubuntu-latest"
+  },
+  {
+    "package": "rvc2",
+    "version": "2022.3.0",
+    "default": "2022.3.0",
+    "os": "ubuntu-latest"
+  },
+  {
+    "package": "rvc3",
+    "version": "2022.3.0",
+    "default": "2022.3.0",
+    "os": "ubuntu-latest"
+  },
+  {
+    "package": "rvc4",
+    "version": "2.32.6",
+    "default": "2.41.0",
+    "os": "ubuntu-latest"
+  },
+  {
+    "package": "rvc4",
+    "version": "2.41.0",
+    "default": "2.41.0",
+    "os": "ubuntu-latest"
+  },
+  {
+    "package": "hailo",
+    "version": "2024.10",
+    "default": "2025.04",
+    "os": "ubuntu-22.04-4core"
+  },
+  {
+    "package": "hailo",
+    "version": "2025.01",
+    "default": "2025.04",
+    "os": "ubuntu-22.04-4core"
+  },
+  {
+    "package": "hailo",
+    "version": "2025.04",
+    "default": "2025.04",
+    "os": "ubuntu-22.04-4core"
+  }
+]

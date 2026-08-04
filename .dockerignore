@@ -1,2 +1,5 @@
 shared_with_container/*
+# The test suite is bind-mounted into dev containers at run time (see
+# generate_compose_config), not baked into the image -- keeping it out of the
+# build context means editing tests never invalidates any Docker layer.
 tests

@@ -91,7 +91,8 @@ class RVC2Exporter(Exporter):
                     if len(inp.frozen_value) == 1:
                         value = inp.frozen_value[0]
                     else:
-                        value = f"{_lst_join(inp.frozen_value)}"
+                        sep = " " if OV_2021 else ","
+                        value = f"{_lst_join(inp.frozen_value, sep)}"
                     inp_str += f"->{value}"
             args.extend(["--input", inp_str])
 
@@ -112,8 +113,12 @@ class RVC2Exporter(Exporter):
                     inp.mean_values = inp.mean_values[::-1]
                 if inp.scale_values is not None and inp.encoding_mismatch:
                     inp.scale_values = inp.scale_values[::-1]
-                inp.encoding.from_ = Encoding.BGR
-                inp.encoding.to = Encoding.BGR
+                # Only colour inputs get their channels reversed in the ONNX;
+                # marking non-colour inputs (e.g. grayscale) as BGR is wrong and
+                # later makes their inferer read a 1-channel input as 3-channel.
+                if inp.is_color_input and inp.encoding_mismatch:
+                    inp.encoding.from_ = Encoding.BGR
+                    inp.encoding.to = Encoding.BGR
 
         if not self.onnx_optimizations.all_disabled():
             onnx_modifier = ONNXModifier(
@@ -133,12 +138,12 @@ class RVC2Exporter(Exporter):
                 ):
                     logger.info("ONNX model has been optimized for RVC2.")
                     shutil.move(onnx_modifier.output_path, self.input_model)
-            except Exception as e:
+            except Exception as e:  # pragma: no cover
                 logger.warning(
                     f"Failed to optimize ONNX model: {e}. "
                     "Proceeding with unoptimized model."
                 )
-            finally:
+            finally:  # pragma: no cover
                 if onnx_modifier.output_path.exists():
                     onnx_modifier.output_path.unlink()
 
@@ -210,7 +215,7 @@ class RVC2Exporter(Exporter):
                 inp.encoding.from_ == Encoding.NONE
                 or not inp.layout
                 or not inp.shape
-            ):
+            ):  # pragma: no cover
                 continue
 
             lt = inp.layout
@@ -311,7 +316,7 @@ class RVC2Exporter(Exporter):
         n_workers = int(
             max(1, min(cpu_count(), 15, avail_ram // base_peak_mem - 1))
         )
-        if self.n_workers is not None:
+        if self.n_workers is not None:  # pragma: no cover
             if self.n_workers > n_workers:
                 logger.warning(
                     f"Requested {self.n_workers} workers, which is "
@@ -346,7 +351,7 @@ class RVC2Exporter(Exporter):
             logger.info(f"Compiling {shaves}-shave patch...")
             with SubprocessHandle(
                 ["compile_tool", *args], silent=True
-            ) as handle:
+            ) as handle:  # pragma: no cover
                 while handle.poll() is None:
                     if handle.is_suspended():
                         with lock:
@@ -421,7 +426,7 @@ class RVC2Exporter(Exporter):
                 superblob_file.write(default_blob_file.read())
 
             patches = sorted(patch2idx.keys(), key=lambda x: patch2idx[x])
-            if not patches:
+            if not patches:  # pragma: no cover
                 raise RuntimeError("No patches found.")
 
             for patch_path in patches:

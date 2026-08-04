@@ -121,6 +121,7 @@ ignore = [
   "TRY003",
   "TRY301",
   "W191",
+  "PLR0917",
 ]
 unfixable = ["B905", "PLC0208"]
 
@@ -136,3 +137,59 @@ wrap-descriptions = 72
 
 [tool.pyright]
 typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit", "tests/conversion"]
+addopts = "-ra --strict-markers --import-mode=importlib"
+markers = [
+  "unit: host-side unit tests (fast, no Docker)",
+  "rvc2: RVC2 conversion tests",
+  "rvc3: RVC3 conversion tests",
+  "rvc4: RVC4 conversion tests",
+  "hailo: Hailo conversion tests",
+]
+
+[tool.coverage.run]
+source = ["modelconverter", "tests"]
+relative_files = true
+omit = [
+  "**/__main__.py",
+  "modelconverter/utils/onnx_tools.py",
+  "modelconverter/utils/onnx_compatibility.py",
+  "modelconverter/packages/base_benchmark.py",
+  "modelconverter/packages/*/benchmark.py",
+  "modelconverter/packages/base_analyze.py",
+  "modelconverter/packages/*/analyze.py",
+  "modelconverter/packages/base_visualize.py",
+  "modelconverter/packages/*/visualize.py",
+  "modelconverter/utils/device_handlers.py",
+  "modelconverter/utils/device_monitors.py",
+  "modelconverter/utils/telemetry.py",
+  "modelconverter/utils/log_latency.py",
+  "modelconverter/utils/hub_requests.py",
+  "modelconverter/utils/hubai_utils.py",
+  "modelconverter/utils/docker_utils.py",
+  "modelconverter/utils/progress_handler.py",
+  "modelconverter/utils/environ.py",
+  "tests/test_benchmark/*.py",
+]
+
+[tool.coverage.report]
+exclude_also = [
+  "def __repr__",
+  "def __rich_repr__",
+  "def __str__",
+  "assert",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "except ImportError",
+  "@abstractmethod",
+  "@overload",
+  "(sys\\.)?exit\\(",
+  "exit\\(",
+  "cv2\\.imshow",
+  "cv2\\.waitKey",
+  "logger\\.",
+  "pytest\\.skip",
+  "exit_with\\(",
+]
