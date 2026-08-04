@@ -249,7 +249,12 @@ def _stage_onnx(src: Path, inputs_dir: Path) -> Path:
     except Exception as exc:
         # Staging must not be the thing that reports a broken model: copy it
         # and let the conversion fail with a message about the model itself.
-        logger.debug(f"Could not read external data locations of {src}: {exc}")
+        # The container can then only report the missing tensor files, so say
+        # here what the actual cause was.
+        logger.warning(
+            f"Could not read external data locations of {src}: {exc}. "
+            "Staging the model file on its own."
+        )
         return _stage_file(src, inputs_dir)
 
     digest = _hash_files([src, *external_data])
@@ -439,6 +444,11 @@ def _atomic_write_text(dest: Path, content: str) -> None:
     try:
         with os.fdopen(fd, "w") as f:
             f.write(content)
+            # `replace` only makes the rename atomic; without this the entry
+            # can survive a power loss under its digest with truncated
+            # contents, and nothing ever re-writes it.
+            f.flush()
+            os.fsync(f.fileno())
         tmp.replace(dest)
     finally:
         tmp.unlink(missing_ok=True)
@@ -485,6 +495,15 @@ def _iter_input_files(src: Path) -> Iterator[_InputFile]:
     ends up seeing is also what gets fingerprinted; a directory already
     visited is skipped so a symlink cycle terminates. Anything that is
     not a regular file (dangling symlink, socket, fifo) is left out.
+
+    So is a file this process cannot read: a staged directory routinely
+    holds files that have nothing to do with the model -- root-owned
+    leftovers of an earlier container run, for instance -- and failing
+    the conversion over one of those would be worse than leaving it out.
+    Leaving it out *here* rather than at copy time keeps the digest a
+    description of what the cache entry actually holds, so making the
+    file readable later yields a new entry instead of silently reusing
+    the one that lacks it.
     """
     excluded = _excluded_dirs()
     visited: set[tuple[int, int]] = set()
@@ -504,10 +523,12 @@ def _iter_input_files(src: Path) -> Iterator[_InputFile]:
                 file_stat = path.stat()
             except OSError:
                 continue
-            if stat_module.S_ISREG(file_stat.st_mode):
-                yield _InputFile(
-                    path.relative_to(src).as_posix(), path, file_stat
-                )
+            if not stat_module.S_ISREG(file_stat.st_mode):
+                continue
+            if not os.access(path, os.R_OK):
+                logger.warning(f"Skipping unreadable file {path}")
+                continue
+            yield _InputFile(path.relative_to(src).as_posix(), path, file_stat)
 
 
 def _first_visit(directory: Path, visited: set[tuple[int, int]]) -> bool:
@@ -556,20 +577,17 @@ def _stage_dir(src: Path, inputs_dir: Path) -> Path:
 def _copy_input_files(files: list[_InputFile], dest: Path) -> None:
     """Copies the enumerated files under ``dest``.
 
-    A staged directory routinely holds files that have nothing to do
-    with the model -- root-owned leftovers of an earlier container run,
-    for instance. Failing the conversion over one of those would be
-    worse than leaving it out; if it really was an input, the container
-    reports it as missing.
+    Unreadable files were already left out by L{_iter_input_files}, so a
+    failure here means the source changed since it was enumerated. It is
+    raised rather than logged: the digest promises the whole enumeration,
+    and publishing less than that under it would hide the missing file
+    from every later run.
     """
     dest.mkdir(parents=True, exist_ok=True)
     for file in files:
         target = dest / file.relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            shutil.copy2(file.path, target)
-        except OSError as exc:
-            logger.warning(f"Skipping unreadable file {file.path}: {exc}")
+        shutil.copy2(file.path, target)
 
 
 def _record_source(src: Path, digest_dir: Path) -> None:

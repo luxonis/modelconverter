@@ -1,3 +1,5 @@
+import errno
+import os
 import shutil
 import subprocess
 import sys
@@ -497,6 +499,61 @@ def test_unusable_files_do_not_abort_staging(
     staged_dir = _host_staged_path(staged_tokens[1], cache_dir)
     assert (staged_dir / "image.jpg").read_bytes() == b"image"
     assert not (staged_dir / "dangling").exists()
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="root can read a file whatever its mode",
+)
+def test_an_unreadable_file_is_staged_once_it_becomes_readable(
+    tmp_path: Path,
+) -> None:
+    src = tmp_path / "calibration"
+    src.mkdir()
+    (src / "image.jpg").write_bytes(b"image")
+    unreadable = src / "root_owned.jpg"
+    unreadable.write_bytes(b"leftover")
+    unreadable.chmod(0o000)
+    inputs_dir = tmp_path / "cache" / "inputs"
+
+    try:
+        without = input_staging._stage_dir(src, inputs_dir)
+        assert (without / "image.jpg").read_bytes() == b"image"
+        assert not (without / "root_owned.jpg").exists()
+
+        unreadable.chmod(0o644)
+        with_it = input_staging._stage_dir(src, inputs_dir)
+    finally:
+        unreadable.chmod(0o644)
+
+    # The digest describes what the entry holds, so the file joining the
+    # enumeration yields a new entry instead of reusing the one without it.
+    assert with_it != without
+    assert (with_it / "root_owned.jpg").read_bytes() == b"leftover"
+
+
+def test_a_file_lost_mid_copy_does_not_publish_an_incomplete_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    src = tmp_path / "calibration"
+    src.mkdir()
+    (src / "one.jpg").write_bytes(b"one")
+    (src / "two.jpg").write_bytes(b"two")
+    inputs_dir = tmp_path / "cache" / "inputs"
+    expected = inputs_dir / input_staging._hash_dir(src) / src.name
+    real_copy = shutil.copy2
+
+    def fail_on_second(source: Path, dest: Path, *args, **kwargs) -> None:
+        if Path(source).name == "two.jpg":
+            raise PermissionError(errno.EACCES, "Permission denied")
+        real_copy(source, dest, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "copy2", fail_on_second)
+
+    with pytest.raises(PermissionError):
+        input_staging._stage_dir(src, inputs_dir)
+
+    assert not expected.exists()
 
 
 def test_directory_digest_covers_symlinked_subdirectories(

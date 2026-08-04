@@ -1,10 +1,14 @@
 """Tests for the container entrypoint.
 
-The signal, stdin and ownership handling lives in
-``docker/entrypoint_common.sh``, which every target entrypoint sources;
-running the RVC2 one therefore exercises the logic of all of them. The
-other targets add environment setup that only exists inside their image
-(SNPE, Hailo), so they cannot be run here.
+The signal and stdin handling lives in ``docker/entrypoint_common.sh``,
+which every target entrypoint sources; running the RVC2 one therefore
+exercises the logic of all of them. The other targets add environment
+setup that only exists inside their image (SNPE, Hailo), so they cannot
+be run here.
+
+Its ownership handling is not covered: ``chown_mounts`` chowns absolute
+paths that only exist inside the image, so a host-side test would either
+do nothing or touch a real ``/app``.
 """
 
 import os
