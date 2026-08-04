@@ -19,8 +19,7 @@ RUN <<EOF
         ffmpeg libcurl4 \
         libncurses5     \
         llvm-14-runtime \
-        patch           \
-        git
+        patch
 
 EOF
 
@@ -107,17 +106,6 @@ ENV IN_DOCKER=
 ENV VERSION=${VERSION}
 ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib/python3.8/site-packages/openvino/libs/
 
-RUN <<EOF
-
-    set -e
-
-    apt-get update
-    apt-get install -y --no-install-recommends git
-    rm -rf /var/lib/apt/lists/*
-
-EOF
-
-
 COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libcurl.so.4 \
     /usr/lib/x86_64-linux-gnu/libnghttp2.so.14 \
@@ -167,9 +155,19 @@ COPY --link --from=base /usr/local/bin/mo \
     /usr/local/bin/
 
 
+ARG DEV=false
+COPY --link requirements-dev.txt /app/requirements-dev.txt
+COPY --link requirements-eval.txt /app/requirements-eval.txt
+RUN if [ "$DEV" = "true" ]; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends git && \
+        rm -rf /var/lib/apt/lists/* && \
+        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli && \
+        pip install --no-cache-dir --no-deps -r /app/requirements-eval.txt; \
+    fi
+
 COPY --link modelconverter /app/modelconverter/
 COPY --link pyproject.toml /app/pyproject.toml
-
 RUN pip install -e . --no-deps --no-cache-dir
 
 COPY --link docker/rvc2/entrypoint.sh /app/entrypoint.sh

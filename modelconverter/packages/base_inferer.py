@@ -1,7 +1,7 @@
 import shutil
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +33,7 @@ class Inferer(ABC):
     out_dtypes: dict[str, DataType]
     resize_method: dict[str, ResizeMethod]
     encoding: dict[str, Encoding]
+    layout: dict[str, str | None] = field(default_factory=dict)
     config: SingleStageConfig | None = None
 
     def __post_init__(self):
@@ -65,7 +66,7 @@ class Inferer(ABC):
             (config.outputs, "output"),
         ]:
             for node in container:
-                if node.shape is None:
+                if node.shape is None:  # pragma: no cover
                     raise ValueError(
                         f"Shape for {typ_name} '{node.name}' must be provided."
                     )
@@ -84,12 +85,8 @@ class Inferer(ABC):
                 else ResizeMethod.RESIZE
                 for inp in config.inputs
             },
-            encoding={
-                inp.name: inp.encoding.to
-                if isinstance(inp.calibration, ImageCalibrationConfig)
-                else Encoding.BGR
-                for inp in config.inputs
-            },
+            encoding={inp.name: inp.encoding.to for inp in config.inputs},
+            layout={inp.name: inp.layout for inp in config.inputs},
             config=config,
         )
 

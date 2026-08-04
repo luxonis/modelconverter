@@ -13,7 +13,9 @@ chown_mounts() {
           "$container_uid" != 0 || "$host_uid" != 0 ]]; then
         return
     fi
-    chown -R "$HOST_UID:$HOST_GID" /app/output 2>/dev/null || true
+    # `/app/tests` is bind-mounted into dev containers, where running the suite
+    # leaves `__pycache__` and report files behind in the host checkout.
+    chown -R "$HOST_UID:$HOST_GID" /app/output /app/tests 2>/dev/null || true
     # The staged inputs are written by the host user and only read in here, and
     # they are the part of the cache that grows: walking them after every run
     # would cost more the more inputs have been cached.

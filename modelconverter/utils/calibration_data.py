@@ -78,23 +78,16 @@ def download_calibration_data(string: str, max_images: int = -1) -> Path:
         if path.is_dir():
             return path
         raise ModelconverterException(f"Path {path} is not a directory")
-    try:
-        try_dataset_split = string.split(":")
-        if len(try_dataset_split) == 2:
-            dataset_name, view = try_dataset_split
-            loader_plugin = None
-        elif len(try_dataset_split) == 3:
-            dataset_name, view, loader_plugin = try_dataset_split
-        else:
+
+    match string.split(":"):
+        case [dataset_name, view]:
+            return load_from_ldf(dataset_name, view)
+        case [dataset_name, view, loader_plugin]:
+            return load_from_ldf(dataset_name, view, loader_plugin)
+        case _:
             raise ModelconverterException(
                 "LDF specification should be in the form <dataset_name>:<split> or <dataset_name>:<split>:<loader_plugin>"
             )
-    except ValueError as e:
-        raise ModelconverterException(
-            f"{string} is either in an unsupported format "
-            "or points to a non-existing directory"
-        ) from e
-    return load_from_ldf(dataset_name, view, loader_plugin)
 
 
 def load_from_ldf(

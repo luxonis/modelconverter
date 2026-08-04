@@ -15,6 +15,7 @@ def read_image(
     resize_method: ResizeMethod,
     data_type: DataType | None = None,
     transpose: bool = True,
+    layout: str | None = None,
 ) -> np.ndarray:
     path = Path(path)
     if path.suffix == ".npy":
@@ -30,7 +31,18 @@ def read_image(
             shape
         )
 
-    if len(shape) == 2:
+    if (
+        layout is not None
+        and len(layout) == len(shape)
+        and "H" in layout
+        and "W" in layout
+    ):
+        # The layout tells us which axes are spatial vs. channel, so a
+        # channels-last (e.g. TFLite NHWC) shape is read correctly.
+        h = shape[layout.index("H")]
+        w = shape[layout.index("W")]
+        c = shape[layout.index("C")] if "C" in layout else 1
+    elif len(shape) == 2:
         h, w, c = *shape, 1
     elif len(shape) == 3:
         if shape[0] == 1:
@@ -60,7 +72,7 @@ def read_image(
         img = img.crop((left, upper, right, lower))
     elif resize_method == ResizeMethod.RESIZE:
         img = img.resize((w, h))
-    elif resize_method == ResizeMethod.PAD:
+    elif resize_method == ResizeMethod.PAD:  # pragma: no branch
         orig_ratio = img.size[0] / img.size[1]
 
         # Calculate aspect ratio of new size

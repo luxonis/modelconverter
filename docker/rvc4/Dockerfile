@@ -20,8 +20,7 @@ RUN <<EOF
         libcurl4t64     \
         libncurses5     \
         libtinfo5       \
-        llvm-19-runtime \
-        git
+        llvm-14-runtime
 
 EOF
 
@@ -102,14 +101,26 @@ COPY --link --from=base \
     /usr/lib/x86_64-linux-gnu/libz3.so.4 \
     /usr/lib/x86_64-linux-gnu/libxml2.so.2 \
     /usr/lib/x86_64-linux-gnu/libtinfo.so.5 \
+    /usr/lib/x86_64-linux-gnu/libLLVM-14.so.1 \
     /usr/lib/
 
 
 COPY --link docker/rvc4/entrypoint.sh /app/entrypoint.sh
 COPY --link docker/entrypoint_common.sh /app/entrypoint_common.sh
+
+ARG DEV=false
+COPY --link requirements-dev.txt /app/requirements-dev.txt
+COPY --link requirements-eval.txt /app/requirements-eval.txt
+RUN if [ "$DEV" = "true" ]; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends git && \
+        rm -rf /var/lib/apt/lists/* && \
+        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli && \
+        pip install --no-cache-dir --no-deps -r /app/requirements-eval.txt; \
+    fi
+
 COPY --link modelconverter /app/modelconverter/
 COPY --link pyproject.toml /app/pyproject.toml
-
 RUN <<EOF
 
     set -e

@@ -4,22 +4,14 @@
 [![PyPI](https://img.shields.io/pypi/v/modelconv?label=pypi%20package)](https://pypi.org/project/modelconv/)
 [![PyPI - Downloads](https://img.shields.io/pypi/dm/modelconv)](https://pypi.org/project/modelconv/)
 
+[![CI](https://github.com/luxonis/modelconverter/actions/workflows/ci.yaml/badge.svg)](https://github.com/luxonis/modelconverter/actions/workflows/ci.yaml)
+[![Publish](https://github.com/luxonis/modelconverter/actions/workflows/publish.yaml/badge.svg)](https://github.com/luxonis/modelconverter/actions/workflows/publish.yaml)
+[![codecov](https://codecov.io/gh/luxonis/modelconverter/graph/badge.svg?token=EIPEE2RJ1F)](https://codecov.io/gh/luxonis/modelconverter)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![Docformatter](https://img.shields.io/badge/%20formatter-docformatter-fedcba.svg)](https://github.com/PyCQA/docformatter)
-[![Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 Convert your **ONNX** models to a format compatible with any generation of Luxonis camera using the **Model Compilation Library**.
 
 `ModelConverter` is in an experimental public beta stage. Some parts might change in the future.
-
-## Status
-
-| Package   | Test                                                                                                  | Deploy                                                                                                  |
-| --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **RVC2**  | ![RVC2 Tests](https://github.com/luxonis/modelconverter/actions/workflows/rvc2_test.yaml/badge.svg)   | ![RVC2 Push](https://github.com/luxonis/modelconverter/actions/workflows/rvc2_publish.yaml/badge.svg)   |
-| **RVC3**  | ![RVC3 Tests](https://github.com/luxonis/modelconverter/actions/workflows/rvc3_test.yaml/badge.svg)   | ![RVC3 Push](https://github.com/luxonis/modelconverter/actions/workflows/rvc3_publish.yaml/badge.svg)   |
-| **RVC4**  | ![RVC4 Tests](https://github.com/luxonis/modelconverter/actions/workflows/rvc4_test.yaml/badge.svg)   | ![RVC4 Push](https://github.com/luxonis/modelconverter/actions/workflows/rvc4_publish.yaml/badge.svg)   |
-| **Hailo** | ![Hailo Tests](https://github.com/luxonis/modelconverter/actions/workflows/hailo_test.yaml/badge.svg) | ![Hailo Push](https://github.com/luxonis/modelconverter/actions/workflows/hailo_publish.yaml/badge.svg) |
 
 ## Table of Contents
 

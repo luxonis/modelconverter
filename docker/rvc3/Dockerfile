@@ -123,9 +123,14 @@ COPY --link --from=base /usr/local/bin/mo \
     /usr/local/bin/python3.8 \
     /usr/local/bin/
 
+ARG DEV=false
+COPY --link requirements-dev.txt /app/requirements-dev.txt
+RUN if [ "$DEV" = "true" ]; then \
+        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli; \
+    fi
+
 COPY --link modelconverter /app/modelconverter/
 COPY --link pyproject.toml /app/pyproject.toml
-
 RUN pip install -e . --no-deps
 
 # The RVC2 entrypoint is used for RVC3 as well

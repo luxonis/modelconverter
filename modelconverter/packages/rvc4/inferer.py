@@ -34,6 +34,7 @@ class RVC4Inferer(Inferer):
                     resize_method=self.resize_method[input_name],
                     data_type=DataType.FLOAT32,
                     transpose=False,
+                    layout=self.layout.get(input_name),
                 )
                 arr.tofile(raw_path)
                 f.write(f"{input_name}:={raw_path} ")
