@@ -13,7 +13,6 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 import psutil
-import semver
 import yaml
 from docker.utils import parse_repository_tag
 from loguru import logger
@@ -240,7 +239,7 @@ def prepare_build_environemnt(
 
 
 def download_snpe_archive(version: str, dest: Path) -> Path:
-    archive_path = dest / f"snpe-{semver.finalize_version(version)}.zip"
+    archive_path = dest / f"snpe-{version}.zip"
     if archive_path.exists():
         return archive_path
 
