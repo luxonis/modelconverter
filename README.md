@@ -29,6 +29,7 @@ Convert your **ONNX** models to a format compatible with any generation of Luxon
     - [GPU Support](#gpu-support)
   - [Inputs, Outputs and the Cache](#inputs-outputs-and-the-cache)
     - [Managing the cache](#managing-the-cache)
+    - [Migrating from `shared_with_container`](#migrating-from-shared_with_container)
   - [Running ModelConverter](#running-modelconverter)
     - [Available CLI Options](#available-cli-options)
     - [Handling Large ONNX Files (Exceeding 2GB)](#handling-large-onnx-files-exceeding-2gb)
@@ -347,6 +348,34 @@ modelconverter cache clean       # remove the cache after confirmation
 modelconverter cache clean --yes # remove it non-interactively
 ```
 
+Because the container only sees the cache, every input **directory** you pass is
+copied into it in full; a warning is printed when a single one exceeds 1 GiB.
+Re-staging a directory you have since edited replaces the previous copy, but
+staged files, directories staged from other paths, and remote downloads simply
+accumulate — nothing expires on a schedule. Check in with `cache info` now and
+then and reclaim the space with `cache clean`; the next run re-stages whatever
+it still needs.
+
+#### Migrating from `shared_with_container`
+
+Earlier versions required a `shared_with_container` directory in the current
+working directory and resolved every CLI path relative to it. That directory is
+no longer used, and paths are now ordinary filesystem paths. To migrate:
+
+- **Paths in scripts and CI.** A path that used to be written relative to
+  `shared_with_container` (`--path configs/model.yaml`, `models/model.onnx`) now
+  has to name the file where it actually lives — relative to your current
+  directory, or absolute. Remote URLs are unaffected.
+- **Paths inside config files.** These are now resolved relative to the **config
+  file's own directory** rather than to `shared_with_container`, so a config
+  kept next to its model and calibration data needs no changes at all.
+- **Outputs.** Results moved from `shared_with_container/outputs/<output_dir>`
+  to `output/<output_dir>` in your current working directory, and are owned by
+  you rather than by `root`.
+- **The old directory.** Nothing reads it any more. Move anything you still want
+  out of it and delete it. If a previous version left `root`-owned files behind,
+  removing it needs `sudo`.
+
 ### Running ModelConverter
 
 You can run the built image either manually using the `docker run` command or using the `modelconverter` CLI.
@@ -371,13 +400,9 @@ You can run the built image either manually using the `docker run` command or us
 - If using `docker-compose`:
 
   ```bash
-  # Rootful Docker needs your identity for output ownership. With rootless
-  # Docker, container root is already mapped to your host user.
-  if docker info -f '{{json .SecurityOptions}}' | grep -q rootless; then
-      unset HOST_UID HOST_GID
-  else
-      export HOST_UID=$(id -u) HOST_GID=$(id -g)
-  fi
+  # Lets the container hand the outputs back to you on a rootful daemon.
+  # Harmless under rootless Docker, where container root is already your user.
+  export HOST_UID=$(id -u) HOST_GID=$(id -g)
   docker compose run <target> convert <target> ...
   ```
 
@@ -402,6 +427,13 @@ You can run the built image either manually using the `docker run` command or us
   > so files must be referenced by remote URL or already be inside the cache. The
   > `modelconverter` CLI removes this limitation by copying local inputs into the
   > cache for you.
+
+> [!IMPORTANT]
+> Do not run the CLI through `sudo` to reach a rootful Docker daemon. The
+> outputs are handed back to whoever invoked the conversion, so under `sudo`
+> that is `root` and the results stay `root`-owned. Grant your own user access
+> to the daemon instead — add it to the `docker` group and log back in — then
+> run `modelconverter` normally.
 
 #### Available CLI Options
 
@@ -583,7 +615,7 @@ modelconverter infer rvc4 \
   --model-path <path_to_model.dlc> \
   --output-dir <output_dir_name> \
   --input-path <input_path> \
-  --path <path_to_config.yaml>
+  --config <path_to_config.yaml>
 ```
 
 The output directory structure would be:
