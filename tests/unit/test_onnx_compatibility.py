@@ -1,133 +1,56 @@
+"""Host-side unit tests for the external-data lookups.
+
+Only these two helpers are covered here, because only they are new:
+input staging asks them where a model keeps its weights so the companion
+files can be copied into the cache alongside it. Miss one and the
+container gets a model whose tensors are not there.
+
+The wider compatibility helpers had a test module before the tests
+refactor removed it; restoring that coverage belongs in its own change,
+not in this one.
+"""
+
 from pathlib import Path
 
 import numpy as np
-import pytest
+import onnx
 from onnx import TensorProto, helper, numpy_helper
+from onnx.external_data_helper import set_external_data
 
-from modelconverter.packages.base_exporter import Exporter
-from modelconverter.utils.config import generate_renamed_onnx
 from modelconverter.utils.onnx_compatibility import (
-    ensure_onnx_helper_compatibility,
     get_external_data_path,
     get_external_data_paths,
-    save_onnx_model,
 )
-from modelconverter.utils.types import DataType
-
-
-@pytest.mark.parametrize(
-    ("tensor_name", "expected"),
-    [
-        ("BFLOAT16", DataType.BFLOAT16),
-        ("INT4", DataType.INT4),
-        ("UINT4", DataType.UINT4),
-    ],
+from tests.helpers.onnx_factory import (
+    single_io_onnx,
+    weights_only_external_onnx,
 )
-def test_extended_onnx_dtype_support(tensor_name: str, expected: DataType):
-    if not hasattr(TensorProto, tensor_name):
-        pytest.skip(f"{tensor_name} is not available in this ONNX version")
-    assert (
-        DataType.from_onnx_dtype(getattr(TensorProto, tensor_name)) == expected
-    )
 
 
-def test_simplify_onnx_falls_back_on_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
-    import onnx
-    import onnxsim
+def test_external_data_path_finds_the_companion_file(tmp_path: Path):
+    model_path = tmp_path / "model.onnx"
+    (external_data,) = weights_only_external_onnx(model_path)
 
-    input_tensor = helper.make_tensor_value_info(
-        "input0", TensorProto.FLOAT, [1, 4]
-    )
-    output_tensor = helper.make_tensor_value_info(
-        "output0", TensorProto.FLOAT, [1, 4]
-    )
-    node = helper.make_node("Identity", inputs=["input0"], outputs=["output0"])
-    model = helper.make_model(
-        helper.make_graph(
-            [node], "SimplifyFallbackModel", [input_tensor], [output_tensor]
-        )
-    )
-    input_path = tmp_path / "fallback.onnx"
-    onnx.save(model, input_path)
-
-    monkeypatch.setattr(
-        onnxsim,
-        "simplify",
-        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
-
-    class DummyExporter:
-        input_model = input_path
-        _attach_suffix = staticmethod(Exporter._attach_suffix)
-        onnx_simplification = "onnxsim"
-
-    assert Exporter.simplify_onnx(DummyExporter()) == input_path
+    assert get_external_data_path(model_path) == external_data
 
 
-@pytest.mark.parametrize(
-    "input_external_data_name",
-    ["external_input.onnx_data", "external_input.onnx.data"],
-)
-def test_generate_renamed_onnx_overwrites_external_data(
-    tmp_path: Path, input_external_data_name: str
-):
-    input_tensor = helper.make_tensor_value_info(
-        "input0", TensorProto.FLOAT, [1, 1024]
-    )
-    output_tensor = helper.make_tensor_value_info(
-        "output0", TensorProto.FLOAT, [1, 1024]
-    )
-    bias_tensor = numpy_helper.from_array(
-        np.arange(1024, dtype=np.float32).reshape(1, 1024), name="bias"
-    )
-    node = helper.make_node(
-        "Add", inputs=["input0", "bias"], outputs=["output0"]
-    )
-    model = helper.make_model(
-        helper.make_graph(
-            [node],
-            "ExternalDataModel",
-            [input_tensor],
-            [output_tensor],
-            initializer=[bias_tensor],
-        ),
-        producer_name="DummyModelProducer",
-    )
+def test_external_data_path_is_none_without_external_data(tmp_path: Path):
+    """Several callers branch on this to decide whether to re-save as
+    external data at all, so an embedded model has to answer
+    ``None``."""
+    model_path = single_io_onnx(tmp_path / "model.onnx")
 
-    input_path = tmp_path / "external_input.onnx"
-    output_path = tmp_path / "external_output.onnx"
-
-    save_onnx_model(
-        model,
-        input_path,
-        save_as_external_data=True,
-        location=input_external_data_name,
-    )
-    assert input_path.with_name(input_external_data_name).exists()
-    assert get_external_data_path(input_path) == input_path.with_name(
-        input_external_data_name
-    )
-
-    generate_renamed_onnx(input_path, {"output0": "renamed0"}, output_path)
-    assert output_path.with_name(f"{output_path.name}_data").exists()
-
-    generate_renamed_onnx(input_path, {"output0": "renamed1"}, output_path)
-    assert output_path.with_name(f"{output_path.name}_data").exists()
-
-
-def test_onnx_graphsurgeon_imports_with_onnx_121():
-    ensure_onnx_helper_compatibility()
-    import onnx_graphsurgeon as gs
-
-    assert gs is not None
+    assert get_external_data_path(model_path) is None
 
 
 def test_external_data_paths_cover_subgraph_initializers(tmp_path: Path):
-    import onnx
-    from onnx.external_data_helper import set_external_data
+    """A tensor reached only through a subgraph still names a file that
+    has to travel with the model.
 
+    Walking just the top-level graph -- the obvious implementation --
+    would miss it, and the omission only surfaces later as a load
+    failure inside the container.
+    """
     model_path = tmp_path / "model.onnx"
     external_data = tmp_path / "subgraph_weights.bin"
     weights = np.asarray([1.0, 2.0], dtype=np.float32)

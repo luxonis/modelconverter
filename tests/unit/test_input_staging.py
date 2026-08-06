@@ -7,14 +7,12 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import numpy as np
-import onnx
 import pytest
 import yaml
-from onnx import helper, numpy_helper
 
 from modelconverter.utils import input_staging
 from modelconverter.utils.constants import CONTAINER_SHARED_DIR
+from tests.helpers.onnx_factory import weights_only_external_onnx
 
 
 def _host_staged_path(staged: str, cache_dir: Path) -> Path:
@@ -23,44 +21,8 @@ def _host_staged_path(staged: str, cache_dir: Path) -> Path:
 
 
 def _external_onnx(path: Path) -> Path:
-    tensor = numpy_helper.from_array(
-        np.asarray([1.0, 2.0], dtype=np.float32), name="weights"
-    )
-    graph = helper.make_graph([], "external", [], [], [tensor])
-    model = helper.make_model(graph)
-    external_data = path.with_name(f"{path.name}_data")
-    onnx.save_model(
-        model,
-        path,
-        save_as_external_data=True,
-        all_tensors_to_one_file=True,
-        location=external_data.name,
-        size_threshold=0,
-    )
+    (external_data,) = weights_only_external_onnx(path)
     return external_data
-
-
-def _multi_file_external_onnx(path: Path) -> list[Path]:
-    """Saves a model whose tensors each land in their own companion
-    file."""
-    tensors = [
-        numpy_helper.from_array(
-            np.asarray([1.0, 2.0], dtype=np.float32), name="first"
-        ),
-        numpy_helper.from_array(
-            np.asarray([3.0, 4.0], dtype=np.float32), name="second"
-        ),
-    ]
-    graph = helper.make_graph([], "external", [], [], tensors)
-    model = helper.make_model(graph)
-    onnx.save_model(
-        model,
-        path,
-        save_as_external_data=True,
-        all_tensors_to_one_file=False,
-        size_threshold=0,
-    )
-    return sorted(p for p in path.parent.iterdir() if p != path)
 
 
 def test_stages_onnx_external_data(
@@ -89,7 +51,7 @@ def test_stages_every_external_data_file(
     cache_dir = tmp_path / "cache"
     model_path = tmp_path / "models" / "model.onnx"
     model_path.parent.mkdir()
-    external_data = _multi_file_external_onnx(model_path)
+    external_data = weights_only_external_onnx(model_path, single_file=False)
     assert len(external_data) > 1
     monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 

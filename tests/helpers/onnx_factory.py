@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import onnx
-from onnx import TensorProto, checker, helper
+from onnx import TensorProto, checker, helper, numpy_helper
 
 # Opset 13 keeps `axes` an attribute of ReduceMean rather than an input, and
 # IR 9 is accepted by every vendor tool (the onnx lib defaults higher).
@@ -229,6 +229,55 @@ def build_toy_conv_onnx(
         [node], "ToyConvModel", [inp], [out], initializer=[weight]
     )
     return _save(graph, path, external_data=external_data)
+
+
+def weights_only_external_onnx(
+    path: str | Path, *, single_file: bool = True
+) -> list[Path]:
+    """A model that is nothing but externally stored weights.
+
+    Returns the companion files, in sorted order. Anything walking a
+    model's external data has to find every one of them, so
+    ``single_file=False`` stores one tensor per file -- what
+    ``all_tensors_to_one_file=False`` produces -- and the default packs
+    them into the single sibling ``<name>_data`` that a real large model
+    uses.
+
+    The graph declares no inputs or outputs: these are subjects for the
+    file bookkeeping around a model, never for a conversion, and leaving
+    the graph empty keeps what each test is about in the test.
+    """
+    path = Path(path)
+    tensors = [
+        numpy_helper.from_array(
+            np.asarray([1.0, 2.0], dtype=np.float32), name="first"
+        ),
+        numpy_helper.from_array(
+            np.asarray([3.0, 4.0], dtype=np.float32), name="second"
+        ),
+    ]
+    if single_file:
+        tensors = tensors[:1]
+    model = helper.make_model(
+        helper.make_graph([], "ExternalWeights", [], [], tensors)
+    )
+    # The companion files are whatever the save newly produced. Diffing the
+    # directory rather than listing it afterwards keeps unrelated entries --
+    # the re-rooted cache lives under the same tmp_path -- out of the result.
+    before = set(path.parent.iterdir())
+    onnx.save_model(
+        model,
+        str(path),
+        save_as_external_data=True,
+        all_tensors_to_one_file=single_file,
+        # One file per tensor is only reached by leaving the location
+        # unset; naming it would collapse them back into that one file.
+        location=f"{path.name}_data" if single_file else None,
+        # Without this the tiny tensors stay embedded and no companion
+        # file is written at all.
+        size_threshold=0,
+    )
+    return sorted(set(path.parent.iterdir()) - before - {path})
 
 
 def build_relu_onnx(path: str | Path, shape: list[int]) -> Path:

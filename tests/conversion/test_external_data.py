@@ -7,9 +7,10 @@ to the sanitized model in both ``intermediate_outputs/`` and the output dir, and
 ``simplify_onnx`` / ``onnx_tools`` / ``generate_renamed_onnx`` re-save as external
 data so it survives every rewrite.
 
-No other test builds an external-data model, so this is the only thing exercising
-that. Converting on every backend and asserting success is enough: the model is
-only usable at all if the sibling weights travelled with it.
+This is the only thing exercising that end to end; the host-side tests cover the
+bookkeeping alone (which files staging copies, where they are looked up).
+Converting on every backend and asserting success is enough: the model is only
+usable at all if the sibling weights travelled with it.
 
 Run inside the platform Docker image, e.g.::
 
