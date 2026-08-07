@@ -14,6 +14,7 @@ import onnxruntime as rt
 import polars as pl
 from loguru import logger
 from PIL import Image
+from rich.progress import track
 
 from modelconverter.packages.base_analyze import Analyzer
 from modelconverter.packages.rvc4.benchmark import get_device_info
@@ -55,26 +56,28 @@ class RVC4Analyzer(Analyzer):
                 f"/data/modelconverter/{self.model_name}/output"
             )
 
-            for sample_id, input_dict in input_matcher.items():
-                logger.info(
-                    f"Analyzing sample {sample_id + 1}/{len(input_matcher)}."
-                )
+            for sample_id, input_dict in track(
+                input_matcher.items(),
+                description="Analyzing samples",
+                total=len(input_matcher),
+            ):
                 chunk_input_matcher = {sample_id: input_dict}
                 dlc_matcher = self._prepare_raw_inputs(
-                    chunk_input_matcher, np.float32
+                    chunk_input_matcher, np.float32, verbose=False
                 )
 
                 output_dir = Path(
                     self._run_dlc(
                         f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --output_dir {device_output_dir} --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float",
                         prepare_debug_dirs=True,
+                        verbose=False,
                     )
                 )
                 dlc_matcher = {
                     k: output_dir / v for k, v in dlc_matcher.items()
                 }
 
-                self._flatten_dlc_outputs(dlc_matcher)
+                self._flatten_dlc_outputs(dlc_matcher, verbose=False)
                 statistics.extend(
                     self._collect_comparison_statistics(
                         session,
@@ -83,6 +86,7 @@ class RVC4Analyzer(Analyzer):
                         onnx_input_shapes,
                         chunk_input_matcher,
                         dlc_matcher,
+                        verbose=False,
                     )
                 )
                 self._cleanup_dlc_outputs()
@@ -136,9 +140,14 @@ class RVC4Analyzer(Analyzer):
         return input_matcher
 
     def _prepare_raw_inputs(
-        self, input_matcher: dict[str, dict[str, str]], type: type = np.uint8
+        self,
+        input_matcher: dict[str, dict[str, str]],
+        type: type = np.uint8,
+        *,
+        verbose: bool = True,
     ) -> dict[str, str]:
-        logger.info("Preparing raw inputs for RVC4 analysis.")
+        if verbose:
+            logger.info("Preparing raw inputs for RVC4 analysis.")
         self.handler.shell(f"rm -rf /data/modelconverter/{self.model_name}")
         self.handler.shell(
             f"mkdir -p /data/modelconverter/{self.model_name}/inputs"
@@ -190,9 +199,10 @@ class RVC4Analyzer(Analyzer):
                 f"/data/modelconverter/{self.model_name}/input_list.txt",
             )
             f.close()
-        logger.info(
-            f"Raw inputs pushed to device at /data/modelconverter/{self.model_name}/input_list.txt"
-        )
+        if verbose:
+            logger.info(
+                f"Raw inputs pushed to device at /data/modelconverter/{self.model_name}/input_list.txt"
+            )
         self._result_names = list(dlc_matcher.values())
         return dlc_matcher
 
@@ -349,8 +359,11 @@ class RVC4Analyzer(Analyzer):
         onnx_input_shapes: dict[str, list[int | str | None]],
         input_matcher: dict[str, dict[str, str]],
         dlc_matcher: dict[str, Path],
+        *,
+        verbose: bool = True,
     ) -> list[list]:
-        logger.info("Comparing ONNX and DLC layer outputs.")
+        if verbose:
+            logger.info("Comparing ONNX and DLC layer outputs.")
         statistics = []
         for i, input_dict in input_matcher.items():
             onnx_input_dict = {}
@@ -375,7 +388,8 @@ class RVC4Analyzer(Analyzer):
 
             dlc_output_path = dlc_matcher[i]
 
-            logger.info("Calculating statistics for ONNX and DLC outputs.")
+            if verbose:
+                logger.info("Calculating statistics for ONNX and DLC outputs.")
             for layer_name, onnx_layer_output in zip(
                 layer_names, outputs, strict=True
             ):
@@ -467,9 +481,14 @@ class RVC4Analyzer(Analyzer):
         return [max_abs_diff, mse, cosine_sim, mean_ape]
 
     def _run_dlc(
-        self, command: str, *, prepare_debug_dirs: bool = False
+        self,
+        command: str,
+        *,
+        prepare_debug_dirs: bool = False,
+        verbose: bool = True,
     ) -> str:
-        logger.info("Inferencing DLC model on device.")
+        if verbose:
+            logger.info("Inferencing DLC model on device.")
         try:
             self.handler.push(
                 str(self.dlc_model_path),
@@ -490,9 +509,10 @@ class RVC4Analyzer(Analyzer):
                 f"/data/modelconverter/{self.model_name}/output",
                 f"{target_dir}/output",
             )
-            logger.info(
-                f"Raw outputs pulled from device to {target_dir}/output"
-            )
+            if verbose:
+                logger.info(
+                    f"Raw outputs pulled from device to {target_dir}/output"
+                )
         except subprocess.CalledProcessError as e:
             stdout = e.output.decode(errors="ignore") if e.output else ""
             stderr = e.stderr.decode(errors="ignore") if e.stderr else ""
@@ -512,8 +532,11 @@ class RVC4Analyzer(Analyzer):
 
         return f"{target_dir}/output"
 
-    def _flatten_dlc_outputs(self, dlc_matcher: dict[str, Path]) -> None:
-        logger.info("Flattening SNPE results.")
+    def _flatten_dlc_outputs(
+        self, dlc_matcher: dict[str, Path], *, verbose: bool = True
+    ) -> None:
+        if verbose:
+            logger.info("Flattening SNPE results.")
         for result_path in dlc_matcher.values():
             root = Path(result_path)
 
