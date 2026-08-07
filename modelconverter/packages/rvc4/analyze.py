@@ -32,10 +32,10 @@ class RVC4Analyzer(Analyzer):
         image_dirs: dict[str, str],
         image_subset: int | None = None,
     ):
+        self.image_subset = image_subset
         super().__init__(dlc_model_path, image_dirs)
         _, device_adb_id = get_device_info(device_ip, device_id)
         self.handler = create_handler(device_ip, device_adb_id)
-        self.image_subset = image_subset
 
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
         onnx_all_layers = self._add_outputs_to_all_layers(str(onnx_model_path))
@@ -109,7 +109,7 @@ class RVC4Analyzer(Analyzer):
 
         return image.astype(np.uint8)
 
-    def _prepare_input_matcher(self) -> dict[str, dict[str, str]]:
+    def _get_selected_image_paths(self) -> dict[str, list[Path]]:
         image_names = {
             k: sorted(
                 path
@@ -122,14 +122,23 @@ class RVC4Analyzer(Analyzer):
             image_names = {
                 k: paths[: self.image_subset] for k, paths in image_names.items()
             }
-        if len({len(v) for v in image_names.values()}) != 1:
+        return image_names
+
+    def _check_dir_sizes(self) -> None:
+        image_names = self._get_selected_image_paths()
+        dir_lengths = [len(paths) for paths in image_names.values()]
+
+        if len(set(dir_lengths)) > 1:
             raise ValueError(
-                "All input dirs must have the same number of input images"
+                "All input dirs must have the same number of supported image files."
             )
-        if any(len(v) == 0 for v in image_names.values()):
+        if len(dir_lengths) == 0 or any(length == 0 for length in dir_lengths):
             raise ValueError(
                 "Input dirs must contain at least one supported image or .npy file."
             )
+
+    def _prepare_input_matcher(self) -> dict[str, dict[str, str]]:
+        image_names = self._get_selected_image_paths()
 
         input_matcher = {}
         for i in range(len(next(iter(image_names.values())))):
