@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import ml_dtypes
@@ -66,21 +66,47 @@ def save_onnx_model(
     onnx.save(model, str(output_path))
 
 
+def _iter_node_tensors(
+    nodes: Iterable[onnx.NodeProto],
+) -> Iterator[onnx.TensorProto]:
+    """Yields the tensors reachable from ``nodes``.
+
+    Besides the subgraphs nested in a node (the bodies of ``If``,
+    ``Loop``, ``Scan``, ...), an attribute can hold a tensor directly --
+    the value of a ``Constant``, say -- and ONNX writes those out
+    externally too when the model is converted with
+    ``convert_attribute=True``.
+    """
+    for node in nodes:
+        for attribute in node.attribute:
+            yield attribute.t
+            yield from attribute.tensors
+            if attribute.HasField("g"):
+                yield from _iter_tensors(attribute.g)
+            for subgraph in attribute.graphs:
+                yield from _iter_tensors(subgraph)
+
+
 def _iter_tensors(graph: onnx.GraphProto) -> Iterator[onnx.TensorProto]:
-    """Yields every initializer of ``graph``, including those of the
-    subgraphs nested in its nodes (the bodies of ``If``, ``Loop``,
-    ``Scan``, ...), which may hold external data of their own."""
+    """Yields every initializer of ``graph``, including those held by its
+    nodes."""
     yield from graph.initializer
     for sparse_tensor in graph.sparse_initializer:
         yield sparse_tensor.values
         yield sparse_tensor.indices
 
-    for node in graph.node:
-        for attribute in node.attribute:
-            if attribute.HasField("g"):
-                yield from _iter_tensors(attribute.g)
-            for subgraph in attribute.graphs:
-                yield from _iter_tensors(subgraph)
+    yield from _iter_node_tensors(graph.node)
+
+
+def _iter_model_tensors(model: onnx.ModelProto) -> Iterator[onnx.TensorProto]:
+    """Yields every tensor of ``model`` that may carry external data.
+
+    Local functions are walked as well: their nodes are not part of the
+    main graph, but ONNX's own loader resolves their external data.
+    """
+    yield from _iter_tensors(model.graph)
+    for function in model.functions:
+        yield from _iter_node_tensors(function.node)
 
 
 def get_external_data_paths(model_path: str | Path) -> list[Path]:
@@ -95,7 +121,7 @@ def get_external_data_paths(model_path: str | Path) -> list[Path]:
     model_dir = model_path.parent.resolve()
 
     paths: list[Path] = []
-    for tensor in _iter_tensors(model.graph):
+    for tensor in _iter_model_tensors(model):
         if not uses_external_data(tensor):
             continue
         location = ExternalDataInfo(tensor).location

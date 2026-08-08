@@ -81,3 +81,33 @@ def test_external_data_paths_cover_subgraph_initializers(tmp_path: Path):
     onnx.save(helper.make_model(graph), model_path)
 
     assert get_external_data_paths(model_path) == [external_data]
+
+
+def test_external_data_paths_cover_attribute_tensors(tmp_path: Path):
+    """A `Constant` keeps its value in a node attribute, and ONNX writes
+    those out externally too (`convert_attribute=True`).
+
+    Its own loader reads them back, so a companion file missed here
+    becomes an "unable to open data file" once the container tries to
+    convert a model whose weights never travelled with it.
+    """
+    model_path = tmp_path / "model.onnx"
+    external_data = tmp_path / "constant_weights.bin"
+    weights = np.asarray([1.0, 2.0], dtype=np.float32)
+    external_data.write_bytes(weights.tobytes())
+
+    tensor = numpy_helper.from_array(weights, name="const_value")
+    set_external_data(tensor, location=external_data.name)
+    tensor.ClearField("raw_data")
+    tensor.data_location = TensorProto.EXTERNAL
+
+    node = helper.make_node("Constant", [], ["out"], value=tensor)
+    graph = helper.make_graph(
+        [node],
+        "outer",
+        [],
+        [helper.make_tensor_value_info("out", TensorProto.FLOAT, [2])],
+    )
+    onnx.save(helper.make_model(graph), model_path)
+
+    assert get_external_data_paths(model_path) == [external_data]
