@@ -183,14 +183,27 @@ def _is_path_like(value: str) -> bool:
         return False
     if get_protocol(value) != "file":
         return False
-    p = Path(value).expanduser()
-    if not p.exists():
+    p = _as_path(value)
+    if p is None or not _exists(p):
         return False
     if p.is_absolute() or "/" in value or "\\" in value:
         return True
     if value.startswith(("~", ".")):
         return True
     return p.is_file() and p.suffix.lower() in _KNOWN_EXTS
+
+
+def _as_path(value: str) -> Path | None:
+    """Interprets ``value`` as a local path, or returns ``None``.
+
+    A CLI override or a config field may legitimately hold something that
+    is not a path at all -- an inline encodings JSON, a calibration
+    script -- and C{Path} rejects some of those outright.
+    """
+    try:
+        return Path(value).expanduser()
+    except (OSError, ValueError, RuntimeError):
+        return None
 
 
 def _absolute(path: Path) -> Path:
@@ -204,14 +217,27 @@ def _absolute(path: Path) -> Path:
     return Path(os.path.abspath(path))  # noqa: PTH100
 
 
+def _exists(path: Path) -> bool:
+    """C{Path.exists} for values that may not name a path.
+
+    An inline JSON blob has no C{/} but is far longer than a filename may
+    be, so C{exists} raises C{OSError} (C{ENAMETOOLONG}) instead of
+    answering C{False}.
+    """
+    try:
+        return path.exists()
+    except (OSError, ValueError):
+        return False
+
+
 def _stage_value(value: str, inputs_dir: Path) -> str | None:
     """Copies the file/dir at ``value`` into the cache and returns the
     container-side path, or ``None`` if it cannot/should not be
     staged."""
     if get_protocol(value) != "file":
         return None
-    src = Path(value).expanduser()
-    if not src.exists():
+    src = _as_path(value)
+    if src is None or not _exists(src):
         return None
     src = _absolute(src)
 
@@ -441,20 +467,24 @@ def _stage_config_reference(
     if get_protocol(value) != "file":
         return None
 
-    candidate = Path(value).expanduser()
+    # `calibration.script` may hold the script itself rather than a path to
+    # one, so the value is not necessarily something `Path` can represent.
+    candidate = _as_path(value)
+    if candidate is None:
+        return None
     if candidate.is_absolute():
         bases = [candidate]
     else:
         bases = [config_dir / candidate, Path.cwd() / candidate]
 
     for base in bases:
-        if not base.exists():
+        if not _exists(base):
             continue
         if base.is_file() and base.suffix.lower() in _CONFIG_EXTS:
             # No config field points at another config, so a YAML reached from
             # inside one is data. Staging it as such also keeps a config that
             # names itself from recursing forever.
-            return _to_container(_stage_file(base.resolve(), inputs_dir))
+            return _to_container(_stage_file(_absolute(base), inputs_dir))
         return _stage_value(str(base), inputs_dir)
     return None
 

@@ -790,3 +790,25 @@ def test_a_symlinked_model_keeps_the_name_it_was_given(
     assert (
         _host_staged_path(staged, cache_dir).read_bytes() == blob.read_bytes()
     )
+
+
+def test_a_long_override_value_is_not_treated_as_a_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`rvc4.encodings` accepts the encodings JSON inline.
+
+    It has no separator, so it reaches the filesystem as one component
+    and `Path.exists` answers with `ENAMETOOLONG` rather than `False`.
+    """
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    monkeypatch.chdir(tmp_path)
+    encodings = (
+        '{"activation_encodings": {"x": ['
+        + '{"bitwidth": 8},' * 40
+        + '{"bitwidth": 8}]}, "param_encodings": {}}'
+    )
+    assert len(encodings) > 255
+    tokens = ["convert", "rvc4", "rvc4.encodings", encodings]
+
+    assert input_staging.stage_inputs(tokens, {"--path"}) == tokens
