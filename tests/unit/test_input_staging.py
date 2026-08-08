@@ -953,3 +953,39 @@ def test_a_single_dash_flag_value_is_not_staged(
     tokens = ["shell", "rvc4", "-c", "./script.py"]
 
     assert input_staging.stage_inputs(tokens, {"--path"}) == tokens
+
+
+def test_replacing_directory_content_in_place_restages_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`rsync -a`, `cp -p` and a backup restore all preserve size and
+    modification time.
+
+    Keying the cache on those alone would hand the container the previous
+    calibration images and quantize against them without a word.
+    """
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    calib = tmp_path / "calib"
+    calib.mkdir()
+    image = calib / "image.raw"
+    image.write_bytes(b"aaaa")
+
+    first = input_staging.stage_inputs(
+        ["--input-path", str(calib)], {"--input-path"}
+    )[1]
+
+    original = image.stat()
+    image.write_bytes(b"bbbb")
+    os.utime(image, ns=(original.st_atime_ns, original.st_mtime_ns))
+    assert image.stat().st_size == original.st_size
+    assert image.stat().st_mtime_ns == original.st_mtime_ns
+
+    second = input_staging.stage_inputs(
+        ["--input-path", str(calib)], {"--input-path"}
+    )[1]
+
+    assert second != first
+    assert (
+        _host_staged_path(second, cache_dir) / "image.raw"
+    ).read_bytes() == b"bbbb"

@@ -848,8 +848,17 @@ def _hash_files(paths: list[Path]) -> str:
 
 
 def _hash_dir(path: Path, files: list[_InputFile] | None = None) -> str:
-    """Fast content-fingerprint of a directory based on the relative
-    paths, sizes and modification times of the files that are staged."""
+    """Fast fingerprint of a directory from the metadata of the files
+    that are staged, rather than from their contents.
+
+    Reading a calibration set in full on every run would cost more than
+    the conversion, but the size and modification time alone are too weak
+    to key a cache on: restoring a backup or an ``rsync -a`` preserves
+    both, and the container would then quantize against the previous
+    images without any sign that it had. The inode and the change time
+    are stat'ed anyway and neither survives a file being replaced, so
+    they are folded in as well.
+    """
     if files is None:
         files = sorted(_iter_input_files(path), key=lambda f: f.relative)
     h = hashlib.sha256()
@@ -857,7 +866,8 @@ def _hash_dir(path: Path, files: list[_InputFile] | None = None) -> str:
     for file in files:
         h.update(
             f"{file.relative}\0{file.stat.st_size}\0"
-            f"{file.stat.st_mtime_ns}".encode()
+            f"{file.stat.st_mtime_ns}\0{file.stat.st_ctime_ns}\0"
+            f"{file.stat.st_ino}".encode()
         )
     return h.hexdigest()[:16]
 
