@@ -48,12 +48,21 @@ MODELS_DIR: Final[Path] = SHARED_DIR / "models"
 # hash for de-duplication across runs.
 INPUTS_DIR: Final[Path] = SHARED_DIR / "inputs"
 
+# Written into a directory modelconverter produced itself. `OUTPUTS_DIR` is the
+# host's `./output`, so a rerun may only clear a directory it made; anything
+# else the user keeps there is not ours to delete. The two kinds are separate
+# on purpose: an inference rerun must not wipe a conversion's output either.
+CONVERSION_MARKER: Final[str] = ".modelconverter_output"
+INFERENCE_MARKER: Final[str] = ".modelconverter_inference"
+
 LOADERS = Registry(name="loaders")
 
 __all__ = [
     "CALIBRATION_DIR",
     "CONFIGS_DIR",
     "CONTAINER_SHARED_DIR",
+    "CONVERSION_MARKER",
+    "INFERENCE_MARKER",
     "INPUTS_DIR",
     "MISC_DIR",
     "MODELS_DIR",

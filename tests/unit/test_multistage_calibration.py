@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from modelconverter.packages import multistage_exporter
-from modelconverter.packages.base_inferer import RESULTS_MARKER, Inferer
+from modelconverter.packages.base_inferer import Inferer
 from modelconverter.packages.multistage_exporter import MultiStageExporter
 from modelconverter.utils.config import (
     Config,
@@ -22,6 +22,7 @@ from modelconverter.utils.config import (
     LinkCalibrationConfig,
     SingleStageConfig,
 )
+from modelconverter.utils.constants import INFERENCE_MARKER
 from modelconverter.utils.types import Target
 
 # Concatenates every output of the linked stage into one calibration
@@ -154,7 +155,7 @@ def test_inference_results_are_marked(exporter: MultiStageExporter):
     exporter._produce_calibration_data(exporter.exporters["second"])
 
     results_dir = exporter.intermediate_outputs_dir / "dummy_model_calibration"
-    assert (results_dir / RESULTS_MARKER).is_file()
+    assert (results_dir / INFERENCE_MARKER).is_file()
     assert sorted(p.name for p in results_dir.iterdir() if p.is_dir()) == [
         "output0",
         "output1",

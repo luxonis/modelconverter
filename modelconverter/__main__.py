@@ -46,6 +46,7 @@ from modelconverter.utils import (
 )
 from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.constants import (
+    CONVERSION_MARKER,
     MODELS_DIR,
     OUTPUTS_DIR,
     get_cache_dir,
@@ -211,6 +212,10 @@ def convert(
 
         output_path = get_output_dir_name(target, cfg.name, output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
+        # Lets a rerun recognize its own output directory (see
+        # `get_output_dir_name`) instead of clearing whatever the user keeps
+        # under `./output`.
+        (output_path / CONVERSION_MARKER).touch()
         setup_logging(
             file=str(output_path / "modelconverter.log"),
             use_rich=cfg.rich_logging,

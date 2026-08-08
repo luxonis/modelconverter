@@ -15,8 +15,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from modelconverter.packages.base_inferer import RESULTS_MARKER, Inferer
+from modelconverter.packages.base_inferer import Inferer
 from modelconverter.utils import ModelconverterException
+from modelconverter.utils.constants import INFERENCE_MARKER
 
 
 class _StubInferer(Inferer):
@@ -49,7 +50,7 @@ def test_missing_destination_is_created_and_marked(work_dir: Path):
     _infer_into(dest)
 
     assert dest.is_dir()
-    assert (dest / RESULTS_MARKER).is_file()
+    assert (dest / INFERENCE_MARKER).is_file()
 
 
 def test_empty_destination_is_accepted(work_dir: Path):
@@ -61,7 +62,7 @@ def test_empty_destination_is_accepted(work_dir: Path):
 
     _infer_into(dest)
 
-    assert (dest / RESULTS_MARKER).is_file()
+    assert (dest / INFERENCE_MARKER).is_file()
 
 
 def test_own_results_are_replaced(work_dir: Path):
@@ -69,7 +70,7 @@ def test_own_results_are_replaced(work_dir: Path):
     previous run cannot be mistaken for this run's."""
     dest = work_dir / "output" / "results"
     dest.mkdir(parents=True)
-    (dest / RESULTS_MARKER).touch()
+    (dest / INFERENCE_MARKER).touch()
     stale = dest / "output0"
     stale.mkdir()
     (stale / "0.npy").write_bytes(b"stale")
@@ -77,7 +78,7 @@ def test_own_results_are_replaced(work_dir: Path):
     _infer_into(dest)
 
     assert not stale.exists()
-    assert (dest / RESULTS_MARKER).is_file()
+    assert (dest / INFERENCE_MARKER).is_file()
 
 
 def test_foreign_directory_is_refused(work_dir: Path):

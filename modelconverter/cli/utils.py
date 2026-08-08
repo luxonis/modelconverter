@@ -13,6 +13,7 @@ from luxonis_ml.typing import Params
 from requests.exceptions import HTTPError
 
 from modelconverter.utils import (
+    ModelconverterException,
     process_nn_archive,
     resolve_path,
     sanitize_net_name,
@@ -21,6 +22,7 @@ from modelconverter.utils.config import Config
 from modelconverter.utils.constants import (
     CALIBRATION_DIR,
     CONFIGS_DIR,
+    CONVERSION_MARKER,
     MISC_DIR,
     MODELS_DIR,
     OUTPUTS_DIR,
@@ -59,11 +61,25 @@ def get_output_dir_name(
     name = sanitize_net_name(name)
     date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
     if output_dir is not None:
-        if (OUTPUTS_DIR / output_dir).exists():
-            shutil.rmtree(OUTPUTS_DIR / output_dir)
-    else:
-        output_dir = f"{name}_to_{target.name.lower()}_{date}"
-    return OUTPUTS_DIR / output_dir
+        dest = OUTPUTS_DIR / output_dir
+        if dest.exists():
+            # `OUTPUTS_DIR` is the user's `./output`, so a rerun may only clear
+            # a directory a previous conversion produced. Inference results
+            # carry a marker of their own and are not ours to delete either.
+            if not dest.is_dir():
+                raise ModelconverterException(
+                    f"Refusing to overwrite '{dest}': it is not a directory. "
+                    "Pass a different `--output-dir`."
+                )
+            if not (dest / CONVERSION_MARKER).exists() and any(dest.iterdir()):
+                raise ModelconverterException(
+                    f"Refusing to overwrite '{dest}': it is not empty and "
+                    "does not hold conversion results. Pass a different "
+                    "`--output-dir`."
+                )
+            shutil.rmtree(dest)
+        return dest
+    return OUTPUTS_DIR / f"{name}_to_{target.name.lower()}_{date}"
 
 
 def init_dirs() -> None:

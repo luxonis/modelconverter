@@ -13,13 +13,8 @@ from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
 )
+from modelconverter.utils.constants import INFERENCE_MARKER
 from modelconverter.utils.types import DataType, Encoding, ResizeMethod
-
-# Marks a directory as holding inference results. `dest` now lives under the
-# host's `./output`, so a rerun may only clear a directory it produced itself;
-# anything else there (a previous conversion's results, say) is not ours to
-# delete.
-RESULTS_MARKER = ".modelconverter_inference"
 
 
 @dataclass
@@ -43,7 +38,7 @@ class Inferer(ABC):
                     f"Refusing to overwrite '{self.dest}': it is not a "
                     "directory. Pass a different `--output-dir`."
                 )
-            if not (self.dest / RESULTS_MARKER).exists() and any(
+            if not (self.dest / INFERENCE_MARKER).exists() and any(
                 self.dest.iterdir()
             ):
                 raise ModelconverterException(
@@ -54,7 +49,7 @@ class Inferer(ABC):
             logger.debug(f"Removing existing directory {self.dest}.")
             shutil.rmtree(self.dest)
         self.dest.mkdir(parents=True, exist_ok=True)
-        (self.dest / RESULTS_MARKER).touch()
+        (self.dest / INFERENCE_MARKER).touch()
         self.setup()
 
     @classmethod
