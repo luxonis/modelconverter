@@ -588,9 +588,12 @@ def _iter_input_files(src: Path) -> Iterator[_InputFile]:
     """Yields every file that staging ``src`` copies, with its stat.
 
     Symlinked sub-directories are followed so that what the container
-    ends up seeing is also what gets fingerprinted; a directory already
-    visited is skipped so a symlink cycle terminates. Anything that is
-    not a regular file (dangling symlink, socket, fifo) is left out.
+    ends up seeing is also what gets fingerprinted. A link that points
+    back at a directory already on the way down -- ``calib/all -> ..``,
+    say -- is skipped, which terminates any cycle without dropping two
+    sibling links to the same directory: those are distinct content the
+    container expects to find under both names. Anything that is not a
+    regular file (dangling symlink, socket, fifo) is left out.
 
     So is a file this process cannot read: a staged directory routinely
     holds files that have nothing to do with the model -- root-owned
@@ -602,17 +605,34 @@ def _iter_input_files(src: Path) -> Iterator[_InputFile]:
     the one that lacks it.
     """
     excluded = _excluded_dirs()
-    visited: set[tuple[int, int]] = set()
+    # The chain of directory identities leading to each pending directory. It
+    # starts with `src` and everything above it, so `calib/latest -> .` and
+    # `calib/all -> ..` are both skipped rather than pulling the surrounding
+    # tree -- potentially the whole home directory -- into the cache.
+    chains: dict[Path, frozenset[tuple[int, int]]] = {
+        src: frozenset(
+            key
+            for directory in (src, *src.parents)
+            if (key := _dir_key(directory)) is not None
+        )
+    }
 
     for root, dir_names, file_names in os.walk(src, followlinks=True):
         root_path = Path(root)
-        dir_names[:] = [
-            name
-            for name in dir_names
-            if name not in _IGNORED_DIR_NAMES
-            and (root_path / name).resolve() not in excluded
-            and _first_visit(root_path / name, visited)
-        ]
+        ancestors = chains.pop(root_path, frozenset())
+        kept = []
+        for name in dir_names:
+            if name in _IGNORED_DIR_NAMES:
+                continue
+            directory = root_path / name
+            if directory.resolve() in excluded:
+                continue
+            key = _dir_key(directory)
+            if key is None or key in ancestors:
+                continue
+            chains[directory] = ancestors | {key}
+            kept.append(name)
+        dir_names[:] = kept
         for name in file_names:
             path = root_path / name
             try:
@@ -627,16 +647,14 @@ def _iter_input_files(src: Path) -> Iterator[_InputFile]:
             yield _InputFile(path.relative_to(src).as_posix(), path, file_stat)
 
 
-def _first_visit(directory: Path, visited: set[tuple[int, int]]) -> bool:
+def _dir_key(directory: Path) -> tuple[int, int] | None:
+    """The identity a symlink cycle would repeat, or ``None`` if the
+    directory cannot be stat'ed."""
     try:
         directory_stat = directory.stat()
     except OSError:
-        return False
-    key = (directory_stat.st_dev, directory_stat.st_ino)
-    if key in visited:
-        return False
-    visited.add(key)
-    return True
+        return None
+    return (directory_stat.st_dev, directory_stat.st_ino)
 
 
 def _stage_dir(src: Path, inputs_dir: Path) -> Path:

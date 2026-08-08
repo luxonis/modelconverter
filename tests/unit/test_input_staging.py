@@ -857,3 +857,51 @@ def test_stages_the_quantization_overrides_file(
         _host_staged_path(args[1], cache_dir).read_text()
         == overrides.read_text()
     )
+
+
+def test_sibling_symlinks_to_one_directory_are_both_staged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The inferer expects one directory per input, and two of them may
+    well be the same images under different names."""
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    shared = tmp_path / "images"
+    shared.mkdir()
+    (shared / "image.raw").write_bytes(b"image")
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "input0").symlink_to(shared, target_is_directory=True)
+    (data / "input1").symlink_to(shared, target_is_directory=True)
+
+    staged = input_staging.stage_inputs(
+        ["--input-path", str(data)], {"--input-path"}
+    )[1]
+
+    staged_dir = _host_staged_path(staged, cache_dir)
+    assert (staged_dir / "input0" / "image.raw").read_bytes() == b"image"
+    assert (staged_dir / "input1" / "image.raw").read_bytes() == b"image"
+
+
+def test_a_symlink_pointing_back_up_is_not_followed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A convenience link such as `calib/all -> ..` would otherwise copy
+    the whole surrounding tree into the cache."""
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    (tmp_path / "unrelated.bin").write_bytes(b"unrelated")
+    calib = tmp_path / "calib"
+    calib.mkdir()
+    (calib / "image.raw").write_bytes(b"image")
+    (calib / "all").symlink_to(tmp_path, target_is_directory=True)
+    (calib / "here").symlink_to(calib, target_is_directory=True)
+
+    staged = input_staging.stage_inputs(
+        ["--input-path", str(calib)], {"--input-path"}
+    )[1]
+
+    staged_dir = _host_staged_path(staged, cache_dir)
+    assert (staged_dir / "image.raw").read_bytes() == b"image"
+    assert not (staged_dir / "all").exists()
+    assert not (staged_dir / "here").exists()
