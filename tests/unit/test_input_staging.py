@@ -12,7 +12,10 @@ import yaml
 
 from modelconverter.utils import input_staging
 from modelconverter.utils.constants import CONTAINER_SHARED_DIR
-from tests.helpers.onnx_factory import weights_only_external_onnx
+from tests.helpers.onnx_factory import (
+    single_io_onnx,
+    weights_only_external_onnx,
+)
 
 
 def _host_staged_path(staged: str, cache_dir: Path) -> Path:
@@ -756,3 +759,34 @@ def test_concurrent_directory_staging_publishes_one_complete_entry(
     assert (results[0] / "one.jpg").read_bytes() == b"one"
     assert (results[0] / "two.jpg").read_bytes() == b"two"
     assert not list(results[0].parent.glob(f".{src.name}.tmp-*"))
+
+
+def test_a_symlinked_model_keeps_the_name_it_was_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DVC, git-annex and Nix all present a model as a symlink to a
+    content-addressed blob.
+
+    The container dispatches on the suffix, so a staged copy named after
+    the link's target -- extension-less -- is parsed as a config instead
+    of converted.
+    """
+    cache_dir = tmp_path / "cache"
+    store = tmp_path / "store"
+    store.mkdir()
+    blob = store / "b1946ac92492d234"
+    single_io_onnx(store / "model.onnx").rename(blob)
+    work = tmp_path / "work"
+    work.mkdir()
+    link = work / "model.onnx"
+    link.symlink_to(blob)
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    staged = input_staging.stage_inputs(
+        ["--model-path", str(link)], {"--model-path"}
+    )[1]
+
+    assert Path(staged).name == "model.onnx"
+    assert (
+        _host_staged_path(staged, cache_dir).read_bytes() == blob.read_bytes()
+    )

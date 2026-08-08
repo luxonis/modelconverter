@@ -193,6 +193,17 @@ def _is_path_like(value: str) -> bool:
     return p.is_file() and p.suffix.lower() in _KNOWN_EXTS
 
 
+def _absolute(path: Path) -> Path:
+    """Absolutizes ``path`` without resolving symlinks.
+
+    Deliberately not C{Path.resolve}: the staged copy keeps the name the
+    user asked for. Resolving would name it after the symlink's target,
+    and a content-addressed blob (DVC, git-annex, Nix) carries neither
+    the model's name nor the suffix the container dispatches on.
+    """
+    return Path(os.path.abspath(path))  # noqa: PTH100
+
+
 def _stage_value(value: str, inputs_dir: Path) -> str | None:
     """Copies the file/dir at ``value`` into the cache and returns the
     container-side path, or ``None`` if it cannot/should not be
@@ -202,7 +213,7 @@ def _stage_value(value: str, inputs_dir: Path) -> str | None:
     src = Path(value).expanduser()
     if not src.exists():
         return None
-    src = src.resolve()
+    src = _absolute(src)
 
     if src.is_dir():
         dest = _stage_dir(src, inputs_dir)
@@ -268,8 +279,12 @@ def _stage_onnx(src: Path, inputs_dir: Path) -> Path:
     digest = _hash_files([src, *external_data])
     hash_dir = inputs_dir / digest
     destinations = {src: Path(src.name)}
+    # `get_external_data_paths` resolves each location against -- and confines
+    # it to -- the resolved model directory, so that is what the recorded
+    # locations are relative to.
+    model_dir = src.parent.resolve()
     for data_path in external_data:
-        destinations[data_path] = data_path.relative_to(src.parent)
+        destinations[data_path] = data_path.relative_to(model_dir)
 
     _stage_file_bundle(destinations, hash_dir)
     return hash_dir / src.name
