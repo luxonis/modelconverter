@@ -552,9 +552,10 @@ def docker_exec(
             ).encode()
         )
 
-    def sanitize(arg: str) -> str:
-        return arg.replace('"', "'")
-
+    # The arguments are passed through as argv, never re-evaluated: the
+    # entrypoints run `exec modelconverter "$@"`. They used to build a string
+    # and `eval` it, which is what the double quotes here were once rewritten
+    # for -- doing so now would only corrupt an inline JSON override.
     sys.exit(
         subprocess.run(
             [
@@ -566,7 +567,7 @@ def docker_exec(
                 "--rm",
                 "--remove-orphans",
                 "modelconverter",
-                *map(sanitize, args),
+                *args,
             ],
             env=os.environ,
             check=False,

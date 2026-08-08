@@ -33,6 +33,7 @@ def _launch(
     monkeypatch: pytest.MonkeyPatch,
     *,
     namespace_mode: str = "rootless",
+    extra: list[str] | None = None,
 ) -> _Launch:
     launch: _Launch | None = None
 
@@ -58,7 +59,7 @@ def _launch(
     monkeypatch.setattr(docker_utils.subprocess, "run", fake_run)
 
     with pytest.raises(SystemExit) as exit_info:
-        app.meta(["convert", "rvc4", "--path", str(config)])
+        app.meta(["convert", "rvc4", "--path", str(config), *(extra or [])])
     assert exit_info.value.code == 0
     assert launch is not None
 
@@ -179,3 +180,20 @@ def test_host_identity_follows_the_daemon(
     environment = launch.service["environment"]
     assert ("HOST_UID" in environment) is identity_passed
     assert ("HOST_GID" in environment) is identity_passed
+
+
+def test_overrides_reach_the_container_verbatim(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`rvc4.encodings` takes the encodings JSON inline.
+
+    The entrypoints exec their argv directly, so nothing may rewrite the
+    double quotes on the way -- `json.loads` rejects the single-quoted
+    result and the conversion never starts.
+    """
+    config = _project(work_dir)
+    encodings = '{"activation_encodings": {"x": [{"bitwidth": 8}]}}'
+
+    launch = _launch(config, monkeypatch, extra=["rvc4.encodings", encodings])
+
+    assert encodings in launch.container_args
