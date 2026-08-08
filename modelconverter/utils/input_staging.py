@@ -857,7 +857,13 @@ def _hash_dir(path: Path, files: list[_InputFile] | None = None) -> str:
     both, and the container would then quantize against the previous
     images without any sign that it had. The inode and the change time
     are stat'ed anyway and neither survives a file being replaced, so
-    they are folded in as well.
+    they are folded in as well -- with the device, since an inode number
+    is only unique within one filesystem.
+
+    This is still a description of the metadata rather than of the bytes:
+    a filesystem that does not maintain a change time (FAT, some network
+    mounts) can hide an in-place edit that keeps the size and the
+    modification time.
     """
     if files is None:
         files = sorted(_iter_input_files(path), key=lambda f: f.relative)
@@ -867,7 +873,7 @@ def _hash_dir(path: Path, files: list[_InputFile] | None = None) -> str:
         h.update(
             f"{file.relative}\0{file.stat.st_size}\0"
             f"{file.stat.st_mtime_ns}\0{file.stat.st_ctime_ns}\0"
-            f"{file.stat.st_ino}".encode()
+            f"{file.stat.st_dev}\0{file.stat.st_ino}".encode()
         )
     return h.hexdigest()[:16]
 

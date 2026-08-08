@@ -6,6 +6,7 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -989,3 +990,37 @@ def test_replacing_directory_content_in_place_restages_it(
     assert (
         _host_staged_path(second, cache_dir) / "image.raw"
     ).read_bytes() == b"bbbb"
+
+
+def _fabricated_file(
+    path: Path, **stat_fields: int
+) -> "input_staging._InputFile":
+    """An enumerated file with a stat this test controls.
+
+    Two filesystems cannot be mounted from a unit test, so the one
+    property that distinguishes them -- `st_dev` -- has to be supplied.
+    """
+    stat = SimpleNamespace(
+        st_size=4, st_mtime_ns=1, st_ctime_ns=1, st_dev=1, st_ino=7
+    )
+    for name, value in stat_fields.items():
+        setattr(stat, name, value)
+    return input_staging._InputFile("sample.npy", path, stat)  # type: ignore[arg-type]
+
+
+def test_directory_digest_separates_matching_inodes_on_other_devices(
+    tmp_path: Path,
+) -> None:
+    """An inode number is only unique within one filesystem.
+
+    Two calibration sets on different mounts can agree on inode, size
+    and modification time, and everything else in the digest is the file
+    name -- so without the device they share a cache entry and the
+    second conversion silently reuses the first one's images.
+    """
+    on_one = _fabricated_file(tmp_path / "a" / "sample.npy", st_dev=1)
+    on_other = _fabricated_file(tmp_path / "b" / "sample.npy", st_dev=2)
+
+    assert input_staging._hash_dir(Path("data"), [on_one]) != (
+        input_staging._hash_dir(Path("data"), [on_other])
+    )
