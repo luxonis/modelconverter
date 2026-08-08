@@ -140,7 +140,11 @@ def get_external_data_paths(model_path: str | Path) -> list[Path]:
     return paths
 
 
-def get_external_data_path(model_path: str | Path) -> Path | None:
-    """Returns the first companion file holding external tensor data, if
-    any."""
-    return next(iter(get_external_data_paths(model_path)), None)
+def has_external_data(model_path: str | Path) -> bool:
+    """Whether the model keeps any of its tensors in companion files.
+
+    Callers that re-save the model consolidate every tensor into one new
+    file, so they only need to know *whether* there is external data --
+    not where it currently lives.
+    """
+    return bool(get_external_data_paths(model_path))

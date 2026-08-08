@@ -380,3 +380,54 @@ def intermediate_info_onnx(path: str | Path) -> Path:
         nodes, "IntermediateModel", [inp], [out], value_info=[described]
     )
     return _save(graph, path)
+
+
+def multi_file_external_onnx(path: str | Path) -> list[Path]:
+    """A conv model whose weight and bias each live in their own file.
+
+    Returns the companion files, in sorted order. This is the layout
+    ``all_tensors_to_one_file=False`` produces; two initializers are the
+    smallest model that tells "copies the external data" apart from
+    "copies *all* of it". Unlike L{weights_only_external_onnx} the graph
+    has real inputs and outputs, so it can be put through a conversion.
+    """
+    path = Path(path)
+    inp = helper.make_tensor_value_info("img", TensorProto.FLOAT, [1, 3, 8, 8])
+    out = helper.make_tensor_value_info("out", TensorProto.FLOAT, [1, 2, 8, 8])
+    node = helper.make_node(
+        "Conv",
+        ["img", "weight", "bias"],
+        ["out"],
+        kernel_shape=[3, 3],
+        pads=[1] * 4,
+    )
+    graph = helper.make_graph(
+        [node],
+        "MultiFileExternal",
+        [inp],
+        [out],
+        initializer=[
+            numpy_helper.from_array(
+                np.zeros((2, 3, 3, 3), dtype=np.float32), name="weight"
+            ),
+            numpy_helper.from_array(
+                np.zeros((2,), dtype=np.float32), name="bias"
+            ),
+        ],
+    )
+    model = helper.make_model(
+        graph, opset_imports=[helper.make_opsetid("", _OPSET)]
+    )
+    model.ir_version = _IR_VERSION
+    checker.check_model(model)
+
+    before = set(path.parent.iterdir())
+    onnx.save_model(
+        model,
+        str(path),
+        save_as_external_data=True,
+        # Naming a location would collapse the tensors back into one file.
+        all_tensors_to_one_file=False,
+        size_threshold=0,
+    )
+    return sorted(set(path.parent.iterdir()) - before - {path})
