@@ -408,7 +408,18 @@ You can run the built image either manually using the `docker run` command or us
    export AWS_S3_ENDPOINT_URL=<your_aws_s3_endpoint_url>
    ```
 
-2. Execute the conversion:
+2. Create the mounted directories, unless you are using the `modelconverter` CLI
+   (which creates them for you):
+
+   ```bash
+   mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}/modelconverter" output
+   ```
+
+   A rootful Docker daemon creates a missing bind-mount source itself, and it
+   creates it as `root`. The container hands both directories back to you on
+   exit, but creating them up front means they are yours from the start.
+
+3. Execute the conversion:
 
 - If using the `modelconverter` CLI (recommended — it handles staging inputs and
   fixing output ownership for you):
