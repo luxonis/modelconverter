@@ -85,7 +85,10 @@ class Exporter(ABC):
         # A model saved with `all_tensors_to_one_file=False` has one companion
         # file per tensor, and each is located relative to the model, so the
         # layout has to be reproduced rather than flattened.
-        model_dir = input_model.resolve().parent
+        # `get_external_data_paths` anchors the returned paths to the resolved
+        # model *directory* -- not the directory of the resolved model, which
+        # differs when the model itself is a symlink into another directory.
+        model_dir = input_model.parent.resolve()
         for external_data_path in external_data_paths:
             relative = external_data_path.relative_to(model_dir)
             for directory in (self.intermediate_outputs_dir, self.output_dir):
