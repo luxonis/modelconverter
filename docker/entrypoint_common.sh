@@ -5,6 +5,10 @@
 # target's own environment setup, with the container's arguments intact. The
 # Dockerfiles copy it next to the entrypoint, at /app/entrypoint_common.sh.
 
+# Where the image puts the mounts. Only ever overridden by the tests, which
+# cannot let a `chown -R` loose on a real `/app`.
+APP_ROOT="${APP_ROOT:-/app}"
+
 # The conversion tools run as root, so anything written to the cache or the
 # output directory would otherwise be owned by root on the host.
 chown_mounts() {
@@ -13,14 +17,24 @@ chown_mounts() {
           "$container_uid" != 0 || "$host_uid" != 0 ]]; then
         return
     fi
-    # `/app/tests` is bind-mounted into dev containers, where running the suite
-    # leaves `__pycache__` and report files behind in the host checkout.
-    chown -R "$HOST_UID:$HOST_GID" /app/output /app/tests 2>/dev/null || true
+    owner="$HOST_UID:$HOST_GID"
+    # `tests` and `modelconverter` are bind-mounted into dev containers, where
+    # running the suite leaves `__pycache__` and report files behind in the
+    # host checkout. Neither exists in a plain conversion.
+    for mount in "$APP_ROOT/output" "$APP_ROOT/tests" \
+                 "$APP_ROOT/modelconverter"; do
+        [[ -d $mount ]] && chown -R "$owner" "$mount" 2>/dev/null
+    done
+    # The cache mount root too: when its host directory did not exist, the
+    # daemon created it as root and nothing else ever repairs that -- the next
+    # run would fail to stage its inputs into it.
+    chown "$owner" "$APP_ROOT/shared_with_container" 2>/dev/null
     # The staged inputs are written by the host user and only read in here, and
     # they are the part of the cache that grows: walking them after every run
     # would cost more the more inputs have been cached.
-    find /app/shared_with_container -mindepth 1 -maxdepth 1 ! -name inputs \
-        -exec chown -R "$HOST_UID:$HOST_GID" {} + 2>/dev/null || true
+    find "$APP_ROOT/shared_with_container" -mindepth 1 -maxdepth 1 \
+        ! -name inputs -exec chown -R "$owner" {} + 2>/dev/null
+    return 0
 }
 
 child_pid=""

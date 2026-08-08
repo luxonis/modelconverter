@@ -151,10 +151,14 @@ def generate_compose_config(
         f"{get_cache_dir()}:{CONTAINER_SHARED_DIR}",
         f"{cwd / 'output'}:/app/output",
     ]
+    is_dev = image.endswith("-dev")
     # Mount the test suite (excluded from the image via .dockerignore) so a
     # dev container can run it, e.g.
-    # `modelconverter shell <t> --dev -c "pytest -m <t>"`.
-    if (cwd / "tests").exists():
+    # `modelconverter shell <t> --dev -c "pytest -m <t>"`. Only for dev images:
+    # a plain conversion has no use for it, and the entrypoint hands the mount
+    # back to the invoking user on exit -- which has no business touching an
+    # unrelated `tests/` that merely happens to sit in the working directory.
+    if is_dev and (cwd / "tests").exists():
         volumes.append(f"{cwd / 'tests'}:/app/tests")
     if (cwd / "pyproject.toml").exists():
         volumes.append(f"{cwd / 'pyproject.toml'}:/app/pyproject.toml")
@@ -165,7 +169,7 @@ def generate_compose_config(
     # In dev images the package is baked in (`pip install -e .`), so a source
     # change would otherwise need an image rebuild to take effect. Mount the
     # host source over it so edits to modelconverter are live in the container.
-    if image.endswith("-dev") and (cwd / "modelconverter").exists():
+    if is_dev and (cwd / "modelconverter").exists():
         volumes.append(f"{cwd / 'modelconverter'}:/app/modelconverter")
 
     config = {

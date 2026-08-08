@@ -33,12 +33,13 @@ def _launch(
     monkeypatch: pytest.MonkeyPatch,
     *,
     namespace_mode: str = "rootless",
+    image: str = _IMAGE,
     extra: list[str] | None = None,
 ) -> _Launch:
     launch: _Launch | None = None
 
     monkeypatch.setattr(
-        docker_utils, "get_docker_image", lambda *_a, **_k: _IMAGE
+        docker_utils, "get_docker_image", lambda *_a, **_k: image
     )
     monkeypatch.setattr(docker_utils, "docker_bin", lambda: "docker")
     monkeypatch.setattr(
@@ -197,3 +198,37 @@ def test_overrides_reach_the_container_verbatim(
     launch = _launch(config, monkeypatch, extra=["rvc4.encodings", encodings])
 
     assert encodings in launch.container_args
+
+
+def test_the_repository_is_only_mounted_into_dev_images(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The entrypoint hands every mount back to the invoking user, so a
+    `tests/` that merely happens to sit in the working directory must not
+    be mounted -- let alone chowned -- by a plain conversion."""
+    config = _project(work_dir)
+    (work_dir / "tests").mkdir()
+    (work_dir / "modelconverter").mkdir()
+
+    volumes = _launch(config, monkeypatch).service["volumes"]
+
+    assert not [
+        v for v in volumes if v.endswith(("/app/tests", "/app/modelconverter"))
+    ]
+
+
+def test_the_repository_is_mounted_into_a_dev_image(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A dev container runs the suite and the host source over the
+    installed package, which is what those mounts are for."""
+    config = _project(work_dir)
+    (work_dir / "tests").mkdir()
+    (work_dir / "modelconverter").mkdir()
+
+    volumes = _launch(config, monkeypatch, image=f"{_IMAGE}-dev").service[
+        "volumes"
+    ]
+
+    assert f"{work_dir / 'tests'}:/app/tests" in volumes
+    assert f"{work_dir / 'modelconverter'}:/app/modelconverter" in volumes

@@ -6,9 +6,10 @@ exercises the logic of all of them. The other targets add environment
 setup that only exists inside their image (SNPE, Hailo), so they cannot
 be run here.
 
-Its ownership handling is not covered: ``chown_mounts`` chowns absolute
-paths that only exist inside the image, so a host-side test would either
-do nothing or touch a real ``/app``.
+Its ownership handling runs against ``APP_ROOT``, which the image leaves
+at ``/app``; the tests point it at a temp tree and put a recording
+``chown`` on PATH, since letting a real ``chown -R`` run as part of the
+suite is not an option.
 """
 
 import os
@@ -160,3 +161,91 @@ def test_entrypoint_forwards_signals_and_waits_for_child_cleanup(
         process.send_signal(sent)
         assert process.wait(timeout=TIMEOUT) == exit_code
         assert signal_file.read_text() == signal_name
+
+
+@pytest.fixture
+def mounts(tmp_path: Path) -> Path:
+    """An ``APP_ROOT`` laid out the way the container's mounts are."""
+    app = tmp_path / "app_root"
+    (app / "output").mkdir(parents=True)
+    cache = app / "shared_with_container"
+    (cache / "inputs" / "digest").mkdir(parents=True)
+    (cache / "models").mkdir()
+    return app
+
+
+def _recording_chown(tmp_path: Path) -> Path:
+    """Puts a ``chown`` that only records its arguments on PATH."""
+    recorder = tmp_path / "chown"
+    recorder.write_text(
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$CHOWN_LOG"\n'
+    )
+    recorder.chmod(0o755)
+    return tmp_path / "chown.log"
+
+
+def _handover_env(tmp_path: Path, mounts: Path, log: Path) -> dict[str, str]:
+    return _entrypoint_env(tmp_path, "exit 0\n") | {
+        "HOST_UID": "1234",
+        "HOST_GID": "5678",
+        "APP_ROOT": str(mounts),
+        "CHOWN_LOG": str(log),
+    }
+
+
+def _run_handover(entrypoint: Path, env: dict[str, str]) -> None:
+    with _entrypoint_process(
+        entrypoint, "convert", "rvc2", env=env
+    ) as process:
+        assert process.wait(timeout=TIMEOUT) == 0
+
+
+def test_entrypoint_hands_the_mounts_back_to_the_host_user(
+    tmp_path: Path, entrypoint: Path, mounts: Path
+) -> None:
+    log = _recording_chown(tmp_path)
+
+    _run_handover(entrypoint, _handover_env(tmp_path, mounts, log))
+
+    cache = mounts / "shared_with_container"
+    chowned = log.read_text().splitlines()
+    assert f"-R 1234:5678 {mounts / 'output'}" in chowned
+    # The cache root itself. When its host directory did not exist the daemon
+    # created it as root, and nothing else ever repairs that.
+    assert f"1234:5678 {cache}" in chowned
+    assert f"-R 1234:5678 {cache / 'models'}" in chowned
+    # The staged inputs are written by the host user and only read in the
+    # container, so walking them after every run would be pure cost.
+    assert not any("inputs" in line for line in chowned)
+
+
+def test_entrypoint_hands_back_the_dev_mounts_it_finds(
+    tmp_path: Path, entrypoint: Path, mounts: Path
+) -> None:
+    """A dev container mounts the host checkout over the installed
+    package and the suite over the image's, and running as root leaves
+    ``__pycache__`` in both."""
+    (mounts / "tests").mkdir()
+    (mounts / "modelconverter").mkdir()
+    log = _recording_chown(tmp_path)
+
+    _run_handover(entrypoint, _handover_env(tmp_path, mounts, log))
+
+    chowned = log.read_text().splitlines()
+    assert f"-R 1234:5678 {mounts / 'tests'}" in chowned
+    assert f"-R 1234:5678 {mounts / 'modelconverter'}" in chowned
+
+
+def test_entrypoint_leaves_ownership_alone_without_a_host_identity(
+    tmp_path: Path, entrypoint: Path, mounts: Path
+) -> None:
+    """Under a rootless or user-namespaced daemon the launcher passes no
+    identity, and chowning anyway would hand the files to an unmapped
+    sub-uid."""
+    log = _recording_chown(tmp_path)
+    env = _handover_env(tmp_path, mounts, log)
+    del env["HOST_UID"]
+
+    _run_handover(entrypoint, env)
+
+    assert not log.exists()
