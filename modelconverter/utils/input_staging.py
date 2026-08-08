@@ -81,6 +81,11 @@ _PATH_ARG_FIELDS: dict[str, frozenset[str]] = {
     "snpe_onnx_to_dlc_args": frozenset({"--quantization_overrides"}),
 }
 
+# Config fields naming a *destination*. These look exactly like input paths but
+# must keep pointing at the user's location: rewriting one would send the
+# converted model into the cache instead.
+_OUTPUT_FIELDS = {"output_remote_url"}
+
 # Never copied along when a directory is staged: repository metadata is not a
 # model input and would dominate the copy.
 _IGNORED_DIR_NAMES = {".git"}
@@ -159,7 +164,7 @@ def _maybe_stage_token(
             return f"{flag}={staged}" if staged is not None else None
         return None
 
-    if token.startswith("--"):
+    if _is_flag(token):
         return None
 
     # A value explicitly introduced by a path flag.
@@ -168,13 +173,47 @@ def _maybe_stage_token(
 
     # A value introduced by a flag we must not stage, or by an unknown/boolean
     # flag: leave it alone.
-    if prev is not None and prev.startswith("--"):
+    if prev is not None and _is_flag(prev):
         return None
 
-    # A bare positional token (target, config-override value, ...). Only stage
+    # A config override (`<key> <value>`). The schema knows what the value is,
+    # which beats guessing from its shape: a bare directory name is staged when
+    # the key calls for a path, and a destination is never staged at all.
+    if prev is not None:
+        kind = _override_key_kind(prev)
+        if kind == "output":
+            return None
+        if kind == "path":
+            return _stage_value(token, inputs_dir)
+
+    # A bare positional token (target, unknown override value, ...). Only stage
     # it when it clearly looks like an existing local path.
     if _is_path_like(token):
         return _stage_value(token, inputs_dir)
+    return None
+
+
+def _is_flag(token: str) -> bool:
+    """Whether ``token`` is an option rather than a value.
+
+    Single-dash aliases count: the value after ``-c`` is no more an input
+    path than one after ``--config``. A negative number is a value.
+    """
+    return len(token) > 1 and token[0] == "-" and not token[1].isdigit()
+
+
+def _override_key_kind(key: str) -> str | None:
+    """Classifies a config-override key by what its value names.
+
+    Overrides are dotted paths into the config (``calibration.path``), so
+    the same schema tables that drive config-file staging apply here.
+    """
+    if key in _OUTPUT_FIELDS:
+        return "output"
+    head, _, leaf = key.rpartition(".")
+    parent = head.rsplit(".", 1)[-1] or None
+    if _is_path_field(leaf, parent):
+        return "path"
     return None
 
 

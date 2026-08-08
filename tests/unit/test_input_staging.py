@@ -905,3 +905,51 @@ def test_a_symlink_pointing_back_up_is_not_followed(
     assert (staged_dir / "image.raw").read_bytes() == b"image"
     assert not (staged_dir / "all").exists()
     assert not (staged_dir / "here").exists()
+
+
+def test_an_output_destination_override_is_left_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rewriting a destination would upload the converted model into the
+    cache instead of where the user asked for it."""
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "nas").mkdir()
+    tokens = ["convert", "rvc4", "output_remote_url", "./nas"]
+
+    assert input_staging.stage_inputs(tokens, {"--path"}) == tokens
+
+
+def test_a_bare_directory_name_is_staged_for_a_path_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The config schema says the value is a path, which beats guessing
+    from a shape that a bare name does not have."""
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "calib").mkdir()
+    (tmp_path / "calib" / "image.raw").write_bytes(b"image")
+    tokens = ["convert", "rvc4", "calibration.path", "calib"]
+
+    staged = input_staging.stage_inputs(tokens, {"--path"})
+
+    assert staged[3].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
+    assert (
+        _host_staged_path(staged[3], cache_dir) / "image.raw"
+    ).read_bytes() == b"image"
+
+
+def test_a_single_dash_flag_value_is_not_staged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`-c` takes a shell command, not an input path; only long options
+    were recognised as introducing a value."""
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "script.py").write_bytes(b"print()")
+    tokens = ["shell", "rvc4", "-c", "./script.py"]
+
+    assert input_staging.stage_inputs(tokens, {"--path"}) == tokens
