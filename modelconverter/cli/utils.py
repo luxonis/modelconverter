@@ -26,6 +26,7 @@ from modelconverter.utils.constants import (
     MISC_DIR,
     MODELS_DIR,
     OUTPUTS_DIR,
+    in_docker,
 )
 from modelconverter.utils.filesystem_utils import set_input_base
 from modelconverter.utils.hub_requests import Request
@@ -61,10 +62,14 @@ def resolve_output_dir(output_dir: str) -> Path:
     Only the host's ``./output`` is mounted into the container, so an
     absolute path -- which C{pathlib} would let win over the mount point
     -- or one escaping upwards through C{..} would be written to a
-    container-only location and lost when the container is removed.
+    container-only location and lost when the container is removed. A
+    native run writes straight to the host filesystem, where every path
+    the user names is reachable, so any path is honored there.
     """
     relative = Path(output_dir)
-    if not relative.parts or relative.is_absolute() or ".." in relative.parts:
+    if in_docker() and (
+        not relative.parts or relative.is_absolute() or ".." in relative.parts
+    ):
         raise ModelconverterException(
             f"Invalid `--output-dir` '{output_dir}': it must name a "
             f"directory inside '{OUTPUTS_DIR}'. Pass a relative path "
