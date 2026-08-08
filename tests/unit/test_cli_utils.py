@@ -95,6 +95,24 @@ def test_output_dir_refuses_a_directory_it_did_not_produce():
     assert (foreign / "keep.txt").read_text() == "mine"
 
 
+@pytest.mark.parametrize("output_dir", ["/abs/results", "../escape", ""])
+def test_output_dir_must_stay_under_outputs_dir(output_dir: str):
+    """Only `./output` is mounted into the container: an absolute or
+    upward path would be written somewhere the host never sees, and an
+    empty one names `./output` itself."""
+    with pytest.raises(
+        ModelconverterException, match="Invalid `--output-dir`"
+    ):
+        get_output_dir_name(Target.RVC2, "model", output_dir)
+
+
+def test_output_dir_ignores_a_trailing_separator():
+    assert (
+        get_output_dir_name(Target.RVC2, "model", "results/")
+        == OUTPUTS_DIR / "results"
+    )
+
+
 def test_output_dir_explicit_and_missing_is_kept():
     # output_dir provided but does not exist -> the rmtree branch is skipped.
     out = get_output_dir_name(Target.RVC2, "model", "fresh")

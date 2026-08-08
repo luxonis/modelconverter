@@ -55,13 +55,31 @@ class ModelType(str, Enum):
         raise ValueError(f"Unsupported model format: {suffix}")
 
 
+def resolve_output_dir(output_dir: str) -> Path:
+    """Resolves a user-provided ``--output-dir`` under L{OUTPUTS_DIR}.
+
+    Only the host's ``./output`` is mounted into the container, so an
+    absolute path -- which C{pathlib} would let win over the mount point
+    -- or one escaping upwards through C{..} would be written to a
+    container-only location and lost when the container is removed.
+    """
+    relative = Path(output_dir)
+    if not relative.parts or relative.is_absolute() or ".." in relative.parts:
+        raise ModelconverterException(
+            f"Invalid `--output-dir` '{output_dir}': it must name a "
+            f"directory inside '{OUTPUTS_DIR}'. Pass a relative path "
+            "without `..`."
+        )
+    return OUTPUTS_DIR / relative
+
+
 def get_output_dir_name(
     target: Target, name: str, output_dir: str | None
 ) -> Path:
     name = sanitize_net_name(name)
     date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
     if output_dir is not None:
-        dest = OUTPUTS_DIR / output_dir
+        dest = resolve_output_dir(output_dir)
         if dest.exists():
             # `OUTPUTS_DIR` is the user's `./output`, so a rerun may only clear
             # a directory a previous conversion produced. Inference results

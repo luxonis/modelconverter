@@ -24,6 +24,7 @@ from modelconverter.cli import (
     get_configs,
     get_output_dir_name,
     init_dirs,
+    resolve_output_dir,
 )
 from modelconverter.packages import (
     get_analyzer,
@@ -48,7 +49,6 @@ from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.constants import (
     CONVERSION_MARKER,
     MODELS_DIR,
-    OUTPUTS_DIR,
     get_cache_dir,
 )
 from modelconverter.utils.general import sanitize_net_name
@@ -440,9 +440,12 @@ def infer(
         cfg = mult_cfg.get_stage_config(stage)
         # Write inference results to `./output/<output_dir>` on the host
         # instead of an ephemeral path inside the container.
-        output_path = OUTPUTS_DIR / output_dir
+        output_path = resolve_output_dir(output_dir)
+        # Derived from the resolved path, not from the raw argument: a
+        # trailing slash would otherwise put the log *inside* the results
+        # directory, which the emptiness guard then refuses to overwrite.
         setup_logging(
-            file=str(OUTPUTS_DIR / f"{output_dir}.log"),
+            file=str(output_path.parent / f"{output_path.name}.log"),
             use_rich=mult_cfg.rich_logging,
         )
         logger.info("Starting inference")
