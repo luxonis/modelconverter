@@ -38,7 +38,9 @@ chown_mounts() {
 }
 
 child_pid=""
+signal_interrupted=""
 forward_signal() {
+    signal_interrupted=1
     if [[ -n "$child_pid" ]]; then
         kill "-$1" "$child_pid" 2>/dev/null || true
     fi
@@ -60,12 +62,17 @@ else
 fi
 child_pid=$!
 
-# A trapped signal interrupts `wait` before the child has necessarily exited.
-# Keep waiting so the converter can finish its own signal cleanup.
+# A trapped signal interrupts `wait` before the child has necessarily exited --
+# possibly in the very instant the child exits, in which case `wait` reports
+# 128+signal even though the child's own status was something else. Only a
+# round no trap interrupted is trusted; after an interrupted one, waiting
+# again either keeps waiting for the live child or has bash report the exit
+# status it remembers for a reaped one.
 while true; do
+    signal_interrupted=""
     wait "$child_pid"
     status=$?
-    if ! kill -0 "$child_pid" 2>/dev/null; then
+    if [[ -z "$signal_interrupted" ]]; then
         break
     fi
 done
