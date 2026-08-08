@@ -52,7 +52,11 @@ from modelconverter.utils.constants import (
     get_cache_dir,
 )
 from modelconverter.utils.general import sanitize_net_name
-from modelconverter.utils.input_staging import path_flags_for, stage_inputs
+from modelconverter.utils.input_staging import (
+    in_use_staged_inputs,
+    path_flags_for,
+    stage_inputs,
+)
 from modelconverter.utils.nn_archive import generate_archive
 from modelconverter.utils.telemetry import (
     COMMAND_EVENT,
@@ -850,6 +854,19 @@ def cache_info() -> None:
     )
 
 
+def _confirm(question: str) -> bool:
+    """Asks C{question}, treating an unusable stdin as a decline.
+
+    Piped or closed stdin (a CI step, `</dev/null`) makes C{input()} raise
+    C{EOFError}; a destructive command must not abort with a traceback
+    there, nor assume consent nobody gave.
+    """
+    try:
+        return Confirm.ask(question)
+    except (EOFError, KeyboardInterrupt):
+        return False
+
+
 @cache_app.command(name="clean", sort_key=1)
 def cache_clean(
     yes: Annotated[
@@ -871,8 +888,19 @@ def cache_clean(
     # A root that cannot even be listed still has something to clean.
     entries = _cache_entries(root)
     if entries is None or entries:
+        # The cache is bind-mounted into every running container, so emptying
+        # it would pull the staged inputs out from under a conversion that is
+        # still reading them.
+        in_use = in_use_staged_inputs()
+        if in_use:
+            console.print(
+                f"Not clearing [cyan]{root}[/]: {len(in_use)} staged input(s) "
+                "are still in use by a running conversion. Wait for it to "
+                "finish and try again."
+            )
+            return
         size, _ = _dir_stats(root)
-        if not yes and not Confirm.ask(
+        if not yes and not _confirm(
             f"Clear the entire ModelConverter cache at [cyan]{root}[/]?"
         ):
             console.print("Cache clean cancelled.")

@@ -640,6 +640,20 @@ def _is_in_use(entry: Path) -> bool:
     return in_use
 
 
+def in_use_staged_inputs() -> list[Path]:
+    """Returns the staged input entries a live process has claimed.
+
+    The container reads its staged inputs throughout the conversion, so
+    anything that empties the cache wholesale (``cache clean``) has to be
+    able to see that a run in another terminal is still using it.
+    """
+    try:
+        entries = sorted((get_cache_dir() / "inputs").iterdir())
+    except OSError:
+        return []
+    return [entry for entry in entries if entry.is_dir() and _is_in_use(entry)]
+
+
 def _prune_superseded_stagings(
     src: Path, keep: Path, inputs_dir: Path
 ) -> None:
