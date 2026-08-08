@@ -34,6 +34,13 @@ def run_script(outputs):
     return np.concatenate([outputs[name].flatten() for name in sorted(outputs)])
 """
 
+# Takes only the first output, so its results are distinguishable from
+# `LINK_SCRIPT`'s by shape alone.
+FIRST_OUTPUT_SCRIPT = """
+def run_script(outputs):
+    return outputs[sorted(outputs)[0]].flatten()
+"""
+
 N_CALIBRATION_IMAGES = 3
 
 
@@ -181,28 +188,31 @@ def test_linked_output_calibration_points_at_the_output_dir(
     ]
 
 
-def test_two_script_linked_inputs_share_the_stage_directory(
+def test_two_script_linked_inputs_calibrate_with_their_own_scripts(
     exporter: MultiStageExporter, config: Config
 ):
     """Both inputs of a stage may be calibrated from the same previous
-    stage.
+    stage, each with a script of its own.
 
-    The script is written into one directory per linked stage, so the
-    second input finds it already there -- and creating it unconditionally
-    aborts the conversion after the first stage's inference has run.
+    The generated data is keyed by the receiving input, not just the
+    linked stage; sharing one directory would leave both inputs
+    calibrated on whichever script ran last.
     """
     second = config.stages["second"]
     second.inputs[1].calibration = LinkCalibrationConfig(
-        stage="first", script=LINK_SCRIPT
+        stage="first", script=FIRST_OUTPUT_SCRIPT
     )
 
     exporter._produce_calibration_data(exporter.exporters["second"])
 
-    assert (
-        exporter.intermediate_outputs_dir / "first" / "script.py"
-    ).is_file()
+    shapes = []
     for inp in second.inputs:
         assert isinstance(inp.calibration, ImageCalibrationConfig)
+        assert (inp.calibration.path.parent / "script.py").is_file()
         assert sorted(p.name for p in inp.calibration.path.iterdir()) == [
             f"{i}.npy" for i in range(N_CALIBRATION_IMAGES)
         ]
+        shapes.append(np.load(inp.calibration.path / "0.npy").shape)
+    # (1, 10) and (1, 5, 5, 5) concatenated for one input; only (1, 10)
+    # flattened for the other.
+    assert shapes == [(135,), (10,)]
