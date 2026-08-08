@@ -812,3 +812,48 @@ def test_a_long_override_value_is_not_treated_as_a_path(
     tokens = ["convert", "rvc4", "rvc4.encodings", encodings]
 
     assert input_staging.stage_inputs(tokens, {"--path"}) == tokens
+
+
+def test_stages_the_quantization_overrides_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`rvc4.snpe_onnx_to_dlc_args` is a raw argument list, but the value
+    after `--quantization_overrides` is a file the config opens."""
+    cache_dir = tmp_path / "cache"
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    overrides = config_dir / "encodings.json"
+    overrides.write_text('{"activation_encodings": {}, "param_encodings": {}}')
+    config_path = config_dir / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "rvc4": {
+                    "snpe_onnx_to_dlc_args": [
+                        "--quantization_overrides",
+                        "encodings.json",
+                        "--float_bw",
+                        "16",
+                    ]
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    staged = input_staging.stage_inputs(
+        ["--config", str(config_path)], {"--config"}
+    )[1]
+
+    rewritten = yaml.safe_load(
+        _host_staged_path(staged, cache_dir).read_text()
+    )
+    args = rewritten["rvc4"]["snpe_onnx_to_dlc_args"]
+    assert args[0] == "--quantization_overrides"
+    assert args[1].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
+    # Everything else in the list is passed to the tool verbatim.
+    assert args[2:] == ["--float_bw", "16"]
+    assert (
+        _host_staged_path(args[1], cache_dir).read_text()
+        == overrides.read_text()
+    )

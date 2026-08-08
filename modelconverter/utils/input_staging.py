@@ -71,6 +71,16 @@ _PATH_FIELDS: dict[str, frozenset[str] | None] = {
     "encodings": frozenset({"rvc4"}),
 }
 
+# Config fields holding a list of raw tool arguments, mapped to the flags
+# within them whose *value* is a local path. The list as a whole is not a path
+# field: only the token following one of these flags is staged, so the flags
+# themselves and every unrelated argument are passed through untouched.
+_PATH_ARG_FIELDS: dict[str, frozenset[str]] = {
+    # `RVC4Config.validate_quantization_overrides` opens this file while the
+    # config is validated, inside the container.
+    "snpe_onnx_to_dlc_args": frozenset({"--quantization_overrides"}),
+}
+
 # Never copied along when a directory is staged: repository metadata is not a
 # model input and would dominate the copy.
 _IGNORED_DIR_NAMES = {".git"}
@@ -420,6 +430,10 @@ def _rewrite_config_paths(
         return rewritten, changed
 
     if isinstance(value, list):
+        if key is not None and key in _PATH_ARG_FIELDS:
+            return _rewrite_arg_list(
+                value, _PATH_ARG_FIELDS[key], config_dir, inputs_dir
+            )
         changed = False
         rewritten_list = []
         # A list does not introduce a key of its own: an entry of `inputs`
@@ -443,6 +457,35 @@ def _rewrite_config_paths(
     if staged is None:
         return value, False
     return staged, True
+
+
+def _rewrite_arg_list(
+    args: list[Any],
+    path_flags: frozenset[str],
+    config_dir: Path,
+    inputs_dir: Path,
+) -> tuple[list[Any], bool]:
+    """Stages the values ``path_flags`` introduce in a raw argument list.
+
+    The list is passed to the conversion tool verbatim, so everything
+    else in it -- the flags themselves, numeric options, tool-specific
+    switches -- has to survive untouched.
+    """
+    rewritten: list[Any] = []
+    changed = False
+    for index, item in enumerate(args):
+        previous = args[index - 1] if index else None
+        staged = (
+            _stage_config_reference(item, config_dir, inputs_dir)
+            if isinstance(item, str) and previous in path_flags
+            else None
+        )
+        if staged is None:
+            rewritten.append(item)
+        else:
+            rewritten.append(staged)
+            changed = True
+    return rewritten, changed
 
 
 def _is_path_field(key: str | None, parent: str | None) -> bool:
