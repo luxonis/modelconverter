@@ -1,5 +1,5 @@
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Final
 
 from luxonis_ml.utils.registry import Registry
@@ -28,10 +28,14 @@ def get_cache_dir() -> Path:
 # the on-disk cache directory and a local `./output` directory.
 _IN_DOCKER: Final[bool] = in_docker()
 
-CONTAINER_SHARED_DIR: Final[Path] = Path("/app/shared_with_container")
+# A container-side location: pure so that paths built from it keep their
+# forward slashes even when the launcher runs on a Windows host.
+CONTAINER_SHARED_DIR: Final[PurePosixPath] = PurePosixPath(
+    "/app/shared_with_container"
+)
 
 SHARED_DIR: Final[Path] = (
-    CONTAINER_SHARED_DIR if _IN_DOCKER else get_cache_dir()
+    Path(CONTAINER_SHARED_DIR) if _IN_DOCKER else get_cache_dir()
 )
 OUTPUTS_DIR: Final[Path] = (
     Path("/app/output") if _IN_DOCKER else Path.cwd() / "output"

@@ -860,9 +860,14 @@ def _prune_superseded_stagings(
 
 
 def _to_container(dest: Path) -> str:
-    """Maps a host cache path to its container-side location."""
+    """Maps a host cache path to its container-side location.
+
+    The container runs Linux whatever the host is, so the rewritten
+    token must keep forward slashes even when the host's native paths
+    do not.
+    """
     relative = dest.relative_to(get_cache_dir())
-    return str(CONTAINER_SHARED_DIR / relative)
+    return str(CONTAINER_SHARED_DIR / relative.as_posix())
 
 
 def _hash_file(path: Path) -> str:
