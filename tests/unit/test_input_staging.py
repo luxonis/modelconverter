@@ -1,3 +1,4 @@
+import ast
 import errno
 import os
 import shutil
@@ -1024,3 +1025,64 @@ def test_directory_digest_separates_matching_inodes_on_other_devices(
     assert input_staging._hash_dir(Path("data"), [on_one]) != (
         input_staging._hash_dir(Path("data"), [on_other])
     )
+
+
+def test_a_serialized_argument_list_override_is_staged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same list written in a config file is rewritten already.
+
+    On the command line it arrives as one token, so nothing saw the path
+    inside it -- and the container opened it during config validation,
+    where the host path does not exist.
+    """
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    monkeypatch.chdir(tmp_path)
+    overrides = tmp_path / "encodings.json"
+    overrides.write_text('{"activation_encodings": {}, "param_encodings": {}}')
+
+    staged = input_staging.stage_inputs(
+        [
+            "convert",
+            "rvc4",
+            "rvc4.snpe_onnx_to_dlc_args",
+            '["--quantization_overrides", "encodings.json", "--float_bw", "16"]',
+        ],
+        {"--path"},
+    )[3]
+
+    # `LuxonisConfig` parses an override value with `ast.literal_eval`, so the
+    # rewritten token has to survive the same round trip.
+    args = ast.literal_eval(staged)
+    assert args[0] == "--quantization_overrides"
+    assert args[1].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
+    assert args[2:] == ["--float_bw", "16"]
+    assert (
+        _host_staged_path(args[1], cache_dir).read_text()
+        == overrides.read_text()
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "not a list at all",
+        '["--float_bw", "16"]',
+        '["--quantization_overrides", "missing.json"]',
+    ],
+)
+def test_argument_list_overrides_without_a_local_path_are_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """Only the value after a path flag is ours to rewrite.
+
+    A missing file is left for the config validation to report, the same
+    way a missing reference inside a config file is.
+    """
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    monkeypatch.chdir(tmp_path)
+    tokens = ["convert", "rvc4", "rvc4.snpe_onnx_to_dlc_args", value]
+
+    assert input_staging.stage_inputs(tokens, {"--path"}) == tokens

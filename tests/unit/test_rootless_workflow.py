@@ -1,5 +1,6 @@
 """Tests for the host-side rootless conversion workflow."""
 
+import ast
 import subprocess
 from pathlib import Path
 from typing import Any, NamedTuple, cast
@@ -232,3 +233,30 @@ def test_the_repository_is_mounted_into_a_dev_image(
 
     assert f"{work_dir / 'tests'}:/app/tests" in volumes
     assert f"{work_dir / 'modelconverter'}:/app/modelconverter" in volumes
+
+
+def test_a_serialized_argument_list_reaches_the_container_staged(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The config-file form of this list is rewritten by the config
+    walker; the CLI form has to come out the same way, since the
+    container opens the file either way."""
+    config = _project(work_dir)
+    encodings = work_dir / "encodings.json"
+    encodings.write_text('{"activation_encodings": {}, "param_encodings": {}}')
+
+    launch = _launch(
+        config,
+        monkeypatch,
+        extra=[
+            "rvc4.snpe_onnx_to_dlc_args",
+            f'["--quantization_overrides", "{encodings}"]',
+        ],
+    )
+
+    args = launch.container_args
+    value = args[args.index("rvc4.snpe_onnx_to_dlc_args") + 1]
+    staged = ast.literal_eval(value)
+    assert staged[0] == "--quantization_overrides"
+    assert staged[1].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
+    assert _staged_on_host(staged[1]).read_text() == encodings.read_text()

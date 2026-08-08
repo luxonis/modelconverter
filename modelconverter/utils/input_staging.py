@@ -14,6 +14,7 @@ locations. Only the files the conversion actually needs are copied,
 whatever the config happens to sit next to.
 """
 
+import ast
 import atexit
 import errno
 import hashlib
@@ -185,6 +186,8 @@ def _maybe_stage_token(
             return None
         if kind == "path":
             return _stage_value(token, inputs_dir)
+        if kind == "args":
+            return _stage_arg_list_token(token, prev, inputs_dir)
 
     # A bare positional token (target, unknown override value, ...). Only stage
     # it when it clearly looks like an existing local path.
@@ -212,9 +215,42 @@ def _override_key_kind(key: str) -> str | None:
         return "output"
     head, _, leaf = key.rpartition(".")
     parent = head.rsplit(".", 1)[-1] or None
+    if leaf in _PATH_ARG_FIELDS:
+        return "args"
     if _is_path_field(leaf, parent):
         return "path"
     return None
+
+
+def _stage_arg_list_token(
+    token: str, key: str, inputs_dir: Path
+) -> str | None:
+    """Stages the paths inside a serialized argument-list override.
+
+    The whole list arrives as a single CLI token, so the path it holds is
+    invisible to token staging -- while the same list written in a config
+    file is rewritten by L{_rewrite_arg_list}. ``LuxonisConfig`` reads
+    these values with ``ast.literal_eval`` and falls back to the raw
+    string, so reading them the same way here (and writing the result
+    back with ``repr``) keeps the two forms behaving alike.
+
+    Relative paths resolve against the working directory: the user typed
+    this one in a shell, not inside a config file.
+    """
+    try:
+        parsed = ast.literal_eval(token)
+    except (ValueError, SyntaxError, MemoryError, RecursionError):
+        return None
+    if not isinstance(parsed, list):
+        return None
+
+    rewritten, changed = _rewrite_arg_list(
+        parsed,
+        _PATH_ARG_FIELDS[key.rpartition(".")[2]],
+        Path.cwd(),
+        inputs_dir,
+    )
+    return repr(rewritten) if changed else None
 
 
 def _is_path_like(value: str) -> bool:
