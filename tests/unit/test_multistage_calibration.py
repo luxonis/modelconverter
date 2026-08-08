@@ -179,3 +179,30 @@ def test_linked_output_calibration_points_at_the_output_dir(
     assert sorted(p.name for p in path.iterdir()) == [
         f"{i}.npy" for i in range(N_CALIBRATION_IMAGES)
     ]
+
+
+def test_two_script_linked_inputs_share_the_stage_directory(
+    exporter: MultiStageExporter, config: Config
+):
+    """Both inputs of a stage may be calibrated from the same previous
+    stage.
+
+    The script is written into one directory per linked stage, so the
+    second input finds it already there -- and creating it unconditionally
+    aborts the conversion after the first stage's inference has run.
+    """
+    second = config.stages["second"]
+    second.inputs[1].calibration = LinkCalibrationConfig(
+        stage="first", script=LINK_SCRIPT
+    )
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+
+    assert (
+        exporter.intermediate_outputs_dir / "first" / "script.py"
+    ).is_file()
+    for inp in second.inputs:
+        assert isinstance(inp.calibration, ImageCalibrationConfig)
+        assert sorted(p.name for p in inp.calibration.path.iterdir()) == [
+            f"{i}.npy" for i in range(N_CALIBRATION_IMAGES)
+        ]

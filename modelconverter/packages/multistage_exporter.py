@@ -102,7 +102,9 @@ class MultiStageExporter:
                     / "script"
                 )
                 dest.mkdir(parents=True, exist_ok=True)
-                (self.intermediate_outputs_dir / stage).mkdir()
+                # Several inputs of this stage may link to the same previous
+                # stage, in which case the directory is already there.
+                (self.intermediate_outputs_dir / stage).mkdir(exist_ok=True)
                 (
                     self.intermediate_outputs_dir / stage / "script.py"
                 ).write_text(script)
