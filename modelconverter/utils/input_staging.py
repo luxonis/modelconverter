@@ -357,7 +357,7 @@ def _stage_value(value: str, inputs_dir: Path) -> str | None:
 
 
 def _stage_file(src: Path, inputs_dir: Path) -> Path:
-    digest = _hash_file(src)
+    digest = _hash_file_memoized(src)
     dest = inputs_dir / digest / src.name
     if not dest.exists():
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -937,13 +937,56 @@ def _hash_file(path: Path) -> str:
     return h.hexdigest()[:16]
 
 
+def _hash_file_memoized(path: Path) -> str:
+    """Content digest of ``path``, memoized on its stat fingerprint.
+
+    Staging would otherwise re-read every staged file in full on each
+    run just to learn that the cache already holds it -- minutes of
+    start-up I/O for a multi-gigabyte ONNX model. The memo key carries
+    the same metadata as L{_hash_dir} (and shares its caveat about
+    filesystems without a change time), while the digest the cache is
+    keyed on stays a description of the bytes.
+    """
+    try:
+        file_stat = path.stat()
+    except OSError:
+        return _hash_file(path)
+    key = hashlib.sha256(
+        f"{path}\0{file_stat.st_size}\0"
+        f"{file_stat.st_mtime_ns}\0{file_stat.st_ctime_ns}\0"
+        f"{file_stat.st_dev}\0{file_stat.st_ino}".encode()
+    ).hexdigest()[:16]
+    memo = get_cache_dir() / "digests" / key
+    try:
+        digest = memo.read_text()
+    except OSError:
+        digest = ""
+    if _is_digest(digest):
+        return digest
+    digest = _hash_file(path)
+    try:
+        memo.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(memo, digest)
+    except OSError:
+        pass
+    return digest
+
+
+def _is_digest(value: str) -> bool:
+    if len(value) != 16:
+        return False
+    try:
+        int(value, 16)
+    except ValueError:
+        return False
+    return True
+
+
 def _hash_files(paths: list[Path]) -> str:
     h = hashlib.sha256()
     for path in sorted(paths):
         h.update(path.name.encode())
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                h.update(chunk)
+        h.update(_hash_file_memoized(path).encode())
     return h.hexdigest()[:16]
 
 
