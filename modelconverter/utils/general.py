@@ -53,3 +53,11 @@ def sanitize_net_name(name: str, with_suffix: bool = False) -> str:
             f"Illegal characters detected in: '{name}'. Replacing with '_'. New name: '{sanitized}'"
         )
     return sanitized
+
+
+def human_size(num: float) -> str:
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if num < 1024:
+            return f"{num:.1f} {unit}"
+        num /= 1024
+    return f"{num:.1f} PiB"

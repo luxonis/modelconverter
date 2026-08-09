@@ -51,7 +51,7 @@ from modelconverter.utils.constants import (
     MODELS_DIR,
     get_cache_dir,
 )
-from modelconverter.utils.general import sanitize_net_name
+from modelconverter.utils.general import human_size, sanitize_net_name
 from modelconverter.utils.input_staging import (
     cache_is_in_use,
     path_flags_for,
@@ -772,14 +772,6 @@ def _cache_entries(root: Path) -> list[Path] | None:
         return None
 
 
-def _human_size(num: float) -> str:
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
-        if num < 1024:
-            return f"{num:.1f} {unit}"
-        num /= 1024
-    return f"{num:.1f} PiB"
-
-
 @cache_app.command(name="info", sort_key=0)
 def cache_info() -> None:
     """Reports the location and disk usage of the modelconverter
@@ -833,14 +825,14 @@ def cache_info() -> None:
             description = ""
         total_size += size
         total_files += count
-        table.add_row(entry.name, description, str(count), _human_size(size))
+        table.add_row(entry.name, description, str(count), human_size(size))
 
     table.add_section()
     table.add_row(
         "[bold]Total[/]",
         "",
         f"[bold]{total_files}[/]",
-        f"[bold]{_human_size(total_size)}[/]",
+        f"[bold]{human_size(total_size)}[/]",
     )
 
     console.print(
@@ -922,8 +914,8 @@ def cache_clean(
             remaining, _ = _dir_stats(root)
             console.print(
                 f"Cleared what could be removed from [cyan]{root}[/] "
-                f"([green]{_human_size(size - remaining)}[/] freed, "
-                f"[yellow]{_human_size(remaining)}[/] left). The remaining "
+                f"([green]{human_size(size - remaining)}[/] freed, "
+                f"[yellow]{human_size(remaining)}[/] left). The remaining "
                 "files are owned by another user, most likely written by a "
                 "container that was killed before it could hand them back. "
                 f"Remove them with [bold]sudo rm -rf {root}[/]."
@@ -931,7 +923,7 @@ def cache_clean(
             return
         console.print(
             f":wastebasket:  Cleared cache at [cyan]{root}[/] "
-            f"(freed [green]{_human_size(size)}[/])."
+            f"(freed [green]{human_size(size)}[/])."
         )
     else:
         console.print(f"Cache is already empty ([cyan]{root}[/]).")
@@ -1042,9 +1034,6 @@ def launcher(
                     target.value, bare_tag=tag, version=version, image=image
                 )
 
-        # Copy user-provided inputs into the hidden cache (which is the only
-        # host directory mounted into the container) and rewrite the tokens to
-        # their container-side paths.
         staged_tokens = stage_inputs(list(tokens), path_flags_for(command))
 
         docker_exec(

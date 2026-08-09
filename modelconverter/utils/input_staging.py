@@ -21,7 +21,7 @@ import hashlib
 import inspect
 import os
 import shutil
-import stat as stat_module
+import stat
 import tempfile
 from collections.abc import Callable, Collection, Iterator
 from pathlib import Path
@@ -33,6 +33,7 @@ from loguru import logger
 
 from modelconverter.utils.constants import CONTAINER_SHARED_DIR, get_cache_dir
 from modelconverter.utils.filesystem_utils import get_protocol
+from modelconverter.utils.general import human_size
 from modelconverter.utils.onnx_compatibility import get_external_data_paths
 
 # Target names are positional tokens that must not be mistaken for paths.
@@ -158,7 +159,6 @@ def _maybe_stage_token(
 ) -> str | None:
     """Returns the rewritten token if it should be staged, else
     ``None``."""
-    # Handle the ``--flag=value`` form.
     if token.startswith("--") and "=" in token:
         flag, _, value = token.partition("=")
         if flag in path_flags:
@@ -336,12 +336,12 @@ def _stage_value(value: str, inputs_dir: Path) -> str | None:
         dest = _stage_dir(src, inputs_dir)
         return _to_container(dest)
 
-    # Config file: stage the files it references, wherever they live.
     if src.suffix.lower() in _CONFIG_EXTS:
         dest = _stage_config(src, inputs_dir)
         return _to_container(dest)
 
-    # OpenVINO IR: stage the `.xml`/`.bin` pair together.
+    # An OpenVINO IR is a `.xml`/`.bin` pair; whichever half was named, the
+    # container needs both.
     if src.suffix.lower() in {".xml", ".bin"}:
         dest = _stage_ir_pair(src, inputs_dir)
         return _to_container(dest)
@@ -409,7 +409,6 @@ def _stage_onnx(src: Path, inputs_dir: Path) -> Path:
 
 
 def _atomic_copy_file(src: Path, dest: Path) -> None:
-    """Copy one file and atomically publish it at ``dest``."""
     fd, tmp_name = tempfile.mkstemp(
         prefix=f".{dest.name}.tmp-", dir=dest.parent
     )
@@ -730,25 +729,25 @@ def _iter_input_files(src: Path) -> Iterator[_InputFile]:
         for name in file_names:
             path = root_path / name
             try:
-                file_stat = path.stat()
+                st = path.stat()
             except OSError:
                 continue
-            if not stat_module.S_ISREG(file_stat.st_mode):
+            if not stat.S_ISREG(st.st_mode):
                 continue
             if not os.access(path, os.R_OK):
                 logger.warning(f"Skipping unreadable file {path}")
                 continue
-            yield _InputFile(path.relative_to(src).as_posix(), path, file_stat)
+            yield _InputFile(path.relative_to(src).as_posix(), path, st)
 
 
 def _dir_key(directory: Path) -> tuple[int, int] | None:
     """The identity a symlink cycle would repeat, or ``None`` if the
     directory cannot be stat'ed."""
     try:
-        directory_stat = directory.stat()
+        st = directory.stat()
     except OSError:
         return None
-    return (directory_stat.st_dev, directory_stat.st_ino)
+    return (st.st_dev, st.st_ino)
 
 
 def _stage_dir(src: Path, inputs_dir: Path) -> Path:
@@ -760,7 +759,7 @@ def _stage_dir(src: Path, inputs_dir: Path) -> Path:
         size = sum(f.stat.st_size for f in files)
         if size > _LARGE_DIR_BYTES:
             logger.warning(
-                f"Caching a large directory {src} ({_human_size(size)}). "
+                f"Caching a large directory {src} ({human_size(size)}). "
                 "The conversion runs in a container that only sees the cache, "
                 "so every input directory is copied into it. Run "
                 "`modelconverter cache clean` to reclaim space."
@@ -948,13 +947,12 @@ def _hash_file_memoized(path: Path) -> str:
     keyed on stays a description of the bytes.
     """
     try:
-        file_stat = path.stat()
+        st = path.stat()
     except OSError:
         return _hash_file(path)
     key = hashlib.sha256(
-        f"{path}\0{file_stat.st_size}\0"
-        f"{file_stat.st_mtime_ns}\0{file_stat.st_ctime_ns}\0"
-        f"{file_stat.st_dev}\0{file_stat.st_ino}".encode()
+        f"{path}\0{st.st_size}\0{st.st_mtime_ns}\0{st.st_ctime_ns}\0"
+        f"{st.st_dev}\0{st.st_ino}".encode()
     ).hexdigest()[:16]
     memo = get_cache_dir() / "digests" / key
     try:
@@ -1022,12 +1020,4 @@ def _hash_dir(path: Path, files: list[_InputFile] | None = None) -> str:
 
 
 def _log_copy(src: Path, size: int) -> None:
-    logger.info(f"Caching input {src} ({_human_size(size)})")
-
-
-def _human_size(num: float) -> str:
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
-        if num < 1024:
-            return f"{num:.1f} {unit}"
-        num /= 1024
-    return f"{num:.1f} PiB"
+    logger.info(f"Caching input {src} ({human_size(size)})")

@@ -36,7 +36,6 @@ def _redirect_dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "CONFIGS_DIR": cache / "configs",
         "CALIBRATION_DIR": cache / "calibration_data",
         "MODELS_DIR": cache / "models",
-        "INPUTS_DIR": cache / "inputs",
         "OUTPUTS_DIR": tmp_path / "output",
     }
     for path in replacements.values():

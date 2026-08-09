@@ -48,10 +48,6 @@ CONFIGS_DIR: Final[Path] = SHARED_DIR / "configs"
 CALIBRATION_DIR: Final[Path] = SHARED_DIR / "calibration_data"
 MODELS_DIR: Final[Path] = SHARED_DIR / "models"
 
-# Directory holding staged copies of user-provided inputs, keyed by content
-# hash for de-duplication across runs.
-INPUTS_DIR: Final[Path] = SHARED_DIR / "inputs"
-
 # Written into a directory modelconverter produced itself. `OUTPUTS_DIR` is the
 # host's `./output`, so a rerun may only clear a directory it made; anything
 # else the user keeps there is not ours to delete. The two kinds are separate
@@ -67,7 +63,6 @@ __all__ = [
     "CONTAINER_SHARED_DIR",
     "CONVERSION_MARKER",
     "INFERENCE_MARKER",
-    "INPUTS_DIR",
     "MISC_DIR",
     "MODELS_DIR",
     "OUTPUTS_DIR",

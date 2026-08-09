@@ -10,18 +10,21 @@ from modelconverter import __main__ as cli
 from modelconverter.utils import input_staging
 
 
-def _nonempty_cache(tmp_path: Path) -> Path:
+@pytest.fixture
+def cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A non-empty cache that both the CLI and input staging resolve
+    to."""
     cache = tmp_path / "modelconverter"
     cache.mkdir()
     (cache / "entry").write_bytes(b"cached")
+    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache)
     return cache
 
 
 def test_cache_clean_declined_keeps_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cache: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cache = _nonempty_cache(tmp_path)
-    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
     monkeypatch.setattr(cli.Confirm, "ask", lambda *_args, **_kwargs: False)
 
     cli.cache_clean()
@@ -31,10 +34,8 @@ def test_cache_clean_declined_keeps_cache(
 
 
 def test_cache_clean_confirmed_removes_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cache: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cache = _nonempty_cache(tmp_path)
-    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
     monkeypatch.setattr(cli.Confirm, "ask", lambda *_args, **_kwargs: True)
 
     cli.cache_clean()
@@ -53,12 +54,10 @@ def _deny_listing(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_cache_info_reports_an_unreadable_cache(
-    tmp_path: Path,
+    cache: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    cache = _nonempty_cache(tmp_path)
-    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
     _deny_listing(monkeypatch)
 
     cli.cache_info()
@@ -67,10 +66,8 @@ def test_cache_info_reports_an_unreadable_cache(
 
 
 def test_cache_clean_cleans_an_unreadable_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cache: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cache = _nonempty_cache(tmp_path)
-    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
     monkeypatch.setattr(cli.Confirm, "ask", lambda *_args, **_kwargs: True)
     _deny_listing(monkeypatch)
 
@@ -80,11 +77,8 @@ def test_cache_clean_cleans_an_unreadable_cache(
 
 
 def test_cache_clean_yes_skips_confirmation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cache: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cache = _nonempty_cache(tmp_path)
-    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
-
     def unexpected_prompt(*_args, **_kwargs) -> bool:
         raise AssertionError("confirmation prompt should be skipped")
 
@@ -106,15 +100,12 @@ def _claimed_by(cache: Path, pid: int) -> Path:
 
 
 def test_cache_clean_spares_inputs_a_running_conversion_holds(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cache: Path,
 ) -> None:
     """The cache is bind-mounted into every running container, so
     emptying it pulls the staged inputs out from under a conversion that
     is still reading them."""
-    cache = _nonempty_cache(tmp_path)
     entry = _claimed_by(cache, os.getpid())
-    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache)
 
     cli.cache_clean(yes=True)
 
@@ -122,16 +113,13 @@ def test_cache_clean_spares_inputs_a_running_conversion_holds(
 
 
 def test_cache_clean_ignores_a_claim_from_a_dead_process(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cache: Path,
 ) -> None:
     """A run that was killed leaves its marker behind; refusing forever
     on account of it would make the cache impossible to clear."""
-    cache = _nonempty_cache(tmp_path)
     dead = subprocess.Popen([sys.executable, "-c", ""])
     dead.wait()
     _claimed_by(cache, dead.pid)
-    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache)
 
     cli.cache_clean(yes=True)
 
@@ -139,13 +127,11 @@ def test_cache_clean_ignores_a_claim_from_a_dead_process(
 
 
 def test_cache_clean_declines_when_stdin_cannot_answer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cache: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Piped or closed stdin makes the prompt raise ``EOFError``. Nothing
     in this command group runs inside ``catch_exceptions``, and a
     destructive command must not read silence as consent either."""
-    cache = _nonempty_cache(tmp_path)
-    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
 
     def no_stdin(*_args: object, **_kwargs: object) -> NoReturn:
         raise EOFError
@@ -158,14 +144,11 @@ def test_cache_clean_declines_when_stdin_cannot_answer(
 
 
 def test_cache_clean_spares_a_cache_claimed_for_downloads(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cache: Path,
 ) -> None:
     """The container downloads remote inputs straight into the cache
     mount, so the launcher's whole-cache claim must hold ``cache clean``
     off even when nothing was staged host-side."""
-    cache = _nonempty_cache(tmp_path)
-    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache)
     input_staging.claim_cache()
 
     cli.cache_clean(yes=True)
@@ -174,13 +157,10 @@ def test_cache_clean_spares_a_cache_claimed_for_downloads(
 
 
 def test_cache_clean_rechecks_claims_after_the_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cache: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A conversion may start while the confirmation prompt sits
     unanswered; the answer must not license deleting its inputs."""
-    cache = _nonempty_cache(tmp_path)
-    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache)
 
     def stage_and_confirm(*_args: object, **_kwargs: object) -> bool:
         _claimed_by(cache, os.getpid())

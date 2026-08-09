@@ -20,6 +20,14 @@ from tests.helpers.onnx_factory import (
 )
 
 
+@pytest.fixture
+def cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Rebases the staging cache into the test's temp directory."""
+    cache = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache)
+    return cache
+
+
 def _host_staged_path(staged: str, cache_dir: Path) -> Path:
     relative = Path(staged).relative_to(CONTAINER_SHARED_DIR)
     return cache_dir / relative
@@ -30,14 +38,10 @@ def _external_onnx(path: Path) -> Path:
     return external_data
 
 
-def test_stages_onnx_external_data(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    cache_dir = tmp_path / "cache"
+def test_stages_onnx_external_data(tmp_path: Path, cache_dir: Path) -> None:
     model_path = tmp_path / "models" / "model.onnx"
     model_path.parent.mkdir()
     external_data = _external_onnx(model_path)
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged_tokens = input_staging.stage_inputs(
         ["--model-path", str(model_path)], {"--model-path"}
@@ -51,14 +55,12 @@ def test_stages_onnx_external_data(
 
 
 def test_stages_every_external_data_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
-    cache_dir = tmp_path / "cache"
     model_path = tmp_path / "models" / "model.onnx"
     model_path.parent.mkdir()
     external_data = weights_only_external_onnx(model_path, single_file=False)
     assert len(external_data) > 1
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged_tokens = input_staging.stage_inputs(
         ["--model-path", str(model_path)], {"--model-path"}
@@ -76,9 +78,8 @@ def _staged_content(staged: str, cache_dir: Path) -> bytes:
 
 
 def test_stages_and_rewrites_absolute_config_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
-    cache_dir = tmp_path / "cache"
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
 
@@ -114,7 +115,6 @@ def test_stages_and_rewrites_absolute_config_paths(
             }
         )
     )
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged_tokens = input_staging.stage_inputs(
         ["--config", str(config_path)], {"--config"}
@@ -138,9 +138,8 @@ def test_stages_and_rewrites_absolute_config_paths(
 
 
 def test_stages_and_rewrites_relative_config_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cache_dir = tmp_path / "cache"
     config_dir = tmp_path / "configs"
     (config_dir / "calibration_data").mkdir(parents=True)
     (config_dir / "model.onnx").write_bytes(b"model")
@@ -172,7 +171,6 @@ def test_stages_and_rewrites_relative_config_paths(
             }
         )
     )
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     # The config directory is not the working directory: relative references
     # have to resolve against the config file itself.
     monkeypatch.chdir(tmp_path)
@@ -201,9 +199,8 @@ def test_stages_and_rewrites_relative_config_paths(
 
 
 def test_only_config_references_are_staged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
-    cache_dir = tmp_path / "cache"
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
     (config_dir / "model.onnx").write_bytes(b"model")
@@ -215,7 +212,6 @@ def test_only_config_references_are_staged(
 
     config_path = config_dir / "config.yaml"
     config_path.write_text(yaml.safe_dump({"input_model": "model.onnx"}))
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     input_staging.stage_inputs(["--path", str(config_path)], {"--path"})
 
@@ -232,9 +228,8 @@ def test_only_config_references_are_staged(
 
 
 def test_stages_the_openvino_bin_alongside_the_xml(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
-    cache_dir = tmp_path / "cache"
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
     ir_dir = tmp_path / "ir"
@@ -251,7 +246,6 @@ def test_stages_the_openvino_bin_alongside_the_xml(
             }
         )
     )
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged_tokens = input_staging.stage_inputs(
         ["--path", str(config_path)], {"--path"}
@@ -267,12 +261,10 @@ def test_stages_the_openvino_bin_alongside_the_xml(
 
 
 def test_missing_config_references_are_left_untouched(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
-    cache_dir = tmp_path / "cache"
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump({"input_model": "nowhere.onnx"}))
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged_tokens = input_staging.stage_inputs(
         ["--path", str(config_path)], {"--path"}
@@ -285,9 +277,8 @@ def test_missing_config_references_are_left_untouched(
 
 
 def test_non_path_fields_are_never_staged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cache_dir = tmp_path / "cache"
     model = tmp_path / "model.onnx"
     model.write_bytes(b"model")
     # A stage named after a directory that exists next to the config.
@@ -298,7 +289,6 @@ def test_non_path_fields_are_never_staged(
             {"name": "resnet18", "stages": {"resnet18": {"input_model": None}}}
         )
     )
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     monkeypatch.chdir(tmp_path)
 
     staged_tokens = input_staging.stage_inputs(
@@ -312,12 +302,10 @@ def test_non_path_fields_are_never_staged(
 
 
 def test_a_config_naming_itself_terminates(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
-    cache_dir = tmp_path / "cache"
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump({"input_model": "config.yaml"}))
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged_tokens = input_staging.stage_inputs(
         ["--path", str(config_path)], {"--path"}
@@ -332,14 +320,12 @@ def test_a_config_naming_itself_terminates(
 
 
 def test_restaging_a_changed_reference_keeps_the_previous_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
-    cache_dir = tmp_path / "cache"
     model = tmp_path / "model.onnx"
     model.write_bytes(b"first")
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump({"input_model": "model.onnx"}))
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     first = input_staging.stage_inputs(
         ["--path", str(config_path)], {"--path"}
@@ -364,9 +350,8 @@ def test_restaging_a_changed_reference_keeps_the_previous_config(
 
 
 def test_output_destinations_are_left_alone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
-    cache_dir = tmp_path / "cache"
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
     destination = tmp_path / "nas"
@@ -385,7 +370,6 @@ def test_output_destinations_are_left_alone(
             }
         )
     )
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged_tokens = input_staging.stage_inputs(
         ["--config", str(config_path)], {"--config"}
@@ -402,10 +386,8 @@ def test_output_destinations_are_left_alone(
 
 
 def test_bare_names_are_not_mistaken_for_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     monkeypatch.chdir(tmp_path)
     # Both a config-override value and the subcommand itself collide with a
     # directory in the working directory.
@@ -418,10 +400,8 @@ def test_bare_names_are_not_mistaken_for_paths(
 
 
 def test_relative_paths_are_still_staged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "calibration").mkdir()
     (tmp_path / "calibration" / "image.jpg").write_bytes(b"image")
@@ -456,14 +436,12 @@ def test_staging_a_directory_holding_the_cache_does_not_recurse(
 
 
 def test_unusable_files_do_not_abort_staging(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
-    cache_dir = tmp_path / "cache"
     calibration = tmp_path / "calibration"
     calibration.mkdir()
     (calibration / "image.jpg").write_bytes(b"image")
     (calibration / "dangling").symlink_to(tmp_path / "nowhere")
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged_tokens = input_staging.stage_inputs(
         ["--input-path", str(calibration)], {"--input-path"}
@@ -547,11 +525,9 @@ def test_directory_digest_covers_symlinked_subdirectories(
 
 
 def test_restaging_a_changed_directory_replaces_the_previous_copy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
-    cache_dir = tmp_path / "cache"
     inputs_dir = cache_dir / "inputs"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     src = tmp_path / "calibration"
     src.mkdir()
     (src / "image.jpg").write_bytes(b"first")
@@ -573,11 +549,9 @@ def test_restaging_a_changed_directory_replaces_the_previous_copy(
 
 
 def test_staged_copies_still_in_use_are_not_pruned(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
-    cache_dir = tmp_path / "cache"
     inputs_dir = cache_dir / "inputs"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     src = tmp_path / "calibration"
     src.mkdir()
     (src / "image.jpg").write_bytes(b"first")
@@ -596,11 +570,9 @@ def test_staged_copies_still_in_use_are_not_pruned(
 
 
 def test_staged_copies_claimed_by_dead_processes_are_pruned(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
-    cache_dir = tmp_path / "cache"
     inputs_dir = cache_dir / "inputs"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     src = tmp_path / "calibration"
     src.mkdir()
     (src / "image.jpg").write_bytes(b"first")
@@ -636,7 +608,7 @@ def test_path_flags_come_from_the_command_signature() -> None:
 
 
 def test_stages_the_underscored_spelling_of_a_path_flag(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
     """Cyclopts accepts an option spelled either way, so a path given as
     ``--model_path`` must be staged like one given as ``--model-path``.
@@ -646,10 +618,8 @@ def test_stages_the_underscored_spelling_of_a_path_flag(
     """
     from modelconverter.__main__ import infer
 
-    cache_dir = tmp_path / "cache"
     model_path = tmp_path / "model.dlc"
     model_path.write_bytes(b"model")
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged_tokens = input_staging.stage_inputs(
         ["--model_path", str(model_path)], input_staging.path_flags_for(infer)
@@ -770,7 +740,7 @@ def test_concurrent_directory_staging_publishes_one_complete_entry(
 
 
 def test_a_symlinked_model_keeps_the_name_it_was_given(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
     """DVC, git-annex and Nix all present a model as a symlink to a
     content-addressed blob.
@@ -779,7 +749,6 @@ def test_a_symlinked_model_keeps_the_name_it_was_given(
     the link's target -- extension-less -- is parsed as a config instead
     of converted.
     """
-    cache_dir = tmp_path / "cache"
     store = tmp_path / "store"
     store.mkdir()
     blob = store / "b1946ac92492d234"
@@ -788,7 +757,6 @@ def test_a_symlinked_model_keeps_the_name_it_was_given(
     work.mkdir()
     link = work / "model.onnx"
     link.symlink_to(blob)
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged = input_staging.stage_inputs(
         ["--model-path", str(link)], {"--model-path"}
@@ -801,15 +769,13 @@ def test_a_symlinked_model_keeps_the_name_it_was_given(
 
 
 def test_a_long_override_value_is_not_treated_as_a_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`rvc4.encodings` accepts the encodings JSON inline.
 
     It has no separator, so it reaches the filesystem as one component
     and `Path.exists` answers with `ENAMETOOLONG` rather than `False`.
     """
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     monkeypatch.chdir(tmp_path)
     encodings = (
         '{"activation_encodings": {"x": ['
@@ -823,11 +789,10 @@ def test_a_long_override_value_is_not_treated_as_a_path(
 
 
 def test_stages_the_quantization_overrides_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
     """`rvc4.snpe_onnx_to_dlc_args` is a raw argument list, but the value
     after `--quantization_overrides` is a file the config opens."""
-    cache_dir = tmp_path / "cache"
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
     overrides = config_dir / "encodings.json"
@@ -847,7 +812,6 @@ def test_stages_the_quantization_overrides_file(
             }
         )
     )
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged = input_staging.stage_inputs(
         ["--config", str(config_path)], {"--config"}
@@ -868,12 +832,10 @@ def test_stages_the_quantization_overrides_file(
 
 
 def test_sibling_symlinks_to_one_directory_are_both_staged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
     """The inferer expects one directory per input, and two of them may
     well be the same images under different names."""
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     shared = tmp_path / "images"
     shared.mkdir()
     (shared / "image.raw").write_bytes(b"image")
@@ -892,12 +854,10 @@ def test_sibling_symlinks_to_one_directory_are_both_staged(
 
 
 def test_a_symlink_pointing_back_up_is_not_followed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
     """A convenience link such as `calib/all -> ..` would otherwise copy
     the whole surrounding tree into the cache."""
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     (tmp_path / "unrelated.bin").write_bytes(b"unrelated")
     calib = tmp_path / "calib"
     calib.mkdir()
@@ -916,12 +876,10 @@ def test_a_symlink_pointing_back_up_is_not_followed(
 
 
 def test_an_output_destination_override_is_left_alone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Rewriting a destination would upload the converted model into the
     cache instead of where the user asked for it."""
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "nas").mkdir()
     tokens = ["convert", "rvc4", "output_remote_url", "./nas"]
@@ -930,12 +888,10 @@ def test_an_output_destination_override_is_left_alone(
 
 
 def test_a_bare_directory_name_is_staged_for_a_path_override(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The config schema says the value is a path, which beats guessing
     from a shape that a bare name does not have."""
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "calib").mkdir()
     (tmp_path / "calib" / "image.raw").write_bytes(b"image")
@@ -950,12 +906,10 @@ def test_a_bare_directory_name_is_staged_for_a_path_override(
 
 
 def test_a_single_dash_flag_value_is_not_staged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`-c` takes a shell command, not an input path; only long options
     were recognised as introducing a value."""
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "script.py").write_bytes(b"print()")
     tokens = ["shell", "rvc4", "-c", "./script.py"]
@@ -964,7 +918,7 @@ def test_a_single_dash_flag_value_is_not_staged(
 
 
 def test_replacing_directory_content_in_place_restages_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
     """`rsync -a`, `cp -p` and a backup restore all preserve size and
     modification time.
@@ -972,8 +926,6 @@ def test_replacing_directory_content_in_place_restages_it(
     Keying the cache on those alone would hand the container the previous
     calibration images and quantize against them without a word.
     """
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     calib = tmp_path / "calib"
     calib.mkdir()
     image = calib / "image.raw"
@@ -1034,7 +986,7 @@ def test_directory_digest_separates_matching_inodes_on_other_devices(
 
 
 def test_a_serialized_argument_list_override_is_staged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The same list written in a config file is rewritten already.
 
@@ -1042,8 +994,6 @@ def test_a_serialized_argument_list_override_is_staged(
     inside it -- and the container opened it during config validation,
     where the host path does not exist.
     """
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     monkeypatch.chdir(tmp_path)
     overrides = tmp_path / "encodings.json"
     overrides.write_text('{"activation_encodings": {}, "param_encodings": {}}')
@@ -1079,15 +1029,16 @@ def test_a_serialized_argument_list_override_is_staged(
     ],
 )
 def test_argument_list_overrides_without_a_local_path_are_untouched(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+    tmp_path: Path,
+    cache_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
 ) -> None:
     """Only the value after a path flag is ours to rewrite.
 
     A missing file is left for the config validation to report, the same
     way a missing reference inside a config file is.
     """
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     monkeypatch.chdir(tmp_path)
     tokens = ["convert", "rvc4", "rvc4.snpe_onnx_to_dlc_args", value]
 
@@ -1095,12 +1046,10 @@ def test_argument_list_overrides_without_a_local_path_are_untouched(
 
 
 def test_a_dotted_output_destination_override_is_left_alone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A destination field keeps naming a destination when it is reached
     through a stage prefix."""
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "exported").mkdir()
     tokens = [
@@ -1116,11 +1065,10 @@ def test_a_dotted_output_destination_override_is_left_alone(
 
 
 def test_stages_the_flag_equals_value_quantization_overrides(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path
 ) -> None:
     """`--quantization_overrides=file` names the same file as the
     two-token spelling and has to reach the container all the same."""
-    cache_dir = tmp_path / "cache"
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
     overrides = config_dir / "encodings.json"
@@ -1139,7 +1087,6 @@ def test_stages_the_flag_equals_value_quantization_overrides(
             }
         )
     )
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
 
     staged = input_staging.stage_inputs(
         ["--config", str(config_path)], {"--config"}
@@ -1160,12 +1107,10 @@ def test_stages_the_flag_equals_value_quantization_overrides(
 
 
 def test_a_negative_decimal_is_not_mistaken_for_a_flag(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`-.5` is an override value; treating it as an option would exempt
     whatever comes after it from staging."""
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     monkeypatch.chdir(tmp_path)
     model = tmp_path / "model.onnx"
     single_io_onnx(model)
@@ -1180,13 +1125,11 @@ def test_a_negative_decimal_is_not_mistaken_for_a_flag(
 
 
 def test_staged_files_are_claimed_while_the_process_lives(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`cache clean` consults the claims, so a conversion whose staged
     inputs are plain files needs them no less than one that staged a
     directory."""
-    cache_dir = tmp_path / "cache"
-    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
     monkeypatch.chdir(tmp_path)
     model = tmp_path / "model.onnx"
     single_io_onnx(model)
