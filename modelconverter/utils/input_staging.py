@@ -200,9 +200,12 @@ def _is_flag(token: str) -> bool:
     """Whether ``token`` is an option rather than a value.
 
     Single-dash aliases count: the value after ``-c`` is no more an input
-    path than one after ``--config``. A negative number is a value.
+    path than one after ``--config``. A negative number is a value,
+    whether it leads with a digit (``-5``) or a decimal point (``-.5``).
     """
-    return len(token) > 1 and token[0] == "-" and not token[1].isdigit()
+    if len(token) <= 1 or token[0] != "-" or token[1].isdigit():
+        return False
+    return not (token[1] == "." and len(token) > 2 and token[2].isdigit())
 
 
 def _override_key_kind(key: str) -> str | None:

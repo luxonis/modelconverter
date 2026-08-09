@@ -1151,3 +1151,23 @@ def test_stages_the_flag_equals_value_quantization_overrides(
         _host_staged_path(value, cache_dir).read_text()
         == overrides.read_text()
     )
+
+
+def test_a_negative_decimal_is_not_mistaken_for_a_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`-.5` is an override value; treating it as an option would exempt
+    whatever comes after it from staging."""
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    monkeypatch.chdir(tmp_path)
+    model = tmp_path / "model.onnx"
+    single_io_onnx(model)
+
+    staged = input_staging.stage_inputs(
+        ["convert", "rvc4", "outputs.0.scale", "-.5", "./model.onnx"],
+        {"--path"},
+    )
+
+    assert staged[3] == "-.5"
+    assert staged[4].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
