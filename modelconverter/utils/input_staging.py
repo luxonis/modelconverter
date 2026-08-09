@@ -362,6 +362,7 @@ def _stage_file(src: Path, inputs_dir: Path) -> Path:
         dest.parent.mkdir(parents=True, exist_ok=True)
         _log_copy(src, src.stat().st_size)
         _atomic_copy_file(src, dest)
+    _mark_in_use(dest.parent)
     return dest
 
 
@@ -423,6 +424,7 @@ def _atomic_copy_file(src: Path, dest: Path) -> None:
 def _stage_file_bundle(destinations: dict[Path, Path], dest_dir: Path) -> None:
     """Atomically stage a set of files as one digest-keyed directory."""
     if dest_dir.exists():
+        _mark_in_use(dest_dir)
         return
 
     dest_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -438,6 +440,7 @@ def _stage_file_bundle(destinations: dict[Path, Path], dest_dir: Path) -> None:
         _publish_directory(tmp_dir, dest_dir)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+    _mark_in_use(dest_dir)
 
 
 def _publish_directory(src: Path, dest: Path) -> None:
@@ -483,6 +486,7 @@ def _stage_config_text(content: str, name: str, inputs_dir: Path) -> Path:
     if not dest.exists():
         dest.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_text(dest, content)
+    _mark_in_use(dest.parent)
     return dest
 
 
@@ -646,9 +650,10 @@ _LARGE_DIR_BYTES = 1024**3  # 1 GiB
 # so the previous copy can be dropped once that source changes.
 _SOURCE_MARKER = ".source"
 
-# Written next to a staged directory for as long as this process may be using
-# it, suffixed with the pid so a concurrent run can tell live users from the
-# leftovers of a killed one.
+# Written inside a staged entry (and at the cache root, for the container's
+# own downloads) for as long as this process may be using it, suffixed with
+# the pid so a concurrent run can tell live users from the leftovers of a
+# killed one.
 _IN_USE_PREFIX = ".inuse-"
 
 

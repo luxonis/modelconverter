@@ -220,7 +220,13 @@ def test_only_config_references_are_staged(
     input_staging.stage_inputs(["--path", str(config_path)], {"--path"})
 
     staged_names = {
-        path.name for path in cache_dir.rglob("*") if path.is_file()
+        path.name
+        for path in cache_dir.rglob("*")
+        if path.is_file()
+        # The cache holds bookkeeping of its own -- in-use claims and
+        # digest memos -- which is not staged content.
+        and not path.name.startswith(".")
+        and path.parent.name != "digests"
     }
     assert staged_names == {"config.yaml", "model.onnx"}
 
@@ -1171,3 +1177,21 @@ def test_a_negative_decimal_is_not_mistaken_for_a_flag(
 
     assert staged[3] == "-.5"
     assert staged[4].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
+
+
+def test_staged_files_are_claimed_while_the_process_lives(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`cache clean` consults the claims, so a conversion whose staged
+    inputs are plain files needs them no less than one that staged a
+    directory."""
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    monkeypatch.chdir(tmp_path)
+    model = tmp_path / "model.onnx"
+    single_io_onnx(model)
+
+    staged = input_staging.stage_inputs(["--path", str(model)], {"--path"})[1]
+
+    entry = _host_staged_path(staged, cache_dir).parent
+    assert entry in input_staging.in_use_staged_inputs()
