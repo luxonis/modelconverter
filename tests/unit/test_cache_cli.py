@@ -155,3 +155,39 @@ def test_cache_clean_declines_when_stdin_cannot_answer(
     cli.cache_clean()
 
     assert (cache / "entry").exists()
+
+
+def test_cache_clean_spares_a_cache_claimed_for_downloads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The container downloads remote inputs straight into the cache
+    mount, so the launcher's whole-cache claim must hold ``cache clean``
+    off even when nothing was staged host-side."""
+    cache = _nonempty_cache(tmp_path)
+    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache)
+    input_staging.claim_cache()
+
+    cli.cache_clean(yes=True)
+
+    assert (cache / "entry").read_bytes() == b"cached"
+
+
+def test_cache_clean_rechecks_claims_after_the_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A conversion may start while the confirmation prompt sits
+    unanswered; the answer must not license deleting its inputs."""
+    cache = _nonempty_cache(tmp_path)
+    monkeypatch.setattr(cli, "get_cache_dir", lambda: cache)
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache)
+
+    def stage_and_confirm(*_args: object, **_kwargs: object) -> bool:
+        _claimed_by(cache, os.getpid())
+        return True
+
+    monkeypatch.setattr(cli.Confirm, "ask", stage_and_confirm)
+
+    cli.cache_clean()
+
+    assert (cache / "entry").exists()

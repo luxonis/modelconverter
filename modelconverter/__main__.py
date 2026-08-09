@@ -53,7 +53,7 @@ from modelconverter.utils.constants import (
 )
 from modelconverter.utils.general import sanitize_net_name
 from modelconverter.utils.input_staging import (
-    in_use_staged_inputs,
+    cache_is_in_use,
     path_flags_for,
     stage_inputs,
 )
@@ -889,21 +889,30 @@ def cache_clean(
     entries = _cache_entries(root)
     if entries is None or entries:
         # The cache is bind-mounted into every running container, so emptying
-        # it would pull the staged inputs out from under a conversion that is
-        # still reading them.
-        in_use = in_use_staged_inputs()
-        if in_use:
+        # it would pull the staged inputs -- and the downloads the container
+        # writes as it runs -- out from under a conversion that is still
+        # using them.
+        def refuse_while_in_use() -> bool:
+            if not cache_is_in_use():
+                return False
             console.print(
-                f"Not clearing [cyan]{root}[/]: {len(in_use)} staged input(s) "
-                "are still in use by a running conversion. Wait for it to "
-                "finish and try again."
+                f"Not clearing [cyan]{root}[/]: it is still in use by a "
+                "running conversion. Wait for it to finish and try again."
             )
+            return True
+
+        if refuse_while_in_use():
             return
         size, _ = _dir_stats(root)
         if not yes and not _confirm(
             f"Clear the entire ModelConverter cache at [cyan]{root}[/]?"
         ):
             console.print("Cache clean cancelled.")
+            return
+        # The prompt can sit unanswered for as long as the user likes --
+        # plenty of time for another terminal to start a conversion -- so
+        # look again right before deleting.
+        if refuse_while_in_use():
             return
         # Never abort part-way through: files left root-owned by a container
         # that was killed before its entrypoint could chown the mounts back

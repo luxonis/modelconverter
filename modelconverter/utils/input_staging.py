@@ -873,6 +873,27 @@ def in_use_staged_inputs() -> list[Path]:
     return [entry for entry in entries if entry.is_dir() and _is_in_use(entry)]
 
 
+def claim_cache() -> None:
+    """Claims the whole cache for the lifetime of this process.
+
+    The container downloads remote models and calibration data straight
+    into the cache mount as it runs, so a conversion can be using the
+    cache even when none of its inputs were staged host-side. The
+    launcher places this claim before starting the container.
+    """
+    cache_dir = get_cache_dir()
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    _mark_in_use(cache_dir)
+
+
+def cache_is_in_use() -> bool:
+    """Whether a live process is still using any part of the cache."""
+    return _is_in_use(get_cache_dir()) or bool(in_use_staged_inputs())
+
+
 def _prune_superseded_stagings(
     src: Path, keep: Path, inputs_dir: Path
 ) -> None:

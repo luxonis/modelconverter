@@ -27,6 +27,7 @@ from modelconverter.utils.constants import (
     get_cache_dir,
     in_docker,
 )
+from modelconverter.utils.input_staging import claim_cache
 from modelconverter.utils.target_versions import (
     get_default_target_version,
 )
@@ -539,6 +540,10 @@ def docker_exec(
     # receives the conversion results).
     get_cache_dir().mkdir(parents=True, exist_ok=True)
     (Path.cwd() / "output").mkdir(parents=True, exist_ok=True)
+    # The container downloads remote inputs straight into the cache mount, so
+    # `cache clean` in another terminal must see this run even when nothing
+    # was staged host-side.
+    claim_cache()
 
     with tempfile.NamedTemporaryFile(delete=False) as f:
         f.write(
