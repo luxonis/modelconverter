@@ -552,11 +552,19 @@ def _rewrite_arg_list(
     changed = False
     for index, item in enumerate(args):
         previous = args[index - 1] if index else None
-        staged = (
-            _stage_config_reference(item, config_dir, inputs_dir)
-            if isinstance(item, str) and previous in path_flags
-            else None
-        )
+        staged = None
+        if isinstance(item, str):
+            if previous in path_flags:
+                staged = _stage_config_reference(item, config_dir, inputs_dir)
+            elif "=" in item and item.partition("=")[0] in path_flags:
+                # The `--flag=value` spelling carries the path in the same
+                # token as the flag.
+                flag, _, value = item.partition("=")
+                staged_value = _stage_config_reference(
+                    value, config_dir, inputs_dir
+                )
+                if staged_value is not None:
+                    staged = f"{flag}={staged_value}"
         if staged is None:
             rewritten.append(item)
         else:

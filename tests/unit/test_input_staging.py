@@ -1107,3 +1107,47 @@ def test_a_dotted_output_destination_override_is_left_alone(
     ]
 
     assert input_staging.stage_inputs(tokens, {"--path"}) == tokens
+
+
+def test_stages_the_flag_equals_value_quantization_overrides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--quantization_overrides=file` names the same file as the
+    two-token spelling and has to reach the container all the same."""
+    cache_dir = tmp_path / "cache"
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    overrides = config_dir / "encodings.json"
+    overrides.write_text('{"activation_encodings": {}, "param_encodings": {}}')
+    config_path = config_dir / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "rvc4": {
+                    "snpe_onnx_to_dlc_args": [
+                        "--quantization_overrides=encodings.json",
+                        "--float_bw",
+                        "16",
+                    ]
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+
+    staged = input_staging.stage_inputs(
+        ["--config", str(config_path)], {"--config"}
+    )[1]
+
+    rewritten = yaml.safe_load(
+        _host_staged_path(staged, cache_dir).read_text()
+    )
+    args = rewritten["rvc4"]["snpe_onnx_to_dlc_args"]
+    flag, _, value = args[0].partition("=")
+    assert flag == "--quantization_overrides"
+    assert value.startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
+    assert args[1:] == ["--float_bw", "16"]
+    assert (
+        _host_staged_path(value, cache_dir).read_text()
+        == overrides.read_text()
+    )
