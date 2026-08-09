@@ -160,7 +160,10 @@ def generate_compose_config(
     # unrelated `tests/` that merely happens to sit in the working directory.
     if is_dev and (cwd / "tests").exists():
         volumes.append(f"{cwd / 'tests'}:/app/tests")
-    if (cwd / "pyproject.toml").exists():
+    # Same reasoning: the image carries its own pyproject.toml, and in-container
+    # tooling reading /app/pyproject.toml must not pick up whatever Python
+    # project the user happens to convert from.
+    if is_dev and (cwd / "pyproject.toml").exists():
         volumes.append(f"{cwd / 'pyproject.toml'}:/app/pyproject.toml")
     # The conversion tests convert some of the example configs by their
     # repository-relative path, so those have to be reachable too.
