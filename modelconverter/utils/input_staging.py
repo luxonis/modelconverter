@@ -85,7 +85,7 @@ _PATH_ARG_FIELDS: dict[str, frozenset[str]] = {
 # Config fields naming a *destination*. These look exactly like input paths but
 # must keep pointing at the user's location: rewriting one would send the
 # converted model into the cache instead.
-_OUTPUT_FIELDS = {"output_remote_url"}
+_OUTPUT_FIELDS = {"output_remote_url", "intermediate_outputs_remote_url"}
 
 # Never copied along when a directory is staged: repository metadata is not a
 # model input and would dominate the copy.
@@ -211,10 +211,12 @@ def _override_key_kind(key: str) -> str | None:
     Overrides are dotted paths into the config (``calibration.path``), so
     the same schema tables that drive config-file staging apply here.
     """
-    if key in _OUTPUT_FIELDS:
-        return "output"
     head, _, leaf = key.rpartition(".")
     parent = head.rsplit(".", 1)[-1] or None
+    # The leaf, not the whole key: `stages.<name>.output_remote_url` names a
+    # destination just as much as the bare field does.
+    if leaf in _OUTPUT_FIELDS:
+        return "output"
     if leaf in _PATH_ARG_FIELDS:
         return "args"
     if _is_path_field(leaf, parent):

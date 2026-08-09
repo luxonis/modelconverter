@@ -1086,3 +1086,24 @@ def test_argument_list_overrides_without_a_local_path_are_untouched(
     tokens = ["convert", "rvc4", "rvc4.snpe_onnx_to_dlc_args", value]
 
     assert input_staging.stage_inputs(tokens, {"--path"}) == tokens
+
+
+def test_a_dotted_output_destination_override_is_left_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A destination field keeps naming a destination when it is reached
+    through a stage prefix."""
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache_dir)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "exported").mkdir()
+    tokens = [
+        "convert",
+        "rvc4",
+        "stages.model.output_remote_url",
+        "./exported",
+        "intermediate_outputs_remote_url",
+        "./exported",
+    ]
+
+    assert input_staging.stage_inputs(tokens, {"--path"}) == tokens
