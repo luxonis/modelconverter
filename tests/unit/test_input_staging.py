@@ -1195,3 +1195,17 @@ def test_staged_files_are_claimed_while_the_process_lives(
 
     entry = _host_staged_path(staged, cache_dir).parent
     assert entry in input_staging.in_use_staged_inputs()
+
+
+def test_a_claim_from_a_recycled_pid_is_ignored(tmp_path: Path) -> None:
+    """A killed run leaves its marker behind, and its pid may since have
+    been handed to an unrelated long-lived process; the recorded creation
+    time is what tells the two apart."""
+    entry = tmp_path / "digest"
+    entry.mkdir()
+    marker = entry / f"{input_staging._IN_USE_PREFIX}{os.getpid()}"
+    # This pid is certainly alive, but the claim predates its process.
+    marker.write_text("1.0")
+
+    assert not input_staging._is_in_use(entry)
+    assert not marker.exists()

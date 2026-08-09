@@ -27,6 +27,7 @@ from collections.abc import Callable, Collection, Iterator
 from pathlib import Path
 from typing import Any, NamedTuple
 
+import psutil
 import yaml
 from loguru import logger
 
@@ -804,11 +805,16 @@ def _record_source(src: Path, digest_dir: Path) -> None:
 
 
 def _mark_in_use(digest_dir: Path) -> None:
-    """Claims ``digest_dir`` for the lifetime of this process."""
+    """Claims ``digest_dir`` for the lifetime of this process.
+
+    The marker records the process creation time alongside the pid: the
+    pid alone would keep the claim alive once an unrelated process
+    recycles it after this one is killed.
+    """
     marker = digest_dir / f"{_IN_USE_PREFIX}{os.getpid()}"
     try:
-        marker.touch()
-    except OSError:
+        _atomic_write_text(marker, str(psutil.Process().create_time()))
+    except (OSError, psutil.Error):
         return
     atexit.register(marker.unlink, missing_ok=True)
 
@@ -819,7 +825,9 @@ def _is_in_use(entry: Path) -> bool:
     The container reads its staged inputs throughout the conversion, so
     an entry another run is still using must survive even once its
     source has changed. Claims left behind by a killed process name a
-    pid that no longer exists and are cleaned up here.
+    pid that no longer exists -- or one that has since been recycled by
+    an unrelated process, which the recorded creation time tells apart --
+    and are cleaned up here.
     """
     in_use = False
     for marker in entry.glob(f"{_IN_USE_PREFIX}*"):
@@ -828,14 +836,26 @@ def _is_in_use(entry: Path) -> bool:
         except ValueError:
             continue
         try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
+            create_time = psutil.Process(pid).create_time()
+        except psutil.NoSuchProcess:
             marker.unlink(missing_ok=True)
-        except OSError:
-            # The pid exists but is not ours to signal.
+            continue
+        except psutil.Error:
+            # The pid exists but is not ours to inspect.
+            in_use = True
+            continue
+        try:
+            recorded = float(marker.read_text())
+        except (OSError, ValueError):
+            # No recorded time to compare against: assume the claim holds.
+            in_use = True
+            continue
+        # A recycled pid belongs to a process started well after the claim
+        # was written; the tolerance only absorbs clock rounding.
+        if abs(recorded - create_time) < 1.0:
             in_use = True
         else:
-            in_use = True
+            marker.unlink(missing_ok=True)
     return in_use
 
 
