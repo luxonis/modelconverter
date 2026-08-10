@@ -4,22 +4,14 @@
 [![PyPI](https://img.shields.io/pypi/v/modelconv?label=pypi%20package)](https://pypi.org/project/modelconv/)
 [![PyPI - Downloads](https://img.shields.io/pypi/dm/modelconv)](https://pypi.org/project/modelconv/)
 
+[![CI](https://github.com/luxonis/modelconverter/actions/workflows/ci.yaml/badge.svg)](https://github.com/luxonis/modelconverter/actions/workflows/ci.yaml)
+[![Publish](https://github.com/luxonis/modelconverter/actions/workflows/publish.yaml/badge.svg)](https://github.com/luxonis/modelconverter/actions/workflows/publish.yaml)
+[![codecov](https://codecov.io/gh/luxonis/modelconverter/graph/badge.svg?token=EIPEE2RJ1F)](https://codecov.io/gh/luxonis/modelconverter)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![Docformatter](https://img.shields.io/badge/%20formatter-docformatter-fedcba.svg)](https://github.com/PyCQA/docformatter)
-[![Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 Convert your **ONNX** models to a format compatible with any generation of Luxonis camera using the **Model Compilation Library**.
 
 `ModelConverter` is in an experimental public beta stage. Some parts might change in the future.
-
-## Status
-
-| Package   | Test                                                                                                  | Deploy                                                                                                  |
-| --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **RVC2**  | ![RVC2 Tests](https://github.com/luxonis/modelconverter/actions/workflows/rvc2_test.yaml/badge.svg)   | ![RVC2 Push](https://github.com/luxonis/modelconverter/actions/workflows/rvc2_publish.yaml/badge.svg)   |
-| **RVC3**  | ![RVC3 Tests](https://github.com/luxonis/modelconverter/actions/workflows/rvc3_test.yaml/badge.svg)   | ![RVC3 Push](https://github.com/luxonis/modelconverter/actions/workflows/rvc3_publish.yaml/badge.svg)   |
-| **RVC4**  | ![RVC4 Tests](https://github.com/luxonis/modelconverter/actions/workflows/rvc4_test.yaml/badge.svg)   | ![RVC4 Push](https://github.com/luxonis/modelconverter/actions/workflows/rvc4_publish.yaml/badge.svg)   |
-| **Hailo** | ![Hailo Tests](https://github.com/luxonis/modelconverter/actions/workflows/hailo_test.yaml/badge.svg) | ![Hailo Push](https://github.com/luxonis/modelconverter/actions/workflows/hailo_publish.yaml/badge.svg) |
 
 ## Table of Contents
 
@@ -156,8 +148,8 @@ If you prefer not to share your models with the cloud, you can run the conversio
 
 ### Official Docker Images
 
-We provide official Docker images only for RVC2 and RVC3 platforms.
-Images for Hailo and RVC4 need to be built manually, as described in the [Build Instructions](#build-instructions) section.
+We provide official Docker images for `RVC2`, `RVC3` and `RVC4` platforms.
+Images for Hailo need to be built manually, as described in the [Build Instructions](#build-instructions) section.
 
 The following images are available on [Luxonis GitHub Container Registry](https://github.com/orgs/luxonis/packages?tab=packages&q=modelconverter):
 
@@ -170,7 +162,27 @@ The following images are available on [Luxonis GitHub Container Registry](https:
 
 - `ghcr.io/luxonis/modelconverter-rvc3:2022.3.0-latest`
 
+**RVC4**
+
+- `ghcr.io/luxonis/modelconverter-rvc4:2.32.6-latest`
+- `ghcr.io/luxonis/modelconverter-rvc4:2.41.0-latest`
+
+Using these prebuilt official images is the recommended way to get started with local conversions. Running a command like the one below will automatically download the latest versions of the default images:
+
+```bash
+modelconverter convert rvc4 --path <config_or_archive>
+```
+
+or if you want specific publicly available tool version:
+
+```bash
+modelconverter convert rvc4 --tool-version 2.41.0 --path <config_or_archive>
+```
+
 ### Build Instructions
+
+> [!NOTE]
+> Build locally only when the [official Docker images](#official-docker-images) do not meet your requirements.
 
 #### Prerequisites
 
@@ -181,7 +193,7 @@ Otherwise, follow the installation instructions for your OS from the [official w
 
 In order for the images to be build successfully, you need to download additional packages depending on the selected target and the desired version of the underlying conversion tools.
 
-**RVC2**
+##### RVC2
 
 Requires `openvino-<version>.tar.gz` to be present in `docker/extra_packages/`.
 
@@ -191,11 +203,11 @@ Requires `openvino-<version>.tar.gz` to be present in `docker/extra_packages/`.
 
 You only need to rename the archive to either `openvino-2022.3.0.tar.gz` or `openvino-2021.4.0.tar.gz` and place it in the `docker/extra_packages` directory.
 
-**RVC3**
+##### RVC3
 
 Only the version `2022.3.0` of `OpenVino` is supported for `RVC3`. Follow the same instructions as for `RVC2` to use the correct archive.
 
-**RVC4**
+##### RVC4
 
 Requires `snpe-<version>.zip` archive to be present in `docker/extra_packages`. When building locally via the CLI, the tool will attempt to download the archive automatically if it is missing, but only when a **full SNPE build version** is provided (e.g. `2.41.0.251128`) and that version exists in the Qualcomm catalog. If you pass only the short version (e.g. `2.41.0`), the CLI expects either the image or archive to already be present. After the first download though you can use the local image with the short or long version.
 You can also download different SNPE versions manually from [here](https://softwarecenter.qualcomm.com/catalog/item/Qualcomm_AI_Runtime_Community). After downloading, rename the archive according to the version number and place it in the `docker/extra_packages` directory.
@@ -214,7 +226,7 @@ Example (short version, assumes archive or image already present):
 modelconverter convert rvc4 --tool-version 2.41.0 --path <config_or_archive>
 ```
 
-**HAILO**
+##### HAILO
 
 Requires `hailo_ai_sw_suite_<version>:1` docker image to be present on the system. You can obtain the image by following the instructions on [Hailo website](https://developer.hailo.ai/developer-zone/sw-downloads/).
 

@@ -64,6 +64,7 @@ def save_onnx_model(
 
     onnx.save(model, str(output_path))
 
+
 def get_external_data_path(model_path: str | Path) -> Path | None:
     model_path = Path(model_path)
     model = onnx.load(str(model_path), load_external_data=False)
@@ -71,10 +72,12 @@ def get_external_data_path(model_path: str | Path) -> Path | None:
 
     tensors = list(model.graph.initializer)
     tensors.extend(
-        sparse_tensor.values for sparse_tensor in model.graph.sparse_initializer
+        sparse_tensor.values
+        for sparse_tensor in model.graph.sparse_initializer
     )
     tensors.extend(
-        sparse_tensor.indices for sparse_tensor in model.graph.sparse_initializer
+        sparse_tensor.indices
+        for sparse_tensor in model.graph.sparse_initializer
     )
     for tensor in tensors:
         if uses_external_data(tensor):

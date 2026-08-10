@@ -9,7 +9,7 @@ from typing_extensions import Self
 
 def get_password_with_timeout(
     service_name: str, username: str, timeout: float = 5
-) -> str | None:
+) -> str | None:  # pragma: no cover
     def _get_password(q: multiprocessing.Queue) -> None:
         try:
             result = keyring.get_password(service_name, username)

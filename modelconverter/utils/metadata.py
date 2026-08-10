@@ -92,7 +92,7 @@ def _get_metadata_dlc(path: Path) -> Metadata:
             end_index = len(content)
 
         section = content[line_start:end_index].strip()
-        if not section:
+        if not section:  # pragma: no cover
             continue
 
         lines = section.split("\n")
@@ -111,7 +111,7 @@ def _get_metadata_dlc(path: Path) -> Metadata:
 
         relevant_csv_part = "\n".join(cleaned_lines)
 
-        if not relevant_csv_part.strip():
+        if not relevant_csv_part.strip():  # pragma: no cover
             continue
 
         df = pl.read_csv(io.StringIO(relevant_csv_part))

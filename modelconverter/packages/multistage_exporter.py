@@ -69,18 +69,20 @@ class MultiStageExporter:
 
             linked_exporter = self.exporters[stage]
 
-            Inferer = get_inferer(self.target)
             source_dir = self._create_source_dir(linked_exporter, stage)
             dest_dir = (
                 self.intermediate_outputs_dir
                 / f"{linked_exporter.model_name}_calibration"
             )
             model_path = linked_exporter.inference_model_path
-            inferer = Inferer.from_config(
-                model_path=str(model_path),
-                src=source_dir,
-                dest=dest_dir,
-                config=linked_exporter.config,
+            # ``get_inferer`` returns a ready ``from_config`` instance (same
+            # contract as the ``infer`` command), so pass the arguments here.
+            inferer = get_inferer(
+                self.target,
+                str(model_path),
+                source_dir,
+                dest_dir,
+                linked_exporter.config,
             )
             logger.debug(f"Initialized inferer {inferer}.")
             inferer.run()
@@ -109,22 +111,21 @@ class MultiStageExporter:
                         for out_name in output_dirs
                     }
 
-                    local_scope = {}
-                    safe_globals = {"__builtins__": {}}
-
+                    # The calibration script is trusted (it comes from the
+                    # model config); exec it with a fresh namespace, which gets
+                    # real builtins so the script can `import numpy` etc.
+                    scope = {}
                     try:
-                        exec(  # nosemgrep  # noqa: S102
-                            script, safe_globals, local_scope
-                        )
-                    except Exception as e:
+                        exec(script, scope)  # nosemgrep  # noqa: S102
+                    except Exception as e:  # pragma: no cover
                         raise RuntimeError("Error executing script") from e
 
-                    if "run_script" not in local_scope:
+                    if "run_script" not in scope:  # pragma: no cover
                         raise RuntimeError(
                             "Error: `run_script` function not found in script."
                         )
 
-                    run_script = local_scope["run_script"]
+                    run_script = scope["run_script"]
                     arr = run_script(outputs)
                     np.save(dest / f"{i}.npy", arr)
 

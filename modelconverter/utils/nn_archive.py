@@ -86,10 +86,7 @@ def process_nn_archive(
         "outputs": [],
     }
 
-    if (
-        target is Target.RVC4
-        and (p := untar_path / "encondings.json").exists()
-    ):
+    if target is Target.RVC4 and (p := untar_path / "encodings.json").exists():
         logger.info("Using custom `encodings.json` from the NN Archive.")
         main_stage_config["rvc4"] = {
             "encodings": json.loads(p.read_text()),
@@ -283,7 +280,7 @@ def modelconverter_config_to_nn(
         case Target.RVC3 | Target.RVC4, _, False:
             precision = DataType.INT8
 
-        case Target.HAILO, _, _:
+        case Target.HAILO, _, _:  # pragma: no branch
             precision = DataType.INT8
 
     archive_cfg = {

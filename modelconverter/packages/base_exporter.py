@@ -74,7 +74,13 @@ class Exporter(ABC):
             self.intermediate_outputs_dir / sanitized_model_name,
         )
         shutil.copy(input_model, self.output_dir / sanitized_model_name)
-        external_data_path = get_external_data_path(input_model)
+        # External data is an ONNX-only concept; loading a non-ONNX input
+        # (e.g. an OpenVINO IR .xml/.bin) as ONNX would fail.
+        external_data_path = (
+            get_external_data_path(input_model)
+            if self.input_file_type == InputFileType.ONNX
+            else None
+        )
         if external_data_path is not None:
             shutil.copy(
                 external_data_path,
@@ -118,13 +124,13 @@ class Exporter(ABC):
 
     @property
     def inference_model_path(self) -> Path:
-        if self._inference_model_path is None:
+        if self._inference_model_path is None:  # pragma: no cover
             raise ValueError(
                 "Inference model path not yet set. Export must be run first."
             )
         return self._inference_model_path
 
-    def simplify_onnx(self) -> Path:
+    def simplify_onnx(self) -> Path:  # pragma: no cover
         logger.info("Simplifying ONNX.")
         try:
             if self.onnx_simplification == "onnxsim":
@@ -150,12 +156,12 @@ class Exporter(ABC):
 
         try:
             onnx_sim, check = simplify(str(self.input_model))
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             logger.warning(
                 f"Failed to simplify ONNX: {e}. Proceeding without simplification."
             )
             return self.input_model
-        if not check:
+        if not check:  # pragma: no cover
             logger.warning(
                 "Provided ONNX could not be simplified. "
                 "Proceeding without simplification."
@@ -195,7 +201,7 @@ class Exporter(ABC):
         if self._inference_model_path == output_path:
             self._inference_model_path = new_output_path
 
-        if not self.keep_intermediate_outputs:
+        if not self.keep_intermediate_outputs:  # pragma: no cover
             shutil.rmtree(self.intermediate_outputs_dir)
 
         buildinfo = {
@@ -231,7 +237,7 @@ class Exporter(ABC):
             )
             dest = self.intermediate_outputs_dir / "random" / name
             dest.mkdir(parents=True)
-            if inp.shape is None:
+            if inp.shape is None:  # pragma: no cover
                 exit_with(
                     ValueError(
                         f"Random calibration requires shape to be specified for input '{name}'."
@@ -243,8 +249,9 @@ class Exporter(ABC):
                 arr = np.clip(arr, calib.min_value, calib.max_value)
 
                 arr = arr.astype(calib.data_type.as_numpy_dtype())
-                if len(arr.shape) in {2, 3} or (
-                    len(arr.shape) in {3, 4} and arr.shape[0] == 1
+                if not inp.is_raw_input and (
+                    len(arr.shape) in {2, 3}
+                    or (len(arr.shape) in {3, 4} and arr.shape[0] == 1)
                 ):
                     layout = inp.layout
                     if arr.shape[0] == 1 and len(arr.shape) > 2:

@@ -58,7 +58,9 @@ def _expand_encoding_item(item: dict[str, Any]) -> list[dict[str, Any]]:
 
     size = vector_lengths[0]
     if any(length != size for length in vector_lengths):
-        raise ValueError("Per-channel encoding fields must have matching lengths.")
+        raise ValueError(
+            "Per-channel encoding fields must have matching lengths."
+        )
 
     expanded = []
     for idx in range(size):
@@ -97,7 +99,9 @@ def _normalize_encoding_group(entries: Any) -> dict[str, list[dict[str, Any]]]:
             )
         name = item.get("name")
         if not isinstance(name, str) or not name:
-            raise ValueError(f"Missing or invalid tensor name in entry: {item}")
+            raise ValueError(
+                f"Missing or invalid tensor name in entry: {item}"
+            )
         normalized.setdefault(name, []).extend(_expand_encoding_item(item))
     return normalized
 

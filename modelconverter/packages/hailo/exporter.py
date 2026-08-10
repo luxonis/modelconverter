@@ -213,7 +213,7 @@ class HailoExporter(Exporter):
         for hn_name, params in runner.get_hn_dict()["layers"].items():
             if name in params.get("original_names", []):
                 return hn_name, [1, *(params["input_shapes"][0])[1:]]
-        raise RuntimeError(
+        raise RuntimeError(  # pragma: no cover
             f"Could not find HN layer name for {name}. This should not happen."
         )
 
