@@ -221,9 +221,6 @@ def convert(
 
         output_path = get_output_dir_name(target, cfg.name, output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        # Lets a rerun recognize its own output directory (see
-        # `get_output_dir_name`) instead of clearing whatever the user keeps
-        # under `./output`.
         (output_path / CONVERSION_MARKER).touch()
         setup_logging(
             file=str(output_path / "modelconverter.log"),
@@ -447,12 +444,7 @@ def infer(
     with catch_exceptions():
         mult_cfg, _, _ = get_configs(target, str(config), list(opts))
         cfg = mult_cfg.get_stage_config(stage)
-        # Write inference results to `./output/<output_dir>` on the host
-        # instead of an ephemeral path inside the container.
         output_path = resolve_output_dir(output_dir)
-        # Derived from the resolved path, not from the raw argument: a
-        # trailing slash would otherwise put the log *inside* the results
-        # directory, which the emptiness guard then refuses to overwrite.
         setup_logging(
             file=str(output_path.parent / f"{output_path.name}.log"),
             use_rich=mult_cfg.rich_logging,
@@ -798,8 +790,6 @@ def cache_info() -> None:
     total_size = 0
     total_files = 0
     for entry in entries:
-        # Claims, sizes and use stamps are bookkeeping the cache keeps about
-        # itself; nobody put them there and nobody can clean them up.
         if entry.name.startswith("."):
             continue
         if entry.is_dir():
@@ -875,25 +865,22 @@ def _confirm(question: str) -> bool:
 
 @cache_app.command(name="clean", sort_key=1)
 def cache_clean(
+    *,
     yes: Annotated[
         bool,
         Parameter(
-            name="--yes",
-            alias="-y",
+            name="-y",
             negative_bool=[],
         ),
     ] = False,
 ) -> None:
     """Removes the entire modelconverter cache.
 
-    Parameters
-    ----------
-    yes : bool
-        Clear the cache without prompting for confirmation.
+    Args:
+        yes: Clear the cache without prompting for confirmation.
     """
     console = Console()
     root = get_cache_dir()
-    # A root that cannot even be listed still has something to clean.
     entries = _cache_entries(root)
     if entries is not None and not entries:
         console.print(f"Cache is already empty ([cyan]{root}[/]).")
@@ -907,14 +894,10 @@ def cache_clean(
     ):
         console.print("Cache clean cancelled.")
         return
-    # The prompt can sit unanswered for as long as the user likes -- plenty
-    # of time for another terminal to start a conversion -- so look again
-    # right before deleting.
+
     if _refuse_while_in_use(console, root):
         return
-    # Never abort part-way through: files left root-owned by a container that
-    # was killed before its entrypoint could chown the mounts back would
-    # otherwise leave the cache half-deleted.
+
     shutil.rmtree(root, ignore_errors=True)
     if root.exists():
         remaining, _ = dir_stats(root)
@@ -1017,8 +1000,6 @@ def launcher(
         tag = "dev" if dev else "latest"
         if dev:
             version = tool_version or get_default_target_version(target.value)
-            # CI invokes multiple dev docker commands per job; reuse the first
-            # local build so later commands don't rebuild the same image again.
             if not (
                 os.getenv("CI") == "true"
                 and get_local_docker_image(
@@ -1049,7 +1030,7 @@ def launcher(
     if not is_convert_command:
         return run_in_configured_environment()
 
-    if running_in_docker:  # to suppress duplicate COMMAND_EVENT capture
+    if running_in_docker:
         return run_in_configured_environment()
 
     assert target is not None
@@ -1095,7 +1076,6 @@ def launcher(
             if previous_conversion_run_id is None:
                 os.environ.pop(CONVERSION_RUN_ID_ENV_VAR, None)
             else:
-                # Restore in case this is used elsewhere
                 os.environ[CONVERSION_RUN_ID_ENV_VAR] = (
                     previous_conversion_run_id
                 )
