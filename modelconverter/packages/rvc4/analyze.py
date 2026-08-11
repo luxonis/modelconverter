@@ -161,7 +161,8 @@ class RVC4Analyzer(Analyzer):
             k: sorted(
                 path
                 for path in Path(v).glob("*")
-                if path.suffix.lower() in self.SUPPORTED_INPUT_SUFFIXES
+                if path.is_file()
+                and path.suffix.lower() in self.SUPPORTED_INPUT_SUFFIXES
             )
             for k, v in self.image_dirs.items()
         }
@@ -455,7 +456,8 @@ class RVC4Analyzer(Analyzer):
     def _write_layer_comparison_csv(
         self, statistics: list[list], layer_names: list[str]
     ) -> None:
-        output_dir = f"{constants.OUTPUTS_DIR!s}/analysis/{self.model_name}"
+        output_dir = constants.OUTPUTS_DIR / "analysis" / self.model_name
+        output_dir.mkdir(parents=True, exist_ok=True)
         stats_df = pl.DataFrame(
             statistics,
             schema=[
@@ -494,7 +496,7 @@ class RVC4Analyzer(Analyzer):
         ).sort("order")
 
         grouped_df = grouped_df.drop("order")
-        grouped_df.write_csv(f"{output_dir}/layer_comparison.csv")
+        grouped_df.write_csv(output_dir / "layer_comparison.csv")
         logger.info(
             f"Layer comparison results saved to {output_dir}/layer_comparison.csv"
         )
