@@ -271,10 +271,10 @@ jobs:
             --tool-version "${VERSION}" \
             -c "${ML_INSTALL_COMMAND} \
               python -m pytest tests/conversion -m '${PACKAGE}' -x \
-                --junitxml shared_with_container/junit-${PACKAGE}-${VERSION}.xml \
+                --junitxml output/junit-${PACKAGE}-${VERSION}.xml \
                 -o junit_family=legacy \
                 --cov --cov-report term-missing \
-                --cov-report xml:shared_with_container/coverage-${PACKAGE}-${VERSION}.xml"
+                --cov-report xml:output/coverage-${PACKAGE}-${VERSION}.xml"
 
       - name: Upload test results to Codecov
         if: ${{ always() }}
@@ -282,7 +282,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           report_type: test_results
-          files: shared_with_container/junit-${{ matrix.package }}-${{ matrix.version }}.xml
+          files: output/junit-${{ matrix.package }}-${{ matrix.version }}.xml
           flags: conversion
           name: conversion-${{ matrix.package }}-${{ matrix.version }}
           fail_ci_if_error: false
@@ -297,7 +297,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: coverage-conversion-${{ matrix.package }}-${{ matrix.version }}
-          path: shared_with_container/coverage-${{ matrix.package }}-${{ matrix.version }}.xml
+          path: output/coverage-${{ matrix.package }}-${{ matrix.version }}.xml
           if-no-files-found: ignore
 
   # Codecov evaluates the commit every time a report arrives, so uploading from

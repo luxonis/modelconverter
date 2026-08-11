@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import onnx
-from onnx import TensorProto, checker, helper
+from onnx import TensorProto, checker, helper, numpy_helper
 
 # Opset 13 keeps `axes` an attribute of ReduceMean rather than an input, and
 # IR 9 is accepted by every vendor tool (the onnx lib defaults higher).
@@ -231,6 +231,55 @@ def build_toy_conv_onnx(
     return _save(graph, path, external_data=external_data)
 
 
+def weights_only_external_onnx(
+    path: str | Path, *, single_file: bool = True
+) -> list[Path]:
+    """A model that is nothing but externally stored weights.
+
+    Returns the companion files, in sorted order. Anything walking a
+    model's external data has to find every one of them, so
+    ``single_file=False`` stores one tensor per file -- what
+    ``all_tensors_to_one_file=False`` produces -- and the default packs
+    them into the single sibling ``<name>_data`` that a real large model
+    uses.
+
+    The graph declares no inputs or outputs: these are subjects for the
+    file bookkeeping around a model, never for a conversion, and leaving
+    the graph empty keeps what each test is about in the test.
+    """
+    path = Path(path)
+    tensors = [
+        numpy_helper.from_array(
+            np.asarray([1.0, 2.0], dtype=np.float32), name="first"
+        ),
+        numpy_helper.from_array(
+            np.asarray([3.0, 4.0], dtype=np.float32), name="second"
+        ),
+    ]
+    if single_file:
+        tensors = tensors[:1]
+    model = helper.make_model(
+        helper.make_graph([], "ExternalWeights", [], [], tensors)
+    )
+    # The companion files are whatever the save newly produced. Diffing the
+    # directory rather than listing it afterwards keeps unrelated entries --
+    # the re-rooted cache lives under the same tmp_path -- out of the result.
+    before = set(path.parent.iterdir())
+    onnx.save_model(
+        model,
+        str(path),
+        save_as_external_data=True,
+        all_tensors_to_one_file=single_file,
+        # One file per tensor is only reached by leaving the location
+        # unset; naming it would collapse them back into that one file.
+        location=f"{path.name}_data" if single_file else None,
+        # Without this the tiny tensors stay embedded and no companion
+        # file is written at all.
+        size_threshold=0,
+    )
+    return sorted(set(path.parent.iterdir()) - before - {path})
+
+
 def build_relu_onnx(path: str | Path, shape: list[int]) -> Path:
     """A shape-preserving ``Relu`` over a single input of the given shape.
 
@@ -331,3 +380,54 @@ def intermediate_info_onnx(path: str | Path) -> Path:
         nodes, "IntermediateModel", [inp], [out], value_info=[described]
     )
     return _save(graph, path)
+
+
+def multi_file_external_onnx(path: str | Path) -> list[Path]:
+    """A conv model whose weight and bias each live in their own file.
+
+    Returns the companion files, in sorted order. This is the layout
+    ``all_tensors_to_one_file=False`` produces; two initializers are the
+    smallest model that tells "copies the external data" apart from
+    "copies *all* of it". Unlike L{weights_only_external_onnx} the graph
+    has real inputs and outputs, so it can be put through a conversion.
+    """
+    path = Path(path)
+    inp = helper.make_tensor_value_info("img", TensorProto.FLOAT, [1, 3, 8, 8])
+    out = helper.make_tensor_value_info("out", TensorProto.FLOAT, [1, 2, 8, 8])
+    node = helper.make_node(
+        "Conv",
+        ["img", "weight", "bias"],
+        ["out"],
+        kernel_shape=[3, 3],
+        pads=[1] * 4,
+    )
+    graph = helper.make_graph(
+        [node],
+        "MultiFileExternal",
+        [inp],
+        [out],
+        initializer=[
+            numpy_helper.from_array(
+                np.zeros((2, 3, 3, 3), dtype=np.float32), name="weight"
+            ),
+            numpy_helper.from_array(
+                np.zeros((2,), dtype=np.float32), name="bias"
+            ),
+        ],
+    )
+    model = helper.make_model(
+        graph, opset_imports=[helper.make_opsetid("", _OPSET)]
+    )
+    model.ir_version = _IR_VERSION
+    checker.check_model(model)
+
+    before = set(path.parent.iterdir())
+    onnx.save_model(
+        model,
+        str(path),
+        save_as_external_data=True,
+        # Naming a location would collapse the tensors back into one file.
+        all_tensors_to_one_file=False,
+        size_threshold=0,
+    )
+    return sorted(set(path.parent.iterdir()) - before - {path})

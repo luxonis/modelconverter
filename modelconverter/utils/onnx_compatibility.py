@@ -1,3 +1,4 @@
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import ml_dtypes
@@ -65,31 +66,85 @@ def save_onnx_model(
     onnx.save(model, str(output_path))
 
 
-def get_external_data_path(model_path: str | Path) -> Path | None:
+def _iter_node_tensors(
+    nodes: Iterable[onnx.NodeProto],
+) -> Iterator[onnx.TensorProto]:
+    """Yields the tensors reachable from ``nodes``.
+
+    Besides the subgraphs nested in a node (the bodies of ``If``,
+    ``Loop``, ``Scan``, ...), an attribute can hold a tensor directly --
+    the value of a ``Constant``, say -- and ONNX writes those out
+    externally too when the model is converted with
+    ``convert_attribute=True``.
+    """
+    for node in nodes:
+        for attribute in node.attribute:
+            yield attribute.t
+            yield from attribute.tensors
+            if attribute.HasField("g"):
+                yield from _iter_tensors(attribute.g)
+            for subgraph in attribute.graphs:
+                yield from _iter_tensors(subgraph)
+
+
+def _iter_tensors(graph: onnx.GraphProto) -> Iterator[onnx.TensorProto]:
+    """Yields every initializer of ``graph``, including those held by its
+    nodes."""
+    yield from graph.initializer
+    for sparse_tensor in graph.sparse_initializer:
+        yield sparse_tensor.values
+        yield sparse_tensor.indices
+
+    yield from _iter_node_tensors(graph.node)
+
+
+def _iter_model_tensors(model: onnx.ModelProto) -> Iterator[onnx.TensorProto]:
+    """Yields every tensor of ``model`` that may carry external data.
+
+    Local functions are walked as well: their nodes are not part of the
+    main graph, but ONNX's own loader resolves their external data.
+    """
+    yield from _iter_tensors(model.graph)
+    for function in model.functions:
+        yield from _iter_node_tensors(function.node)
+
+
+def get_external_data_paths(model_path: str | Path) -> list[Path]:
+    """Returns every companion file holding the model's external tensor
+    data.
+
+    A model saved with ``all_tensors_to_one_file=False`` keeps one file
+    per tensor, so there is not necessarily just one.
+    """
     model_path = Path(model_path)
     model = onnx.load(str(model_path), load_external_data=False)
     model_dir = model_path.parent.resolve()
 
-    tensors = list(model.graph.initializer)
-    tensors.extend(
-        sparse_tensor.values
-        for sparse_tensor in model.graph.sparse_initializer
-    )
-    tensors.extend(
-        sparse_tensor.indices
-        for sparse_tensor in model.graph.sparse_initializer
-    )
-    for tensor in tensors:
-        if uses_external_data(tensor):
-            location = ExternalDataInfo(tensor).location
-            if location:
-                candidate = (model_path.parent / location).resolve()
-                try:
-                    candidate.relative_to(model_dir)
-                except ValueError as exc:
-                    raise ValueError(
-                        "ONNX external data location must stay within the "
-                        f"model directory: {location}"
-                    ) from exc
-                return candidate
-    return None
+    paths: list[Path] = []
+    for tensor in _iter_model_tensors(model):
+        if not uses_external_data(tensor):
+            continue
+        location = ExternalDataInfo(tensor).location
+        if not location:
+            continue
+        candidate = (model_path.parent / location).resolve()
+        try:
+            candidate.relative_to(model_dir)
+        except ValueError as exc:
+            raise ValueError(
+                "ONNX external data location must stay within the "
+                f"model directory: {location}"
+            ) from exc
+        if candidate not in paths:
+            paths.append(candidate)
+    return paths
+
+
+def has_external_data(model_path: str | Path) -> bool:
+    """Whether the model keeps any of its tensors in companion files.
+
+    Callers that re-save the model consolidate every tensor into one new
+    file, so they only need to know *whether* there is external data --
+    not where it currently lives.
+    """
+    return bool(get_external_data_paths(model_path))

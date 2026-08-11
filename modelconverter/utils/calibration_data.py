@@ -7,9 +7,13 @@ import numpy as np
 from loguru import logger
 from luxonis_ml.data import LuxonisDataset, LuxonisLoader
 
-from .constants import CALIBRATION_DIR, LOADERS, SHARED_DIR
+from .constants import CALIBRATION_DIR, LOADERS
 from .exceptions import ModelconverterException, exit_with
-from .filesystem_utils import download_from_remote, get_protocol
+from .filesystem_utils import (
+    download_from_remote,
+    get_protocol,
+    resolve_input_path,
+)
 from .image import read_calib_dir
 
 
@@ -67,9 +71,9 @@ def download_calibration_data(string: str, max_images: int = -1) -> Path:
     if protocol != "file":
         return _get_from_remote(string, CALIBRATION_DIR, max_images)
 
-    path = Path(string)
+    path = Path(string).expanduser()
     if not path.exists():
-        path = SHARED_DIR / string
+        path = resolve_input_path(string) or path
     if path.exists():
         if path.is_dir():
             return path

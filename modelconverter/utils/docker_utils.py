@@ -6,6 +6,7 @@ import sys
 import tempfile
 import zipfile
 from contextlib import suppress
+from functools import cache
 from pathlib import Path
 from typing import Literal
 from urllib.error import HTTPError, URLError
@@ -21,10 +22,55 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 import docker
 from modelconverter import __version__
+from modelconverter.utils.constants import (
+    CONTAINER_SHARED_DIR,
+    get_cache_dir,
+    in_docker,
+)
+from modelconverter.utils.input_staging import claim_cache
 from modelconverter.utils.target_versions import (
     get_default_target_version,
 )
 from modelconverter.utils.telemetry import telemetry_environment
+
+UserNamespaceMode = Literal["rootless", "userns", "rootful", "unknown"]
+
+
+@cache
+def docker_user_namespace_mode() -> UserNamespaceMode:
+    """Returns how the active Docker daemon maps the container's root
+    user onto the host.
+
+    - ``rootless``: the daemon itself runs as the invoking user, so
+      container root is already that user.
+    - ``userns``: the daemon runs as root with user-namespace remapping,
+      so container root is a subordinate uid that cannot even be chowned
+      to the host user from inside the container.
+    - ``rootful``: container root is host root, so what the container
+      writes has to be handed back to the invoking user.
+    - ``unknown``: the daemon could not be asked.
+
+    The answer cannot change within a run, so it is cached: this is a
+    round-trip to the daemon on a path that would otherwise take it once
+    per generated compose config.
+    """
+    try:
+        out = subprocess.check_output(
+            [docker_bin(), "info", "-f", "{{json .SecurityOptions}}"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            # A `DOCKER_HOST` pointing at an unreachable daemon must not hang
+            # the conversion.
+            timeout=30,
+        )
+    # `docker_bin` raises RuntimeError when docker is not installed at all.
+    except (subprocess.SubprocessError, OSError, RuntimeError):
+        return "unknown"
+    if "rootless" in out:
+        return "rootless"
+    if "userns" in out:
+        return "userns"
+    return "rootful"
 
 
 def get_docker_client_from_active_context() -> docker.DockerClient:
@@ -62,7 +108,7 @@ def rvc4_tag_version(version: str) -> str:
 def generate_compose_config(
     image: str,
     gpu: bool = False,
-    memory: str | None = None,
+    memory: int | None = None,
     cpus: float | None = None,
     extra_environment: dict[str, str] | None = None,
 ) -> str:
@@ -81,22 +127,53 @@ def generate_compose_config(
         # archives from HubAI.
         "HUBAI_API_KEY": os.getenv("HUBAI_API_KEY", ""),
     }
+    # Pass the host user's identity so the container can chown the outputs and
+    # cache back to the invoking user on exit (see docker/*/entrypoint.sh).
+    # `getuid`/`getgid` are POSIX-only; on other platforms chowning is neither
+    # possible nor necessary. Under a user-namespace daemon it is either
+    # unnecessary (rootless: container root already *is* the host user) or
+    # impossible (userns remap: the host user is not mapped into the
+    # container), and doing it anyway hands the files to an unmapped sub-uid.
+    namespace_mode = docker_user_namespace_mode()
+    if namespace_mode == "unknown":
+        logger.warning(
+            "Could not determine the Docker daemon's user-namespace mode; "
+            "assuming a rootful daemon. If the outputs come out owned by "
+            "another user, unset HOST_UID/HOST_GID and check `docker info`."
+        )
+    if hasattr(os, "getuid") and namespace_mode in {"rootful", "unknown"}:
+        environment["HOST_UID"] = str(os.getuid())
+        environment["HOST_GID"] = str(os.getgid())
     if extra_environment:
         environment.update(extra_environment)
 
     cwd = Path.cwd().absolute()
-    volumes = [f"{cwd / 'shared_with_container'}:/app/shared_with_container"]
+    volumes = [
+        f"{get_cache_dir()}:{CONTAINER_SHARED_DIR}",
+        f"{cwd / 'output'}:/app/output",
+    ]
+    is_dev = image.endswith("-dev")
     # Mount the test suite (excluded from the image via .dockerignore) so a
     # dev container can run it, e.g.
-    # `modelconverter shell <t> --dev -c "pytest -m <t>"`.
-    if (cwd / "tests").exists():
+    # `modelconverter shell <t> --dev -c "pytest -m <t>"`. Only for dev images:
+    # a plain conversion has no use for it, and the entrypoint hands the mount
+    # back to the invoking user on exit -- which has no business touching an
+    # unrelated `tests/` that merely happens to sit in the working directory.
+    if is_dev and (cwd / "tests").exists():
         volumes.append(f"{cwd / 'tests'}:/app/tests")
-    if (cwd / "pyproject.toml").exists():
+    # Same reasoning: the image carries its own pyproject.toml, and in-container
+    # tooling reading /app/pyproject.toml must not pick up whatever Python
+    # project the user happens to convert from.
+    if is_dev and (cwd / "pyproject.toml").exists():
         volumes.append(f"{cwd / 'pyproject.toml'}:/app/pyproject.toml")
+    # The conversion tests convert some of the example configs by their
+    # repository-relative path, so those have to be reachable too.
+    if (cwd / "configs").exists():
+        volumes.append(f"{cwd / 'configs'}:/app/configs")
     # In dev images the package is baked in (`pip install -e .`), so a source
     # change would otherwise need an image rebuild to take effect. Mount the
     # host source over it so edits to modelconverter are live in the container.
-    if image.endswith("-dev") and (cwd / "modelconverter").exists():
+    if is_dev and (cwd / "modelconverter").exists():
         volumes.append(f"{cwd / 'modelconverter'}:/app/modelconverter")
 
     config = {
@@ -119,7 +196,9 @@ def generate_compose_config(
     }
     limits = {}
     if memory is not None:
-        limits["memory"] = memory
+        # Compose reads a bare number as bytes, so the limit is handed over
+        # already parsed rather than in whatever spelling the user typed.
+        limits["memory"] = str(memory)
     if cpus is not None:
         limits["cpus"] = str(cpus)
 
@@ -132,10 +211,6 @@ def generate_compose_config(
         config["services"]["modelconverter"]["runtime"] = "nvidia"
 
     return yaml.dump(config)
-
-
-def in_docker() -> bool:
-    return "IN_DOCKER" in os.environ
 
 
 def check_docker() -> None:
@@ -456,11 +531,21 @@ def docker_exec(
     use_gpu: bool,
     version: str | None = None,
     image: str | None = None,
-    memory: str | None = None,
+    memory: int | None = None,
     cpus: float | None = None,
 ) -> None:
     version = version or get_default_target_version(target)
     image = get_docker_image(target, bare_tag, version, image)
+
+    # Create the writable host directories up front so they are owned by the
+    # invoking user (the cache also holds the staged inputs, and `./output`
+    # receives the conversion results).
+    get_cache_dir().mkdir(parents=True, exist_ok=True)
+    (Path.cwd() / "output").mkdir(parents=True, exist_ok=True)
+    # The container downloads remote inputs straight into the cache mount, so
+    # `cache clean` in another terminal must see this run even when nothing
+    # was staged host-side.
+    claim_cache()
 
     with tempfile.NamedTemporaryFile(delete=False) as f:
         f.write(
@@ -481,9 +566,10 @@ def docker_exec(
             ).encode()
         )
 
-    def sanitize(arg: str) -> str:
-        return arg.replace('"', "'")
-
+    # The arguments are passed through as argv, never re-evaluated: the
+    # entrypoints run `exec modelconverter "$@"`. They used to build a string
+    # and `eval` it, which is what the double quotes here were once rewritten
+    # for -- doing so now would only corrupt an inline JSON override.
     sys.exit(
         subprocess.run(
             [
@@ -495,7 +581,7 @@ def docker_exec(
                 "--rm",
                 "--remove-orphans",
                 "modelconverter",
-                *map(sanitize, args),
+                *args,
             ],
             env=os.environ,
             check=False,

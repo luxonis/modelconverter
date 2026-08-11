@@ -1,9 +1,53 @@
 import os
+from contextvars import ContextVar
 from pathlib import Path
 
 from luxonis_ml.utils import LuxonisFileSystem
 
-from modelconverter.utils.constants import SHARED_DIR
+from modelconverter.utils.constants import SHARED_DIR, in_docker
+
+# Base directory against which relative local paths are resolved when they do
+# not exist as-is. It is set to the directory of the active config file while
+# it is being parsed (see `set_input_base`), so that files referenced *inside*
+# a config (calibration data, scripts, encodings, ...) are resolved relative to
+# the config file. It is tried before -- not instead of -- the default root:
+# the cache directory (inside the container) or the current working directory
+# (native runs). See `get_input_bases`.
+_input_base: ContextVar[Path | None] = ContextVar("input_base", default=None)
+
+
+def set_input_base(base: Path | None) -> None:
+    """Sets the base directory for resolving relative local paths.
+
+    Pass C{None} to reset to the default.
+    """
+    _input_base.set(base)
+
+
+def get_input_bases() -> list[Path]:
+    """Returns the base directories tried, in order, for a relative
+    local path that does not exist as-is.
+
+    The active config's directory comes first, then the default root. The
+    default has to stay as a fallback: a config downloaded from remote
+    storage lands in the cache, so the paths it references relative to the
+    shared root would otherwise stop resolving.
+    """
+    default = SHARED_DIR if in_docker() else Path.cwd()
+    base = _input_base.get()
+    if base is None or base == default:
+        return [default]
+    return [base, default]
+
+
+def resolve_input_path(string: str) -> Path | None:
+    """Resolves a relative local path against the input bases, or
+    returns ``None`` if it exists under none of them."""
+    for base in get_input_bases():
+        candidate = base / string
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def resolve_path(string: str, dest: Path) -> Path:
@@ -12,11 +56,12 @@ def resolve_path(string: str, dest: Path) -> Path:
     if protocol != "file":
         path = download_from_remote(string, dest)
     else:
-        path = Path(string)
+        path = Path(string).expanduser()
     if not path.exists():
-        path = SHARED_DIR / path
-    if not path.exists():
-        raise ValueError(f"Path `{string}` does not exist.")
+        resolved = resolve_input_path(string)
+        if resolved is None:
+            raise ValueError(f"Path `{string}` does not exist.")
+        path = resolved
     return path
 
 

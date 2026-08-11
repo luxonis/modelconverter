@@ -13,6 +13,7 @@ from luxonis_ml.typing import Params
 from requests.exceptions import HTTPError
 
 from modelconverter.utils import (
+    ModelconverterException,
     process_nn_archive,
     resolve_path,
     sanitize_net_name,
@@ -21,10 +22,13 @@ from modelconverter.utils.config import Config
 from modelconverter.utils.constants import (
     CALIBRATION_DIR,
     CONFIGS_DIR,
+    CONVERSION_MARKER,
     MISC_DIR,
     MODELS_DIR,
     OUTPUTS_DIR,
+    in_docker,
 )
+from modelconverter.utils.filesystem_utils import set_input_base
 from modelconverter.utils.hub_requests import Request
 from modelconverter.utils.types import DataType, Encoding, Target
 
@@ -52,17 +56,53 @@ class ModelType(str, Enum):
         raise ValueError(f"Unsupported model format: {suffix}")
 
 
+def resolve_output_dir(output_dir: str) -> Path:
+    """Resolves a user-provided ``--output-dir`` under L{OUTPUTS_DIR}.
+
+    Only the host's ``./output`` is mounted into the container, so an
+    absolute path -- which C{pathlib} would let win over the mount point
+    -- or one escaping upwards through C{..} would be written to a
+    container-only location and lost when the container is removed. A
+    native run writes straight to the host filesystem, where every path
+    the user names is reachable, so any path is honored there.
+    """
+    relative = Path(output_dir)
+    if in_docker() and (
+        not relative.parts or relative.is_absolute() or ".." in relative.parts
+    ):
+        raise ModelconverterException(
+            f"Invalid `--output-dir` '{output_dir}': it must name a "
+            f"directory inside '{OUTPUTS_DIR}'. Pass a relative path "
+            "without `..`."
+        )
+    return OUTPUTS_DIR / relative
+
+
 def get_output_dir_name(
     target: Target, name: str, output_dir: str | None
 ) -> Path:
     name = sanitize_net_name(name)
     date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
     if output_dir is not None:
-        if (OUTPUTS_DIR / output_dir).exists():
-            shutil.rmtree(OUTPUTS_DIR / output_dir)
-    else:
-        output_dir = f"{name}_to_{target.name.lower()}_{date}"
-    return OUTPUTS_DIR / output_dir
+        dest = resolve_output_dir(output_dir)
+        if dest.exists():
+            # `OUTPUTS_DIR` is the user's `./output`, so a rerun may only clear
+            # a directory a previous conversion produced. Inference results
+            # carry a marker of their own and are not ours to delete either.
+            if not dest.is_dir():
+                raise ModelconverterException(
+                    f"Refusing to overwrite '{dest}': it is not a directory. "
+                    "Pass a different `--output-dir`."
+                )
+            if not (dest / CONVERSION_MARKER).exists() and any(dest.iterdir()):
+                raise ModelconverterException(
+                    f"Refusing to overwrite '{dest}': it is not empty and "
+                    "does not hold conversion results. Pass a different "
+                    "`--output-dir`."
+                )
+            shutil.rmtree(dest)
+        return dest
+    return OUTPUTS_DIR / f"{name}_to_{target.name.lower()}_{date}"
 
 
 def init_dirs() -> None:
@@ -87,6 +127,10 @@ def get_configs(
         L{NNArchiveConfig} and the main stage key.
     """
     opts = opts or []
+    # `infer` parses a second config after `convert` has returned, in the same
+    # process. Start from the default base so a directory left behind by the
+    # previous config cannot resolve this one's relative paths.
+    set_input_base(None)
     if isinstance(opts, list):
         if len(opts) % 2 != 0:
             raise ValueError(
@@ -101,6 +145,9 @@ def get_configs(
         path_ = resolve_path(path, MISC_DIR)
         if path_.is_dir() or is_nn_archive(path_):
             return process_nn_archive(target, path_, overrides)
+        # Resolve files referenced *inside* the config (calibration data,
+        # scripts, encodings, ...) relative to the config file's directory.
+        set_input_base(path_.parent)
     cfg = Config.get_config(path, overrides)
 
     main_stage_key = None

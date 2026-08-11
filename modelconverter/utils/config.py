@@ -24,7 +24,7 @@ from modelconverter.utils.filesystem_utils import resolve_path
 from modelconverter.utils.layout import make_default_layout
 from modelconverter.utils.metadata import Metadata, get_metadata
 from modelconverter.utils.onnx_compatibility import (
-    get_external_data_path,
+    has_external_data,
     save_onnx_model,
 )
 from modelconverter.utils.types import (
@@ -850,7 +850,7 @@ def generate_renamed_onnx(
     onnx_path = Path(onnx_path)
     output_path = Path(output_path)
     model = onnx.load(str(onnx_path))
-    model_data_path = get_external_data_path(onnx_path)
+    model_has_external_data = has_external_data(onnx_path)
 
     for node in model.graph.node:
         for i, input_name in enumerate(node.input):
@@ -864,6 +864,6 @@ def generate_renamed_onnx(
     save_onnx_model(
         model,
         output_path,
-        save_as_external_data=model_data_path is not None,
+        save_as_external_data=model_has_external_data,
         location=f"{output_path.name}_data",
     )

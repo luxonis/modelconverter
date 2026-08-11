@@ -14,6 +14,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from modelconverter.utils import calibration_data as cd
+from modelconverter.utils import filesystem_utils
 from modelconverter.utils.constants import CALIBRATION_DIR, SHARED_DIR
 from modelconverter.utils.exceptions import ModelconverterException
 from tests.helpers.strategies import reuses_function_fixtures
@@ -150,7 +151,12 @@ def test_local_dir_is_used_as_is(work_dir: Path):
     assert cd.download_calibration_data(str(d)) == Path(str(d))
 
 
-def test_calibration_dir_falls_back_to_the_shared_dir():
+def test_calibration_dir_falls_back_to_the_shared_dir(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # The shared directory is only the fallback root inside the container;
+    # a native run falls back to the working directory instead.
+    monkeypatch.setattr(filesystem_utils, "in_docker", lambda: True)
     (SHARED_DIR / "calibdir").mkdir(parents=True)
     result = cd.download_calibration_data("calibdir")
     assert result == SHARED_DIR / "calibdir"

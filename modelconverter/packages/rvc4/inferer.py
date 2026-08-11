@@ -14,7 +14,11 @@ class RVC4Inferer(Inferer):
         self.header = f"%{' '.join(name for name in self.out_shapes)}"
 
     def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
-        outputs_path = Path("output")
+        # Scratch directory for SNPE's raw outputs. Must NOT be literally
+        # "output": inside the container that resolves to `/app/output`, which
+        # is the bind-mounted results directory the inferer writes into. Using
+        # it here would wipe previously-saved results on every image.
+        outputs_path = Path("snpe_output")
         shutil.rmtree(self.raw_images_path, ignore_errors=True)
         self.raw_images_path.mkdir(parents=True)
         shutil.rmtree(outputs_path, ignore_errors=True)
@@ -44,7 +48,7 @@ class RVC4Inferer(Inferer):
                 "--input_list",
                 "input_list.txt",
                 "--output_dir",
-                "output",
+                str(outputs_path),
             ],
             silent=True,
         )

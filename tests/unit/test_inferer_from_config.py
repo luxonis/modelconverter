@@ -32,7 +32,7 @@ class _StubInferer(Inferer):
 def _build(work_dir: Path, shape: list[int], **overrides: Any) -> _StubInferer:
     """Build an inferer from a single-input model of the given shape."""
     model = single_io_onnx(
-        work_dir / "shared_with_container" / "models" / "m.onnx",
+        work_dir / "m.onnx",
         shape=shape,
     ).resolve()
     config = Config.get_config(

@@ -1,6 +1,6 @@
 import importlib.metadata
 import os
-import re
+import shutil
 import signal
 import sys
 import time
@@ -12,12 +12,18 @@ from cyclopts import App, Group, Parameter
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator, is_nn_archive
 from luxonis_ml.utils import LuxonisFileSystem, setup_logging
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Confirm
+from rich.table import Table
 
 from modelconverter.cli import (
     extract_preprocessing,
     get_configs,
     get_output_dir_name,
     init_dirs,
+    resolve_output_dir,
 )
 from modelconverter.packages import (
     get_analyzer,
@@ -39,8 +45,23 @@ from modelconverter.utils import (
     upload_to_remote,
 )
 from modelconverter.utils.config import SingleStageConfig
-from modelconverter.utils.constants import MODELS_DIR
-from modelconverter.utils.general import sanitize_net_name
+from modelconverter.utils.constants import (
+    CONVERSION_MARKER,
+    MODELS_DIR,
+    get_cache_dir,
+)
+from modelconverter.utils.general import (
+    dir_stats,
+    human_size,
+    parse_size,
+    sanitize_net_name,
+)
+from modelconverter.utils.input_staging import (
+    cache_budget,
+    cache_is_in_use,
+    path_flags_for,
+    stage_inputs,
+)
 from modelconverter.utils.nn_archive import generate_archive
 from modelconverter.utils.telemetry import (
     COMMAND_EVENT,
@@ -200,6 +221,7 @@ def convert(
 
         output_path = get_output_dir_name(target, cfg.name, output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
+        (output_path / CONVERSION_MARKER).touch()
         setup_logging(
             file=str(output_path / "modelconverter.log"),
             use_rich=cfg.rich_logging,
@@ -422,13 +444,13 @@ def infer(
     with catch_exceptions():
         mult_cfg, _, _ = get_configs(target, str(config), list(opts))
         cfg = mult_cfg.get_stage_config(stage)
+        output_path = resolve_output_dir(output_dir)
         setup_logging(
-            file="modelconverter.log", use_rich=mult_cfg.rich_logging
+            file=str(output_path.parent / f"{output_path.name}.log"),
+            use_rich=mult_cfg.rich_logging,
         )
         logger.info("Starting inference")
-        get_inferer(
-            target, model_path, input_path, Path(output_dir), cfg
-        ).run()
+        get_inferer(target, model_path, input_path, output_path, cfg).run()
 
 
 @app.command(group=docker_commands)
@@ -640,7 +662,7 @@ def visualize(dir_path: str) -> None:
     ----------
     dir_path : str
         The path to the directory containing the analysis results.
-        The default search path is ``shared_with_container/outputs/analysis``.
+        The default search path is ``output/analysis``.
     """
     get_visualizer(Target.RVC4, dir_path).visualize()
 
@@ -700,6 +722,207 @@ def archive(
         logger.info(f"Archive saved to {save_path}")
 
 
+cache_app = App(
+    name="cache",
+    help="Manage the hidden modelconverter cache "
+    "(staged inputs and remote downloads).",
+)
+app.meta.command(cache_app)
+
+
+_CACHE_SUBDIR_DESCRIPTIONS = {
+    "inputs": "Staged input files",
+    "models": "Downloaded models",
+    "calibration_data": "Calibration datasets",
+    "misc": "Miscellaneous downloads",
+    "configs": "Configuration files",
+}
+
+
+def _cache_entries(root: Path) -> list[Path] | None:
+    """Returns the cache's top-level entries, or ``None`` if the cache
+    root itself cannot be read.
+
+    A container killed before its entrypoint could chown the mounts back
+    can leave the cache root owned by another user, which is precisely
+    the situation these commands exist to report on and recover from.
+    """
+    if not root.exists():
+        return []
+    try:
+        return sorted(root.iterdir(), key=lambda p: p.name)
+    except OSError:
+        return None
+
+
+@cache_app.command(name="info", sort_key=0)
+def cache_info() -> None:
+    """Reports the location and disk usage of the modelconverter
+    cache."""
+    console = Console()
+    root = get_cache_dir()
+
+    entries = _cache_entries(root)
+    if entries is None:
+        console.print(
+            Panel(
+                f"The cache at [cyan]{root}[/] cannot be read. It is owned "
+                "by another user, most likely written by a container that "
+                "was killed before it could hand it back.\nRemove it with "
+                f"[bold]sudo rm -rf {root}[/].",
+                title="[bold]ModelConverter cache[/]",
+                border_style="yellow",
+                expand=False,
+            )
+        )
+        return
+
+    if not entries:
+        console.print(
+            Panel(
+                f"The cache is empty.\nLocation: [cyan]{root}[/]",
+                title="[bold]ModelConverter cache[/]",
+                border_style="cyan",
+                expand=False,
+            )
+        )
+        return
+
+    table = Table(box=box.SIMPLE_HEAD, expand=False, pad_edge=False)
+    table.add_column("Directory", style="cyan", no_wrap=True)
+    table.add_column("Contents", style="dim")
+    table.add_column("Files", justify="right", style="magenta")
+    table.add_column("Size", justify="right", style="green")
+
+    total_size = 0
+    total_files = 0
+    for entry in entries:
+        if entry.name.startswith("."):
+            continue
+        if entry.is_dir():
+            size, count = dir_stats(entry)
+            description = _CACHE_SUBDIR_DESCRIPTIONS.get(entry.name, "")
+        else:
+            try:
+                size, count = entry.stat().st_size, 1
+            except OSError:
+                size, count = 0, 1
+            description = ""
+        total_size += size
+        total_files += count
+        table.add_row(entry.name, description, str(count), human_size(size))
+
+    table.add_section()
+    table.add_row(
+        "[bold]Total[/]",
+        "",
+        f"[bold]{total_files}[/]",
+        f"[bold]{human_size(total_size)}[/]",
+    )
+
+    budget = cache_budget()
+    if budget:
+        table.add_row(
+            "[dim]Budget[/]",
+            "[dim]MODELCONVERTER_CACHE_MAX_SIZE[/]",
+            "",
+            f"[dim]{human_size(budget)}[/]",
+        )
+
+    console.print(
+        Panel(
+            table,
+            title="[bold]ModelConverter cache[/]",
+            subtitle=f"[dim]{root}[/]",
+            border_style="cyan",
+            expand=False,
+        )
+    )
+
+
+def _refuse_while_in_use(console: Console, root: Path) -> bool:
+    """Whether a running conversion still needs the cache.
+
+    The cache is bind-mounted into every running container, so emptying it
+    would pull the staged inputs -- and the downloads the container writes
+    as it runs -- out from under a conversion that is still using them.
+    """
+    if not cache_is_in_use():
+        return False
+    console.print(
+        f"Not clearing [cyan]{root}[/]: it is still in use by a running "
+        "conversion. Wait for it to finish and try again."
+    )
+    return True
+
+
+def _confirm(question: str) -> bool:
+    """Asks C{question}, treating anything but an answer as a decline.
+
+    Piped or closed stdin (a CI step, `</dev/null`) makes C{input()} raise
+    C{EOFError}, and Ctrl-C at the prompt raises C{KeyboardInterrupt}. A
+    destructive command must not abort with a traceback on either, nor
+    read silence for consent nobody gave.
+    """
+    try:
+        return Confirm.ask(question)
+    except (EOFError, KeyboardInterrupt):
+        return False
+
+
+@cache_app.command(name="clean", sort_key=1)
+def cache_clean(
+    *,
+    yes: Annotated[
+        bool,
+        Parameter(
+            name="-y",
+            negative_bool=[],
+        ),
+    ] = False,
+) -> None:
+    """Removes the entire modelconverter cache.
+
+    Args:
+        yes: Clear the cache without prompting for confirmation.
+    """
+    console = Console()
+    root = get_cache_dir()
+    entries = _cache_entries(root)
+    if entries is not None and not entries:
+        console.print(f"Cache is already empty ([cyan]{root}[/]).")
+        return
+
+    if _refuse_while_in_use(console, root):
+        return
+    size, _ = dir_stats(root)
+    if not yes and not _confirm(
+        f"Clear the entire ModelConverter cache at [cyan]{root}[/]?"
+    ):
+        console.print("Cache clean cancelled.")
+        return
+
+    if _refuse_while_in_use(console, root):
+        return
+
+    shutil.rmtree(root, ignore_errors=True)
+    if root.exists():
+        remaining, _ = dir_stats(root)
+        console.print(
+            f"Cleared what could be removed from [cyan]{root}[/] "
+            f"([green]{human_size(size - remaining)}[/] freed, "
+            f"[yellow]{human_size(remaining)}[/] left). The remaining "
+            "files are owned by another user, most likely written by a "
+            "container that was killed before it could hand them back. "
+            f"Remove them with [bold]sudo rm -rf {root}[/]."
+        )
+        return
+    console.print(
+        f":wastebasket:  Cleared cache at [cyan]{root}[/] "
+        f"(freed [green]{human_size(size)}[/])."
+    )
+
+
 @app.meta.default
 def launcher(
     *tokens: Annotated[
@@ -748,9 +971,9 @@ def launcher(
         str | None,
         Parameter(
             group=docker_parameters,
-            help="Amount of memory to allocate to the docker container. "
-            "The format is a number followed by a suffix, e.g. '4g' for 4 gigabytes. "
-            "Available suffixes are 'b', 'k', 'm', 'g'. "
+            help="Amount of memory to allocate to the docker container, "
+            "as a number with an optional binary unit: '4g' for four "
+            "gibibytes, '512m', '2GiB', or a bare count of bytes. "
             "By default, uses all available system memory.",
         ),
     ] = None,
@@ -769,15 +992,9 @@ def launcher(
     is_convert_command = getattr(command, "__name__", "") == "convert"
     running_in_docker = in_docker()
 
-    if memory is not None:
-        if not re.match(r"^\d+(?:[bkmgBKMG])?$", memory):
-            raise ValueError(
-                "Invalid memory format. Use a number followed by an optional suffix: b, k, m, g."
-            )
-        mem_value = int(memory[:-1])
-        if mem_value <= 0:
-            raise ValueError("Memory value must be a positive integer.")
-        memory = memory.upper()
+    memory_bytes = parse_size(memory) if memory is not None else None
+    if memory_bytes is not None and memory_bytes <= 0:
+        raise ValueError("Memory value must be a positive size.")
 
     if cpus is not None and cpus <= 0:
         raise ValueError("CPUs value must be a positive number.")
@@ -790,8 +1007,6 @@ def launcher(
         tag = "dev" if dev else "latest"
         if dev:
             version = tool_version or get_default_target_version(target.value)
-            # CI invokes multiple dev docker commands per job; reuse the first
-            # local build so later commands don't rebuild the same image again.
             if not (
                 os.getenv("CI") == "true"
                 and get_local_docker_image(
@@ -805,14 +1020,16 @@ def launcher(
                     target.value, bare_tag=tag, version=version, image=image
                 )
 
+        staged_tokens = stage_inputs(list(tokens), path_flags_for(command))
+
         docker_exec(
             target.value,
-            *tokens,
+            *staged_tokens,
             bare_tag=tag,
             use_gpu=gpu,
             version=tool_version,
             image=image,
-            memory=memory,
+            memory=memory_bytes,
             cpus=cpus,
         )
         return None
@@ -820,7 +1037,7 @@ def launcher(
     if not is_convert_command:
         return run_in_configured_environment()
 
-    if running_in_docker:  # to suppress duplicate COMMAND_EVENT capture
+    if running_in_docker:
         return run_in_configured_environment()
 
     assert target is not None
@@ -866,7 +1083,6 @@ def launcher(
             if previous_conversion_run_id is None:
                 os.environ.pop(CONVERSION_RUN_ID_ENV_VAR, None)
             else:
-                # Restore in case this is used elsewhere
                 os.environ[CONVERSION_RUN_ID_ENV_VAR] = (
                     previous_conversion_run_id
                 )

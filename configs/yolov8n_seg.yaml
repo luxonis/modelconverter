@@ -6,7 +6,8 @@ stages:
     scale_values: [255, 255, 255]
     keep_intermediate_outputs: true
     calibration:
-      path: "shared_with_container/calibration_data/imagenette-calib"
+      # Local paths are resolved relative to this config file's directory.
+      path: "calibration_data/imagenette-calib"
       max_images: 20
     inputs:
       - name: images
@@ -26,7 +27,7 @@ stages:
       - name: coeffs
         calibration:
           stage: yolov8-seg
-          script: "shared_with_container/script.py"
+          script: "script.py"
       - name: prototypes
         calibration:
           stage: yolov8-seg

@@ -22,7 +22,8 @@ from modelconverter.utils.config import (
     SingleStageConfig,
 )
 from modelconverter.utils.onnx_compatibility import (
-    get_external_data_path,
+    get_external_data_paths,
+    has_external_data,
     save_onnx_model,
 )
 from modelconverter.utils.subprocess import SubprocessResult
@@ -76,20 +77,24 @@ class Exporter(ABC):
         shutil.copy(input_model, self.output_dir / sanitized_model_name)
         # External data is an ONNX-only concept; loading a non-ONNX input
         # (e.g. an OpenVINO IR .xml/.bin) as ONNX would fail.
-        external_data_path = (
-            get_external_data_path(input_model)
+        external_data_paths = (
+            get_external_data_paths(input_model)
             if self.input_file_type == InputFileType.ONNX
-            else None
+            else []
         )
-        if external_data_path is not None:
-            shutil.copy(
-                external_data_path,
-                self.intermediate_outputs_dir / external_data_path.name,
-            )
-            shutil.copy(
-                external_data_path,
-                self.output_dir / external_data_path.name,
-            )
+        # A model saved with `all_tensors_to_one_file=False` has one companion
+        # file per tensor, and each is located relative to the model, so the
+        # layout has to be reproduced rather than flattened.
+        # `get_external_data_paths` anchors the returned paths to the resolved
+        # model *directory* -- not the directory of the resolved model, which
+        # differs when the model itself is a symlink into another directory.
+        model_dir = input_model.parent.resolve()
+        for external_data_path in external_data_paths:
+            relative = external_data_path.relative_to(model_dir)
+            for directory in (self.intermediate_outputs_dir, self.output_dir):
+                dest = directory / relative
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(external_data_path, dest)
         if self.input_file_type == InputFileType.IR:
             assert self.config.input_bin is not None
             shutil.copy(
@@ -175,8 +180,7 @@ class Exporter(ABC):
         save_onnx_model(
             onnx_sim,
             onnx_sim_path,
-            save_as_external_data=get_external_data_path(self.input_model)
-            is not None,
+            save_as_external_data=has_external_data(self.input_model),
             location=f"{onnx_sim_path.name}_data",
         )
         return onnx_sim_path

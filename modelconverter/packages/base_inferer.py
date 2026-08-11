@@ -8,11 +8,12 @@ import numpy as np
 from loguru import logger
 from typing_extensions import Self
 
-from modelconverter.utils import resolve_path
+from modelconverter.utils import ModelconverterException, resolve_path
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
 )
+from modelconverter.utils.constants import INFERENCE_MARKER
 from modelconverter.utils.types import DataType, Encoding, ResizeMethod
 
 
@@ -32,9 +33,23 @@ class Inferer(ABC):
 
     def __post_init__(self):
         if self.dest.exists():
+            if not self.dest.is_dir():
+                raise ModelconverterException(
+                    f"Refusing to overwrite '{self.dest}': it is not a "
+                    "directory. Pass a different `--output-dir`."
+                )
+            if not (self.dest / INFERENCE_MARKER).exists() and any(
+                self.dest.iterdir()
+            ):
+                raise ModelconverterException(
+                    f"Refusing to overwrite '{self.dest}': it is not empty "
+                    "and does not hold inference results. Pass a different "
+                    "`--output-dir`."
+                )
             logger.debug(f"Removing existing directory {self.dest}.")
             shutil.rmtree(self.dest)
         self.dest.mkdir(parents=True, exist_ok=True)
+        (self.dest / INFERENCE_MARKER).touch()
         self.setup()
 
     @classmethod

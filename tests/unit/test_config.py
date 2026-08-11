@@ -36,6 +36,7 @@ from modelconverter.utils.config import (
     _get_onnx_tensor_info,
     generate_renamed_onnx,
 )
+from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
 from modelconverter.utils.metadata import Metadata
 from modelconverter.utils.types import (
     DataType,
@@ -63,9 +64,9 @@ def _rvc4_config(**data: Any) -> RVC4Config:
 
 
 def _models_dir() -> Path:
-    """The (cwd-relative) models directory created by
+    """The models directory of the cache, re-rooted into the temp dir by
     ``_isolate_cwd``."""
-    return Path("shared_with_container") / "models"
+    return MODELS_DIR
 
 
 def _dummy(name: str = "dummy_model.onnx") -> Path:
@@ -547,7 +548,7 @@ def test_encodings_from_dict():
 
 
 def test_encodings_from_path():
-    enc_file = (Path("shared_with_container") / "misc" / "e.json").resolve()
+    enc_file = MISC_DIR / "e.json"
     enc_file.write_text(
         json.dumps({"activation_encodings": {}, "param_encodings": {}})
     )
@@ -556,7 +557,7 @@ def test_encodings_from_path():
 
 
 def test_quantization_overrides_extracted():
-    enc_file = (Path("shared_with_container") / "misc" / "qo.json").resolve()
+    enc_file = MISC_DIR / "qo.json"
     enc_file.write_text(
         json.dumps({"activation_encodings": {}, "param_encodings": {}})
     )

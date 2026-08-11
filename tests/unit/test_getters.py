@@ -81,9 +81,7 @@ def test_get_exporter_rvc4_real_construction(work_dir: Path):
     from modelconverter.packages.rvc4.exporter import RVC4Exporter
     from modelconverter.utils.config import Config
 
-    model = single_io_onnx(
-        work_dir / "shared_with_container" / "models" / "m.onnx"
-    ).resolve()
+    model = single_io_onnx(work_dir / "m.onnx").resolve()
     cfg = Config.get_config(
         None,
         {

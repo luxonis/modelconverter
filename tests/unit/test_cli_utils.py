@@ -15,10 +15,12 @@ from modelconverter.cli.utils import (
     init_dirs,
     slug_to_id,
 )
+from modelconverter.utils import ModelconverterException
 from modelconverter.utils.config import Config
 from modelconverter.utils.constants import (
     CALIBRATION_DIR,
     CONFIGS_DIR,
+    CONVERSION_MARKER,
     MODELS_DIR,
     OUTPUTS_DIR,
 )
@@ -62,14 +64,64 @@ def test_output_dir_default_name():
     assert out.name.startswith("my_model_to_rvc4_")
 
 
-def test_output_dir_explicit_and_existing_is_wiped():
+def test_output_dir_explicit_and_previous_conversion_is_wiped():
     existing = OUTPUTS_DIR / "custom"
     existing.mkdir(parents=True, exist_ok=True)
+    (existing / CONVERSION_MARKER).touch()
     (existing / "stale.txt").write_text("stale")
     out = get_output_dir_name(Target.RVC2, "model", "custom")
     assert out == OUTPUTS_DIR / "custom"
-    # Existing dir was wiped before returning.
+    # A directory this tool produced is the one case a rerun may clear.
     assert not (OUTPUTS_DIR / "custom" / "stale.txt").exists()
+
+
+def test_output_dir_explicit_and_empty_is_wiped():
+    (OUTPUTS_DIR / "empty").mkdir(parents=True, exist_ok=True)
+    out = get_output_dir_name(Target.RVC2, "model", "empty")
+    assert out == OUTPUTS_DIR / "empty"
+
+
+def test_output_dir_refuses_a_directory_it_did_not_produce():
+    """`OUTPUTS_DIR` is the user's `./output`, so a name that already
+    holds something else -- notes, a previous run's inference results --
+    must not be deleted just because it was passed to
+    `--output-dir`."""
+    foreign = OUTPUTS_DIR / "notes"
+    foreign.mkdir(parents=True, exist_ok=True)
+    (foreign / "keep.txt").write_text("mine")
+
+    with pytest.raises(ModelconverterException, match="Refusing to overwrite"):
+        get_output_dir_name(Target.RVC2, "model", "notes")
+    assert (foreign / "keep.txt").read_text() == "mine"
+
+
+@pytest.mark.parametrize("output_dir", ["/abs/results", "../escape", ""])
+def test_output_dir_must_stay_under_outputs_dir_in_docker(
+    output_dir: str, monkeypatch: pytest.MonkeyPatch
+):
+    """Only `./output` is mounted into the container: an absolute or
+    upward path would be written somewhere the host never sees, and an
+    empty one names `./output` itself."""
+    monkeypatch.setenv("IN_DOCKER", "1")
+    with pytest.raises(
+        ModelconverterException, match="Invalid `--output-dir`"
+    ):
+        get_output_dir_name(Target.RVC2, "model", output_dir)
+
+
+def test_output_dir_accepts_any_path_natively(tmp_path: Path):
+    """A native run has no mount an absolute path could escape, so the
+    user's path is written to as given."""
+    dest = tmp_path / "elsewhere" / "results"
+
+    assert get_output_dir_name(Target.RVC2, "model", str(dest)) == dest
+
+
+def test_output_dir_ignores_a_trailing_separator():
+    assert (
+        get_output_dir_name(Target.RVC2, "model", "results/")
+        == OUTPUTS_DIR / "results"
+    )
 
 
 def test_output_dir_explicit_and_missing_is_kept():

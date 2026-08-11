@@ -55,7 +55,7 @@ SCENARIOS: list[Scenario] = [
     # inputs would fall back to random calibration and fail -- hence the config.
     Scenario(
         "multistage-config-to-native",
-        "shared_with_container/configs/multistage.yaml",
+        "configs/multistage.yaml",
         "native",
         main_stage="yolov5n-seg",
         xfail={
@@ -74,7 +74,7 @@ SCENARIOS: list[Scenario] = [
     ),
     Scenario(
         "ir-to-archive",
-        "shared_with_container/configs/resnet18_IR.yaml",
+        "configs/resnet18_IR.yaml",
         "nn_archive",
         platforms=IR_PLATFORMS,
     ),

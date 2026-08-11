@@ -81,11 +81,16 @@ def test_resolve_path_keeps_an_existing_absolute_path(work_dir: Path):
     assert fsu.resolve_path(str(f), work_dir) == f
 
 
-def test_resolve_path_falls_back_to_the_shared_dir(work_dir: Path):
+def test_resolve_path_falls_back_to_the_shared_dir(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # The shared directory is only the fallback root inside the container;
+    # a native run falls back to the working directory instead.
+    monkeypatch.setattr(fsu, "in_docker", lambda: True)
     target = SHARED_DIR / "misc" / "cfg.yaml"
     target.write_text("x")
-    # ``misc/cfg.yaml`` does not exist under cwd, but does under
-    # ``shared_with_container/``.
+    # ``misc/cfg.yaml`` does not exist under cwd, but does under the
+    # shared (cache) directory.
     resolved = fsu.resolve_path("misc/cfg.yaml", work_dir)
     assert resolved == SHARED_DIR / "misc" / "cfg.yaml"
 
