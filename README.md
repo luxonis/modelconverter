@@ -697,6 +697,8 @@ For other usage instructions run `modelconverter analyze --help`
 > [!NOTE]
 > It is important to ensure that you are using the correct ONNX model for comparison. Before converting to DLC, ModelConverter can modify the ONNX files by adding normalization layers or simplifying the graph. The ONNX model that is actually converted to DLC is typically located at `shared_with_container/outputs/model_name/intermediate_outputs/model_name-modified.onnx`
 >
+> For the DLC argument, you should use the final top-level DLC from the conversion output directory (for example `shared_with_container/outputs/model_name/model_name.dlc`), not the intermediate DLCs in `intermediate_outputs/`. This is because `modelconverter analyze` compares the ONNX reference model against the DLC that will actually run on the device, so the final deployable DLC is the correct default target. If you need to debug where differences are introduced during conversion, you can also analyze the intermediate `*-modified.dlc` or `*-modified-quantized.dlc` artifacts, but they represent earlier conversion stages rather than the final device-ready model.
+>
 > If the model has multiple inputs, make sure that each input directory has the same number of images. The tool alphabetically sorts images in each directory and assumes that images with the same index are used as one input.
 >
 > Recommended number of input images is less than 50.

@@ -4,7 +4,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import cast
 
 import numpy as np
@@ -14,6 +14,7 @@ import onnxruntime as rt
 import polars as pl
 from loguru import logger
 from PIL import Image
+from rich.progress import track
 
 from modelconverter.packages.base_analyze import Analyzer
 from modelconverter.packages.rvc4.benchmark import get_device_info
@@ -21,40 +22,128 @@ from modelconverter.utils import constants, create_handler, subprocess_run
 
 
 class RVC4Analyzer(Analyzer):
+    SUPPORTED_INPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".npy")
+
     def __init__(
         self,
         device_ip: str | None,
         device_id: str | None,
         dlc_model_path: str,
         image_dirs: dict[str, str],
+        image_subset: int | None = None,
     ):
+        self.image_subset = image_subset
         super().__init__(dlc_model_path, image_dirs)
         _, device_adb_id = get_device_info(device_ip, device_id)
         self.handler = create_handler(device_ip, device_adb_id)
+
+    def _device_work_dir(self) -> str:
+        return f"/data/modelconverter/{self.model_name}"
+
+    def _device_input_dir(self) -> str:
+        return f"{self._device_work_dir()}/inputs"
+
+    def _device_output_dir(self) -> str:
+        return f"{self._device_work_dir()}/output"
+
+    def _setup_device_workspace(self) -> None:
+        self.handler.shell(f"rm -rf {self._device_work_dir()}")
+        self.handler.shell(
+            f"mkdir -p {self._device_input_dir()} {self._device_output_dir()}"
+        )
+        self.handler.push(
+            str(self.dlc_model_path),
+            f"{self._device_work_dir()}/{self.model_name}.dlc",
+        )
+
+    def _clear_device_output_files(self) -> None:
+        output_dir = shlex.quote(self._device_output_dir())
+        self.handler.shell(
+            "if [ -d "
+            f"{output_dir}"
+            " ]; then "
+            f"find {output_dir} -type f | while read -r file; do rm -f \"$file\"; done; "
+            "fi"
+        )
+
+    def _pull_outputs_to(
+        self, local_root: Path, *, verbose: bool = True
+    ) -> Path:
+        local_output_dir = local_root / "output"
+        self.handler.pull(self._device_output_dir(), local_output_dir)
+        if verbose:
+            logger.info(
+                f"Raw outputs pulled from device to {local_output_dir}"
+            )
+        return local_output_dir
 
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
         onnx_all_layers = self._add_outputs_to_all_layers(str(onnx_model_path))
         try:
             session = rt.InferenceSession(onnx_all_layers)
-            self._debug_output_paths = [
-                layer.name for layer in session.get_outputs()
-            ]
+            output_names = [layer.name for layer in session.get_outputs()]
+            layer_names = self._replace_bad_layer_names(output_names)
+            onnx_input_shapes = {
+                input_metadata.name: input_metadata.shape
+                for input_metadata in session.get_inputs()
+            }
             input_matcher = self._prepare_input_matcher()
-            dlc_matcher = self._prepare_raw_inputs(input_matcher, np.float32)
-
-            output_dir = Path(
-                self._run_dlc(
-                    f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --debug --use_dsp --userbuffer_floatN_output 32 --perf_profile balanced --userbuffer_float",
-                    prepare_debug_dirs=True,
-                )
+            input_items = list(input_matcher.items())
+            statistics = []
+            device_output_dir = self._device_output_dir()
+            command = (
+                f"snpe-net-run --container {self.model_name}.dlc "
+                f"--input_list input_list.txt --output_dir {device_output_dir} "
+                "--debug --use_dsp --userbuffer_floatN_output 32 "
+                "--perf_profile balanced --userbuffer_float"
             )
-            dlc_matcher = {k: output_dir / v for k, v in dlc_matcher.items()}
+            self._setup_device_workspace()
 
-            self._flatten_dlc_outputs(dlc_matcher)
-            self._compare_to_onnx(onnx_all_layers, input_matcher, dlc_matcher)
+            for sample_index, (sample_id, input_dict) in enumerate(
+                track(
+                    input_items,
+                    description="Analyzing samples",
+                    total=len(input_items),
+                )
+            ):
+                chunk_input_matcher = {sample_id: input_dict}
+                self._prepare_raw_inputs(
+                    chunk_input_matcher,
+                    np.float32,
+                    verbose=False,
+                    reset_workspace=False,
+                    stable_input_names=True,
+                )
+                if sample_index > 0:
+                    self._clear_device_output_files()
 
-            self._cleanup_dlc_outputs()
+                self._execute_dlc_command(command)
+
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    output_dir = self._pull_outputs_to(
+                        Path(tmp_dir), verbose=False
+                    )
+                    dlc_matcher = {sample_id: output_dir / "Result_0"}
+
+                    self._flatten_dlc_outputs(dlc_matcher, verbose=False)
+                    statistics.extend(
+                        self._collect_comparison_statistics(
+                            session,
+                            output_names,
+                            layer_names,
+                            onnx_input_shapes,
+                            chunk_input_matcher,
+                            dlc_matcher,
+                            verbose=False,
+                        )
+                    )
+
+            self._write_layer_comparison_csv(statistics, layer_names)
         finally:
+            try:
+                self._cleanup_dlc_outputs()
+            except Exception:
+                logger.debug("Failed to clean up intermediate DLC outputs.")
             onnx_all_layers.unlink(missing_ok=True)
 
     def _resize_image(
@@ -67,14 +156,37 @@ class RVC4Analyzer(Analyzer):
 
         return image.astype(np.uint8)
 
-    def _prepare_input_matcher(self) -> dict[str, dict[str, str]]:
+    def _get_selected_image_paths(self) -> dict[str, list[Path]]:
         image_names = {
-            k: sorted(Path(v).glob("*")) for k, v in self.image_dirs.items()
-        }
-        if len({len(v) for v in image_names.values()}) != 1:
-            raise ValueError(
-                "All input dirs must have the same number of input images"
+            k: sorted(
+                path
+                for path in Path(v).glob("*")
+                if path.is_file()
+                and path.suffix.lower() in self.SUPPORTED_INPUT_SUFFIXES
             )
+            for k, v in self.image_dirs.items()
+        }
+        if self.image_subset is not None:
+            image_names = {
+                k: paths[: self.image_subset] for k, paths in image_names.items()
+            }
+        return image_names
+
+    def _check_dir_sizes(self) -> None:
+        image_names = self._get_selected_image_paths()
+        dir_lengths = [len(paths) for paths in image_names.values()]
+
+        if len(set(dir_lengths)) > 1:
+            raise ValueError(
+                "All input dirs must have the same number of supported image files."
+            )
+        if len(dir_lengths) == 0 or any(length == 0 for length in dir_lengths):
+            raise ValueError(
+                "Input dirs must contain at least one supported image or .npy file."
+            )
+
+    def _prepare_input_matcher(self) -> dict[str, dict[str, str]]:
+        image_names = self._get_selected_image_paths()
 
         input_matcher = {}
         for i in range(len(next(iter(image_names.values())))):
@@ -85,25 +197,33 @@ class RVC4Analyzer(Analyzer):
         return input_matcher
 
     def _prepare_raw_inputs(
-        self, input_matcher: dict[str, dict[str, str]], type: type = np.uint8
+        self,
+        input_matcher: dict[str, dict[str, str]],
+        type: type = np.uint8,
+        *,
+        verbose: bool = True,
+        reset_workspace: bool = True,
+        stable_input_names: bool = False,
     ) -> dict[str, str]:
-        logger.info("Preparing raw inputs for RVC4 analysis.")
-        self.handler.shell(f"rm -rf /data/modelconverter/{self.model_name}")
-        self.handler.shell(
-            f"mkdir -p /data/modelconverter/{self.model_name}/inputs"
-        )
+        if verbose:
+            logger.info("Preparing raw inputs for RVC4 analysis.")
+        if reset_workspace:
+            self.handler.shell(f"rm -rf {self._device_work_dir()}")
+            self.handler.shell(f"mkdir -p {self._device_input_dir()}")
+        else:
+            self.handler.shell(f"mkdir -p {self._device_input_dir()}")
 
         input_list = ""
         dlc_matcher = {}
-        for i, input_dict in input_matcher.items():
+        for result_index, (sample_id, input_dict) in enumerate(
+            input_matcher.items()
+        ):
             input_row = ""
-            dlc_matcher[i] = "Result_" + str(i)
+            dlc_matcher[sample_id] = f"Result_{result_index}"
             for input_name, img_path in input_dict.items():
-                if not img_path.endswith((".png", ".jpg", ".jpeg", ".npy")):
-                    continue
                 img_name = Path(img_path).stem
                 width_height = self.input_sizes[input_name][1:3][::-1]
-                if img_path.endswith(
+                if img_path.lower().endswith(
                     ".npy"
                 ):  # expects numpy array to already be in correct format
                     raw_image = cast(np.ndarray, np.load(img_path)).astype(
@@ -119,15 +239,22 @@ class RVC4Analyzer(Analyzer):
                     image = image.astype(type)
                     raw_image = cast(np.ndarray, image).astype(type)
 
+                raw_file_name = (
+                    f"{input_name}.raw"
+                    if stable_input_names
+                    else f"{input_name}_{img_name}.raw"
+                )
                 with tempfile.NamedTemporaryFile() as f:
                     raw_image.tofile(f)
                     self.handler.push(
                         f.name,
-                        f"/data/modelconverter/{self.model_name}/inputs/{input_name}_{img_name}.raw",
+                        f"{self._device_input_dir()}/{raw_file_name}",
                     )
                     f.close()
 
-                input_row += f"{input_name}:=/data/modelconverter/{self.model_name}/inputs/{input_name}_{img_name}.raw "
+                input_row += (
+                    f"{input_name}:={self._device_input_dir()}/{raw_file_name} "
+                )
             input_list += input_row
             input_list += "\n"
 
@@ -136,45 +263,74 @@ class RVC4Analyzer(Analyzer):
             f.flush()
             self.handler.push(
                 f.name,
-                f"/data/modelconverter/{self.model_name}/input_list.txt",
+                f"{self._device_work_dir()}/input_list.txt",
             )
             f.close()
-        logger.info(
-            f"Raw inputs pushed to device at /data/modelconverter/{self.model_name}/input_list.txt"
-        )
+        if verbose:
+            logger.info(
+                f"Raw inputs pushed to device at {self._device_work_dir()}/input_list.txt"
+            )
         self._result_names = list(dlc_matcher.values())
         return dlc_matcher
 
-    def _sanitize_output_name(self, output_name: str) -> str:
-        output_name = output_name.lstrip("/")
-        output_path = PurePosixPath(output_name)
-        if output_path.is_absolute() or ".." in output_path.parts:
-            raise ValueError(f"Unsafe output tensor path: {output_name}")
-        return output_path.as_posix()
+    def _extract_missing_output_dirs(self, stderr: str) -> list[str]:
+        work_dir = self._device_work_dir()
+        output_root = self._device_output_dir()
+        missing_dirs: list[str] = []
+        seen_dirs: set[str] = set()
 
-    def _prepare_output_dirs(self, *, debug: bool) -> None:
-        base_dir = f"/data/modelconverter/{self.model_name}/output"
-        output_dirs = {base_dir}
-        result_names = self._result_names
+        for line in stderr.splitlines():
+            if "Failed to write data to:" not in line:
+                continue
 
-        for result_name in result_names:
-            result_dir = posixpath.join(base_dir, result_name)
-            output_dirs.add(result_dir)
-            if debug:
-                for output_name in self._debug_output_paths:
-                    safe_output_name = self._sanitize_output_name(output_name)
-                    parent_dir = posixpath.dirname(
-                        posixpath.join(result_dir, f"{safe_output_name}.raw")
-                    )
-                    output_dirs.add(parent_dir)
+            raw_path = line.split("Failed to write data to:", maxsplit=1)[
+                1
+            ].strip()
+            if not raw_path:
+                continue
 
-        sorted_dirs = sorted(output_dirs)
-        chunk_size = 64
-        for i in range(0, len(sorted_dirs), chunk_size):
-            mkdir_args = " ".join(
-                shlex.quote(path) for path in sorted_dirs[i : i + chunk_size]
+            if posixpath.isabs(raw_path):
+                resolved_path = posixpath.normpath(raw_path)
+            else:
+                resolved_path = posixpath.normpath(
+                    posixpath.join(work_dir, raw_path)
+                )
+
+            parent_dir = posixpath.dirname(resolved_path)
+            if not parent_dir.startswith(f"{output_root}/"):
+                continue
+
+            if parent_dir in seen_dirs:
+                continue
+
+            seen_dirs.add(parent_dir)
+            missing_dirs.append(parent_dir)
+
+        return missing_dirs
+
+    def _execute_dlc_command(self, command: str) -> None:
+        work_dir = self._device_work_dir()
+        try:
+            self.handler.shell(f"cd {work_dir} && {command}")
+            return
+        except subprocess.CalledProcessError as e:
+            stderr = e.stderr.decode(errors="ignore") if e.stderr else ""
+            missing_dirs = self._extract_missing_output_dirs(stderr)
+            if not missing_dirs:
+                raise
+
+            logger.warning(
+                "SNPE failed while writing an output file; recreating parent directories and rerunning inference once."
             )
-            self.handler.shell(f"mkdir -p {mkdir_args}")
+            chunk_size = 64
+            for i in range(0, len(missing_dirs), chunk_size):
+                mkdir_args = " ".join(
+                    shlex.quote(path)
+                    for path in missing_dirs[i : i + chunk_size]
+                )
+                self.handler.shell(f"mkdir -p {mkdir_args}")
+
+        self.handler.shell(f"cd {work_dir} && {command}")
 
     def _add_outputs_to_all_layers(self, onnx_file_path: str) -> Path:
         onnx_path = Path(onnx_file_path)
@@ -234,32 +390,25 @@ class RVC4Analyzer(Analyzer):
 
         raise ValueError(f"Cannot align shapes: {src.shape} -> {target_shape}")
 
-    def _compare_to_onnx(
+    def _collect_comparison_statistics(
         self,
-        onnx_all_layers: Path,
+        session: rt.InferenceSession,
+        output_names: list[str],
+        layer_names: list[str],
+        onnx_input_shapes: dict[str, list[int | str | None]],
         input_matcher: dict[str, dict[str, str]],
         dlc_matcher: dict[str, Path],
-    ) -> None:
-        logger.info("Comparing ONNX and DLC layer outputs.")
-        session = rt.InferenceSession(onnx_all_layers)
-        output_names = [layer.name for layer in session.get_outputs()]
-
-        layer_names = self._replace_bad_layer_names(output_names)
-
+        *,
+        verbose: bool = True,
+    ) -> list[list]:
+        if verbose:
+            logger.info("Comparing ONNX and DLC layer outputs.")
         statistics = []
-        onnx_input_shapes = {}
-        logger.info("Inferencing ONNX model.")
-        for input_metadata in session.get_inputs():
-            onnx_input_shapes[input_metadata.name] = input_metadata.shape
-
         for i, input_dict in input_matcher.items():
             onnx_input_dict = {}
             for input_name, img_path in input_dict.items():
-                if not img_path.endswith((".png", ".jpg", ".jpeg", ".npy")):
-                    continue
-
                 shape = onnx_input_shapes[input_name][2:][::-1]
-                if img_path.endswith(".npy"):
+                if img_path.lower().endswith(".npy"):
                     image = np.load(img_path)
                     if image.shape != tuple(shape):
                         raise ValueError(
@@ -278,7 +427,8 @@ class RVC4Analyzer(Analyzer):
 
             dlc_output_path = dlc_matcher[i]
 
-            logger.info("Calculating statistics for ONNX and DLC outputs.")
+            if verbose:
+                logger.info("Calculating statistics for ONNX and DLC outputs.")
             for layer_name, onnx_layer_output in zip(
                 layer_names, outputs, strict=True
             ):
@@ -301,7 +451,13 @@ class RVC4Analyzer(Analyzer):
                 )
                 statistics.append([layer_name, *layer_stats])
 
-        output_dir = f"{constants.OUTPUTS_DIR!s}/analysis/{self.model_name}"
+        return statistics
+
+    def _write_layer_comparison_csv(
+        self, statistics: list[list], layer_names: list[str]
+    ) -> None:
+        output_dir = constants.OUTPUTS_DIR / "analysis" / self.model_name
+        output_dir.mkdir(parents=True, exist_ok=True)
         stats_df = pl.DataFrame(
             statistics,
             schema=[
@@ -340,7 +496,7 @@ class RVC4Analyzer(Analyzer):
         ).sort("order")
 
         grouped_df = grouped_df.drop("order")
-        grouped_df.write_csv(f"{output_dir}/layer_comparison.csv")
+        grouped_df.write_csv(output_dir / "layer_comparison.csv")
         logger.info(
             f"Layer comparison results saved to {output_dir}/layer_comparison.csv"
         )
@@ -365,33 +521,26 @@ class RVC4Analyzer(Analyzer):
         return [max_abs_diff, mse, cosine_sim, mean_ape]
 
     def _run_dlc(
-        self, command: str, *, prepare_debug_dirs: bool = False
+        self,
+        command: str,
+        *,
+        reset_workspace: bool = True,
+        verbose: bool = True,
     ) -> str:
-        logger.info("Inferencing DLC model on device.")
+        if verbose:
+            logger.info("Inferencing DLC model on device.")
         try:
-            self.handler.push(
-                str(self.dlc_model_path),
-                f"/data/modelconverter/{self.model_name}/{self.model_name}.dlc",
-            )
-            self.handler.shell(
-                f"rm -rf /data/modelconverter/{self.model_name}/output"
-            )
-            self._prepare_output_dirs(debug=prepare_debug_dirs)
-            self.handler.shell(
-                f"cd /data/modelconverter/{self.model_name} && {command}"
-            )
+            if reset_workspace:
+                self._setup_device_workspace()
+            self._execute_dlc_command(command)
 
             target_dir = constants.OUTPUTS_DIR / "analysis" / self.model_name
             if (target_dir / "output").exists():
                 shutil.rmtree(target_dir / "output")
 
             target_dir.mkdir(parents=True, exist_ok=True)
-            self.handler.pull(
-                f"/data/modelconverter/{self.model_name}/output",
-                f"{target_dir}/output",
-            )
-            logger.info(
-                f"Raw outputs pulled from device to {target_dir}/output"
+            pulled_output_dir = self._pull_outputs_to(
+                target_dir, verbose=verbose
             )
         except subprocess.CalledProcessError as e:
             stdout = e.output.decode(errors="ignore") if e.output else ""
@@ -410,10 +559,13 @@ class RVC4Analyzer(Analyzer):
                 f"Failed to run DLC model with command: {command}"
             ) from e
 
-        return f"{target_dir}/output"
+        return str(pulled_output_dir)
 
-    def _flatten_dlc_outputs(self, dlc_matcher: dict[str, Path]) -> None:
-        logger.info("Flattening SNPE results.")
+    def _flatten_dlc_outputs(
+        self, dlc_matcher: dict[str, Path], *, verbose: bool = True
+    ) -> None:
+        if verbose:
+            logger.info("Flattening SNPE results.")
         for result_path in dlc_matcher.values():
             root = Path(result_path)
 
@@ -453,12 +605,14 @@ class RVC4Analyzer(Analyzer):
     # layer execution times
     def analyze_layer_cycles(self) -> None:
         input_matcher = self._prepare_input_matcher()
-        _ = self._prepare_raw_inputs(input_matcher)
+        self._setup_device_workspace()
+        _ = self._prepare_raw_inputs(input_matcher, reset_workspace=False)
+        output_dir = f"/data/modelconverter/{self.model_name}/output"
 
         logger.info("Running DLC model to analyze layer cycles.")
         output_dir = self._run_dlc(
-            f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_auto",
-            prepare_debug_dirs=False,
+            f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --output_dir {output_dir} --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_auto",
+            reset_workspace=False,
         )
 
         csv_path = Path(output_dir + "/layer_stats.csv")

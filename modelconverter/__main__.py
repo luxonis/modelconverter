@@ -561,6 +561,7 @@ def analyze(
     device_id: str | None = None,
     dlc_model_path: str,
     onnx_model_path: str,
+    image_subset: int | None = None,
     image_dirs: Annotated[
         list[str], Parameter(negative_iterable=[], consume_multiple=True)
     ],
@@ -584,6 +585,9 @@ def analyze(
     onnx_model_path : str
         The path to the corresponding ONNX model file that was used for converting to DLC.
 
+    image_subset : int | None
+        If provided, limit analysis to the first N supported input files per input directory.
+
     image_dirs : list[str]
         A list of names and paths to directories with images for each input of the model.
 
@@ -595,6 +599,8 @@ def analyze(
     """
     with catch_exceptions():
         logger.info("Starting analysis")
+        if image_subset is not None and image_subset <= 0:
+            raise ValueError("image_subset must be a positive integer.")
         if len(image_dirs) == 1:
             image_dirs_dict = {"default": image_dirs[0]}
         else:
@@ -613,6 +619,7 @@ def analyze(
             device_id,
             dlc_model_path,
             image_dirs_dict,
+            image_subset=image_subset,
         )
         if analyze_outputs:
             logger.info("Analyzing layer outputs")
