@@ -44,7 +44,9 @@ def pytest_configure(config: pytest.Config) -> None:
 
 @pytest.fixture
 def benchmark_target(request: pytest.FixtureRequest) -> str:
-    return request.config.getoption("--benchmark-target")
+    target = request.config.getoption("--benchmark-target")
+    assert isinstance(target, str)
+    return target
 
 
 @pytest.fixture(scope="session")

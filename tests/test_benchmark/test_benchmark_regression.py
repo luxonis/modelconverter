@@ -212,6 +212,8 @@ def test_benchmark_fps(
     depthai_version: str | None,
     hil_testbed: Any,
 ) -> None:
+    assert influx_bucket is not None
+    assert influx_token is not None
     model_config = _targets_data[benchmark_target][model_slug]
     expected_fps = model_config["expected_fps"]
 
@@ -220,6 +222,7 @@ def test_benchmark_fps(
             f"No expected_fps set for {model_slug}."
             "Establish a baseline and add it to benchmark_targets.json."
         )
+    assert isinstance(expected_fps, float)
 
     target_enum = Target(benchmark_target)
 

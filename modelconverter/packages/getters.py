@@ -22,7 +22,7 @@ def get_exporter(target: Target, *args, **kwargs) -> Exporter:
 
         return RVC4Exporter(*args, **kwargs)
 
-    if target is Target.HAILO:
+    if target is Target.HAILO:  # pragma: no branch
         from modelconverter.packages.hailo.exporter import HailoExporter
 
         return HailoExporter(*args, **kwargs)
@@ -44,7 +44,7 @@ def get_inferer(target: Target, *args, **kwargs) -> Inferer:
 
         return RVC4Inferer.from_config(*args, **kwargs)
 
-    if target is Target.HAILO:
+    if target is Target.HAILO:  # pragma: no branch
         from modelconverter.packages.hailo.inferer import HailoInferer
 
         return HailoInferer.from_config(*args, **kwargs)
@@ -66,7 +66,7 @@ def get_benchmark(target: Target, *args, **kwargs) -> Benchmark:
 
         return RVC4Benchmark(*args, **kwargs)
 
-    if target is Target.HAILO:
+    if target is Target.HAILO:  # pragma: no branch
         raise NotImplementedError("Hailo Benchmark is not implemented yet.")
 
 

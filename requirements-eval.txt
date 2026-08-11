@@ -1,0 +1,20 @@
+# Test-only dependencies for real-model quality regression tests. Keep Luxonis
+# Eval pinned: its parser and metric output contracts are part of the baseline.
+#
+# Luxonis Eval's package metadata includes Torch and Torchvision, but the
+# selected parser and COCO metric classes do not import them. Avoid pulling
+# their multi-GB CUDA wheels into CPU-only converter CI images. Luxonis Eval
+# eagerly imports all metric modules, so these CPU-only wheels are required
+# even though the selected AP metrics do not use Torch themselves. The RVC2
+# and RVC4 development-image build supplies ``--no-deps`` when installing this
+# file.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.5.1+cpu
+torchvision==0.20.1+cpu
+torchmetrics==1.6.1
+lightning-utilities==0.15.3
+luxonis-eval @ git+https://github.com/luxonis/luxonis-eval.git@be0742210cd0f8ec7f63d4853d4cb97eeab49458
+depthai-nodes==0.5.2
+pycocotools
+faster-coco-eval
+tabulate

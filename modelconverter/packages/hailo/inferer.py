@@ -22,10 +22,14 @@ class HailoInferer(Inferer):
         hn_dict = cast(dict, self.runner.get_hn_dict())
         output_hn_names = hn_dict["net_params"]["output_layers_order"]
         orig_meta = self.runner._original_model_meta
-        if orig_meta is None:
+        if orig_meta is None:  # pragma: no cover
             raise RuntimeError("Could not get original model metadata.")
 
-        self.output_names = list(orig_meta["inverse_postprocess_io_map"])
+        # A HAR translated from ONNX carries this postprocess map; one
+        # translated from TFLite does not, so fall back to the output layers.
+        self.output_names = list(
+            orig_meta.get("inverse_postprocess_io_map", [])
+        )
         if len(self.output_names) > 1:
             raise NotImplementedError(
                 "Multiple outputs are not supported at the moment."
@@ -43,6 +47,7 @@ class HailoInferer(Inferer):
                 encoding=self.encoding[name],
                 resize_method=self.resize_method[name],
                 data_type=self.in_dtypes[name],
+                layout=self.layout.get(name),
             ).transpose(1, 2, 0)[np.newaxis, ...]
             for name, path in inputs.items()
         }

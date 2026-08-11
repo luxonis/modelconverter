@@ -1,32 +1,20 @@
-name: Package publishing
+name: Publish images
 
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
-      package:
-        required: true
-        type: string
-        description: Which package to publish
-
-      version:
-        required: true
-        type: string
-        description: >
-          Which version of underlying conversion tools to use
-
-      default:
-        required: true
-        type: string
-        description: >
-          The default tool version. The image using this version will be also
-          tagged with a bare `:latest` tag.
-
-      os:
+      platforms:
+        description: "Platforms to publish, comma-separated (rvc2, rvc3, rvc4, hailo). Empty publishes all."
         required: false
         type: string
-        description: >
-          Which OS to use for the tests. If not specified, the default is 'ubuntu-latest'.
-        default: "ubuntu-latest"
+        default: ""
+      tool_versions:
+        description: "Tool versions to publish, comma-separated (e.g. 2022.3.0,2.41.0). Empty publishes all."
+        required: false
+        type: string
+        default: ""
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -35,19 +23,47 @@ permissions:
 env:
   LUXONIS_TELEMETRY_ENABLED: "false"
   GAR_LOCATION: us-central1
-  PACKAGE: ${{ inputs.package }}
-  NAME: luxonis/modelconverter-${{ inputs.package }}
-  STEM: modelconverter-${{ inputs.package }}
-  VERSION: ${{ inputs.version }}
   GAR_STEM: us-central1-docker.pkg.dev/easyml-394818
 
 jobs:
+  # Selects which of the `.github/matrix.json` entries get published. Without
+  # dispatch inputs that is every entry.
+  resolve-matrix:
+    name: Resolve matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.resolve.outputs.include }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Resolve matrix
+        id: resolve
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+          TOOL_VERSIONS: ${{ inputs.tool_versions }}
+        run: |
+          INCLUDE=$(.github/scripts/resolve-matrix.sh "${PLATFORMS}" "${TOOL_VERSIONS}")
+          echo "include=${INCLUDE}" >> "$GITHUB_OUTPUT"
+
   publish:
-    runs-on: ${{ inputs.os }}
+    name: ${{ matrix.package }} ${{ matrix.version }}
+    needs: resolve-matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        # `default` is the version that also receives the bare `:latest` tag.
+        include: ${{ fromJSON(needs.resolve-matrix.outputs.include) }}
+    runs-on: ${{ matrix.os }}
     env:
-      BARE_LOCAL_NAME: luxonis/modelconverter-${{ inputs.package }}
-      LOCAL_NAME: luxonis/modelconverter-${{ inputs.package }}:${{ inputs.version }}-latest
-      DEFAULT: ${{ inputs.default }}
+      PACKAGE: ${{ matrix.package }}
+      NAME: luxonis/modelconverter-${{ matrix.package }}
+      STEM: modelconverter-${{ matrix.package }}
+      VERSION: ${{ matrix.version }}
+      DEFAULT: ${{ matrix.default }}
+      LOCAL_NAME: luxonis/modelconverter-${{ matrix.package }}:${{ matrix.version }}-latest
 
     steps:
       - name: Checkout code
@@ -63,14 +79,14 @@ jobs:
           token_format: access_token
 
       - name: Docker login to GAR
-        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
         with:
           registry: ${{ env.GAR_LOCATION }}-docker.pkg.dev
           username: oauth2accesstoken
           password: ${{ steps.google-auth.outputs.access_token }}
 
       - name: Docker login to GHCR
-        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -86,23 +102,23 @@ jobs:
           mkdir -p docker/extra_packages
           cd docker/extra_packages
           if [ "${PACKAGE}" = "rvc4" ]; then
-              gcloud storage cp                             \
+              gcloud storage cp \
                 "${GS_BUILD_ARTIFACTS}/snpe-${VERSION}.zip" \
                 "snpe-${VERSION}.zip"
           elif [ "${PACKAGE}" = "rvc2" ] || [ "${PACKAGE}" = "rvc3" ]; then
-              gcloud storage cp                                    \
+              gcloud storage cp \
                 "${GS_BUILD_ARTIFACTS}/openvino-${VERSION}.tar.gz" \
                 "openvino-${VERSION}.tar.gz"
           elif [ "${PACKAGE}" = "hailo" ]; then
-              gcloud storage cp                                    \
+              gcloud storage cp \
                 "${GS_BUILD_ARTIFACTS}/hailo-${VERSION}.tar.gz" .
               docker load -i "hailo-${VERSION}.tar.gz"
           fi
 
       - name: Build image
         run: |
-          DOCKERFILE="docker/${PACKAGE}/Dockerfile"
-          docker build -f "${DOCKERFILE}" -t "${LOCAL_NAME}" . --build-arg VERSION="${VERSION}"
+          docker build -f "docker/${PACKAGE}/Dockerfile" \
+            -t "${LOCAL_NAME}" . --build-arg VERSION="${VERSION}"
 
       - name: GHCR publish latest
         run: |
@@ -143,7 +159,6 @@ jobs:
       - name: GAR publish clients
         run: |
           read -r -a REPO_ARRAY <<< "${{ vars.EXTERNAL_CLIENTS }}"
-
           SHA=$(git rev-parse --short HEAD)
           for REPO in "${REPO_ARRAY[@]}"; do
             GAR_CLIENT_NAME="${GAR_STEM}/${REPO}/${STEM}:${VERSION}-${SHA}"
