@@ -831,6 +831,76 @@ def test_stages_the_quantization_overrides_file(
     )
 
 
+def test_stages_the_transformations_config(
+    tmp_path: Path, cache_dir: Path
+) -> None:
+    """`--transformations_config` names a file the model optimizer opens,
+    so it is staged like any other input the container has to read."""
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    transformations = config_dir / "custom.json"
+    transformations.write_text("[]")
+    config_path = config_dir / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "rvc2": {
+                    "mo_args": [
+                        "--transformations_config",
+                        "custom.json",
+                        "--static_shape",
+                    ]
+                }
+            }
+        )
+    )
+
+    staged = input_staging.stage_inputs(
+        ["--config", str(config_path)], {"--config"}
+    )[1]
+
+    rewritten = yaml.safe_load(
+        _host_staged_path(staged, cache_dir).read_text()
+    )
+    args = rewritten["rvc2"]["mo_args"]
+    assert args[0] == "--transformations_config"
+    assert args[1].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
+    assert args[2:] == ["--static_shape"]
+    assert (
+        _host_staged_path(args[1], cache_dir).read_text()
+        == transformations.read_text()
+    )
+
+
+def test_stages_the_compile_tool_config(
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`compile_tool -c` names a configuration file, which the exporter
+    writes itself only when the user has not supplied one."""
+    monkeypatch.chdir(tmp_path)
+    compile_config = tmp_path / "compile.conf"
+    compile_config.write_text("MYRIAD_NUMBER_OF_SHAVES 4")
+
+    staged = input_staging.stage_inputs(
+        [
+            "convert",
+            "rvc2",
+            "rvc2.compile_tool_args",
+            '["-c", "compile.conf", "-ip", "U8"]',
+        ],
+        {"--path"},
+    )[3]
+
+    args = ast.literal_eval(staged)
+    assert args[0] == "-c"
+    assert args[1].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
+    assert args[2:] == ["-ip", "U8"]
+    assert (
+        _host_staged_path(args[1], cache_dir).read_text()
+        == compile_config.read_text()
+    )
+
+
 def test_sibling_symlinks_to_one_directory_are_both_staged(
     tmp_path: Path, cache_dir: Path
 ) -> None:

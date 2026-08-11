@@ -82,6 +82,12 @@ _PATH_ARG_FIELDS: dict[str, frozenset[str]] = {
     # `RVC4Config.validate_quantization_overrides` opens this file while the
     # config is validated, inside the container.
     "snpe_onnx_to_dlc_args": frozenset({"--quantization_overrides"}),
+    # OpenVINO's model optimizer reads the transformation rules from this
+    # file. Nothing on the Hub sets it, but a local run can.
+    "mo_args": frozenset({"--transformations_config"}),
+    # `compile_tool` takes its configuration as a file; the exporter writes
+    # one itself only when the user has not passed `-c` already.
+    "compile_tool_args": frozenset({"-c"}),
 }
 
 # Config fields naming a *destination*. These look exactly like input paths but
