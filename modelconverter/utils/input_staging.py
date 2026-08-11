@@ -20,10 +20,13 @@ import errno
 import hashlib
 import inspect
 import os
+import re
 import shutil
 import stat
 import tempfile
+import time
 from collections.abc import Callable, Collection, Iterator
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -32,8 +35,9 @@ import yaml
 from loguru import logger
 
 from modelconverter.utils.constants import CONTAINER_SHARED_DIR, get_cache_dir
+from modelconverter.utils.environ import environ
 from modelconverter.utils.filesystem_utils import get_protocol
-from modelconverter.utils.general import human_size
+from modelconverter.utils.general import dir_stats, human_size, parse_size
 from modelconverter.utils.onnx_compatibility import get_external_data_paths
 
 # Target names are positional tokens that must not be mistaken for paths.
@@ -154,6 +158,11 @@ def stage_inputs(tokens: list[str], path_flags: Collection[str]) -> list[str]:
         new_tokens.append(staged if staged is not None else token)
         prev = token
 
+    # Everything this run needs is staged and claimed by now, and the
+    # container has not started, so this is the one moment where the cache
+    # can be trimmed without racing the conversion that is about to read it.
+    enforce_cache_budget()
+
     return new_tokens
 
 
@@ -250,8 +259,11 @@ def _stage_arg_list_token(
     this one in a shell, not inside a config file.
     """
     try:
+        # `literal_eval` is documented to hit the AST compiler's stack limit
+        # on a sufficiently nested string, which is not a malformed override
+        # worth a traceback either.
         parsed = ast.literal_eval(token)
-    except (ValueError, SyntaxError, MemoryError, RecursionError):
+    except (ValueError, SyntaxError, RecursionError):
         return None
     if not isinstance(parsed, list):
         return None
@@ -337,39 +349,40 @@ def _stage_value(value: str, inputs_dir: Path) -> str | None:
     if src is None or not _exists(src):
         return None
     src = _absolute(src)
+    suffix = src.suffix.lower()
 
     if src.is_dir():
         dest = _stage_dir(src, inputs_dir)
-        return _to_container(dest)
-
-    if src.suffix.lower() in _CONFIG_EXTS:
+    elif suffix in _CONFIG_EXTS:
         dest = _stage_config(src, inputs_dir)
-        return _to_container(dest)
-
     # An OpenVINO IR is a `.xml`/`.bin` pair; whichever half was named, the
     # container needs both.
-    if src.suffix.lower() in {".xml", ".bin"}:
+    elif suffix in {".xml", ".bin"}:
         dest = _stage_ir_pair(src, inputs_dir)
-        return _to_container(dest)
-
     # ONNX models may store their tensors in companion files. Preserve the
     # relative external-data locations expected by the model.
-    if src.suffix.lower() == ".onnx":
+    elif suffix == ".onnx":
         dest = _stage_onnx(src, inputs_dir)
-        return _to_container(dest)
-
-    dest = _stage_file(src, inputs_dir)
+    else:
+        dest = _stage_file(src, inputs_dir)
     return _to_container(dest)
 
 
 def _stage_file(src: Path, inputs_dir: Path) -> Path:
     digest = _hash_file_memoized(src)
-    dest = inputs_dir / digest / src.name
+    entry = inputs_dir / digest
+    dest = entry / src.name
+    # The claim goes in before the entry is trusted, not after it is used:
+    # the budget sweep looks for one before evicting, so an entry claimed
+    # first cannot be deleted between finding it and handing it over.
+    entry.mkdir(parents=True, exist_ok=True)
+    _claim_entry(entry)
     if not dest.exists():
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        _log_copy(src, src.stat().st_size)
+        size = src.stat().st_size
+        _log_copy(src, size)
         _atomic_copy_file(src, dest)
-    _mark_in_use(dest.parent)
+        _record_size(entry, size)
+    _record_staging(src, entry, inputs_dir)
     return dest
 
 
@@ -381,6 +394,7 @@ def _stage_ir_pair(src: Path, inputs_dir: Path) -> Path:
     hash_dir = inputs_dir / digest
     destinations = {member: Path(member.name) for member in members}
     _stage_file_bundle(destinations, hash_dir)
+    _record_staging(src, hash_dir, inputs_dir)
     return hash_dir / src.name
 
 
@@ -411,6 +425,7 @@ def _stage_onnx(src: Path, inputs_dir: Path) -> Path:
         destinations[data_path] = data_path.relative_to(model_dir)
 
     _stage_file_bundle(destinations, hash_dir)
+    _record_staging(src, hash_dir, inputs_dir)
     return hash_dir / src.name
 
 
@@ -428,25 +443,40 @@ def _atomic_copy_file(src: Path, dest: Path) -> None:
 
 
 def _stage_file_bundle(destinations: dict[Path, Path], dest_dir: Path) -> None:
-    """Atomically stage a set of files as one digest-keyed directory."""
-    if dest_dir.exists():
-        _mark_in_use(dest_dir)
-        return
+    """Atomically stage a set of files as one digest-keyed directory.
 
+    The published entry is the directory itself, so -- unlike a file
+    entry -- the claim cannot be placed before the content: it would be
+    renamed away along with it. The claim is therefore only proof of
+    anything once the entry is still there afterwards, and a bundle the
+    budget sweep evicted in between is simply built again.
+    """
+    for _ in range(2):
+        if not dest_dir.exists():
+            _publish_bundle(destinations, dest_dir)
+        _claim_entry(dest_dir)
+        if dest_dir.exists():
+            return
+
+
+def _publish_bundle(destinations: dict[Path, Path], dest_dir: Path) -> None:
     dest_dir.parent.mkdir(parents=True, exist_ok=True)
     tmp_dir = Path(
         tempfile.mkdtemp(prefix=f".{dest_dir.name}.tmp-", dir=dest_dir.parent)
     )
+    size = 0
     try:
         for src, relative_dest in destinations.items():
             tmp_dest = tmp_dir / relative_dest
             tmp_dest.parent.mkdir(parents=True, exist_ok=True)
-            _log_copy(src, src.stat().st_size)
+            file_size = src.stat().st_size
+            size += file_size
+            _log_copy(src, file_size)
             shutil.copy2(src, tmp_dest)
         _publish_directory(tmp_dir, dest_dir)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
-    _mark_in_use(dest_dir)
+    _record_size(dest_dir, size)
 
 
 def _publish_directory(src: Path, dest: Path) -> None:
@@ -476,11 +506,11 @@ def _stage_config(src: Path, inputs_dir: Path) -> Path:
     if not changed:
         return _stage_file(src, inputs_dir)
     return _stage_config_text(
-        yaml.safe_dump(rewritten, sort_keys=False), src.name, inputs_dir
+        yaml.safe_dump(rewritten, sort_keys=False), src, inputs_dir
     )
 
 
-def _stage_config_text(content: str, name: str, inputs_dir: Path) -> Path:
+def _stage_config_text(content: str, src: Path, inputs_dir: Path) -> Path:
     """Publishes a rewritten config, keyed by a digest of its own text.
 
     The rewritten paths carry the digests of everything the config
@@ -488,11 +518,14 @@ def _stage_config_text(content: str, name: str, inputs_dir: Path) -> Path:
     overwriting one a concurrent run may still be reading.
     """
     digest = hashlib.sha256(content.encode()).hexdigest()[:16]
-    dest = inputs_dir / digest / name
+    entry = inputs_dir / digest
+    dest = entry / src.name
+    entry.mkdir(parents=True, exist_ok=True)
+    _claim_entry(entry)
     if not dest.exists():
-        dest.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_text(dest, content)
-    _mark_in_use(dest.parent)
+        _record_size(entry, len(content.encode()))
+    _record_staging(src, entry, inputs_dir)
     return dest
 
 
@@ -662,6 +695,21 @@ _SOURCE_MARKER = ".source"
 # killed one.
 _IN_USE_PREFIX = ".inuse-"
 
+# Written inside a staged entry to record its total size and the last time it
+# was used, so the budget sweep can measure and order entries without walking
+# the whole cache on every conversion.
+_SIZE_MARKER = ".size"
+_USED_MARKER = ".used"
+
+# An entry is renamed under this prefix before it is deleted, so a concurrent
+# staging finds it either whole or gone, never half-removed.
+_TRASH_PREFIX = ".trash-"
+
+# The cache sub-directories the container downloads into. They hold no claims
+# of their own -- the container writes them as it runs, under the launcher's
+# claim on the cache root -- so they are evicted a whole download at a time.
+_DOWNLOAD_SUBDIRS = ("models", "calibration_data", "misc", "configs")
+
 
 class _InputFile(NamedTuple):
     relative: str
@@ -761,6 +809,8 @@ def _stage_dir(src: Path, inputs_dir: Path) -> Path:
     digest = _hash_dir(src, files)
     digest_dir = inputs_dir / digest
     dest = digest_dir / src.name
+    digest_dir.mkdir(parents=True, exist_ok=True)
+    _claim_entry(digest_dir)
     if not dest.exists():
         size = sum(f.stat.st_size for f in files)
         if size > _LARGE_DIR_BYTES:
@@ -771,7 +821,6 @@ def _stage_dir(src: Path, inputs_dir: Path) -> Path:
                 "`modelconverter cache clean` to reclaim space."
             )
         _log_copy(src, size)
-        digest_dir.mkdir(parents=True, exist_ok=True)
         tmp_root = Path(
             tempfile.mkdtemp(prefix=f".{src.name}.tmp-", dir=digest_dir)
         )
@@ -781,9 +830,8 @@ def _stage_dir(src: Path, inputs_dir: Path) -> Path:
             _publish_directory(tmp_dest, dest)
         finally:
             shutil.rmtree(tmp_root, ignore_errors=True)
-    _record_source(src, digest_dir)
-    _mark_in_use(digest_dir)
-    _prune_superseded_stagings(src, digest_dir, inputs_dir)
+        _record_size(digest_dir, size)
+    _record_staging(src, digest_dir, inputs_dir)
     return dest
 
 
@@ -803,10 +851,45 @@ def _copy_input_files(files: list[_InputFile], dest: Path) -> None:
         shutil.copy2(file.path, target)
 
 
-def _record_source(src: Path, digest_dir: Path) -> None:
-    marker = digest_dir / _SOURCE_MARKER
-    if not marker.exists():
-        _atomic_write_text(marker, str(src))
+def _record_once(marker: Path, text: str) -> None:
+    """Writes a marker describing an entry, unless it is already there.
+
+    Both markers are written once, by whoever published the entry, and
+    both are best-effort: the entry may have been evicted between
+    publishing and recording. A missing size marker only costs the budget
+    sweep a walk of that entry, and a missing source marker only means
+    the superseded copies of that source stay until the sweep reaches
+    them.
+    """
+    with suppress(OSError):
+        if not marker.exists():
+            _atomic_write_text(marker, text)
+
+
+def _record_size(digest_dir: Path, size: int) -> None:
+    _record_once(digest_dir / _SIZE_MARKER, str(size))
+
+
+def _record_staging(src: Path, digest_dir: Path, inputs_dir: Path) -> None:
+    """Makes ``digest_dir`` the current staged copy of ``src``, dropping
+    the copies made for its older content."""
+    _record_once(digest_dir / _SOURCE_MARKER, str(src))
+    _prune_superseded_stagings(src, digest_dir, inputs_dir)
+
+
+def _claim_entry(digest_dir: Path) -> None:
+    """Claims an entry for this process and stamps it as used now.
+
+    The stamp is refreshed on every use rather than written once: what
+    the budget sweep must not evict is the entry converted every day, not
+    the one that happened to be staged first.
+    """
+    _mark_in_use(digest_dir)
+    # Written in place rather than atomically: this runs for every staged
+    # entry on every conversion, and a stamp lost to a crash only makes the
+    # entry look older than it is.
+    with suppress(OSError):
+        (digest_dir / _USED_MARKER).write_text(str(time.time()))
 
 
 def _mark_in_use(digest_dir: Path) -> None:
@@ -824,7 +907,7 @@ def _mark_in_use(digest_dir: Path) -> None:
     atexit.register(marker.unlink, missing_ok=True)
 
 
-def _is_in_use(entry: Path) -> bool:
+def _is_in_use(entry: Path, ignore_pid: int | None = None) -> bool:
     """Whether a live process has claimed ``entry``.
 
     The container reads its staged inputs throughout the conversion, so
@@ -833,12 +916,23 @@ def _is_in_use(entry: Path) -> bool:
     pid that no longer exists -- or one that has since been recycled by
     an unrelated process, which the recorded creation time tells apart --
     and are cleaned up here.
+
+    ``ignore_pid`` skips one process's claims, which is how the budget
+    sweep asks whether anyone *else* is using the cache: its own claims
+    are on everything the current conversion just staged.
     """
     in_use = False
-    for marker in entry.glob(f"{_IN_USE_PREFIX}*"):
+    try:
+        markers = list(entry.glob(f"{_IN_USE_PREFIX}*"))
+    except OSError:
+        # Not a directory (a downloaded file), or not readable.
+        return False
+    for marker in markers:
         try:
             pid = int(marker.name.removeprefix(_IN_USE_PREFIX))
         except ValueError:
+            continue
+        if pid == ignore_pid:
             continue
         try:
             create_time = psutil.Process(pid).create_time()
@@ -923,6 +1017,213 @@ def _prune_superseded_stagings(
         shutil.rmtree(entry, ignore_errors=True)
 
 
+class _CacheEntry(NamedTuple):
+    path: Path
+    size: int
+    used: float
+    # Downloads are written by the container as it runs and carry no claims
+    # of their own, so they may only be evicted when nothing else is using
+    # the cache.
+    evictable: bool
+
+
+def cache_budget() -> int:
+    """The configured cache size limit in bytes, or ``0`` when
+    unlimited."""
+    configured = environ.MODELCONVERTER_CACHE_MAX_SIZE
+    try:
+        return max(0, parse_size(configured))
+    except ValueError:
+        logger.warning(
+            f"Ignoring MODELCONVERTER_CACHE_MAX_SIZE='{configured}': "
+            "not a size. The cache will not be trimmed."
+        )
+        return 0
+
+
+def enforce_cache_budget() -> None:
+    """Evicts least recently used entries until the cache fits its
+    budget.
+
+    Only staged inputs and the container's downloads are counted and
+    evicted; the digest memo is bookkeeping, orders of magnitude smaller
+    than the models it describes, and re-reading a model to rebuild it
+    would cost more than it frees.
+
+    Nothing claimed by a live process is touched, and neither is
+    anything this process used since it started -- the conversion that
+    is about to run needs those, and a launcher that trimmed its own
+    inputs would only stage them again.
+    """
+    budget = cache_budget()
+    if not budget:
+        return
+
+    cache = get_cache_dir()
+    entries = list(_iter_cache_entries(cache))
+    total = sum(entry.size for entry in entries)
+    if total <= budget:
+        return
+
+    started = _process_start_time()
+    freed = 0
+    for entry in sorted(entries, key=lambda entry: entry.used):
+        if total - freed <= budget:
+            break
+        if entry.used >= started or not entry.evictable:
+            continue
+        if _is_in_use(entry.path):
+            continue
+        if _evict(entry.path):
+            logger.debug(
+                f"Evicted {entry.path} ({human_size(entry.size)}) "
+                "from the cache"
+            )
+            freed += entry.size
+
+    if freed:
+        logger.info(
+            f"Trimmed the cache to its {human_size(budget)} budget "
+            f"({human_size(freed)} freed)."
+        )
+    elif total > budget:
+        logger.warning(
+            f"The cache at {cache} holds {human_size(total)}, over the "
+            f"{human_size(budget)} budget, but nothing in it can be "
+            "evicted right now. Raise MODELCONVERTER_CACHE_MAX_SIZE or "
+            "run `modelconverter cache clean` once the conversions using "
+            "it have finished."
+        )
+
+
+def _iter_cache_entries(cache: Path) -> Iterator[_CacheEntry]:
+    """Yields what the budget is measured and enforced on.
+
+    A staged input is one digest-keyed entry. A download is one file or
+    directory under the sub-directories the container writes into: those
+    hold no per-entry markers, so their size has to be measured and
+    their age taken from the filesystem.
+    """
+    downloads_evictable = not _claimed_by_another_process(cache)
+    for entry in _cache_children(cache / "inputs"):
+        yield _CacheEntry(entry, _entry_size(entry), _used_time(entry), True)
+    for name in _DOWNLOAD_SUBDIRS:
+        for entry in _cache_children(cache / name):
+            yield _CacheEntry(
+                entry,
+                _entry_size(entry),
+                _used_time(entry),
+                downloads_evictable,
+            )
+
+
+def _cache_children(directory: Path) -> Iterator[Path]:
+    """Yields the eviction candidates in ``directory``.
+
+    Bookkeeping written beside the entries is skipped, and so is the
+    leftover of a sweep that was killed between renaming an entry aside
+    and deleting it -- which is removed here instead.
+    """
+    try:
+        children = sorted(directory.iterdir())
+    except OSError:
+        return
+    for child in children:
+        if child.name.startswith(_TRASH_PREFIX):
+            _discard_stale_trash(child)
+        elif not child.name.startswith("."):
+            yield child
+
+
+def _discard_stale_trash(trash: Path) -> None:
+    try:
+        pid = int(trash.name.removeprefix(_TRASH_PREFIX).partition("-")[0])
+    except ValueError:
+        return
+    if not psutil.pid_exists(pid):
+        _remove(trash)
+
+
+def _entry_size(entry: Path) -> int:
+    try:
+        return int((entry / _SIZE_MARKER).read_text())
+    except (OSError, ValueError):
+        pass
+    try:
+        if entry.is_file():
+            return entry.stat().st_size
+    except OSError:
+        return 0
+    return dir_stats(entry)[0]
+
+
+def _used_time(entry: Path) -> float:
+    """When ``entry`` was last used.
+
+    Staged entries are stamped on every use. A download has no stamp of
+    its own -- nothing reads it host-side -- so its modification time
+    stands in, which orders downloads by when they arrived rather than
+    by when they were last needed.
+    """
+    try:
+        return float((entry / _USED_MARKER).read_text())
+    except (OSError, ValueError):
+        pass
+    try:
+        return entry.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _process_start_time() -> float:
+    try:
+        return psutil.Process().create_time()
+    except psutil.Error:
+        return time.time()
+
+
+def _claimed_by_another_process(cache: Path) -> bool:
+    """Whether a conversion other than this one is using the cache."""
+    own = os.getpid()
+    if _is_in_use(cache, ignore_pid=own):
+        return True
+    return any(
+        _is_in_use(entry, ignore_pid=own)
+        for entry in _cache_children(cache / "inputs")
+    )
+
+
+def _evict(entry: Path) -> bool:
+    """Removes a cache entry, backing out of a claim placed in between.
+
+    The entry is renamed aside before it is deleted, so a staging that
+    was about to reuse it finds it missing -- and stages it again --
+    rather than reading a directory being deleted underneath it. A claim
+    that landed between the check and the rename is still visible on the
+    renamed entry, which is then put back.
+    """
+    trash = entry.with_name(f"{_TRASH_PREFIX}{os.getpid()}-{entry.name}")
+    try:
+        entry.rename(trash)
+    except OSError:
+        return False
+    if _is_in_use(trash):
+        try:
+            trash.rename(entry)
+        except OSError:
+            _remove(trash)
+        return False
+    _remove(trash)
+    return True
+
+
+def _remove(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        path.unlink(missing_ok=True)
+
+
 def _to_container(dest: Path) -> str:
     """Maps a host cache path to its container-side location.
 
@@ -932,6 +1233,11 @@ def _to_container(dest: Path) -> str:
     """
     relative = dest.relative_to(get_cache_dir())
     return str(CONTAINER_SHARED_DIR / relative.as_posix())
+
+
+# What every digest here looks like, used to tell a usable memo from a file
+# that was truncated or never finished being written.
+_DIGEST = re.compile(r"[0-9a-f]{16}")
 
 
 def _hash_file(path: Path) -> str:
@@ -962,28 +1268,16 @@ def _hash_file_memoized(path: Path) -> str:
     ).hexdigest()[:16]
     memo = get_cache_dir() / "digests" / key
     try:
-        digest = memo.read_text()
+        memoized = memo.read_text()
     except OSError:
-        digest = ""
-    if _is_digest(digest):
-        return digest
+        memoized = ""
+    if _DIGEST.fullmatch(memoized):
+        return memoized
     digest = _hash_file(path)
-    try:
+    with suppress(OSError):
         memo.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_text(memo, digest)
-    except OSError:
-        pass
     return digest
-
-
-def _is_digest(value: str) -> bool:
-    if len(value) != 16:
-        return False
-    try:
-        int(value, 16)
-    except ValueError:
-        return False
-    return True
 
 
 def _hash_files(paths: list[Path]) -> str:

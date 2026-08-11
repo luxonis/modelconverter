@@ -524,6 +524,81 @@ def test_directory_digest_covers_symlinked_subdirectories(
     assert before != after
 
 
+def _release_claims(entry: Path) -> None:
+    """Stands in for the run that staged ``entry`` having exited."""
+    for marker in entry.glob(f"{input_staging._IN_USE_PREFIX}*"):
+        marker.unlink()
+
+
+def test_restaging_a_changed_file_replaces_the_previous_copy(
+    tmp_path: Path, cache_dir: Path
+) -> None:
+    """A file entry is superseded the same way a directory one is.
+
+    Without this the cache keeps every version of a model that is
+    re-converted while it is being worked on.
+    """
+    inputs_dir = cache_dir / "inputs"
+    src = tmp_path / "model.tflite"
+    src.write_bytes(b"first")
+
+    first = input_staging._stage_file(src, inputs_dir)
+    _release_claims(first.parent)
+
+    src.write_bytes(b"second version")
+    second = input_staging._stage_file(src, inputs_dir)
+
+    assert first != second
+    assert not first.exists()
+    assert second.read_bytes() == b"second version"
+
+
+def test_restaging_a_changed_model_replaces_the_previous_bundle(
+    tmp_path: Path, cache_dir: Path
+) -> None:
+    """An ONNX model and its external data are one entry, superseded as
+    one."""
+    inputs_dir = cache_dir / "inputs"
+    model_path = tmp_path / "models" / "model.onnx"
+    model_path.parent.mkdir()
+    external_data = _external_onnx(model_path)
+
+    first = input_staging._stage_onnx(model_path, inputs_dir)
+    _release_claims(first.parent)
+
+    # The weights changed, not the model file that names them.
+    external_data.write_bytes(external_data.read_bytes() + b"retrained")
+    second = input_staging._stage_onnx(model_path, inputs_dir)
+
+    assert first != second
+    assert not first.parent.exists()
+    assert second.exists()
+
+
+def test_restaging_a_changed_config_replaces_the_previous_copy(
+    tmp_path: Path, cache_dir: Path
+) -> None:
+    """The rewritten config is keyed by its own text, so every edit used
+    to leave the previous one behind for good."""
+    inputs_dir = cache_dir / "inputs"
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"model")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump({"input_model": "model.onnx"}))
+
+    first = input_staging._stage_config(config_path, inputs_dir)
+    _release_claims(first.parent)
+
+    config_path.write_text(
+        yaml.safe_dump({"input_model": "model.onnx", "name": "renamed"})
+    )
+    second = input_staging._stage_config(config_path, inputs_dir)
+
+    assert first != second
+    assert not first.exists()
+    assert yaml.safe_load(second.read_text())["name"] == "renamed"
+
+
 def test_restaging_a_changed_directory_replaces_the_previous_copy(
     tmp_path: Path, cache_dir: Path
 ) -> None:
@@ -534,8 +609,7 @@ def test_restaging_a_changed_directory_replaces_the_previous_copy(
 
     first = input_staging._stage_dir(src, inputs_dir)
     # The run that staged the first copy has exited, dropping its claim.
-    for marker in first.parent.glob(f"{input_staging._IN_USE_PREFIX}*"):
-        marker.unlink()
+    _release_claims(first.parent)
 
     (src / "image.jpg").write_bytes(b"second version")
     second = input_staging._stage_dir(src, inputs_dir)

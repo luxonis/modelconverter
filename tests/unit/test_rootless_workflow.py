@@ -260,3 +260,37 @@ def test_a_serialized_argument_list_reaches_the_container_staged(
     assert staged[0] == "--quantization_overrides"
     assert staged[1].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
     assert _staged_on_host(staged[1]).read_text() == encodings.read_text()
+
+
+@pytest.mark.parametrize(
+    "spelling", ["4g", "4G", "4GiB", "4096m", "4294967296"]
+)
+def test_the_memory_limit_reaches_compose_as_bytes(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch, spelling: str
+):
+    """Every spelling of the same limit has to reach Compose as the same
+    number, which is what handing it over already parsed buys."""
+    config = _project(work_dir)
+
+    launch = _launch(config, monkeypatch, extra=["--memory", spelling])
+
+    limits = launch.service["deploy"]["resources"]["limits"]
+    assert limits["memory"] == str(4 * 1024**3)
+
+
+def test_a_memory_limit_that_is_not_a_size_is_rejected(work_dir: Path):
+    """The launcher fails on the spot rather than handing Compose
+    something it will reject much later."""
+    config = _project(work_dir)
+
+    with pytest.raises(ValueError, match="not a valid size"):
+        app.meta(
+            ["convert", "rvc4", "--path", str(config), "--memory", "lots"]
+        )
+
+
+def test_a_memory_limit_of_zero_is_rejected(work_dir: Path):
+    config = _project(work_dir)
+
+    with pytest.raises(ValueError, match="must be a positive size"):
+        app.meta(["convert", "rvc4", "--path", str(config), "--memory", "0"])

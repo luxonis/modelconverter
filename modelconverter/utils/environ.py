@@ -33,6 +33,11 @@ def get_password_with_timeout(
 class Environ(BaseEnviron):
     HUBAI_API_KEY: str | None = None
     HUBAI_URL: str = "https://easyml.cloud.luxonis.com/"
+    # The cache is hidden and managed for the user, so it also has to stop
+    # growing on its own. Staged inputs are whole models and calibration
+    # sets, so the budget has to be generous enough that a normal working
+    # set survives; `0` turns the eviction off.
+    MODELCONVERTER_CACHE_MAX_SIZE: str = "50GiB"
 
     @model_validator(mode="after")
     def validate_hubai_api_key(self) -> Self:

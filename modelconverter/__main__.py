@@ -1,6 +1,5 @@
 import importlib.metadata
 import os
-import re
 import shutil
 import signal
 import sys
@@ -51,8 +50,14 @@ from modelconverter.utils.constants import (
     MODELS_DIR,
     get_cache_dir,
 )
-from modelconverter.utils.general import human_size, sanitize_net_name
+from modelconverter.utils.general import (
+    dir_stats,
+    human_size,
+    parse_size,
+    sanitize_net_name,
+)
 from modelconverter.utils.input_staging import (
+    cache_budget,
     cache_is_in_use,
     path_flags_for,
     stage_inputs,
@@ -726,7 +731,6 @@ cache_app = App(
 app.meta.command(cache_app)
 
 
-# Human-readable descriptions of the known cache sub-directories.
 _CACHE_SUBDIR_DESCRIPTIONS = {
     "inputs": "Staged input files",
     "models": "Downloaded models",
@@ -734,26 +738,6 @@ _CACHE_SUBDIR_DESCRIPTIONS = {
     "misc": "Miscellaneous downloads",
     "configs": "Configuration files",
 }
-
-
-def _dir_stats(path: Path) -> tuple[int, int]:
-    """Returns the total size (bytes) and number of files under
-    ``path``.
-
-    Entries that cannot be stat'ed are skipped: a container run killed
-    before its entrypoint could chown the mounts back leaves root-owned
-    files behind, and reporting on the cache must not be what breaks.
-    """
-    size = 0
-    count = 0
-    for f in path.rglob("*"):
-        try:
-            if f.is_file():
-                size += f.stat().st_size
-                count += 1
-        except OSError:
-            continue
-    return size, count
 
 
 def _cache_entries(root: Path) -> list[Path] | None:
@@ -814,8 +798,12 @@ def cache_info() -> None:
     total_size = 0
     total_files = 0
     for entry in entries:
+        # Claims, sizes and use stamps are bookkeeping the cache keeps about
+        # itself; nobody put them there and nobody can clean them up.
+        if entry.name.startswith("."):
+            continue
         if entry.is_dir():
-            size, count = _dir_stats(entry)
+            size, count = dir_stats(entry)
             description = _CACHE_SUBDIR_DESCRIPTIONS.get(entry.name, "")
         else:
             try:
@@ -835,6 +823,15 @@ def cache_info() -> None:
         f"[bold]{human_size(total_size)}[/]",
     )
 
+    budget = cache_budget()
+    if budget:
+        table.add_row(
+            "[dim]Budget[/]",
+            "[dim]MODELCONVERTER_CACHE_MAX_SIZE[/]",
+            "",
+            f"[dim]{human_size(budget)}[/]",
+        )
+
     console.print(
         Panel(
             table,
@@ -846,12 +843,29 @@ def cache_info() -> None:
     )
 
 
+def _refuse_while_in_use(console: Console, root: Path) -> bool:
+    """Whether a running conversion still needs the cache.
+
+    The cache is bind-mounted into every running container, so emptying it
+    would pull the staged inputs -- and the downloads the container writes
+    as it runs -- out from under a conversion that is still using them.
+    """
+    if not cache_is_in_use():
+        return False
+    console.print(
+        f"Not clearing [cyan]{root}[/]: it is still in use by a running "
+        "conversion. Wait for it to finish and try again."
+    )
+    return True
+
+
 def _confirm(question: str) -> bool:
-    """Asks C{question}, treating an unusable stdin as a decline.
+    """Asks C{question}, treating anything but an answer as a decline.
 
     Piped or closed stdin (a CI step, `</dev/null`) makes C{input()} raise
-    C{EOFError}; a destructive command must not abort with a traceback
-    there, nor assume consent nobody gave.
+    C{EOFError}, and Ctrl-C at the prompt raises C{KeyboardInterrupt}. A
+    destructive command must not abort with a traceback on either, nor
+    read silence for consent nobody gave.
     """
     try:
         return Confirm.ask(question)
@@ -872,61 +886,51 @@ def cache_clean(
 ) -> None:
     """Removes the entire modelconverter cache.
 
-    Args:
-        yes: Clear the cache without prompting for confirmation.
+    Parameters
+    ----------
+    yes : bool
+        Clear the cache without prompting for confirmation.
     """
     console = Console()
     root = get_cache_dir()
     # A root that cannot even be listed still has something to clean.
     entries = _cache_entries(root)
-    if entries is None or entries:
-        # The cache is bind-mounted into every running container, so emptying
-        # it would pull the staged inputs -- and the downloads the container
-        # writes as it runs -- out from under a conversion that is still
-        # using them.
-        def refuse_while_in_use() -> bool:
-            if not cache_is_in_use():
-                return False
-            console.print(
-                f"Not clearing [cyan]{root}[/]: it is still in use by a "
-                "running conversion. Wait for it to finish and try again."
-            )
-            return True
-
-        if refuse_while_in_use():
-            return
-        size, _ = _dir_stats(root)
-        if not yes and not _confirm(
-            f"Clear the entire ModelConverter cache at [cyan]{root}[/]?"
-        ):
-            console.print("Cache clean cancelled.")
-            return
-        # The prompt can sit unanswered for as long as the user likes --
-        # plenty of time for another terminal to start a conversion -- so
-        # look again right before deleting.
-        if refuse_while_in_use():
-            return
-        # Never abort part-way through: files left root-owned by a container
-        # that was killed before its entrypoint could chown the mounts back
-        # would otherwise leave the cache half-deleted.
-        shutil.rmtree(root, ignore_errors=True)
-        if root.exists():
-            remaining, _ = _dir_stats(root)
-            console.print(
-                f"Cleared what could be removed from [cyan]{root}[/] "
-                f"([green]{human_size(size - remaining)}[/] freed, "
-                f"[yellow]{human_size(remaining)}[/] left). The remaining "
-                "files are owned by another user, most likely written by a "
-                "container that was killed before it could hand them back. "
-                f"Remove them with [bold]sudo rm -rf {root}[/]."
-            )
-            return
-        console.print(
-            f":wastebasket:  Cleared cache at [cyan]{root}[/] "
-            f"(freed [green]{human_size(size)}[/])."
-        )
-    else:
+    if entries is not None and not entries:
         console.print(f"Cache is already empty ([cyan]{root}[/]).")
+        return
+
+    if _refuse_while_in_use(console, root):
+        return
+    size, _ = dir_stats(root)
+    if not yes and not _confirm(
+        f"Clear the entire ModelConverter cache at [cyan]{root}[/]?"
+    ):
+        console.print("Cache clean cancelled.")
+        return
+    # The prompt can sit unanswered for as long as the user likes -- plenty
+    # of time for another terminal to start a conversion -- so look again
+    # right before deleting.
+    if _refuse_while_in_use(console, root):
+        return
+    # Never abort part-way through: files left root-owned by a container that
+    # was killed before its entrypoint could chown the mounts back would
+    # otherwise leave the cache half-deleted.
+    shutil.rmtree(root, ignore_errors=True)
+    if root.exists():
+        remaining, _ = dir_stats(root)
+        console.print(
+            f"Cleared what could be removed from [cyan]{root}[/] "
+            f"([green]{human_size(size - remaining)}[/] freed, "
+            f"[yellow]{human_size(remaining)}[/] left). The remaining "
+            "files are owned by another user, most likely written by a "
+            "container that was killed before it could hand them back. "
+            f"Remove them with [bold]sudo rm -rf {root}[/]."
+        )
+        return
+    console.print(
+        f":wastebasket:  Cleared cache at [cyan]{root}[/] "
+        f"(freed [green]{human_size(size)}[/])."
+    )
 
 
 @app.meta.default
@@ -977,9 +981,9 @@ def launcher(
         str | None,
         Parameter(
             group=docker_parameters,
-            help="Amount of memory to allocate to the docker container. "
-            "The format is a number followed by a suffix, e.g. '4g' for 4 gigabytes. "
-            "Available suffixes are 'b', 'k', 'm', 'g'. "
+            help="Amount of memory to allocate to the docker container, "
+            "as a number with an optional binary unit: '4g' for four "
+            "gibibytes, '512m', '2GiB', or a bare count of bytes. "
             "By default, uses all available system memory.",
         ),
     ] = None,
@@ -998,15 +1002,9 @@ def launcher(
     is_convert_command = getattr(command, "__name__", "") == "convert"
     running_in_docker = in_docker()
 
-    if memory is not None:
-        if not re.match(r"^\d+(?:[bkmgBKMG])?$", memory):
-            raise ValueError(
-                "Invalid memory format. Use a number followed by an optional suffix: b, k, m, g."
-            )
-        mem_value = int(memory[:-1])
-        if mem_value <= 0:
-            raise ValueError("Memory value must be a positive integer.")
-        memory = memory.upper()
+    memory_bytes = parse_size(memory) if memory is not None else None
+    if memory_bytes is not None and memory_bytes <= 0:
+        raise ValueError("Memory value must be a positive size.")
 
     if cpus is not None and cpus <= 0:
         raise ValueError("CPUs value must be a positive number.")
@@ -1043,7 +1041,7 @@ def launcher(
             use_gpu=gpu,
             version=tool_version,
             image=image,
-            memory=memory,
+            memory=memory_bytes,
             cpus=cpus,
         )
         return None

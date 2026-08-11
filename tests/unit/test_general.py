@@ -9,6 +9,7 @@ from hypothesis import strategies as st
 
 from modelconverter.utils.general import (
     _normalize_underscores,
+    parse_size,
     sanitize_net_name,
 )
 
@@ -118,3 +119,34 @@ def test_only_the_basename_is_rewritten(name: str, with_suffix: bool):
     """A model kept in a directory stays in that directory."""
     sanitized = sanitize_net_name(name, with_suffix=with_suffix)
     assert Path(sanitized).parent == Path(name).parent
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("0", 0),
+        ("1024", 1024),
+        ("1B", 1),
+        ("1K", 1024),
+        ("1KB", 1024),
+        ("1KiB", 1024),
+        ("50GiB", 50 * 1024**3),
+        ("1.5MiB", 1536 * 1024),
+        (" 2 TiB ", 2 * 1024**4),
+        ("2gib", 2 * 1024**3),
+    ],
+)
+def test_parse_size_reads_the_units_human_size_writes(
+    value: str, expected: int
+):
+    """The two are read and written by the same people, so a size shown
+    by `cache info` has to be one the budget accepts back."""
+    assert parse_size(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value", ["", "big", "-1", "1 GB please", "GiB", "1.2.3M"]
+)
+def test_parse_size_rejects_what_is_not_a_size(value: str):
+    with pytest.raises(ValueError, match="not a valid size"):
+        parse_size(value)

@@ -376,9 +376,19 @@ modelconverter cache clean       # remove cache contents after confirmation
 modelconverter cache clean --yes # remove it non-interactively
 ```
 
-Input directories are cached in full. ModelConverter warns when one exceeds
-1 GiB and replaces its cached copy when its contents change. Other staged
-inputs and remote downloads remain until you run `cache clean`.
+Inputs are cached in full — directories included — and ModelConverter warns
+when a single one exceeds 1 GiB. When an input changes, the copy staged from
+it is replaced rather than kept alongside the new one.
+
+The cache is kept within a size budget, 50 GiB by default. Before each
+conversion, entries are evicted least-recently-used first until the cache fits
+again; nothing a running conversion is using is ever removed. Set
+`MODELCONVERTER_CACHE_MAX_SIZE` to change the budget (`20GiB`, `500M`, …) or
+to `0` to let the cache grow without limit:
+
+```bash
+MODELCONVERTER_CACHE_MAX_SIZE=20GiB modelconverter convert rvc4 --path config.yaml
+```
 
 #### Migrating from `shared_with_container`
 

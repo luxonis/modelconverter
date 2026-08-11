@@ -108,7 +108,7 @@ def rvc4_tag_version(version: str) -> str:
 def generate_compose_config(
     image: str,
     gpu: bool = False,
-    memory: str | None = None,
+    memory: int | None = None,
     cpus: float | None = None,
     extra_environment: dict[str, str] | None = None,
 ) -> str:
@@ -196,7 +196,9 @@ def generate_compose_config(
     }
     limits = {}
     if memory is not None:
-        limits["memory"] = memory
+        # Compose reads a bare number as bytes, so the limit is handed over
+        # already parsed rather than in whatever spelling the user typed.
+        limits["memory"] = str(memory)
     if cpus is not None:
         limits["cpus"] = str(cpus)
 
@@ -529,7 +531,7 @@ def docker_exec(
     use_gpu: bool,
     version: str | None = None,
     image: str | None = None,
-    memory: str | None = None,
+    memory: int | None = None,
     cpus: float | None = None,
 ) -> None:
     version = version or get_default_target_version(target)
