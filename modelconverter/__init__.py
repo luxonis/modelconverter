@@ -9,7 +9,7 @@ __semver__: Final[SemanticVersion] = SemanticVersion.parse(__version__)
 
 
 def load_put_file_plugins() -> None:
-    """Registers any external put file plugins."""
+    """Register any external put file plugins."""
     eps = entry_points()
     put_file_plugins = eps.select(group="put_file_plugins")
     for entry_point in put_file_plugins:  # pragma: no cover

@@ -14,11 +14,14 @@ def sanitize_net_name(name: str, with_suffix: bool = False) -> str:
     If input is a path, only sanitize the basename. If input is a name,
     sanitize the whole string. Collapse multiple underscores.
 
-    @type name: str
-    @param name: The name or path to sanitize.
-    @type with_suffix: bool
-    @param with_suffix: If True, the suffix (file extension) is
-        preserved and not sanitized.
+    Args:
+        name: The name or path to sanitize.
+        with_suffix: If ``True``, the suffix (file extension) is
+            preserved and not sanitized.
+
+    Returns:
+        The sanitized name or path.
+
     """
     p = Path(name)
     base, stem, suffix = p.name, p.stem, p.suffix
@@ -64,7 +67,7 @@ def human_size(num: float) -> str:
 
 
 def dir_stats(path: Path) -> tuple[int, int]:
-    """Returns the total size (bytes) and number of files under ``path``.
+    """Return the total size (bytes) and number of files under ``path``.
 
     Entries that cannot be stat'ed are skipped: a container run killed
     before its entrypoint could chown the mounts back leaves root-owned
@@ -90,14 +93,22 @@ _SIZE_PATTERN = re.compile(
 
 
 def parse_size(value: str | int) -> int:
-    """Parses a human-written byte size such as ``"50GiB"`` into bytes.
+    """Parse a human-written byte size such as ``"50GiB"`` into bytes.
 
     The unit is optional and its prefixes are binary, matching
-    L{human_size} on the way out and Docker's own byte values on the way
+    `human_size` on the way out and Docker's own byte values on the way
     in: ``50G``, ``50GB`` and ``50GiB`` all mean the same 50 * 1024^3
     bytes, and a bare number is a count of bytes.
 
-    @raises ValueError: If C{value} is not a size.
+    Args:
+        value: Size to parse. An integer is returned unchanged.
+
+    Returns:
+        The size in bytes.
+
+    Raises:
+        ValueError: If ``value`` is not a size.
+
     """
     if isinstance(value, int):
         return value

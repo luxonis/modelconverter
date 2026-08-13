@@ -22,11 +22,21 @@ def _format_time(seconds: float) -> str:
 def create_progress_handler(
     benchmark_time: int, repetitions: int
 ) -> tuple[Progress, Callable[[], None], Callable[[], bool]]:
-    """
+    """Create a progress bar for time- or repetition-based benchmarks.
+
+    Args:
+        benchmark_time: Duration in seconds to benchmark for. A positive
+            value selects the time-based mode.
+        repetitions: Number of repetitions to benchmark for. Used when
+            ``benchmark_time`` is not positive.
+
     Returns:
-      progress: Rich Progress instance (context-manage it with `with progress:`)
-      on_tick(): call once per iteration to update the bar
-      should_continue(): loop guard for time/rep modes
+        A tuple of the Rich ``Progress`` instance (context-manage it
+        with ``with progress:``), an ``on_tick()`` callable to be called
+        once per iteration to update the bar, and a
+        ``should_continue()`` loop guard for the time and repetition
+        modes.
+
     """
     use_time = benchmark_time > 0
     total = int(benchmark_time) if use_time else int(repetitions)

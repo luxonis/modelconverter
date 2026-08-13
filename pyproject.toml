@@ -51,11 +51,15 @@ target-version = "py310"
 line-length = 79
 indent-width = 4
 
+[tool.ruff.format]
+docstring-code-format = true
+
 [tool.ruff.lint]
 select = [
   "ANN",
   "B",
   "C4",
+  "D",
   "DTZ",
   "E",
   "ERA",
@@ -63,7 +67,6 @@ select = [
   "FLY",
   "FURB",
   "I",
-  "ICN",
   "ICN",
   "INP",
   "INT",
@@ -95,7 +98,18 @@ ignore = [
   "ANN003",
   "ANN204",
   "ANN401",
-  "D1",
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D105",
+  "D107",
+  "D202",
+  "D203",
+  "D205",
+  "D212",
+  "D213",
   "DTZ007",
   "E501",
   "F403",
@@ -131,7 +145,7 @@ unfixable = ["B905", "PLC0208"]
 
 [tool.docformatter]
 black = true
-style = "epytext"
+style = "google"
 wrap-summaries = 72
 wrap-descriptions = 72
 

@@ -210,20 +210,20 @@ class InputConfig(OutputConfig):
     @field_validator("scale_values", mode="before")
     @staticmethod
     def _parse_scale_values(value: Any) -> Any:
-        """Parses the scale_values from the config."""
+        """Parse the scale_values from the config."""
         return InputConfig._parse_values("scale", value)
 
     @field_validator("mean_values", mode="before")
     @staticmethod
     def _parse_mean_values(value: Any) -> Any:
-        """Parses the mean_values from the config."""
+        """Parse the mean_values from the config."""
         return InputConfig._parse_values("mean", value)
 
     @staticmethod
     def _parse_values(
         values_type: Literal["mean", "scale"], value: Any
     ) -> Any:
-        """Resolves named values from the config."""
+        """Resolve named values from the config."""
         if value is None:
             return None
         if isinstance(value, str) and value in NAMED_VALUES:
@@ -427,7 +427,7 @@ class SingleStageConfig(BaseModelExtraForbid):
         return data
 
     def get_target_config(self, target: Target) -> TargetConfig:
-        """Returns the target configuration for the given target."""
+        """Return the target configuration for the given target."""
         if target == Target.HAILO:
             return self.hailo
         if target == Target.RVC2:
@@ -686,8 +686,9 @@ class Config(LuxonisConfig):
 
     @model_validator(mode="after")
     def _validate_single_stage_name(self) -> Self:
-        """Changes the default 'default_stage' name to the name of the
-        input model."""
+        """Change the default 'default_stage' name to the name of the
+        input model.
+        """
         if len(self.stages) == 1 and "default_stage" in self.stages:
             stage = next(iter(self.stages.values()))
             model_name = stage.input_model.stem
@@ -697,7 +698,7 @@ class Config(LuxonisConfig):
 
 
 def _extract_bin_xml_from_ir(ir_path: Any) -> tuple[Path, Path]:
-    """Extracts the corresponding second path from a single IR path.
+    """Extract the corresponding second path from a single IR path.
 
     We assume that the base filename matches between the .bin and .xml
     file. Otherwise, an error will be thrown.

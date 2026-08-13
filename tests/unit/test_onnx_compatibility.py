@@ -38,7 +38,8 @@ def test_external_data_paths_find_the_companion_file(tmp_path: Path):
 def test_has_external_data_is_false_without_external_data(tmp_path: Path):
     """Several callers branch on this to decide whether to re-save as
     external data at all, so an embedded model has to answer
-    ``False``."""
+    ``False``.
+    """
     model_path = single_io_onnx(tmp_path / "model.onnx")
 
     assert get_external_data_paths(model_path) == []

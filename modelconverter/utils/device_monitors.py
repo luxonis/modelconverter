@@ -86,13 +86,14 @@ class DeviceMonitor:
 
     def stop(self) -> None:
         """Stop the background sampling thread and wait for it to
-        finish."""
+        finish.
+        """
         self._running = False
         if self._thread is not None:
             self._thread.join()
 
     def loop(self) -> None:
-        """Internal sampling loop executed in the background thread."""
+        """Run the internal sampling loop in the background thread."""
         while self._running:
             try:
                 val = self.read()
@@ -239,9 +240,15 @@ class DeviceMonitor:
         def parse_freq_file(
             text: str,
         ) -> tuple[dict[str, float], float | None, float | None]:
-            """
-            Extract lines like: <float> <float>
-            Returns: {freq: value}
+            """Extract lines of the form ``<float> <float>``.
+
+            Args:
+                text: Raw text to parse.
+
+            Returns:
+                A tuple of the ``{freq: value}`` mapping, the power
+                collapse value and the total time.
+
             """
             data = {}
             pattern = re.compile(r"^\s*([0-9]*\.[0-9]+)\s+([0-9]*\.[0-9]+)")

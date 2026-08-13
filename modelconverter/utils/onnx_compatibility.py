@@ -69,7 +69,7 @@ def save_onnx_model(
 def _iter_node_tensors(
     nodes: Iterable[onnx.NodeProto],
 ) -> Iterator[onnx.TensorProto]:
-    """Yields the tensors reachable from ``nodes``.
+    """Yield the tensors reachable from ``nodes``.
 
     Besides the subgraphs nested in a node (the bodies of ``If``,
     ``Loop``, ``Scan``, ...), an attribute can hold a tensor directly --
@@ -88,8 +88,9 @@ def _iter_node_tensors(
 
 
 def _iter_tensors(graph: onnx.GraphProto) -> Iterator[onnx.TensorProto]:
-    """Yields every initializer of ``graph``, including those held by its
-    nodes."""
+    """Yield every initializer of ``graph``, including those held by its
+    nodes.
+    """
     yield from graph.initializer
     for sparse_tensor in graph.sparse_initializer:
         yield sparse_tensor.values
@@ -99,7 +100,7 @@ def _iter_tensors(graph: onnx.GraphProto) -> Iterator[onnx.TensorProto]:
 
 
 def _iter_model_tensors(model: onnx.ModelProto) -> Iterator[onnx.TensorProto]:
-    """Yields every tensor of ``model`` that may carry external data.
+    """Yield every tensor of ``model`` that may carry external data.
 
     Local functions are walked as well: their nodes are not part of the
     main graph, but ONNX's own loader resolves their external data.
@@ -110,7 +111,7 @@ def _iter_model_tensors(model: onnx.ModelProto) -> Iterator[onnx.TensorProto]:
 
 
 def get_external_data_paths(model_path: str | Path) -> list[Path]:
-    """Returns every companion file holding the model's external tensor
+    """Return every companion file holding the model's external tensor
     data.
 
     A model saved with ``all_tensors_to_one_file=False`` keeps one file

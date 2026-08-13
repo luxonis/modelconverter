@@ -115,7 +115,8 @@ class Benchmark(ABC):
         result: dict[str, Any],
     ) -> Iterable[str]:
         """Shared row cells for each result (configuration + fps +
-        latency)."""
+        latency).
+        """
         # configuration values
         for x in configuration.values():
             yield f"[magenta]{x}"
@@ -142,7 +143,16 @@ class Benchmark(ABC):
         self,
         results: list[tuple[Configuration, dict[str, Any]]],
     ) -> list[str]:
-        """Columns to append after the base header (default: none)."""
+        """Return columns to append after the base header.
+
+        Args:
+            results: All benchmark results, as configuration/result
+                pairs.
+
+        Returns:
+            The extra columns. Empty by default.
+
+        """
         return []
 
     def _extra_row_cells(
@@ -150,9 +160,16 @@ class Benchmark(ABC):
         configuration: Configuration,
         result: dict[str, Any],
     ) -> Iterable[str]:
-        """Extra cells to append after the base row cells (default:
+        """Return extra cells to append after the base row cells.
 
-        none).
+        Args:
+            configuration: The configuration the result was produced
+                with.
+            result: A single benchmark result.
+
+        Returns:
+            The extra cells. Empty by default.
+
         """
         return []
 

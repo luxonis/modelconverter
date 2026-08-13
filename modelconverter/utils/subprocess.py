@@ -15,8 +15,15 @@ from typing_extensions import Self
 
 
 class SubprocessResult(subprocess.CompletedProcess):
-    """Extension of subprocess.CompletedProcess that also carries peak
-    memory usage."""
+    """Extension of `subprocess.CompletedProcess` that also carries peak
+    memory usage.
+
+    Attributes:
+        peak_memory: Peak memory usage of the process and its children,
+            in bytes.
+        total_time: Wall-clock run time of the process, in seconds.
+
+    """
 
     def __init__(self, *args, peak_memory: int, total_time: float, **kwargs):
         super().__init__(*args, **kwargs)
@@ -55,7 +62,8 @@ class SubprocessResult(subprocess.CompletedProcess):
 
 class SubprocessHandle:
     """Context manager wrapping a subprocess with live psutil access and
-    deferred result collection."""
+    deferred result collection.
+    """
 
     def __init__(
         self,
@@ -66,16 +74,15 @@ class SubprocessHandle:
     ):
         """Initialize the subprocess handle.
 
-        @type args: str | list[Any]
-        @param args: Command to execute. If a string is given, it will
-            be split on whitespace. If a list is given, each element
-            will be converted to a string.
-        @type silent: bool
-        @param silent: If True, suppress all output from the command.
-        @type timeout: float | None
-        @param timeout: If given, the maximum time in seconds to allow
-            the process to run. If the timeout is exceeded, the process
-            will be
+        Args:
+            cmd: Command to execute. If a string is given, it will be
+                split on whitespace. If a list is given, each element
+                will be converted to a string.
+            silent: If ``True``, suppress all output from the command.
+            timeout: If given, the maximum time in seconds to allow the
+                process to run. If the timeout is exceeded, the process
+                is terminated and `subprocess.TimeoutExpired` is raised.
+
         """
         if isinstance(cmd, str):
             self.cmd = cmd.split()
@@ -115,7 +122,10 @@ class SubprocessHandle:
     def __bool__(self) -> bool:
         """Return whether the process is still running.
 
-        Also checks for timeout and raises TimeoutExpired if exceeded.
+        Raises:
+            subprocess.TimeoutExpired: If the configured timeout has
+                been exceeded. The process is terminated first.
+
         """
         if time.time() - self._start_time > (self.timeout or float("inf")):
             with suppress(psutil.NoSuchProcess):
@@ -146,16 +156,25 @@ class SubprocessHandle:
             self.ps_proc.resume()
 
     def poll(self) -> int | None:
-        """Check if the process has terminated.
+        """Check whether the process has terminated.
 
-        Returns returncode or None.
+        Returns:
+            The return code, or ``None`` if the process is still
+            running.
+
         """
         return self.proc.poll()
 
     def wait(self, timeout: float | None = None) -> int:
-        """Wait for process to terminate.
+        """Wait for the process to terminate.
 
-        Returns returncode.
+        Args:
+            timeout: Maximum time in seconds to wait. Ignored if a
+                timeout was given when the handle was created.
+
+        Returns:
+            The return code of the process.
+
         """
         return self.proc.wait(timeout=self.timeout or timeout)
 
@@ -222,8 +241,7 @@ class SubprocessHandle:
             t.join(timeout=1.0)
 
     def current_memory(self) -> int:
-        """Return current memory usage of the process and its
-        children."""
+        """Return current memory usage of the process and its children."""
         if self._ps_proc is None:
             return 0
         try:
@@ -271,21 +289,22 @@ class SubprocessHandle:
 def subprocess_run(
     cmd: str | list[Any], *, silent: bool = False, timeout: float | None = None
 ) -> SubprocessResult:
-    """Backwards-compatible wrapper.
+    """Run a command and block until it finishes.
 
-    Blocks until done and returns result.
-    @type cmd: str | list[Any]
-    @param cmd: Command to execute. If a string is given, it will be
-        split on whitespace. If a list is given, each element will be
-        converted to a string.
-    @type silent: bool
-    @param silent: If True, suppress all output from the command.
-    @type timeout: float | None
-    @param timeout: If given, the maximum time in seconds to allow the
-        process to run. If the timeout is exceeded, the process will be
-        terminated and a TimeoutExpired exception will be raised.
-    @rtype: SubprocessResult
-    @return: Result of the command.
+    Backwards-compatible wrapper around `SubprocessHandle`.
+
+    Args:
+        cmd: Command to execute. If a string is given, it will be split
+            on whitespace. If a list is given, each element will be
+            converted to a string.
+        silent: If ``True``, suppress all output from the command.
+        timeout: If given, the maximum time in seconds to allow the
+            process to run. If the timeout is exceeded, the process is
+            terminated and `subprocess.TimeoutExpired` is raised.
+
+    Returns:
+        Result of the command.
+
     """
     if isinstance(cmd, str):
         args = cmd.split()

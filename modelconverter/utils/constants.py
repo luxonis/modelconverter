@@ -11,11 +11,11 @@ def in_docker() -> bool:
 
 
 def get_cache_dir() -> Path:
-    """Returns the hidden, auto-managed cache directory used for staged
+    """Return the hidden, auto-managed cache directory used for staged
     inputs and remote downloads.
 
-    Respects C{XDG_CACHE_HOME} and defaults to
-    C{~/.cache/modelconverter}.
+    Respects ``XDG_CACHE_HOME`` and defaults to
+    ``~/.cache/modelconverter``.
     """
     base = os.environ.get("XDG_CACHE_HOME")
     root = Path(base) if base else Path.home() / ".cache"

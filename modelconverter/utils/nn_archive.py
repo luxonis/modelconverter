@@ -38,15 +38,17 @@ def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
 def process_nn_archive(
     target: Target, path: Path, overrides: dict[str, Any] | None
 ) -> tuple[Config, NNArchiveConfig, str]:
-    """Extracts the archive from tar and parses its config.
+    """Extract the archive from tar and parse its config.
 
-    @type path: Path
-    @param path: Path to the archive.
-    @type overrides: Optional[Dict[str, Any]]
-    @param overrides: Config overrides.
-    @rtype: Tuple[Config, NNArchiveConfig, str]
-    @return: Tuple of the parsed config, NNArchiveConfig and the main
+    Args:
+        target: Conversion target the config is built for.
+        path: Path to the archive.
+        overrides: Config overrides.
+
+    Returns:
+        Tuple of the parsed `Config`, `NNArchiveConfig` and the main
         stage key.
+
     """
     untar_path = MISC_DIR / path.stem
     if path.is_dir():

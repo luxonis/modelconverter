@@ -12,8 +12,9 @@ from modelconverter.utils import input_staging
 
 @pytest.fixture
 def cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A non-empty cache that both the CLI and input staging resolve
-    to."""
+    """Create a non-empty cache that both the CLI and input staging
+    resolve to.
+    """
     cache = tmp_path / "modelconverter"
     cache.mkdir()
     (cache / "entry").write_bytes(b"cached")
@@ -44,8 +45,9 @@ def test_cache_clean_confirmed_removes_cache(
 
 
 def _deny_listing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Makes the cache root unlistable, as a container that was killed
-    before it could hand the mounts back leaves it."""
+    """Make the cache root unlistable, as a container that was killed
+    before it could hand the mounts back leaves it.
+    """
 
     def denied(_self: Path) -> NoReturn:
         raise PermissionError(13, "Permission denied")
@@ -90,8 +92,10 @@ def test_cache_clean_yes_skips_confirmation(
 
 
 def _claimed_by(cache: Path, pid: int) -> Path:
-    """A staged input entry claimed by ``pid``, as a launcher marks the
-    ones its container has open."""
+    """Create a staged input entry claimed by ``pid``.
+
+    Mirrors how a launcher marks the ones its container has open.
+    """
     entry = cache / "inputs" / "digest"
     entry.mkdir(parents=True)
     (entry / "image.jpg").write_bytes(b"calibration image")
@@ -104,7 +108,8 @@ def test_cache_clean_spares_inputs_a_running_conversion_holds(
 ) -> None:
     """The cache is bind-mounted into every running container, so
     emptying it pulls the staged inputs out from under a conversion that
-    is still reading them."""
+    is still reading them.
+    """
     entry = _claimed_by(cache, os.getpid())
 
     cli.cache_clean(yes=True)
@@ -116,7 +121,8 @@ def test_cache_clean_ignores_a_claim_from_a_dead_process(
     cache: Path,
 ) -> None:
     """A run that was killed leaves its marker behind; refusing forever
-    on account of it would make the cache impossible to clear."""
+    on account of it would make the cache impossible to clear.
+    """
     dead = subprocess.Popen([sys.executable, "-c", ""])
     dead.wait()
     _claimed_by(cache, dead.pid)
@@ -131,7 +137,8 @@ def test_cache_clean_declines_when_stdin_cannot_answer(
 ) -> None:
     """Piped or closed stdin makes the prompt raise ``EOFError``. Nothing
     in this command group runs inside ``catch_exceptions``, and a
-    destructive command must not read silence as consent either."""
+    destructive command must not read silence as consent either.
+    """
 
     def no_stdin(*_args: object, **_kwargs: object) -> NoReturn:
         raise EOFError
@@ -148,7 +155,8 @@ def test_cache_clean_spares_a_cache_claimed_for_downloads(
 ) -> None:
     """The container downloads remote inputs straight into the cache
     mount, so the launcher's whole-cache claim must hold ``cache clean``
-    off even when nothing was staged host-side."""
+    off even when nothing was staged host-side.
+    """
     input_staging.claim_cache()
 
     cli.cache_clean(yes=True)
@@ -160,7 +168,8 @@ def test_cache_clean_rechecks_claims_after_the_prompt(
     cache: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A conversion may start while the confirmation prompt sits
-    unanswered; the answer must not license deleting its inputs."""
+    unanswered; the answer must not license deleting its inputs.
+    """
 
     def stage_and_confirm(*_args: object, **_kwargs: object) -> bool:
         _claimed_by(cache, os.getpid())

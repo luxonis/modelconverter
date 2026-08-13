@@ -42,7 +42,8 @@ TIMEOUT = 5
 @pytest.fixture
 def entrypoint(tmp_path: Path) -> Path:
     """Lays the entrypoint out the way the image does, with the shared
-    part next to it."""
+    part next to it.
+    """
     app = tmp_path / "app"
     app.mkdir()
     shutil.copy(DOCKER_DIR / "rvc2" / "entrypoint.sh", app / "entrypoint.sh")
@@ -53,8 +54,9 @@ def entrypoint(tmp_path: Path) -> Path:
 
 
 def _entrypoint_env(tmp_path: Path, body: str) -> dict[str, str]:
-    """Puts a fake ``modelconverter`` on PATH and returns the
-    environment to run the entrypoint with."""
+    """Put a fake ``modelconverter`` on PATH and return the
+    environment to run the entrypoint with.
+    """
     executable = tmp_path / "modelconverter"
     executable.write_text(f"#!/usr/bin/env bash\n{body}")
     executable.chmod(0o755)
@@ -74,7 +76,7 @@ def _entrypoint_process(
     env: dict[str, str],
     stdin: bool = False,
 ) -> Generator[subprocess.Popen, None, None]:
-    """Runs the entrypoint and leaves nothing of it behind.
+    """Run the entrypoint and leaves nothing of it behind.
 
     The entrypoint runs the converter as a background child, so killing
     the entrypoint alone -- all a timeout does -- would leave that child
@@ -165,7 +167,7 @@ def test_entrypoint_forwards_signals_and_waits_for_child_cleanup(
 
 @pytest.fixture
 def mounts(tmp_path: Path) -> Path:
-    """An ``APP_ROOT`` laid out the way the container's mounts are."""
+    """Create an ``APP_ROOT`` laid out the way the container's mounts are."""
     app = tmp_path / "app_root"
     (app / "output").mkdir(parents=True)
     cache = app / "shared_with_container"
@@ -175,7 +177,7 @@ def mounts(tmp_path: Path) -> Path:
 
 
 def _recording_chown(tmp_path: Path) -> Path:
-    """Puts a ``chown`` that only records its arguments on PATH."""
+    """Put a ``chown`` that only records its arguments on PATH."""
     recorder = tmp_path / "chown"
     recorder.write_text(
         '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$CHOWN_LOG"\n'
@@ -224,7 +226,8 @@ def test_entrypoint_hands_back_the_dev_mounts_it_finds(
 ) -> None:
     """A dev container mounts the host checkout over the installed
     package and the suite over the image's, and running as root leaves
-    ``__pycache__`` in both."""
+    ``__pycache__`` in both.
+    """
     (mounts / "tests").mkdir()
     (mounts / "modelconverter").mkdir()
     log = _recording_chown(tmp_path)
@@ -241,7 +244,8 @@ def test_entrypoint_leaves_ownership_alone_without_a_host_identity(
 ) -> None:
     """Under a rootless or user-namespaced daemon the launcher passes no
     identity, and chowning anyway would hand the files to an unmapped
-    sub-uid."""
+    sub-uid.
+    """
     log = _recording_chown(tmp_path)
     env = _handover_env(tmp_path, mounts, log)
     del env["HOST_UID"]

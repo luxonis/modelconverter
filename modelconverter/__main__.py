@@ -129,30 +129,26 @@ def convert(
     main_stage: str | None = None,
     archive_preprocess: bool = False,
 ) -> None:
-    """Exports the model for the specified target platform.
+    """Export the model for the specified target platform.
 
-    Parameters
-    ----------
-    target: Target
-        The target platform to export the model for.
-    opts: *str
-        A list of optional CLI overrides for the configuration file.
-    path: str | None
-        A URL or a path to the configuration file, NN Archive
-        or a standalone model file.
-    output_dir: str | None
-        Name of the directory where the exported model will be saved.
-    to: Literal["native", "nn_archive"]
-        Whether to export the model to a simple model file or a Luxonis NN Archive.
-    main_stage: str | None
-        Name of the stage with the main model.
-        Only needed for multistage configs and when converting to NN Archive.
-        When converting fron NN Archive, the stage names are named the
-        same as the model files without the suffix.
-    archive_preprocess: bool
-        Add the pre-processing to the NN archive instead of the model.
-        In case of conversion from archive to archive, it moves the
-        preprocessing to the new archive.
+    Args:
+        target: The target platform to export the model for.
+        opts: A list of optional CLI overrides for the configuration
+            file.
+        path: A URL or a path to the configuration file, NN Archive
+            or a standalone model file.
+        output_dir: Name of the directory where the exported model will
+            be saved.
+        to: Whether to export the model to a simple model file or a
+            Luxonis NN Archive.
+        main_stage: Name of the stage with the main model.
+            Only needed for multistage configs and when converting to
+            NN Archive. When converting from NN Archive, the stage names
+            are named the same as the model files without the suffix.
+        archive_preprocess: Add the pre-processing to the NN archive
+            instead of the model. In case of conversion from archive to
+            archive, it moves the preprocessing to the new archive.
+
     """
 
     def handle_signal(signum: int, frame: Any) -> None:
@@ -415,29 +411,24 @@ def infer(
     path: str | None = None,
     stage: str | None = None,
 ) -> None:
-    """Runs inference on the specified target platform.
+    """Run inference on the specified target platform.
 
-    Parameters
-    ----------
-    target : Target
-        The target platform to run the inference on.
-    opts: *str
-        A list of optional CLI overrides for the configuration file.
-    model_path : str
-        A URL or a path to the model file.
-    input_path : Path
-        Path to the directory with data for inference.
-        The directory must contain one subdirectory per input, named the same as the input.
-        Inference data must be provided in the NPY format.
-    output_dir: str
-        Name of the directory where the inference results will be saved.
-    config: str | None
-        A URL or a path to the configuration file.
-    path: str | None
-        An alias for ``config``. Deprecated.
-    stage: str | None
-        Name of the stage to run. Only needed for multistage configs.
-        If not provided, the first stage will be used.
+    Args:
+        target: The target platform to run the inference on.
+        opts: A list of optional CLI overrides for the configuration
+            file.
+        model_path: A URL or a path to the model file.
+        input_path: Path to the directory with data for inference.
+            The directory must contain one subdirectory per input, named
+            the same as the input. Inference data must be provided in
+            the NPY format.
+        output_dir: Name of the directory where the inference results
+            will be saved.
+        config: A URL or a path to the configuration file.
+        path: An alias for ``config``. Deprecated.
+        stage: Name of the stage to run. Only needed for multistage
+            configs. If not provided, the first stage will be used.
+
     """
     if path is not None:
         config = path
@@ -460,16 +451,15 @@ def shell(
     *,
     command: Annotated[str | None, Parameter(name=["-c", "--command"])] = None,
 ) -> None:
-    """Boots up a shell inside a docker container for the specified
+    """Boot up a shell inside a docker container for the specified
     target platform.
 
-    Parameters
-    ----------
-    target : Target
-        The target platform.
-    command : str
-        The command to run in the shell. If not provided, a bash shell is started.
-        If you want to run a command with arguments, use quotes around the command.
+    Args:
+        target: The target platform.
+        command: The command to run in the shell. If not provided, a
+            bash shell is started. If you want to run a command with
+            arguments, use quotes around the command.
+
     """
     args = ["bash"]
     if command is not None:
@@ -512,45 +502,41 @@ def benchmark(
     dai_benchmark: Annotated[bool, Parameter(group="RVC4")] = True,
     device_monitor: Annotated[bool, Parameter(group="RVC4")] = True,
 ) -> None:
-    """Runs benchmark on the specified target platform.
+    """Run benchmark on the specified target platform.
 
-    Parameters
-    ----------
-    target : Target
-        The target platform to run the benchmark on.
-    model_path : str
-        A URL or a path to the model file.
-    full : bool
-        If ``True``, runs the full benchmark using all configurations.
-    save : bool
-        If ``True``, saves the benchmark results to a file.
+    Args:
+        target: The target platform to run the benchmark on.
+        model_path: A URL or a path to the model file.
+        full: If ``True``, runs the full benchmark using all
+            configurations.
+        save: If ``True``, saves the benchmark results to a file.
+        repetitions: The number of repetitions to perform. Only relevant
+            for DAI benchmark.
+        benchmark_time: The duration in seconds for time-based
+            benchmarking (overrides repetitions).
+        num_threads: The number of threads to use for inference. Only
+            relevant for DAI benchmark.
+        num_messages: The number of messages to measure for each report.
+            Only relevant for DAI benchmark.
+        requests: The number of requests to perform.
+        profile: The SNPE profile to use for inference.
+        runtime: The SNPE runtime to use for inference (dsp or cpu).
+        num_images: The number of images to use for inference. Only
+            relevant for SNPE backend.
+        device_ip: IP address of the device to run the benchmark on.
+            Interchangeable with ``device_id``. If neither is given, DAI
+            selects the default device. If both are given, ``device_id``
+            takes precedence.
+        device_id: The unique ID of the device to run the benchmark on.
+            Interchangeable with ``device_ip``. If neither is given, DAI
+            selects the default device. If both are given, ``device_id``
+            takes precedence.
+        dai_benchmark: Whether to run the benchmark using the DAI V3. If
+            ``False``, the SNPE tools are used.
+        device_monitor: Whether to monitor the device performance during
+            benchmarking and include it in the results. Only relevant
+            for RVC4 target.
 
-    repetitions : int
-        The number of repetitions to perform. Only relevant for DAI benchmark.
-    benchmark_time : int | None
-        The duration in seconds for time-based benchmarking (overrides repetitions).
-    num_threads : int
-        The number of threads to use for inference. Only relevant for DAI benchmark.
-    num_messages : int
-        The number of messages to measure for each report. Only relevant for DAI benchmark.
-
-    requests : int
-        The number of requests to perform.
-
-    profile : str
-        The SNPE profile to use for inference.
-    runtime : str
-        The SNPE runtime to use for inference (dsp or cpu).
-    num_images : int
-        The number of images to use for inference. Only relevant for SNPE backend.
-    device_ip : str | None
-        IP address of the device to run the benchmark on. Interchangeable with device_id. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
-    device_id : str | None
-        The unique ID of the device to run the benchmark on. Interchangeable with device_ip. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
-    dai_benchmark : bool
-        Whether to run the benchmark using the DAI V3. If False the SNPE tools are used.
-    device_monitor : bool
-        Whether to monitor the device performance during benchmarking and include it in the results. Only relevant for RVC4 target.
     """
     if target in {Target.RVC2, Target.RVC4}:
         kwargs = {
@@ -590,34 +576,30 @@ def analyze(
     analyze_outputs: bool = True,
     analyze_cycles: bool = True,
 ) -> None:
-    """Runs layer and cycle analysis on the specified DLC model.
+    """Run layer and cycle analysis on the specified DLC model.
 
     Requires the RVC4 device to be connected and accessible using
     the ``adb`` command.
 
-    Parameters
-    ----------
-    device_ip : str | None
-        IP address of the device to run the benchmark on. Interchangeable with device_id. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
-    device_id : str | None
-        DeviceId of the device to run the benchmark on. Interchangeable with device_ip. If neither is given, DAI selects the default device. If both are given, device_id takes precedence.
-    dlc_model_path : str
-        The path to the DLC model file.
+    Args:
+        device_ip: IP address of the device to run the benchmark on.
+            Interchangeable with ``device_id``. If neither is given, DAI
+            selects the default device. If both are given, ``device_id``
+            takes precedence.
+        device_id: DeviceId of the device to run the benchmark on.
+            Interchangeable with ``device_ip``. If neither is given, DAI
+            selects the default device. If both are given, ``device_id``
+            takes precedence.
+        dlc_model_path: The path to the DLC model file.
+        onnx_model_path: The path to the corresponding ONNX model file
+            that was used for converting to DLC.
+        image_subset: If provided, limit analysis to the first N
+            supported input files per input directory.
+        image_dirs: A list of names and paths to directories with images
+            for each input of the model.
+        analyze_outputs: Whether to analyze the layer outputs.
+        analyze_cycles: Whether to analyze the layer cycles.
 
-    onnx_model_path : str
-        The path to the corresponding ONNX model file that was used for converting to DLC.
-
-    image_subset : int | None
-        If provided, limit analysis to the first N supported input files per input directory.
-
-    image_dirs : list[str]
-        A list of names and paths to directories with images for each input of the model.
-
-    analyze_outputs : bool
-        Whether to analyze the layer outputs.
-
-    analyze_cycles : bool
-        Whether to analyze the layer cycles.
     """
     with catch_exceptions():
         logger.info("Starting analysis")
@@ -656,13 +638,12 @@ def analyze(
 
 @app.meta.command
 def visualize(dir_path: str) -> None:
-    """Visualizes the analysis results.
+    """Visualize the analysis results.
 
-    Parameters
-    ----------
-    dir_path : str
-        The path to the directory containing the analysis results.
-        The default search path is ``output/analysis``.
+    Args:
+        dir_path: The path to the directory containing the analysis
+            results. The default search path is ``output/analysis``.
+
     """
     get_visualizer(Target.RVC4, dir_path).visualize()
 
@@ -674,17 +655,15 @@ def archive(
     save_path: str | None = None,
     put_file_plugin: str | None = None,
 ) -> None:
-    """Converts a model file to a Luxonis NN Archive.
+    """Convert a model file to a Luxonis NN Archive.
 
-    Parameters
-    ----------
-    path : str
-        A URL or a path to the model file.
-    save_path : str | None
-        Path or URL to save the archive to. By default, it is saved to the current directory
-        under the name of the model.
-    put_file_plugin : str | None
-        The name of the plugin to use for uploading the file.
+    Args:
+        path: A URL or a path to the model file.
+        save_path: Path or URL to save the archive to. By default, it is
+            saved to the current directory under the name of the model.
+        put_file_plugin: The name of the plugin to use for uploading the
+            file.
+
     """
     model_path = resolve_path(path, MODELS_DIR)
     cfg = archive_from_model(model_path)
@@ -740,7 +719,7 @@ _CACHE_SUBDIR_DESCRIPTIONS = {
 
 
 def _cache_entries(root: Path) -> list[Path] | None:
-    """Returns the cache's top-level entries, or ``None`` if the cache
+    """Return the cache's top-level entries, or ``None`` if the cache
     root itself cannot be read.
 
     A container killed before its entrypoint could chown the mounts back
@@ -757,8 +736,9 @@ def _cache_entries(root: Path) -> list[Path] | None:
 
 @cache_app.command(name="info", sort_key=0)
 def cache_info() -> None:
-    """Reports the location and disk usage of the modelconverter
-    cache."""
+    """Report the location and disk usage of the modelconverter
+    cache.
+    """
     console = Console()
     root = get_cache_dir()
 
@@ -857,12 +837,12 @@ def _refuse_while_in_use(console: Console, root: Path) -> bool:
 
 
 def _confirm(question: str) -> bool:
-    """Asks C{question}, treating anything but an answer as a decline.
+    """Ask ``question``, treating anything but an answer as a decline.
 
-    Piped or closed stdin (a CI step, `</dev/null`) makes C{input()} raise
-    C{EOFError}, and Ctrl-C at the prompt raises C{KeyboardInterrupt}. A
-    destructive command must not abort with a traceback on either, nor
-    read silence for consent nobody gave.
+    Piped or closed stdin (a CI step, `</dev/null`) makes ``input()``
+    raise ``EOFError``, and Ctrl-C at the prompt raises
+    ``KeyboardInterrupt``. A destructive command must not abort with a
+    traceback on either, nor read silence for consent nobody gave.
     """
     try:
         return Confirm.ask(question)
@@ -881,10 +861,11 @@ def cache_clean(
         ),
     ] = False,
 ) -> None:
-    """Removes the entire modelconverter cache.
+    """Remove the entire modelconverter cache.
 
     Args:
         yes: Clear the cache without prompting for confirmation.
+
     """
     console = Console()
     root = get_cache_dir()

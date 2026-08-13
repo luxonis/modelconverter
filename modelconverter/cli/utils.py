@@ -57,11 +57,11 @@ class ModelType(str, Enum):
 
 
 def resolve_output_dir(output_dir: str) -> Path:
-    """Resolves a user-provided ``--output-dir`` under L{OUTPUTS_DIR}.
+    """Resolve a user-provided ``--output-dir`` under `OUTPUTS_DIR`.
 
     Only the host's ``./output`` is mounted into the container, so an
-    absolute path -- which C{pathlib} would let win over the mount point
-    -- or one escaping upwards through C{..} would be written to a
+    absolute path -- which ``pathlib`` would let win over the mount point
+    -- or one escaping upwards through ``..`` would be written to a
     container-only location and lost when the container is removed. A
     native run writes straight to the host filesystem, where every path
     the user names is reachable, so any path is honored there.
@@ -116,15 +116,17 @@ def get_configs(
     path: str | None,
     opts: list[str] | dict[str, Any] | None = None,
 ) -> tuple[Config, NNArchiveConfig | None, str | None]:
-    """Sets up the configuration.
+    """Set up the configuration.
 
-    @type path: Optional[str]
-    @param path: Path to the configuration file or NN Archive.
-    @type opts: Optional[List[str]]
-    @param opts: Optional CLI overrides of the config file.
-    @rtype: Tuple[Config, Optional[NNArchiveConfig], Optional[str]]
-    @return: Tuple of the parsed modelconverter L{Config},
-        L{NNArchiveConfig} and the main stage key.
+    Args:
+        target: Conversion target the config is built for.
+        path: Path to the configuration file or NN Archive.
+        opts: Optional CLI overrides of the config file.
+
+    Returns:
+        Tuple of the parsed modelconverter `Config`, `NNArchiveConfig`
+        and the main stage key.
+
     """
     opts = opts or []
     # `infer` parses a second config after `convert` has returned, in the same

@@ -181,7 +181,7 @@ def frozen_toy_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def constant_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """A constant-valued image matching the calibration constant."""
+    """Create a constant-valued image matching the calibration constant."""
     path = tmp_path_factory.mktemp("toy_const") / "const.png"
     cv2.imwrite(
         str(path), np.full((_SIZE, _SIZE, 3), _CALIB_VALUE, dtype=np.uint8)

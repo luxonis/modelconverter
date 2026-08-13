@@ -64,8 +64,10 @@ def _rvc4_config(**data: Any) -> RVC4Config:
 
 
 def _models_dir() -> Path:
-    """The models directory of the cache, re-rooted into the temp dir by
-    ``_isolate_cwd``."""
+    """Return the models directory of the cache.
+
+    Re-rooted into the temp dir by ``_isolate_cwd``.
+    """
     return MODELS_DIR
 
 
@@ -79,7 +81,7 @@ def _single_stage(config: Config) -> SingleStageConfig:
 
 
 def _named_node_onnx(path: Path) -> Path:
-    """A model whose node *name* differs from its output *tensor* name.
+    """Build a model whose node *name* differs from its output *tensor* name.
 
     ``mynode`` produces tensor ``y`` (described in ``value_info``), so a
     lookup by node name misses the tensor search and falls through to
@@ -111,7 +113,8 @@ def _pt_model() -> Path:
 
 def test_flat_config_wrapped_and_renamed():
     """A flat single-stage config is wrapped and the ``default_stage``
-    placeholder is renamed to the input-model stem."""
+    placeholder is renamed to the input-model stem.
+    """
     dummy = _dummy()
     config = Config.get_config(None, {"input_model": str(dummy)})
     assert config.name == dummy.stem
@@ -131,7 +134,8 @@ def test_flat_config_with_explicit_name_kept():
 
 def test_multistage_extras_fanned_into_each_stage():
     """Top-level extras are distributed to stages missing them, and the
-    derived name joins the stage keys."""
+    derived name joins the stage keys.
+    """
     dummy = _dummy()
     config = Config.get_config(
         None,
@@ -207,7 +211,8 @@ def test_onnx_path_resolved_absolute():
 
 def test_ir_path_extracts_bin_and_xml(monkeypatch: pytest.MonkeyPatch):
     """The IR branch splits the ``.xml``/``.bin`` pair; ``get_metadata``
-    is stubbed so no OpenVINO runtime is needed."""
+    is stubbed so no OpenVINO runtime is needed.
+    """
     xml = (_models_dir() / "model.xml").resolve()
     bin_ = (_models_dir() / "model.bin").resolve()
     xml.write_text("<net/>")
@@ -766,7 +771,8 @@ def test_input_without_name_raises():
 
 def test_custom_output_with_shape_and_dtype():
     """Output not present in metadata but given a shape/dtype hits the
-    ``None, None`` branch (no ONNX lookup)."""
+    ``None, None`` branch (no ONNX lookup).
+    """
     config = Config.get_config(
         None,
         {

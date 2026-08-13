@@ -17,15 +17,15 @@ _input_base: ContextVar[Path | None] = ContextVar("input_base", default=None)
 
 
 def set_input_base(base: Path | None) -> None:
-    """Sets the base directory for resolving relative local paths.
+    """Set the base directory for resolving relative local paths.
 
-    Pass C{None} to reset to the default.
+    Pass ``None`` to reset to the default.
     """
     _input_base.set(base)
 
 
 def get_input_bases() -> list[Path]:
-    """Returns the base directories tried, in order, for a relative
+    """Return the base directories tried, in order, for a relative
     local path that does not exist as-is.
 
     The active config's directory comes first, then the default root. The
@@ -41,8 +41,9 @@ def get_input_bases() -> list[Path]:
 
 
 def resolve_input_path(string: str) -> Path | None:
-    """Resolves a relative local path against the input bases, or
-    returns ``None`` if it exists under none of them."""
+    """Resolve a relative local path against the input bases, or
+    returns ``None`` if it exists under none of them.
+    """
     for base in get_input_bases():
         candidate = base / string
         if candidate.exists():
@@ -51,7 +52,7 @@ def resolve_input_path(string: str) -> Path | None:
 
 
 def resolve_path(string: str, dest: Path) -> Path:
-    """Downloads the file from remote or returns the path otherwise."""
+    """Download the file from remote or return the path otherwise."""
     protocol = get_protocol(string)
     if protocol != "file":
         path = download_from_remote(string, dest)
@@ -68,7 +69,7 @@ def resolve_path(string: str, dest: Path) -> Path:
 def download_from_remote(
     url: str, dest: Path | str, max_files: int = -1
 ) -> Path:
-    """Downloads file(s) from remote bucket storage.
+    """Download file(s) from remote bucket storage.
 
     It could be single file, entire directory, or `max_files` within a
     directory
@@ -103,7 +104,7 @@ def upload_to_remote(
     url: str,
     put_file_plugin: str | None = None,
 ) -> None:
-    """Uploads a file to remote bucket storage."""
+    """Upload a file to remote bucket storage."""
     local_path = Path(local_path)
     absolute_path, remote_path = LuxonisFileSystem.split_full_path(url)
     fs = LuxonisFileSystem(absolute_path, put_file_plugin=put_file_plugin)
@@ -115,5 +116,5 @@ def upload_to_remote(
 
 
 def get_protocol(url: str) -> str:
-    """Returns LuxonisFileSystem protocol."""
+    """Return LuxonisFileSystem protocol."""
     return LuxonisFileSystem.get_protocol(url)

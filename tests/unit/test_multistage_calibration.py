@@ -69,7 +69,7 @@ class StubInferer(Inferer):
 
 @pytest.fixture
 def calibration_dir(work_dir: Path) -> Path:
-    """A directory of images, never decoded -- ``infer`` is stubbed."""
+    """Create a directory of images, never decoded -- ``infer`` is stubbed."""
     path = work_dir / "calibration"
     path.mkdir()
     for i in range(N_CALIBRATION_IMAGES):
@@ -146,7 +146,8 @@ def test_script_calibration_uses_only_the_output_dirs(
 ):
     """The inferer marks its destination with a file that sits next to
     the per-output directories; feeding that file to the script as if it
-    were an output directory fails the whole conversion."""
+    were an output directory fails the whole conversion.
+    """
     exporter._produce_calibration_data(exporter.exporters["second"])
 
     path = _resolved_calibration(config).path
@@ -158,7 +159,8 @@ def test_script_calibration_uses_only_the_output_dirs(
 
 def test_inference_results_are_marked(exporter: MultiStageExporter):
     """The marker is what lets a rerun clear its own results, so it has
-    to be there even though the linking code skips it."""
+    to be there even though the linking code skips it.
+    """
     exporter._produce_calibration_data(exporter.exporters["second"])
 
     results_dir = exporter.intermediate_outputs_dir / "dummy_model_calibration"
@@ -173,7 +175,8 @@ def test_linked_output_calibration_points_at_the_output_dir(
     exporter: MultiStageExporter, config: Config
 ):
     """The ``output`` form of a link names one output directory
-    directly, so the marker never enters the picture."""
+    directly, so the marker never enters the picture.
+    """
     second = config.stages["second"]
     second.inputs[0].calibration = LinkCalibrationConfig(
         stage="first", output="output0"

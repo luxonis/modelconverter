@@ -85,7 +85,8 @@ def test_output_dir_refuses_a_directory_it_did_not_produce():
     """`OUTPUTS_DIR` is the user's `./output`, so a name that already
     holds something else -- notes, a previous run's inference results --
     must not be deleted just because it was passed to
-    `--output-dir`."""
+    `--output-dir`.
+    """
     foreign = OUTPUTS_DIR / "notes"
     foreign.mkdir(parents=True, exist_ok=True)
     (foreign / "keep.txt").write_text("mine")
@@ -101,7 +102,8 @@ def test_output_dir_must_stay_under_outputs_dir_in_docker(
 ):
     """Only `./output` is mounted into the container: an absolute or
     upward path would be written somewhere the host never sees, and an
-    empty one names `./output` itself."""
+    empty one names `./output` itself.
+    """
     monkeypatch.setenv("IN_DOCKER", "1")
     with pytest.raises(
         ModelconverterException, match="Invalid `--output-dir`"
@@ -111,7 +113,8 @@ def test_output_dir_must_stay_under_outputs_dir_in_docker(
 
 def test_output_dir_accepts_any_path_natively(tmp_path: Path):
     """A native run has no mount an absolute path could escape, so the
-    user's path is written to as given."""
+    user's path is written to as given.
+    """
     dest = tmp_path / "elsewhere" / "results"
 
     assert get_output_dir_name(Target.RVC2, "model", str(dest)) == dest

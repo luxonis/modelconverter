@@ -20,7 +20,8 @@ def _model_slugs(target: str) -> list[str]:
 
 def _model_id(slug: str) -> str:
     """Take out the `luxonis` and use the remainder of the slug to name
-    the test."""
+    the test.
+    """
     return slug.rsplit("/", 1)[-1]
 
 

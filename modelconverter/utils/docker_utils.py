@@ -38,7 +38,7 @@ UserNamespaceMode = Literal["rootless", "userns", "rootful", "unknown"]
 
 @cache
 def docker_user_namespace_mode() -> UserNamespaceMode:
-    """Returns how the active Docker daemon maps the container's root
+    """Return how the active Docker daemon maps the container's root
     user onto the host.
 
     - ``rootless``: the daemon itself runs as the invoking user, so
@@ -97,8 +97,15 @@ def get_docker_client_from_active_context() -> docker.DockerClient:
 
 
 def rvc4_tag_version(version: str) -> str:
-    """Removes build component from version string (e.g. 2.41.0.251128
-    -> 2.41.0)"""
+    """Remove the build component from a version string.
+
+    Args:
+        version: Version string to strip, e.g. ``2.41.0.251128``.
+
+    Returns:
+        The version without its build component, e.g. ``2.41.0``.
+
+    """
     parts = version.split(".")
     if len(parts) <= 3:
         return version
@@ -590,7 +597,7 @@ def docker_exec(
 
 
 def get_container_memory_limit() -> int:
-    """Returns the memory limit of the current container in bytes."""
+    """Return the memory limit of the current container in bytes."""
     # cgroup v2 (common on modern Linux/Docker)
     cgroup_v2_path = Path("/sys/fs/cgroup/memory.max")
     if cgroup_v2_path.exists():
@@ -610,7 +617,8 @@ def get_container_memory_limit() -> int:
 
 def get_container_memory_available() -> int:
     """Return bytes of memory available to this container, or None if
-    unlimited."""
+    unlimited.
+    """
     limit = get_container_memory_limit()
     # sum RSS of all processes in the container
     total_usage = 0

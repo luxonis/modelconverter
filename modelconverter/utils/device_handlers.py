@@ -17,8 +17,9 @@ class DeviceHandler(ABC):
     def __init__(self, silent: bool = True) -> None:
         """Initialize the device handler.
 
-        @param silent: If C{True}, suppress command logging by default.
-        @type silent: bool
+        Args:
+            silent: If ``True``, suppress command logging by default.
+
         """
         self.silent = silent
 
@@ -28,16 +29,16 @@ class DeviceHandler(ABC):
     ) -> tuple[int, str, str]:
         """Execute a shell command on the target device.
 
-        @type cmd: str
-        @param cmd: Shell command to execute on the device.
-        @type check: bool
-        @param check: If C{True}, propagate subprocess failures as
-            exceptions.
-        @type silent: bool | None
-        @param silent: If C{True}, suppress command logging. If C{None},
-            use the default logging behavior of the handler.
-        @return: A tuple containing return code, stdout, and stderr.
-        @rtype: tuple[int, str, str]
+        Args:
+            cmd: Shell command to execute on the device.
+            check: If ``True``, propagate subprocess failures as
+                exceptions.
+            silent: If ``True``, suppress command logging. If ``None``,
+                use the default logging behavior of the handler.
+
+        Returns:
+            A tuple containing return code, stdout, and stderr.
+
         """
 
     @abstractmethod
@@ -47,15 +48,15 @@ class DeviceHandler(ABC):
         """Copy a file or directory from the device to the local
         machine.
 
-        @param src: Source path on the device.
-        @type src: PathType
-        @param dst: Destination path on the local machine.
-        @type dst: PathType
-        @param check: If C{True}, propagate subprocess failures as
-            exceptions.
-        @type check: bool
-        @return: A tuple containing return code, stdout, and stderr.
-        @rtype: tuple[int, str, str]
+        Args:
+            src: Source path on the device.
+            dst: Destination path on the local machine.
+            check: If ``True``, propagate subprocess failures as
+                exceptions.
+
+        Returns:
+            A tuple containing return code, stdout, and stderr.
+
         """
 
     @abstractmethod
@@ -65,15 +66,15 @@ class DeviceHandler(ABC):
         """Copy a file or directory from the local machine to the
         device.
 
-        @param src: Source path on the local machine.
-        @type src: PathType
-        @param dst: Destination path on the device.
-        @type dst: PathType
-        @param check: If C{True}, propagate subprocess failures as
-            exceptions.
-        @type check: bool
-        @return: A tuple containing return code, stdout, and stderr.
-        @rtype: tuple[int, str, str]
+        Args:
+            src: Source path on the local machine.
+            dst: Destination path on the device.
+            check: If ``True``, propagate subprocess failures as
+                exceptions.
+
+        Returns:
+            A tuple containing return code, stdout, and stderr.
+
         """
 
     def run(
@@ -85,21 +86,22 @@ class DeviceHandler(ABC):
         Output is always captured and decoded using a best-effort
         strategy.
 
-        @param args: Positional command arguments passed to
-            C{subprocess.run()}.
-        @type args: tuple
-        @param check: If C{True}, propagate subprocess failures as
-            exceptions.
-        @type check: bool
-        @param silent: If C{True}, suppress command logging.
-        @type silent: bool
-        @param kwargs: Additional keyword arguments forwarded to
-            C{subprocess.run()}.
-        @type kwargs: dict
-        @return: A tuple containing return code, stdout, and stderr.
-        @rtype: tuple[int, str, str] @raises
-            subprocess.CalledProcessError: If C{check} is enabled and
-            the subprocess exits with a non-zero status.
+        Args:
+            *args: Positional command arguments passed to
+                ``subprocess.run``.
+            check: If ``True``, propagate subprocess failures as
+                exceptions.
+            silent: If ``True``, suppress command logging.
+            **kwargs: Additional keyword arguments forwarded to
+                ``subprocess.run``.
+
+        Returns:
+            A tuple containing return code, stdout, and stderr.
+
+        Raises:
+            subprocess.CalledProcessError: If ``check`` is enabled and
+                the subprocess exits with a non-zero status.
+
         """
         args = list(map(str, args))
         if not silent:
@@ -126,10 +128,10 @@ class SSHHandler(DeviceHandler):
     def __init__(self, ip: str, silent: bool = True) -> None:
         """Initialize an SSH handler for the target device.
 
-        @param ip: Target device IP address.
-        @type ip: str
-        @param silent: If C{True}, suppress command logging.
-        @type silent: bool
+        Args:
+            ip: Target device IP address.
+            silent: If ``True``, suppress command logging.
+
         """
         super().__init__(silent)
         self._address = f"root@{ip}"
@@ -184,13 +186,15 @@ class AdbHandler(DeviceHandler):
         If no device ID is provided, the first connected device is
         selected.
 
-        @param device_id: Optional ADB device identifier.
-        @type device_id: str | None
-        @param silent: If C{True}, suppress command logging.
-        @type silent: bool
-        @raises RuntimeError: If device enumeration fails or no
-            connected device is available.
-        @raises ValueError: If the specified device is not connected.
+        Args:
+            device_id: Optional ADB device identifier.
+            silent: If ``True``, suppress command logging.
+
+        Raises:
+            RuntimeError: If device enumeration fails or no connected
+                device is available.
+            ValueError: If the specified device is not connected.
+
         """
         super().__init__(silent)
         device_id = self._check_adb_connection(device_id)
@@ -233,14 +237,18 @@ class AdbHandler(DeviceHandler):
     def _check_adb_connection(self, device_id: str | None) -> str:
         """Validate ADB connectivity and resolve the device ID.
 
-        @param device_id: Requested device identifier, or C{None} to
-            auto-select the first connected device.
-        @type device_id: str | None
-        @return: Resolved connected device identifier.
-        @rtype: str
-        @raises RuntimeError: If device enumeration fails or no device
-            is connected.
-        @raises ValueError: If the requested device is not connected.
+        Args:
+            device_id: Requested device identifier, or ``None`` to
+                auto-select the first connected device.
+
+        Returns:
+            Resolved connected device identifier.
+
+        Raises:
+            RuntimeError: If device enumeration fails or no device is
+                connected.
+            ValueError: If the requested device is not connected.
+
         """
         result = subprocess.run(
             ["adb", "devices"], check=False, capture_output=True

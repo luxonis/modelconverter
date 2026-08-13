@@ -14,7 +14,8 @@ def parse_inference_latency(
     log_message: dai.LogMessage, pattern: re.Pattern[str]
 ) -> float | None:
     """Extract an inference duration in milliseconds from a device log
-    message."""
+    message.
+    """
     payload = log_message.payload
     if isinstance(payload, bytes):
         payload = payload.decode(errors="replace")
