@@ -75,8 +75,43 @@ env:
   LUXONIS_TELEMETRY_ENABLED: "false"
 
 jobs:
+  # Gates the test jobs: a docstring that pydoctor cannot render is a cheap
+  # failure to find, and finding it here keeps it out of a test log.
+  docs:
+    name: Build docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      # pydoctor reads the sources rather than importing them, so the package's
+      # own dependencies are not needed here.
+      - name: Install pydoctor
+        run: python -m pip install 'pydoctor~=25.10'
+
+      - name: Build docs
+        run: >
+          python -m pydoctor
+          --docformat=google
+          --warnings-as-errors
+          --project-name ModelConverter
+          --project-url https://github.com/luxonis/modelconverter
+          --html-output /tmp/modelconverter-apidocs
+          modelconverter
+
   unit:
     name: Unit tests
+    needs: docs
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
