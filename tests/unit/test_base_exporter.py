@@ -22,9 +22,11 @@ class StubExporter(Exporter):
     target = Target.RVC2
 
     def exporter_buildinfo(self) -> dict:
+        """Return empty build info."""
         return {}
 
     def export(self) -> Path:
+        """Return the input model unchanged."""
         return self.input_model
 
 

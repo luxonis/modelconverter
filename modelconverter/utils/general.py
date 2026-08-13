@@ -1,3 +1,10 @@
+"""General-purpose helpers shared across modelconverter.
+
+Holds the small utilities that fit nowhere more specific: sanitizing
+model names into something the conversion tools accept, and formatting
+or parsing the byte sizes used to report on and bound the disk cache.
+"""
+
 import re
 from pathlib import Path
 
@@ -59,6 +66,16 @@ def sanitize_net_name(name: str, with_suffix: bool = False) -> str:
 
 
 def human_size(num: float) -> str:
+    """Format a number of bytes for display.
+
+    Args:
+        num: Size in bytes.
+
+    Returns:
+        The size with one decimal place and a binary unit, such as
+        ``"1.5 GiB"``.
+
+    """
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
         if num < 1024:
             return f"{num:.1f} {unit}"

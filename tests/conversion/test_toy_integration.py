@@ -54,6 +54,8 @@ _THRESHOLD = 0.9
 
 @dataclass(frozen=True)
 class Precision:
+    """One precision the toy net is converted at."""
+
     name: str
     opts: tuple[str, ...] = ()
     # Reason, if this precision is a known failure for the platform.

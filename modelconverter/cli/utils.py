@@ -1,3 +1,12 @@
+"""Helpers shared by the ``modelconverter`` CLI commands.
+
+Turns what the user typed on the command line into what the conversion
+packages expect: the directory a run writes its results to, the parsed
+configuration (from a config file or an NN Archive), the preprocessing
+that is handed to the NN Archive instead of being baked into the model,
+and lookups of Luxonis Hub resources by slug.
+"""
+
 import shutil
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -34,6 +43,8 @@ from modelconverter.utils.types import DataType, Encoding, Target
 
 
 class ModelType(str, Enum):
+    """Model format, either one that can be converted or a target one."""
+
     ONNX = "ONNX"
     IR = "IR"
     PYTORCH = "PYTORCH"
@@ -45,6 +56,20 @@ class ModelType(str, Enum):
 
     @classmethod
     def from_suffix(cls, suffix: str) -> "ModelType":
+        """Determine the model type from a file suffix.
+
+        Args:
+            suffix: File suffix, leading dot included, such as
+                ``".onnx"``.
+
+        Returns:
+            Model type the suffix belongs to.
+
+        Raises:
+            ValueError: If the suffix belongs to none of the formats
+                that can be converted.
+
+        """
         if suffix == ".onnx":
             return cls.ONNX
         if suffix == ".tflite":
@@ -81,6 +106,30 @@ def resolve_output_dir(output_dir: str) -> Path:
 def get_output_dir_name(
     target: Target, name: str, output_dir: str | None
 ) -> Path:
+    """Determine the directory the conversion writes its results to.
+
+    An existing destination is cleared first, but only when it is a
+    directory that a previous conversion produced -- one holding a
+    `CONVERSION_MARKER` file -- or an empty one.
+
+    Args:
+        target: Conversion target, used in the generated name.
+        name: Name of the model, sanitized before use.
+        output_dir: Directory named by the user, resolved under
+            `OUTPUTS_DIR`. If ``None``, a directory named
+            ``<name>_to_<target>_<timestamp>`` is used instead.
+
+    Returns:
+        Path to the output directory. It is not created here.
+
+    Raises:
+        ModelconverterException: If, in a containerized run,
+            ``output_dir`` is empty, absolute or contains ``..``; or if
+            the destination exists but is not a directory, or is a
+            non-empty directory that does not hold the results of a
+            previous conversion.
+
+    """
     name = sanitize_net_name(name)
     date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
     if output_dir is not None:
@@ -106,6 +155,7 @@ def get_output_dir_name(
 
 
 def init_dirs() -> None:
+    """Create the directories a conversion reads from and writes to."""
     for p in [CONFIGS_DIR, MODELS_DIR, OUTPUTS_DIR, CALIBRATION_DIR]:
         logger.debug(f"Creating {p}")
         p.mkdir(parents=True, exist_ok=True)
@@ -120,12 +170,19 @@ def get_configs(
 
     Args:
         target: Conversion target the config is built for.
-        path: Path to the configuration file or NN Archive.
-        opts: Optional CLI overrides of the config file.
+        path: Path to the configuration file or NN Archive. If
+            ``None``, the config is built from the overrides alone.
+        opts: Optional CLI overrides of the config file. Either a
+            mapping, or a flat list alternating keys and values.
 
     Returns:
-        Tuple of the parsed modelconverter `Config`, ``NNArchiveConfig``
-        and the main stage key.
+        Tuple of the parsed modelconverter `Config`, the
+        ``NNArchiveConfig`` if the input was an NN Archive and ``None``
+        otherwise, and the key of the main stage -- ``None`` for a
+        multi-stage config in which no main stage was recognized.
+
+    Raises:
+        ValueError: If ``opts`` is a list of odd length.
 
     """
     opts = opts or []
@@ -168,6 +225,26 @@ def get_configs(
 def extract_preprocessing(
     cfg: Config,
 ) -> tuple[Config, dict[str, PreprocessingBlock]]:
+    """Move the preprocessing out of the config into archive blocks.
+
+    Mean values, scale values and the color encoding are cleared on
+    every input of the config -- so they are not baked into the
+    converted model -- and returned as ``PreprocessingBlock`` objects to
+    be stored in the NN Archive instead. A raw input only gets a block
+    when it has mean or scale values.
+
+    Args:
+        cfg: Single-stage config to take the preprocessing from. Its
+            inputs are modified in place.
+
+    Returns:
+        Tuple of the modified config and the preprocessing blocks keyed
+        by input name.
+
+    Raises:
+        ValueError: If the config has more than one stage.
+
+    """
     if len(cfg.stages) > 1:
         raise ValueError(
             "Only single-stage models are supported with NN archive."
@@ -217,6 +294,21 @@ def extract_preprocessing(
 def slug_to_id(
     slug: str, endpoint: Literal["models", "modelVersions", "modelInstances"]
 ) -> str:
+    """Look up the ID of a HubAI resource by its slug.
+
+    Public resources are searched first, private ones after them.
+
+    Args:
+        slug: Slug of the resource to look up.
+        endpoint: HubAI endpoint to search on.
+
+    Returns:
+        ID of the first resource matching the slug.
+
+    Raises:
+        ValueError: If no resource with that slug is found.
+
+    """
     for is_public in [True, False]:
         with suppress(HTTPError):
             params = {

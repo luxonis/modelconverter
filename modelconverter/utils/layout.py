@@ -1,3 +1,15 @@
+"""Guessing of tensor layouts from tensor shapes.
+
+A layout is a lettercode such as ``"NCHW"`` naming every dimension of
+a tensor. Conversion needs one for each input and output -- to know
+which axes are spatial, and how an image has to be laid out before it
+is fed to the model -- but a model rarely states it, and the vendor
+toolchains reorder the dimensions along the way. The helpers here
+recover a plausible layout from a shape alone, and carry a known
+layout over to a reordered shape.
+"""
+
+
 def make_default_layout(shape: list[int]) -> str:
     """Create a default layout for the given shape.
 

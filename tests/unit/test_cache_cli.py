@@ -1,3 +1,9 @@
+"""Tests for the ``modelconverter cache`` commands.
+
+Covers reporting and clearing the hidden cache, including the cases where
+it is in use by a running conversion or cannot be read at all.
+"""
+
 import os
 import subprocess
 import sys

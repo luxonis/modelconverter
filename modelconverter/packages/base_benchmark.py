@@ -1,3 +1,12 @@
+"""Target-agnostic scaffolding for on-device benchmarking.
+
+Every target platform measures throughput and latency with its own
+runtime, but the surrounding work is the same: resolve the model to
+either a local file or a HubAI slug, run it once per configuration, and
+report the collected numbers. That shared part lives in `Benchmark`,
+which the per-target benchmarks subclass.
+"""
+
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -13,6 +22,19 @@ Configuration: TypeAlias = dict[str, Any]
 
 
 class Benchmark(ABC):
+    """Base class for benchmarking a converted model on a device.
+
+    Subclasses implement the target-specific measurement in `benchmark`
+    and describe what to measure it with in `default_configuration` and
+    `all_configurations`.
+
+    Attributes:
+        VALID_EXTENSIONS: Model file extensions accepted as a local
+            path. Anything else is treated as a HubAI model slug.
+        HUB_MODEL_PATTERN: Pattern a HubAI model slug must match.
+
+    """
+
     VALID_EXTENSIONS = (".tar.xz", ".blob", ".dlc")
     HUB_MODEL_PATTERN = re.compile(r"^(?:([^/]+)/)?([^:]+):([^:]+)(?::(.+))?$")
 
@@ -21,6 +43,20 @@ class Benchmark(ABC):
         model_path: str,
         dataset_path: Path | None = None,
     ):
+        """Resolve the model to benchmark.
+
+        Args:
+            model_path: Either a path to a local model file ending in
+                one of `VALID_EXTENSIONS`, or a HubAI model slug of the
+                form ``[team_name/]model_name:variant[:model_instance]``.
+            dataset_path: Path to a dataset to benchmark with. Only
+                stored on the instance, for subclasses to use.
+
+        Raises:
+            ValueError: If ``model_path`` is neither a supported model
+                file nor a slug of a model available on HubAI.
+
+        """
         if any(model_path.endswith(ext) for ext in self.VALID_EXTENSIONS):
             self.model_path = resolve_path(model_path, Path.cwd())
             self.model_name = self.model_path.stem
@@ -58,21 +94,40 @@ class Benchmark(ABC):
 
     @abstractmethod
     def benchmark(self, configuration: Configuration) -> dict[str, Any]:
-        pass
+        """Run a single benchmark with the given configuration.
+
+        Args:
+            configuration: The options to benchmark with.
+
+        Returns:
+            The measured metrics. Must contain a ``"fps"`` entry and may
+            contain a ``"latency"`` entry.
+
+        """
 
     @property
     @abstractmethod
     def default_configuration(self) -> Configuration:
-        pass
+        """Return the configuration a plain benchmark run uses."""
 
     @property
     @abstractmethod
     def all_configurations(self) -> list[Configuration]:
-        pass
+        """Return the configurations a full benchmark run sweeps."""
 
     def print_results(
         self, results: list[tuple[Configuration, dict[str, Any]]]
     ) -> None:
+        """Print the benchmark results as a table.
+
+        The table is transposed relative to the results: one column per
+        run, one row per configuration option and measured metric.
+
+        Args:
+            results: The configuration/result pairs to print. Must not
+                be empty.
+
+        """
         assert results, "No results to print"
 
         from rich import box
@@ -176,6 +231,18 @@ class Benchmark(ABC):
     def save_results(
         self, results: list[tuple[Configuration, dict[str, Any]]]
     ) -> None:
+        """Save the benchmark results to a CSV file.
+
+        The file is named ``<model_name>_benchmark_results.csv`` and is
+        written to the current working directory. A nested ``power``
+        column is first split into ``power_system`` and
+        ``power_processor``.
+
+        Args:
+            results: The configuration/result pairs to save. Must not
+                be empty.
+
+        """
         assert results, "No results to save"
         df = pl.DataFrame(
             [configuration | result for configuration, result in results]
@@ -193,6 +260,21 @@ class Benchmark(ABC):
         logger.info(f"Benchmark results saved to {file}.")
 
     def run(self, full: bool = True, save: bool = False, **kwargs) -> None:
+        """Benchmark the model and report the results.
+
+        Args:
+            full: If ``True``, benchmark every configuration in
+                `all_configurations`. If ``False``, benchmark only
+                `default_configuration`.
+            save: If ``True``, the results are written to a CSV file in
+                addition to being printed.
+            **kwargs: Overrides for individual configuration options.
+                An override of an option with a non-``None`` default is
+                cast to the type of that default. In a full run, an
+                override is only applied to configurations that do not
+                set the option themselves.
+
+        """
         logger.info(f"Running benchmarking for {self.model_name}")
         for key, value in self.default_configuration.items():
             if key in kwargs and value is not None:

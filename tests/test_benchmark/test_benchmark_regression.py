@@ -1,3 +1,9 @@
+"""Check measured device throughput against the recorded targets.
+
+Benchmarks each model in ``benchmark_targets.json`` on a real device and
+fails when the measured FPS regresses against the recorded value.
+"""
+
 import json
 import platform
 from pathlib import Path

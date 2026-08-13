@@ -1,3 +1,18 @@
+"""Model converter for Luxonis camera platforms.
+
+``modelconverter`` converts a trained model into the format required by
+the RVC2, RVC3, RVC4 or Hailo platform, passed either directly or
+packaged in an NN Archive. ONNX is the format every target accepts;
+which other formats a target takes is a property of its toolchain and
+is documented by the corresponding sub-package of
+`modelconverter.packages`. Each conversion is executed inside a
+per-backend Docker image that bundles the corresponding vendor
+toolchain, so the host only needs Docker and this package.
+
+This top-level package holds the version constants and registers any
+externally provided put-file plugins at import time.
+"""
+
 from importlib.metadata import entry_points
 from typing import Final
 

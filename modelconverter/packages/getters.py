@@ -1,3 +1,13 @@
+"""Factories for the target-specific conversion components.
+
+Every conversion target (RVC2, RVC3, RVC4 and Hailo) provides its own
+exporter and inferer; the benchmark is missing for Hailo, and the
+analyzer and the visualizer are provided by RVC4 only. The getters in
+this module map a `Target` to the matching implementation and import it
+lazily, so that only the dependencies of the selected target -- which
+are installed in that target's Docker image -- need to be available.
+"""
+
 from modelconverter.packages.base_analyze import Analyzer
 from modelconverter.packages.base_benchmark import Benchmark
 from modelconverter.packages.base_exporter import Exporter
@@ -7,6 +17,17 @@ from modelconverter.utils.types import Target
 
 
 def get_exporter(target: Target, *args, **kwargs) -> Exporter:
+    """Create the `Exporter` implementation for the given target.
+
+    Args:
+        target: Target the model is converted for.
+        *args: Positional arguments passed to the exporter constructor.
+        **kwargs: Keyword arguments passed to the exporter constructor.
+
+    Returns:
+        Exporter for the given target.
+
+    """
     if target is Target.RVC2:
         from modelconverter.packages.rvc2.exporter import RVC2Exporter
 
@@ -29,6 +50,19 @@ def get_exporter(target: Target, *args, **kwargs) -> Exporter:
 
 
 def get_inferer(target: Target, *args, **kwargs) -> Inferer:
+    """Create the `Inferer` implementation for the given target.
+
+    The inferer is constructed using its ``from_config`` constructor.
+
+    Args:
+        target: Target the model was converted for.
+        *args: Positional arguments passed to ``from_config``.
+        **kwargs: Keyword arguments passed to ``from_config``.
+
+    Returns:
+        Inferer for the given target.
+
+    """
     if target is Target.RVC2:
         from modelconverter.packages.rvc2.inferer import RVC2Inferer
 
@@ -51,6 +85,20 @@ def get_inferer(target: Target, *args, **kwargs) -> Inferer:
 
 
 def get_benchmark(target: Target, *args, **kwargs) -> Benchmark:
+    """Create the `Benchmark` implementation for the given target.
+
+    Args:
+        target: Target to benchmark the model on.
+        *args: Positional arguments passed to the benchmark constructor.
+        **kwargs: Keyword arguments passed to the benchmark constructor.
+
+    Returns:
+        Benchmark for the given target.
+
+    Raises:
+        NotImplementedError: If ``target`` is ``Target.HAILO``.
+
+    """
     if target is Target.RVC2:
         from modelconverter.packages.rvc2.benchmark import RVC2Benchmark
 
@@ -71,6 +119,22 @@ def get_benchmark(target: Target, *args, **kwargs) -> Benchmark:
 
 
 def get_analyzer(target: Target, *args, **kwargs) -> Analyzer:
+    """Create the `Analyzer` implementation for the given target.
+
+    Only RVC4 provides an analyzer.
+
+    Args:
+        target: Target the model was converted for.
+        *args: Positional arguments passed to the analyzer constructor.
+        **kwargs: Keyword arguments passed to the analyzer constructor.
+
+    Returns:
+        Analyzer for the given target.
+
+    Raises:
+        ValueError: If ``target`` is not ``Target.RVC4``.
+
+    """
     if target is Target.RVC4:
         from modelconverter.packages.rvc4.analyze import RVC4Analyzer
 
@@ -80,6 +144,24 @@ def get_analyzer(target: Target, *args, **kwargs) -> Analyzer:
 
 
 def get_visualizer(target: Target, *args, **kwargs) -> Visualizer:
+    """Create the `Visualizer` implementation for the given target.
+
+    Only RVC4 provides a visualizer.
+
+    Args:
+        target: Target the model was converted for.
+        *args: Positional arguments passed to the visualizer
+            constructor.
+        **kwargs: Keyword arguments passed to the visualizer
+            constructor.
+
+    Returns:
+        Visualizer for the given target.
+
+    Raises:
+        ValueError: If ``target`` is not ``Target.RVC4``.
+
+    """
     if target is Target.RVC4:
         from modelconverter.packages.rvc4.visualize import RVC4Visualizer
 

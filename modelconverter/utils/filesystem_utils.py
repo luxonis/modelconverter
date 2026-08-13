@@ -1,3 +1,12 @@
+"""Resolution of the local and remote paths modelconverter reads.
+
+Models, configs and calibration data may be given either as local paths
+or as URLs into bucket storage. The helpers here download the remote
+ones, upload results back, and resolve relative local paths against the
+directory of the active config file and the shared root (the cache
+directory inside the container, the working directory on the host).
+"""
+
 import os
 from contextvars import ContextVar
 from pathlib import Path
@@ -41,8 +50,9 @@ def get_input_bases() -> list[Path]:
 
 
 def resolve_input_path(string: str) -> Path | None:
-    """Resolve a relative local path against the input bases, or
-    returns ``None`` if it exists under none of them.
+    """Resolve a relative local path against the input bases.
+
+    Returns ``None`` if the path exists under none of them.
     """
     for base in get_input_bases():
         candidate = base / string
@@ -114,7 +124,7 @@ def upload_to_remote(
     url: str,
     put_file_plugin: str | None = None,
 ) -> None:
-    """Upload a file to remote bucket storage."""
+    """Upload a file or a directory to remote bucket storage."""
     local_path = Path(local_path)
     absolute_path, remote_path = LuxonisFileSystem.split_full_path(url)
     fs = LuxonisFileSystem(absolute_path, put_file_plugin=put_file_plugin)

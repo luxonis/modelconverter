@@ -1,3 +1,13 @@
+"""Utilities shared by the modelconverter CLI and the target packages.
+
+Collects the helpers that are not specific to a single conversion
+target: filesystem and remote storage access, Docker image handling,
+device communication, ONNX manipulation, NN Archive handling, image and
+calibration data loading, and the common exception types. The names
+re-exported here are the ones meant to be used from outside this
+package.
+"""
+
 from .calibration_data import download_calibration_data
 from .constants import in_docker
 from .device_handlers import (

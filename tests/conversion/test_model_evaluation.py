@@ -56,6 +56,8 @@ def run_script(outputs):
 
 @dataclass(frozen=True)
 class EvaluationCase:
+    """One HubAI source model scored against labelled images."""
+
     id: str
     # An immutable HubAI source instance, not a mutable model slug.
     instance_id: str

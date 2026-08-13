@@ -1,3 +1,13 @@
+"""Handlers for driving a physical device.
+
+Benchmarking and analysis of an RVC4 model happen on a real device
+rather than in the conversion container: the model and its inputs are
+pushed to the device, a command is run there and the results are
+pulled back. This module wraps the two transports used for that -- ADB
+and SSH -- behind one interface, so the callers do not have to care
+which one the device is reachable over.
+"""
+
 import re
 import subprocess
 from abc import ABC, abstractmethod
@@ -279,6 +289,27 @@ class AdbHandler(DeviceHandler):
 def create_handler(
     device_ip: str | None, device_adb_id: str | None
 ) -> DeviceHandler:
+    """Create a handler for the device to run on.
+
+    ADB is preferred; an `SSHHandler` is only built if `AdbHandler`
+    cannot be created and an IP address is available to fall back to.
+
+    Args:
+        device_ip: IP address of the device, used for the SSH
+            fallback. ``None`` if no fallback is available.
+        device_adb_id: ADB identifier of the device, or ``None`` to
+            use the first connected one.
+
+    Returns:
+        A handler for the device.
+
+    Raises:
+        RuntimeError: If no ADB device is connected, or ADB cannot be
+            queried, and no IP address was given.
+        ValueError: If the requested ADB device is not connected and
+            no IP address was given.
+
+    """
     try:
         handler = AdbHandler(device_adb_id)
     except Exception:

@@ -1,3 +1,12 @@
+"""Layer-level analysis of converted RVC4 (DLC) models.
+
+Runs the converted model on a connected RVC4 device with
+``snpe-net-run``, compares every layer's output against the ONNX model
+the DLC was converted from, and measures how long each layer takes on
+the device. Both reports are written as CSV files into the ``analysis``
+subdirectory of the modelconverter output directory.
+"""
+
 import os
 import posixpath
 import shlex
@@ -22,6 +31,12 @@ from modelconverter.utils import constants, create_handler, subprocess_run
 
 
 class RVC4Analyzer(Analyzer):
+    """Analyzer of a DLC model running on a connected RVC4 device.
+
+    Compares the model's layer outputs against the ONNX model it was
+    converted from and measures the execution time of each layer.
+    """
+
     SUPPORTED_INPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".npy")
 
     def __init__(
@@ -32,6 +47,18 @@ class RVC4Analyzer(Analyzer):
         image_dirs: dict[str, str],
         image_subset: int | None = None,
     ):
+        """Initialize the analyzer and connect to the device.
+
+        Args:
+            device_ip: IP address of the device to analyze on.
+            device_id: ID of the device to analyze on.
+            dlc_model_path: Path or URL of the DLC model to analyze.
+            image_dirs: Mapping of the model's input names to the
+                directories holding the data for that input.
+            image_subset: If given, only the first ``image_subset``
+                supported files of every directory are used.
+
+        """
         self.image_subset = image_subset
         super().__init__(dlc_model_path, image_dirs)
         _, device_adb_id = get_device_info(device_ip, device_id)
@@ -62,7 +89,7 @@ class RVC4Analyzer(Analyzer):
             "if [ -d "
             f"{output_dir}"
             " ]; then "
-            f"find {output_dir} -type f | while read -r file; do rm -f \"$file\"; done; "
+            f'find {output_dir} -type f | while read -r file; do rm -f "$file"; done; '
             "fi"
         )
 
@@ -78,6 +105,19 @@ class RVC4Analyzer(Analyzer):
         return local_output_dir
 
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
+        """Compare the DLC layer outputs against the ONNX model.
+
+        Runs both models on every prepared input sample and writes the
+        per-layer statistics -- maximum absolute difference, MSE, cosine
+        similarity and mean absolute percentage error, each averaged
+        over the samples -- to ``layer_comparison.csv`` in the analysis
+        output directory.
+
+        Args:
+            onnx_model_path: Path to the ONNX model the analyzed DLC
+                model was converted from.
+
+        """
         onnx_all_layers = self._add_outputs_to_all_layers(str(onnx_model_path))
         try:
             session = rt.InferenceSession(onnx_all_layers)
@@ -168,7 +208,8 @@ class RVC4Analyzer(Analyzer):
         }
         if self.image_subset is not None:
             image_names = {
-                k: paths[: self.image_subset] for k, paths in image_names.items()
+                k: paths[: self.image_subset]
+                for k, paths in image_names.items()
             }
         return image_names
 
@@ -252,9 +293,7 @@ class RVC4Analyzer(Analyzer):
                     )
                     f.close()
 
-                input_row += (
-                    f"{input_name}:={self._device_input_dir()}/{raw_file_name} "
-                )
+                input_row += f"{input_name}:={self._device_input_dir()}/{raw_file_name} "
             input_list += input_row
             input_list += "\n"
 
@@ -312,7 +351,6 @@ class RVC4Analyzer(Analyzer):
         work_dir = self._device_work_dir()
         try:
             self.handler.shell(f"cd {work_dir} && {command}")
-            return
         except subprocess.CalledProcessError as e:
             stderr = e.stderr.decode(errors="ignore") if e.stderr else ""
             missing_dirs = self._extract_missing_output_dirs(stderr)
@@ -329,6 +367,8 @@ class RVC4Analyzer(Analyzer):
                     for path in missing_dirs[i : i + chunk_size]
                 )
                 self.handler.shell(f"mkdir -p {mkdir_args}")
+        else:
+            return
 
         self.handler.shell(f"cd {work_dir} && {command}")
 
@@ -364,6 +404,24 @@ class RVC4Analyzer(Analyzer):
     def transpose_to_match(
         self, src: np.ndarray, target_shape: tuple[int, ...]
     ) -> np.ndarray:
+        """Transpose an array so that it matches the target shape.
+
+        Tries the usual layout permutations (such as ``NHWC`` to
+        ``NCHW``) for arrays of two to five dimensions.
+
+        Args:
+            src: Array to transpose.
+            target_shape: Shape the array should end up in.
+
+        Returns:
+            The transposed array, or ``src`` itself if it already has
+            the target shape.
+
+        Raises:
+            ValueError: If none of the candidate permutations yields the
+                target shape.
+
+        """
         if src.shape == target_shape:
             return src
 
@@ -604,6 +662,13 @@ class RVC4Analyzer(Analyzer):
 
     # layer execution times
     def analyze_layer_cycles(self) -> None:
+        """Measure how long each layer takes on the device.
+
+        Runs the DLC model on the device and turns the SNPE diagnostic
+        log into ``layer_cycles.csv`` in the analysis output directory,
+        holding the mean execution time of every layer and its share of
+        the total time.
+        """
         input_matcher = self._prepare_input_matcher()
         self._setup_device_workspace()
         _ = self._prepare_raw_inputs(input_matcher, reset_workspace=False)

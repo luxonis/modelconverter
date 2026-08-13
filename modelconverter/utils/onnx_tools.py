@@ -1,3 +1,12 @@
+"""ONNX graph utilities shared by the conversion backends.
+
+Holds the passes modelconverter applies to an ONNX model before handing
+it over to a target's vendor toolchain: baking the configured input
+normalization (channel reversal, mean subtraction and scaling) into the
+graph, and simplifying, optimizing and fusing the graph with
+``onnxsim``, ``onnxruntime`` and ``onnx_graphsurgeon``.
+"""
+
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -26,6 +35,18 @@ import onnx_graphsurgeon as gs  # noqa: E402
 
 
 def get_opset_version(model: onnx.ModelProto) -> int:
+    """Return the default domain opset version of an ONNX model.
+
+    Args:
+        model: Model to inspect.
+
+    Returns:
+        Opset version declared for the default (empty) domain.
+
+    Raises:
+        ONNXException: If the model declares no default domain opset.
+
+    """
     for imp in model.opset_import:
         if imp.domain == "":
             return imp.version
@@ -39,6 +60,35 @@ def onnx_attach_normalization_to_inputs(
     *,
     reverse_only: bool = False,
 ) -> Path:
+    """Bake the input normalization into an ONNX model's graph.
+
+    For every input that requires it, channel reversal (``Split`` and
+    ``Concat``), mean subtraction (``Sub``) and scaling (``Mul`` by the
+    reciprocal of the scale) nodes are inserted in front of the input,
+    and the resulting model is saved and validated with the ONNX
+    checker. Inputs whose layout is neither ``"NCHW"`` nor ``"NHWC"``,
+    and inputs with a known channel count other than 3, are skipped with
+    a warning.
+
+    The mean and scale values of an input whose channels are reversed
+    are reversed in place, so the given configurations are modified.
+
+    Args:
+        model_path: Path to the source ONNX model.
+        save_path: Path the modified model is saved to.
+        input_configs: Input configurations keyed by input name.
+        reverse_only: If ``True``, only the channel reversal is applied
+            and the mean and scale values are ignored.
+
+    Returns:
+        ``save_path`` if any input required modification, otherwise the
+        unmodified ``model_path``.
+
+    Raises:
+        ONNXException: If ``input_configs`` names a tensor that is not
+            an input of the graph.
+
+    """
     if not any(
         cfg.requires_onnx_input_modification(reverse_only=reverse_only)
         for cfg in input_configs.values()
@@ -252,6 +302,17 @@ class ONNXModifier:
         skip_optimization: bool = False,
         skip_constant_folding: bool = False,
     ) -> None:
+        """Load the ONNX model and prepare it for modification.
+
+        Args:
+            model_path: Path to the base ONNX model.
+            output_path: Path to save the modified ONNX model to.
+            skip_optimization: Whether to skip the graph optimization
+                performed while loading and exporting the model.
+            skip_constant_folding: Whether to skip constant folding
+                during simplification.
+
+        """
         self.model_path = model_path
         self.has_external_data = has_external_data(model_path)
         self.output_path = output_path

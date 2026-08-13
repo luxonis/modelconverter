@@ -1,3 +1,13 @@
+"""Sampling of a device's hardware counters during a benchmark.
+
+Benchmarking a converted model on real hardware says how fast it runs
+but not what it costs. The monitor here fills that gap: while the
+benchmark is running, it polls the power, RAM, CPU, DSP and thermal
+counters the device exposes over its shell, and reports their aggregates
+afterwards. It is used by the RVC4 benchmark, which also takes an idle
+baseline to compare against.
+"""
+
 import re
 import statistics
 import threading
@@ -13,6 +23,19 @@ from modelconverter.utils import DeviceHandler
 
 
 class DeviceMonitor:
+    """Background sampler of a device's hardware counters.
+
+    Reads the power, RAM, CPU, DSP and temperature counters over the
+    device's shell at a fixed interval from a daemon thread, keeping
+    every sample so that it can be aggregated afterwards. A hardware
+    monitor the device does not expose is detected once, up front, and
+    its power counter is skipped from then on; the other counters are
+    attempted on every sample and simply yield nothing when they fail.
+
+    Doubles as a context manager: entering the ``with`` block starts the
+    sampling thread and leaving it stops the thread.
+    """
+
     DSP_SYS_MON_APP: Final[str] = "/usr/bin/sysMonApp"
 
     def __init__(
@@ -21,6 +44,20 @@ class DeviceMonitor:
         interval: float = 0.5,
         model: Literal["4d", "4s", "4lite"] = "4lite",
     ) -> None:
+        """Initialize the monitor and probe the available counters.
+
+        The probing happens right away: the hardware monitors and the
+        DSP utility are looked for over the device shell. A hardware
+        monitor that is missing is left out of the sampling, while the
+        outcome of the DSP probe is only recorded.
+
+        Args:
+            device_handler: Handler used to run shell commands on the
+                device.
+            interval: Delay in seconds between two samples.
+            model: Device model being monitored. Recorded only.
+
+        """
         self.device_handler = device_handler
         self.interval = interval
         self.hwmon0_exists = self.check_hwmon("hwmon0")
@@ -36,6 +73,12 @@ class DeviceMonitor:
         self._prev_cpu_times: tuple[int, int] | None = None
 
     def __enter__(self) -> Self:
+        """Start the sampling thread on entering the ``with`` block.
+
+        Returns:
+            The monitor itself.
+
+        """
         self.start()
         return self
 
@@ -45,9 +88,25 @@ class DeviceMonitor:
         exc_val: BaseException | None,
         exc_tb: types.TracebackType | None,
     ) -> None:
+        """Stop the sampling thread on leaving the ``with`` block.
+
+        Args:
+            exc_type: Type of the exception that left the block, if any.
+            exc_val: Exception that left the block, if any.
+            exc_tb: Traceback of the exception that left the block, if
+                any.
+
+        """
         self.stop()
 
     def read(self) -> dict[str, float | None]:
+        """Take one sample of every counter.
+
+        Returns:
+            Mapping of counter name to its value, with ``None`` for a
+            counter that could not be read.
+
+        """
         return (
             self.read_power()
             | self.read_ram()
@@ -57,6 +116,16 @@ class DeviceMonitor:
         )
 
     def get_stats(self) -> dict[str, float | None]:
+        """Aggregate the samples collected so far.
+
+        The DSP frequency residencies and the DSP power collapse counter
+        are summed, every other counter is averaged.
+
+        Returns:
+            Mapping of counter name to its aggregate, with ``None`` for
+            a counter that has no samples.
+
+        """
         stats = {}
 
         for key, values in self.measurements.items():
@@ -81,6 +150,9 @@ class DeviceMonitor:
         self._thread.start()
 
     def reset(self) -> None:
+        """Drop the collected samples and the CPU utilization
+        baseline.
+        """
         self.measurements = {}
         self._prev_cpu_times = None
 
@@ -106,6 +178,14 @@ class DeviceMonitor:
             time.sleep(self.interval)
 
     def read_temp(self) -> dict[str, float | None]:
+        """Read the temperature of the device's thermal zones.
+
+        Returns:
+            Mapping of ``temp_zone<n>``, for the zones 92 to 96, to the
+            temperature in degrees Celsius, plus ``temp_avg`` holding
+            the mean over the zones that could be read.
+
+        """
         temps = {
             f"temp_zone{zone}": self._read_temp(zone) for zone in range(92, 97)
         }
@@ -146,6 +226,12 @@ class DeviceMonitor:
             return None
 
     def read_cpu_frequency(self) -> float | None:
+        """Read the current clock frequency of the first CPU core.
+
+        Returns:
+            The frequency in MHz, or ``None`` if it could not be read.
+
+        """
         try:
             _, out, _ = self.device_handler.shell(
                 "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
@@ -230,12 +316,32 @@ class DeviceMonitor:
             return None
 
     def read_cpu(self) -> dict[str, float | None]:
+        """Read the CPU frequency and utilization in one go.
+
+        Returns:
+            Mapping with the ``cpu_frequency`` and ``cpu_utilization``
+            counters.
+
+        """
         return {
             "cpu_frequency": self.read_cpu_frequency(),
             "cpu_utilization": self.read_cpu_utilization(),
         }
 
     def read_dsp(self) -> dict[str, float]:
+        """Read the DSP power statistics and clear them on the device.
+
+        The frequency residency histogram reported by ``sysMonApp`` is
+        collected and then reset, so each call only covers the time
+        since the previous one.
+
+        Returns:
+            Mapping with ``dsp_utilization``, ``dsp_avg_frequency`` and
+            ``dsp_power_collapse``, plus one ``dsp_freq_<freq>`` entry
+            per histogram bucket. Empty if the statistics could not be
+            read.
+
+        """
 
         def parse_freq_file(
             text: str,
@@ -303,6 +409,16 @@ class DeviceMonitor:
             }
 
     def check_hwmon(self, hwmon: str) -> bool:
+        """Check whether a hardware monitor exposes a power reading.
+
+        Args:
+            hwmon: Name of the hardware monitor, e.g. ``"hwmon0"``.
+
+        Returns:
+            ``True`` if the monitor's ``power1_input`` file could be
+            listed on the device, ``False`` otherwise.
+
+        """
         try:
             self.device_handler.shell(
                 f"ls /sys/class/hwmon/{hwmon}/power1_input"
@@ -317,6 +433,14 @@ class DeviceMonitor:
         return True
 
     def read_power(self) -> dict[str, float | None]:
+        """Read the system and processor power draw.
+
+        Returns:
+            Mapping with the ``power_system`` and ``power_processor``
+            counters in watts, with ``None`` where the corresponding
+            hardware monitor is missing or unreadable.
+
+        """
         system = self._read_hwmon("hwmon0")
         proc = self._read_hwmon("hwmon1")
         return {
@@ -325,6 +449,13 @@ class DeviceMonitor:
         }
 
     def check_dsp(self) -> bool:
+        """Check whether the DSP monitoring utility is available.
+
+        Returns:
+            ``True`` if ``sysMonApp`` could be run on the device,
+            ``False`` otherwise.
+
+        """
         try:
             self.device_handler.shell(
                 f"{self.DSP_SYS_MON_APP} getPowerStats --q6 cdsp --clear 1"
@@ -337,6 +468,18 @@ class DeviceMonitor:
         return True
 
     def get_idle_measurements(self, t: float = 5) -> dict[str, float | None]:
+        """Sample the counters while the device is idle.
+
+        Gives the baseline the measurements taken under load are
+        compared against.
+
+        Args:
+            t: How long to sample for, in seconds.
+
+        Returns:
+            The aggregated counters, each key prefixed with ``idle_``.
+
+        """
         with self:
             time.sleep(t)
         return {

@@ -1,3 +1,11 @@
+"""Progress reporting for the on-device benchmarking loops.
+
+A benchmark runs either for a fixed duration or for a fixed number of
+repetitions. This module builds the progress bar for whichever mode is
+selected, along with the loop guard and the per-iteration update the
+benchmark backends drive it with.
+"""
+
 import time
 from collections.abc import Callable
 from dataclasses import dataclass

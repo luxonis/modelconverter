@@ -1,3 +1,15 @@
+"""Entry point of the ``modelconverter`` command-line interface.
+
+Defines the commands the CLI exposes: converting a model for a target
+platform, running inference, benchmarking and analyzing it on a device,
+visualizing the analysis, packaging a model into an NN Archive, opening
+a shell in a target's container and managing the cache. The commands
+that need the vendor conversion tools -- ``convert``, ``infer`` and
+``shell`` -- are re-run inside the Docker image of the requested target
+platform unless they already run inside one; the others run on the
+host.
+"""
+
 import importlib.metadata
 import os
 import shutil
@@ -108,6 +120,11 @@ device_commands = Group.create_ordered("Device Commands")
 
 @contextmanager
 def catch_exceptions():
+    """Log any exception raised in the block and exit.
+
+    Exits with status 1 for a ``ModelconverterException`` and with
+    status 2 for any other exception.
+    """
     try:
         yield
     except ModelconverterException:
@@ -420,8 +437,8 @@ def infer(
         model_path: A URL or a path to the model file.
         input_path: Path to the directory with data for inference.
             The directory must contain one subdirectory per input, named
-            the same as the input. Inference data must be provided in
-            the NPY format.
+            the same as the input. The files may be images, ``.npy``
+            arrays or ``.raw`` buffers.
         output_dir: Name of the directory where the inference results
             will be saved.
         config: A URL or a path to the configuration file.
@@ -932,10 +949,11 @@ def launcher(
     Args:
         *tokens: The command and its arguments, parsed by the wrapped
             app.
-        dev: If ``True``, builds a new image and uses the development
-            docker-compose file.
-        gpu: If ``True``, uses the GPU version of the docker-compose
-            file.
+        dev: If ``True``, builds and runs the target's ``dev`` image,
+            which also mounts the host's sources, tests and
+            ``pyproject.toml`` over the ones baked into it.
+        gpu: If ``True``, runs the container with the ``nvidia``
+            runtime. Only has an effect for the ``hailo`` target.
         tool_version: Version of the underlying conversion tools to use.
             Available options differ based on the target platform.
         image: Full name of the docker image to use. If the name

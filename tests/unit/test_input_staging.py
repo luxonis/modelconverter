@@ -1,3 +1,10 @@
+"""Tests for staging user inputs into the hidden cache.
+
+Covers which paths are copied and rewritten to their container-side
+locations, how staged entries are keyed, claimed and evicted, and the
+budget that bounds the cache.
+"""
+
 import ast
 import errno
 import os

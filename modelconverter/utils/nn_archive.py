@@ -1,3 +1,13 @@
+"""Translation between modelconverter configs and NN Archives.
+
+An NN Archive is the Luxonis packaging format: a tar holding one or
+more model files next to a ``config.json`` that describes their inputs,
+outputs, preprocessing and heads. It sits on both ends of a conversion
+-- an archive can be handed to the converter, in which case it is
+unpacked and turned into a `Config` here, and the converted models are
+packed back into a new archive whose config this module builds.
+"""
+
 import json
 import tarfile
 from itertools import pairwise
@@ -29,6 +39,19 @@ from modelconverter.utils.types import (
 
 
 def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
+    """Look up an input of an archive config by name.
+
+    Args:
+        cfg: Archive config to search.
+        name: Name of the input to look for.
+
+    Returns:
+        The matching archive input.
+
+    Raises:
+        ValueError: If the config declares no input of that name.
+
+    """
     for inp in cfg.model.inputs:
         if inp.name == name:
             return inp
@@ -236,6 +259,35 @@ def modelconverter_config_to_nn(
     model_path: Path,
     target: Target,
 ) -> NNArchiveConfig:
+    """Build the archive config describing a converted model.
+
+    Shapes and data types are taken from the converted model itself,
+    layouts are guessed from the original ones, and the precision is
+    derived from the target together with its quantization settings.
+    Of the original archive config, the heads are carried over, as is
+    the type of every input and the preprocessing block of a raw one.
+
+    Args:
+        config: Config the conversion was run with.
+        model_name: File name the converted model is stored under
+            inside the archive.
+        orig_nn: Archive config the conversion started from, or
+            ``None`` if it did not start from an archive.
+        preprocessing: Preprocessing blocks to attach, keyed by input
+            name.
+        main_stage_key: Key of the stage holding the main model.
+        model_path: Path to the model whose metadata the shapes and
+            data types are read from.
+        target: Conversion target the model was built for.
+
+    Returns:
+        The archive config for the converted model.
+
+    Raises:
+        NotImplementedError: If the config has more than two stages.
+        ValueError: If a multi-stage config's archive declares no head.
+
+    """
     is_multistage = len(config.stages) > 1
     model_metadata = get_metadata(model_path)
 
@@ -400,6 +452,17 @@ def modelconverter_config_to_nn(
 def find_archive_input(
     cfg: NNArchiveConfig | None, name: str
 ) -> NNArchiveInput | None:
+    """Look up an input of an archive config, tolerating its absence.
+
+    Args:
+        cfg: Archive config to search, or ``None`` if there is none.
+        name: Name of the input to look for.
+
+    Returns:
+        The matching archive input, or ``None`` if there is no config or
+        it declares no input of that name.
+
+    """
     if cfg is None:
         return None
     for inp in cfg.model.inputs:
@@ -449,6 +512,20 @@ def _default_archive_preprocessing(
 
 
 def archive_from_model(model_path: Path) -> NNArchiveConfig:
+    """Build a bare archive config out of a model file alone.
+
+    The inputs and outputs come from the model's own metadata, every
+    input is declared as an image with a default layout and no
+    preprocessing, and no heads are declared. This is what packing an
+    unconverted model into an archive starts from.
+
+    Args:
+        model_path: Path to the model file to describe.
+
+    Returns:
+        The archive config describing the model.
+
+    """
     metadata = get_metadata(model_path)
 
     archive_cfg = {
@@ -506,6 +583,32 @@ def generate_archive(
     inference_model_path: Path,
     archive_name: str | None,
 ) -> Path:
+    """Pack the converted models into an NN Archive.
+
+    The archive holds the model files together with the generated
+    config and the build info, and its name is suffixed with the
+    target it was built for.
+
+    Args:
+        target: Conversion target the models were built for.
+        cfg: Config the conversion was run with.
+        main_stage: Key of the stage holding the main model.
+        out_models: Converted model files to put into the archive.
+        output_path: Directory the archive is written to, and where
+            ``buildinfo.json`` is picked up from.
+        archive_cfg: Archive config the conversion started from, or
+            ``None`` if it did not start from an archive.
+        preprocessing: Preprocessing blocks to attach, keyed by input
+            name.
+        inference_model_path: Path to the model whose metadata the
+            shapes and data types are read from.
+        archive_name: Base name for the archive. If ``None``, the
+            config's name is used.
+
+    Returns:
+        Path to the created archive.
+
+    """
     logger.info("Converting to NN archive")
     if len(out_models) > 1:
         model_name = f"{main_stage}{out_models[0].suffix}"

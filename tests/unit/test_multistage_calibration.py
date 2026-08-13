@@ -48,6 +48,13 @@ class StubExporter:
     """The slice of ``Exporter`` that ``MultiStageExporter`` uses."""
 
     def __init__(self, config: SingleStageConfig, output_dir: Path) -> None:
+        """Record the attributes ``MultiStageExporter`` reads.
+
+        Args:
+            config: Config of the stage being exported.
+            output_dir: Directory the stage writes its outputs to.
+
+        """
         self.config = config
         self.output_dir = output_dir
         self.inputs = {inp.name: inp for inp in config.inputs}
@@ -58,9 +65,20 @@ class StubExporter:
 class StubInferer(Inferer):
     """A real ``Inferer`` with the vendor runtime replaced by ones."""
 
-    def setup(self) -> None: ...
+    def setup(self) -> None:
+        """Do nothing -- there is no vendor runtime to set up."""
 
     def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+        """Return an array of ones for every output.
+
+        Args:
+            inputs: Mapping of input name to input file. Ignored, the
+                outputs do not depend on them.
+
+        Returns:
+            Mapping of output name to an array of ones of that shape.
+
+        """
         return {
             name: np.ones(shape, dtype=np.float32)
             for name, shape in self.out_shapes.items()

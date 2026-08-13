@@ -1,3 +1,15 @@
+"""Telemetry events reported by the modelconverter CLI.
+
+Builds the property payloads that the CLI sends through
+``luxonis_ml.telemetry`` for a conversion run: which command ran, how
+the conversion was configured, and how it ended. The reported values are
+enum values, booleans, numeric settings and bucketed counts derived from
+the configuration rather than raw model names, paths or file contents. A
+conversion run id, propagated through an environment variable, ties the
+host-side command event to the events emitted from inside the conversion
+Docker container.
+"""
+
 import os
 import resource
 import sys
@@ -47,21 +59,29 @@ MODELCONVERTER_TELEMETRY_DEFAULTS = TelemetryDefaults(
 
 
 class TelemetryFlowStep(str, Enum):
+    """Step of the conversion lifecycle a flow event belongs to."""
+
     CONFIGURATION_RESOLVED = "configuration_resolved"
     RESULT_RECORDED = "result_recorded"
 
 
 class CommandName(str, Enum):
+    """CLI command a command telemetry event was emitted for."""
+
     CONVERT = "convert"
 
 
 class CommandResult(str, Enum):
+    """Outcome of a command or of a conversion run."""
+
     SUCCESS = "success"
     INTERRUPTED = "interrupted"
     FAILED = "failed"
 
 
 class FailureReason(str, Enum):
+    """Reason a command or a conversion run did not succeed."""
+
     USER_INTERRUPT = "user_interrupt"
     RUNTIME_ERROR = "runtime_error"
     CONFIG_ERROR = "config_error"
@@ -70,6 +90,8 @@ class FailureReason(str, Enum):
 
 
 class ConversionPhase(str, Enum):
+    """Phase of the conversion that was active when it ended."""
+
     CONFIGURATION = "configuration"
     CONVERSION = "conversion"
     UPLOAD_OUTPUT = "upload_output"
@@ -77,6 +99,8 @@ class ConversionPhase(str, Enum):
 
 
 class ConfigSource(str, Enum):
+    """Origin of the configuration used for a conversion."""
+
     DIRECT_MODEL_INPUT = "direct_model_input"
     YAML_CONFIG = "yaml_config"
     NN_ARCHIVE = "nn_archive"
@@ -84,17 +108,36 @@ class ConfigSource(str, Enum):
 
 
 class ArchiveOutputMode(str, Enum):
+    """Form in which the converted model is delivered.
+
+    Either a plain model file (``native``) or a Luxonis NN Archive
+    (``nn_archive``).
+    """
+
     NATIVE = "native"
     NN_ARCHIVE = "nn_archive"
 
 
 class CalibrationSource(str, Enum):
+    """Kind of calibration data configured for an input."""
+
     IMAGE_DIRECTORY = "image_directory"
     RANDOM = "random"
     REMOTE_LINK = "remote_link"
 
 
 def get_conversion_run_id() -> str:
+    """Return the id of the current conversion run.
+
+    The id is stored in the ``MODELCONVERTER_CONVERSION_RUN_ID``
+    environment variable and generated on first use, so that the
+    host-side command and the conversion running inside the Docker
+    container report the same id.
+
+    Returns:
+        Conversion run id for the current process.
+
+    """
     conversion_run_id = os.environ.get(CONVERSION_RUN_ID_ENV_VAR)
     if conversion_run_id:
         return conversion_run_id
@@ -104,6 +147,13 @@ def get_conversion_run_id() -> str:
 
 
 def telemetry_environment() -> dict[str, str]:
+    """Collect the telemetry variables to forward to the container.
+
+    Returns:
+        The conversion run id and ``LUXONIS_TELEMETRY_*`` variables that
+        are set in the current environment. Unset variables are omitted.
+
+    """
     env = {}
     for key in [
         CONVERSION_RUN_ID_ENV_VAR,
@@ -121,6 +171,15 @@ def telemetry_environment() -> dict[str, str]:
 
 
 def get_component_telemetry() -> Telemetry:
+    """Return the shared modelconverter telemetry client.
+
+    The client is created on first use, configured from the environment
+    with the modelconverter telemetry defaults as fallback.
+
+    Returns:
+        The ``Telemetry`` instance registered for modelconverter.
+
+    """
     return get_or_init(
         "modelconverter",
         library_version=__version__,
@@ -146,6 +205,30 @@ def build_command_properties(
     duration_ms: int,
     failure_reason: FailureReason | None = None,
 ) -> dict[str, Any]:
+    """Build the properties of the command telemetry event.
+
+    Args:
+        conversion_run_id: Id tying the event to the conversion run.
+        target: Conversion target the command was invoked for.
+        runs_in_docker: Whether the conversion runs inside a Docker
+            container.
+        dev_image: Whether the development image tag is used.
+        gpu_enabled: Whether GPU access was requested.
+        target_tool_version: Resolved tool version of the target, or
+            ``None`` if it is determined by a custom image tag.
+        custom_image_provided: Whether a custom Docker image was given.
+        memory_limit_set: Whether a memory limit was given.
+        cpu_limit_set: Whether a CPU limit was given.
+        result: Outcome of the command.
+        duration_ms: Wall-clock duration of the command in
+            milliseconds.
+        failure_reason: Reason the command failed, or ``None`` if it
+            did not fail.
+
+    Returns:
+        Event properties, with the ``None`` values dropped.
+
+    """
     return _drop_none(
         {
             "conversion_run_id": conversion_run_id,
@@ -174,6 +257,25 @@ def build_conversion_summary(
     archive_preprocess: bool,
     main_stage_provided: bool,
 ) -> dict[str, Any]:
+    """Summarize a resolved conversion configuration for telemetry.
+
+    Only enum values, booleans, numeric settings and bucketed counts
+    derived from the configuration are reported.
+
+    Args:
+        cfg: Resolved conversion configuration.
+        target: Conversion target.
+        config_source: Where the configuration came from.
+        archive_output_mode: Form in which the outputs are delivered.
+        archive_preprocess: Whether the pre-processing is added to the
+            NN archive instead of the model.
+        main_stage_provided: Whether the name of the main stage was
+            given explicitly.
+
+    Returns:
+        Event properties, with the ``None`` values dropped.
+
+    """
     stages = list(cfg.stages.values())
     inputs = [inp for stage in stages for inp in stage.inputs]
     outputs = [out for stage in stages for out in stage.outputs]
@@ -244,6 +346,18 @@ def build_flow_properties(
     flow_step: TelemetryFlowStep,
     properties: dict[str, Any],
 ) -> dict[str, Any]:
+    """Extend event properties with the conversion flow metadata.
+
+    Args:
+        conversion_run_id: Id tying the event to the conversion run.
+        flow_step: Step of the conversion flow the event belongs to.
+        properties: Event properties to extend.
+
+    Returns:
+        The properties, with the flow name, the conversion run id and
+        the flow step added.
+
+    """
     return {
         "flow_name": FLOW_NAME,
         "conversion_run_id": conversion_run_id,
@@ -262,6 +376,26 @@ def build_conversion_result_properties(
     output_artifact_count: int | None = None,
     peak_ram_bytes: int | None = None,
 ) -> dict[str, Any]:
+    """Build the properties of the conversion result event.
+
+    Args:
+        result: Outcome of the conversion.
+        duration_ms: Wall-clock duration of the conversion in
+            milliseconds.
+        uploaded_output: Whether the output models were uploaded to a
+            remote location.
+        uploaded_intermediate_outputs: Whether the intermediate outputs
+            were uploaded to a remote location.
+        failure_reason: Reason the conversion failed, or ``None`` if it
+            did not fail.
+        output_artifact_count: Number of produced output artifacts,
+            reported as a bucket.
+        peak_ram_bytes: Peak RAM usage in bytes, reported as a bucket.
+
+    Returns:
+        Event properties, with the ``None`` values dropped.
+
+    """
     return _drop_none(
         {
             "result": result.value,
@@ -286,6 +420,19 @@ def build_conversion_result_properties(
 def command_result_from_exception(
     exc: BaseException | None,
 ) -> CommandResult:
+    """Derive the command result from the exception that ended it.
+
+    Args:
+        exc: Exception that terminated the command, or ``None`` if the
+            command completed normally.
+
+    Returns:
+        ``CommandResult.SUCCESS`` for no exception or a ``SystemExit``
+        with code ``None`` or ``0``, ``CommandResult.INTERRUPTED`` for a
+        keyboard interrupt or an exit code of ``130``, and
+        ``CommandResult.FAILED`` otherwise.
+
+    """
     if exc is None:
         return CommandResult.SUCCESS
     code = getattr(exc, "code", None)
@@ -302,6 +449,19 @@ def command_result_from_exception(
 def command_failure_reason_from_exception(
     exc: BaseException | None,
 ) -> FailureReason | None:
+    """Derive the command failure reason from the exception.
+
+    Args:
+        exc: Exception that terminated the command, or ``None`` if the
+            command completed normally.
+
+    Returns:
+        ``None`` if the command did not fail,
+        ``FailureReason.USER_INTERRUPT`` for a keyboard interrupt or an
+        exit code of ``130``, and ``FailureReason.RUNTIME_ERROR``
+        otherwise.
+
+    """
     if exc is None:
         return None
     code = getattr(exc, "code", None)
@@ -318,6 +478,20 @@ def command_failure_reason_from_exception(
 def runtime_failure_reason_from_exception(
     exc: BaseException | None, *, phase: ConversionPhase
 ) -> FailureReason | None:
+    """Derive the conversion failure reason from the exception.
+
+    Args:
+        exc: Exception that ended the conversion, or ``None`` if the
+            conversion finished normally.
+        phase: Conversion phase that was active when it ended.
+
+    Returns:
+        ``None`` if there was no exception,
+        ``FailureReason.USER_INTERRUPT`` for a keyboard interrupt or an
+        exit code of ``130``, and otherwise the failure reason matching
+        the phase.
+
+    """
     if exc is None:
         return None
     if isinstance(exc, (KeyboardInterrupt, SystemExit)) and getattr(
@@ -337,6 +511,19 @@ def runtime_failure_reason_from_exception(
 def resolve_target_tool_version(
     *, target: Target, tool_version: str | None, image: str | None
 ) -> str | None:
+    """Resolve the tool version the target is converted with.
+
+    Args:
+        target: Conversion target.
+        tool_version: Explicitly requested tool version, if any.
+        image: Custom Docker image, if any.
+
+    Returns:
+        The requested tool version, or the default one for the target.
+        ``None`` is returned when a custom image with an explicit tag is
+        given, since the version is then decided by that tag.
+
+    """
     if image is not None and ":" in image.rsplit("/", maxsplit=1)[-1]:
         return None
     return tool_version or get_default_target_version(target.value)
@@ -347,6 +534,23 @@ def detect_config_source(
     opts: list[str],
     archive_cfg: NNArchiveConfig | None,
 ) -> ConfigSource:
+    """Detect where the conversion configuration came from.
+
+    Args:
+        path: Path given on the command line, if any.
+        opts: CLI configuration overrides as alternating key and value
+            tokens.
+        archive_cfg: Configuration extracted from an NN archive, if the
+            input was an archive or an archive directory.
+
+    Returns:
+        ``ConfigSource.NN_ARCHIVE`` or
+        ``ConfigSource.ARCHIVE_DIRECTORY`` when an archive
+        configuration is given, ``ConfigSource.DIRECT_MODEL_INPUT``
+        when a model file or an ``input_model`` override is given, and
+        ``ConfigSource.YAML_CONFIG`` otherwise.
+
+    """
     if archive_cfg is not None:
         if path and is_nn_archive(path):
             return ConfigSource.NN_ARCHIVE
@@ -366,6 +570,16 @@ def _looks_like_model_input(path: str) -> bool:
 
 
 def bucket_count(value: int | None) -> str | None:
+    """Reduce a count to a coarse bucket label.
+
+    Args:
+        value: Count to bucket.
+
+    Returns:
+        One of ``"0"``, ``"1"``, ``"2_4"`` or ``"5_plus"``, or ``None``
+        if ``value`` is ``None``.
+
+    """
     if value is None:
         return None
     if value <= 0:
@@ -378,6 +592,16 @@ def bucket_count(value: int | None) -> str | None:
 
 
 def bucket_memory_bytes(value: int | None) -> str | None:
+    """Reduce a memory size in bytes to a coarse bucket label.
+
+    Args:
+        value: Memory size in bytes.
+
+    Returns:
+        One of ``"under_512m"``, ``"512m_1g"``, ``"1g_4g"`` or
+        ``"above_4g"``, or ``None`` if ``value`` is ``None``.
+
+    """
     if value is None:
         return None
     mib = value / (1024 * 1024)
@@ -391,6 +615,15 @@ def bucket_memory_bytes(value: int | None) -> str | None:
 
 
 def peak_ram_usage_bytes() -> int:
+    """Return the peak RAM usage of this process in bytes.
+
+    The value comes from ``resource.getrusage``, whose ``ru_maxrss`` is
+    reported in bytes on macOS and in kibibytes elsewhere.
+
+    Returns:
+        Peak resident set size in bytes.
+
+    """
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     if sys.platform == "darwin":
         return int(peak)

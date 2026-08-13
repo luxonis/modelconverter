@@ -1,3 +1,13 @@
+"""Helpers smoothing over differences between ONNX releases.
+
+ONNX is the input format every target can take, so modelconverter has to
+cope with whatever the ONNX package in a given image offers: helper
+functions come and go between releases, and a model too large for a
+single protobuf keeps its weights in companion files. This module
+patches the missing helpers back in and gathers the external-data
+handling the rest of the package needs.
+"""
+
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
@@ -8,6 +18,13 @@ from onnx.external_data_helper import ExternalDataInfo, uses_external_data
 
 
 def ensure_onnx_helper_compatibility() -> None:
+    """Patch the scalar conversion helpers back into ``onnx.helper``.
+
+    ONNX 1.21 dropped ``float32_to_bfloat16`` and
+    ``float32_to_float8e4m3``, which ONNX GraphSurgeon still imports.
+    Both are reinstated here, implemented on top of ``ml_dtypes``, and
+    an ONNX release that still provides them is left untouched.
+    """
     helper = onnx.helper
 
     def _convert_scalar(
@@ -44,6 +61,22 @@ def save_onnx_model(
     save_as_external_data: bool = False,
     location: str | None = None,
 ) -> None:
+    """Save an ONNX model, optionally with its tensors kept beside it.
+
+    When external data is requested, the initializers are written into
+    a single companion file next to the model, replacing an earlier
+    file of the same name. Tensors held in node attributes stay in the
+    model file.
+
+    Args:
+        model: Model to save.
+        output_path: Path to write the model to.
+        save_as_external_data: Whether to store the tensor data in a
+            companion file instead of in the model file itself.
+        location: Name of that companion file. Defaults to the model's
+            file name with ``_data`` appended.
+
+    """
     output_path = Path(output_path)
 
     if save_as_external_data:

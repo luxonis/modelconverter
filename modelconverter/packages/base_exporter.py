@@ -1,3 +1,13 @@
+"""Target-agnostic scaffolding for the model exporters.
+
+Converting a model means handing it to a vendor toolchain that only
+exists inside that target's Docker image, so what the exporters share is
+everything around that call: staging the input model in the output
+directory, optionally simplifying the ONNX, producing calibration data
+for the inputs that ask for random ones, and recording what was run.
+That part lives in `Exporter`, which the per-target exporters subclass.
+"""
+
 import json
 import shutil
 from abc import ABC, abstractmethod
@@ -31,6 +41,17 @@ from modelconverter.utils.types import InputFileType, Target
 
 
 class Exporter(ABC):
+    """Base class of the single-stage, per-target model exporters.
+
+    Subclasses implement `export` to run their target's toolchain and
+    `exporter_buildinfo` to describe what they ran; `run` wraps both
+    with the shared bookkeeping.
+
+    Attributes:
+        target: The target platform the subclass converts for.
+
+    """
+
     target: Target
 
     def __init__(
@@ -38,6 +59,22 @@ class Exporter(ABC):
         config: SingleStageConfig,
         output_dir: Path,
     ):
+        """Stage the input model and the calibration data.
+
+        The model, along with any ONNX external data belonging to it, is
+        copied into the output directory and the intermediate outputs
+        directory, and simplified when the configuration asks for it.
+        Unless the target is RVC2 or calibration is disabled, inputs
+        configured for random calibration also get their data generated
+        here, so that the export itself only ever sees image
+        calibration.
+
+        Args:
+            config: Configuration of the single stage to convert.
+            output_dir: Directory the converted model and the build
+                information are written to.
+
+        """
         input_model = config.input_model
 
         self.config = config
@@ -129,6 +166,13 @@ class Exporter(ABC):
 
     @property
     def inference_model_path(self) -> Path:
+        """Return the path of the model to run inference with.
+
+        Raises:
+            ValueError: If the export has not been run yet, so no such
+                model exists.
+
+        """
         if self._inference_model_path is None:  # pragma: no cover
             raise ValueError(
                 "Inference model path not yet set. Export must be run first."
@@ -136,6 +180,18 @@ class Exporter(ABC):
         return self._inference_model_path
 
     def simplify_onnx(self) -> Path:  # pragma: no cover
+        """Simplify the staged ONNX model.
+
+        The backend is whichever one the ``onnx_simplification`` option
+        names, ``onnxsim`` or ``onnxslim``. A missing backend, a failed
+        simplification or a simplified model that does not check out are
+        all only warned about, leaving the model as it was.
+
+        Returns:
+            Path of the simplified model, or the path of the staged
+            model if the simplification did not happen.
+
+        """
         logger.info("Simplifying ONNX.")
         try:
             if self.onnx_simplification == "onnxsim":
@@ -187,13 +243,35 @@ class Exporter(ABC):
 
     @abstractmethod
     def exporter_buildinfo(self) -> dict[str, Any]:
-        pass
+        """Describe the target-specific side of the conversion.
+
+        Returns:
+            Whatever the target records about the tools it used, merged
+            into ``buildinfo.json`` by `run`.
+
+        """
 
     @abstractmethod
     def export(self) -> Path:
-        pass
+        """Convert the model with the target's toolchain.
+
+        Returns:
+            Path of the converted model, still under its intermediate
+            name.
+
+        """
 
     def run(self) -> Path:
+        """Convert the model and finish the output directory.
+
+        Runs `export`, renames its result after the original model,
+        drops the intermediate outputs unless they are to be kept, and
+        writes ``buildinfo.json``.
+
+        Returns:
+            Path of the converted model in the output directory.
+
+        """
         output_path = self.export()
         new_output_path = self.output_dir / Path(
             self.original_model_name
@@ -220,6 +298,20 @@ class Exporter(ABC):
         return new_output_path
 
     def read_img_dir(self, path: Path, max_images: int) -> list[Path]:
+        """Collect the calibration images from a directory.
+
+        If the directory holds no images, the error is logged and the
+        process exits.
+
+        Args:
+            path: Directory to read the calibration images from.
+            max_images: How many of the images to use. A negative value
+                means all of them.
+
+        Returns:
+            Paths of the images to calibrate with, sorted by file name.
+
+        """
         imgs = read_calib_dir(path)
         if not imgs:
             exit_with(FileNotFoundError(f"No images found in {path}"))

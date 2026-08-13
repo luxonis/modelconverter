@@ -1,3 +1,11 @@
+"""Execution of external commands used by the conversions.
+
+The conversions drive vendor toolchains through their command line
+tools. The helpers here run such a command, stream its output to the
+log with ANSI escape sequences removed, and record the peak memory
+usage and the wall-clock run time of the whole process tree.
+"""
+
 import io
 import re
 import shutil
@@ -26,6 +34,18 @@ class SubprocessResult(subprocess.CompletedProcess):
     """
 
     def __init__(self, *args, peak_memory: int, total_time: float, **kwargs):
+        """Initialize the result.
+
+        Args:
+            *args: Positional arguments passed to
+                ``subprocess.CompletedProcess``.
+            peak_memory: Peak memory usage of the process and its
+                children, in bytes.
+            total_time: Wall-clock run time of the process, in seconds.
+            **kwargs: Keyword arguments passed to
+                ``subprocess.CompletedProcess``.
+
+        """
         super().__init__(*args, **kwargs)
         self.peak_memory = peak_memory
         self.total_time = total_time
@@ -41,6 +61,7 @@ class SubprocessResult(subprocess.CompletedProcess):
         return f"{mem:.2f} GB"
 
     def __repr__(self) -> str:
+        """Return the base representation with memory and run time."""
         base = super().__repr__()
         return (
             f"{base.rstrip(')')}, "
@@ -49,9 +70,16 @@ class SubprocessResult(subprocess.CompletedProcess):
         )
 
     def __str__(self) -> str:
+        """Return the representation of the result."""
         return repr(self)
 
     def __rich_repr__(self) -> Iterator[tuple[str, Any]]:
+        """Yield the fields used by ``rich`` to render the result.
+
+        Yields:
+            Tuples of field name and field value.
+
+        """
         yield "args", self.args
         yield "returncode", self.returncode
         yield "stdout", self.stdout
@@ -103,6 +131,12 @@ class SubprocessHandle:
 
     @property
     def proc(self) -> subprocess.Popen:
+        """Return the underlying ``subprocess.Popen`` object.
+
+        Raises:
+            RuntimeError: If the process has not been started yet.
+
+        """
         if self._proc is None:
             raise RuntimeError(
                 "Process not started yet. "
@@ -112,6 +146,12 @@ class SubprocessHandle:
 
     @property
     def ps_proc(self) -> psutil.Process:
+        """Return the ``psutil.Process`` wrapping the process.
+
+        Raises:
+            RuntimeError: If the process has not been started yet.
+
+        """
         if self._ps_proc is None:
             raise RuntimeError(
                 "Process not started yet. "
@@ -179,6 +219,19 @@ class SubprocessHandle:
         return self.proc.wait(timeout=self.timeout or timeout)
 
     def __enter__(self) -> Self:
+        """Start the process and begin collecting its output.
+
+        Spawns one reader thread per output stream and a thread that
+        keeps track of the peak memory usage of the process tree.
+
+        Returns:
+            The handle itself.
+
+        Raises:
+            subprocess.SubprocessError: If the command is not found on
+                the ``PATH``.
+
+        """
         if shutil.which(self.cmd_name) is None:
             raise subprocess.SubprocessError(
                 f"Command `{self.cmd_name}` not found. Ensure it is in PATH."
@@ -235,6 +288,15 @@ class SubprocessHandle:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """Wait for the process and its reader threads to finish.
+
+        Args:
+            exc_type: Type of the exception raised in the block, if any.
+            exc_value: Exception raised in the block, if any.
+            traceback: Traceback of the exception raised in the block,
+                if any.
+
+        """
         if self.poll() is None:
             self.wait(self.timeout)
         for t in self._threads:
@@ -263,6 +325,20 @@ class SubprocessHandle:
             pass
 
     def result(self) -> SubprocessResult:
+        """Collect the result of the finished process.
+
+        Waits for the reader threads to finish and logs a summary of
+        the run unless the handle is silent.
+
+        Returns:
+            Result of the command, carrying its captured output, the
+            peak memory usage and the total run time.
+
+        Raises:
+            subprocess.SubprocessError: If the command finished with a
+                non-zero return code.
+
+        """
         for t in self._threads:
             t.join(timeout=1.0)
         total_time = time.time() - self._start_time
@@ -318,4 +394,13 @@ def subprocess_run(
 
 
 def strip_ansi(s: str) -> str:
+    """Remove ANSI escape sequences from a string.
+
+    Args:
+        s: String to strip.
+
+    Returns:
+        The string without ANSI escape sequences.
+
+    """
     return re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])").sub("", s)
