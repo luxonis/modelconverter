@@ -6,8 +6,8 @@ from typing import cast
 import numpy as np
 from hailo_sdk_client import ClientRunner, InferenceContext
 
-from modelconverter.packages.base_inferer import Inferer
-from modelconverter.packages.hailo.exporter import HailoExporter
+from modelconverter.platforms.base_inferer import Inferer
+from modelconverter.platforms.hailo.exporter import HailoExporter
 from modelconverter.utils import read_image
 
 

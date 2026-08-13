@@ -10,7 +10,7 @@ from modelconverter.utils.config import (
     ImageCalibrationConfig,
     LinkCalibrationConfig,
 )
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 
 from .base_exporter import Exporter
 from .getters import get_exporter, get_inferer
@@ -18,11 +18,11 @@ from .getters import get_exporter, get_inferer
 
 class MultiStageExporter:
     def __init__(
-        self, target: Target, config: Config, output_dir: Path
+        self, platform: Platform, config: Config, output_dir: Path
     ) -> None:
         self.config = config
         self.name = config.name
-        self.target = target
+        self.platform = platform
 
         self.output_dir = output_dir
         self.intermediate_outputs_dir = (
@@ -37,7 +37,7 @@ class MultiStageExporter:
 
         self.exporters = {
             stage_name: get_exporter(
-                target, stage_config, self.output_dir / stage_name
+                platform, stage_config, self.output_dir / stage_name
             )
             for stage_name, stage_config in config.stages.items()
         }
@@ -78,7 +78,7 @@ class MultiStageExporter:
             # ``get_inferer`` returns a ready ``from_config`` instance (same
             # contract as the ``infer`` command), so pass the arguments here.
             inferer = get_inferer(
-                self.target,
+                self.platform,
                 str(model_path),
                 source_dir,
                 dest_dir,

@@ -1,8 +1,8 @@
 """Tests for the container entrypoint.
 
 The signal and stdin handling lives in ``docker/entrypoint_common.sh``,
-which every target entrypoint sources; running the RVC2 one therefore
-exercises the logic of all of them. The other targets add environment
+which every platform entrypoint sources; running the RVC2 one therefore
+exercises the logic of all of them. The other platforms add environment
 setup that only exists inside their image (SNPE, Hailo), so they cannot
 be run here.
 

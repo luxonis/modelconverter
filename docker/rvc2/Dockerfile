@@ -136,7 +136,7 @@ COPY --link --from=base /opt/intel /opt/intel
 COPY --link --from=base /usr/local/lib /usr/local/lib
 
 COPY --link requirements.txt /app/requirements.txt
-COPY --link modelconverter/packages/rvc2/requirements.txt requirements-rvc2.txt
+COPY --link modelconverter/platforms/rvc2/requirements.txt requirements-rvc2.txt
 
 RUN <<EOF
 

@@ -17,7 +17,7 @@ from depthai import XLinkPlatform
 from loguru import logger
 from rich.progress import track
 
-from modelconverter.packages.base_benchmark import Benchmark, Configuration
+from modelconverter.platforms.base_benchmark import Benchmark, Configuration
 from modelconverter.utils import (
     DataType,
     DeviceMonitor,

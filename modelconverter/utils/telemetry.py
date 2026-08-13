@@ -28,10 +28,10 @@ from modelconverter.utils.config import (
     RVC4Config,
     SingleStageConfig,
 )
-from modelconverter.utils.target_versions import (
-    get_default_target_version,
+from modelconverter.utils.tool_versions import (
+    get_default_tool_version,
 )
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 
 CONVERSION_RUN_ID_ENV_VAR = "MODELCONVERTER_CONVERSION_RUN_ID"
 FLOW_NAME = "modelconverter_conversion_lifecycle"
@@ -134,11 +134,11 @@ def get_component_telemetry() -> Telemetry:
 def build_command_properties(
     *,
     conversion_run_id: str,
-    target: Target,
+    platform: Platform,
     runs_in_docker: bool,
     dev_image: bool,
     gpu_enabled: bool,
-    target_tool_version: str | None,
+    tool_version: str | None,
     custom_image_provided: bool,
     memory_limit_set: bool,
     cpu_limit_set: bool,
@@ -150,11 +150,13 @@ def build_command_properties(
         {
             "conversion_run_id": conversion_run_id,
             "command_name": CommandName.CONVERT.value,
-            "target": target.value,
+            # The "target"-based property keys predate the platform
+            # terminology; keep them so existing analytics queries stay valid.
+            "target": platform.value,
             "runs_in_docker": runs_in_docker,
             "dev_image": dev_image,
             "gpu_enabled": gpu_enabled,
-            "target_tool_version": target_tool_version,
+            "target_tool_version": tool_version,
             "custom_image_provided": custom_image_provided,
             "memory_limit_set": memory_limit_set,
             "cpu_limit_set": cpu_limit_set,
@@ -168,7 +170,7 @@ def build_command_properties(
 def build_conversion_summary(
     cfg: Config,
     *,
-    target: Target,
+    platform: Platform,
     config_source: ConfigSource,
     archive_output_mode: ArchiveOutputMode,
     archive_preprocess: bool,
@@ -181,9 +183,11 @@ def build_conversion_summary(
     input_format_values = [
         file_type.value.lower() for file_type in input_formats
     ]
-    target_configs = [stage.get_target_config(target) for stage in stages]
+    platform_configs = [
+        stage.get_platform_config(platform) for stage in stages
+    ]
     disable_calibration = any(
-        target_cfg.disable_calibration for target_cfg in target_configs
+        platform_cfg.disable_calibration for platform_cfg in platform_configs
     )
     calibration_sources = {
         _calibration_source(inp.calibration)
@@ -193,7 +197,8 @@ def build_conversion_summary(
 
     return _drop_none(
         {
-            "target": target.value,
+            # Pre-rename property key, kept for analytics continuity.
+            "target": platform.value,
             "config_source": config_source.value,
             "stage_count_bucket": bucket_count(len(stages)),
             "is_multistage": len(stages) > 1,
@@ -234,7 +239,7 @@ def build_conversion_summary(
                 stage.intermediate_outputs_remote_url is not None
                 for stage in stages
             ),
-            "target_configuration": _target_configuration(target, stages),
+            "target_configuration": _platform_configuration(platform, stages),
         }
     )
 
@@ -334,12 +339,12 @@ def runtime_failure_reason_from_exception(
     return FailureReason.CONVERSION_ERROR
 
 
-def resolve_target_tool_version(
-    *, target: Target, tool_version: str | None, image: str | None
+def resolve_tool_version(
+    *, platform: Platform, tool_version: str | None, image: str | None
 ) -> str | None:
     if image is not None and ":" in image.rsplit("/", maxsplit=1)[-1]:
         return None
-    return tool_version or get_default_target_version(target.value)
+    return tool_version or get_default_tool_version(platform.value)
 
 
 def detect_config_source(
@@ -397,64 +402,64 @@ def peak_ram_usage_bytes() -> int:
     return int(peak * 1024)
 
 
-def _target_configuration(
-    target: Target, stages: list[SingleStageConfig]
+def _platform_configuration(
+    platform: Platform, stages: list[SingleStageConfig]
 ) -> dict[str, Any] | None:
     first_stage = stages[0]
-    target_config = first_stage.get_target_config(target)
+    platform_config = first_stage.get_platform_config(platform)
 
-    if isinstance(target_config, RVC2Config):
+    if isinstance(platform_config, RVC2Config):
         return _drop_none(
             {
-                "number_of_shaves": target_config.number_of_shaves,
-                "superblob": target_config.superblob,
-                "n_workers_bucket": bucket_count(target_config.n_workers),
-                "compress_to_fp16": target_config.compress_to_fp16,
+                "number_of_shaves": platform_config.number_of_shaves,
+                "superblob": platform_config.superblob,
+                "n_workers_bucket": bucket_count(platform_config.n_workers),
+                "compress_to_fp16": platform_config.compress_to_fp16,
             }
         )
 
-    if isinstance(target_config, RVC3Config):
+    if isinstance(platform_config, RVC3Config):
         return _drop_none(
             {
                 "pot_target_device": (
-                    target_config.pot_target_device.value.lower()
+                    platform_config.pot_target_device.value.lower()
                 ),
-                "compress_to_fp16": target_config.compress_to_fp16,
+                "compress_to_fp16": platform_config.compress_to_fp16,
             }
         )
 
-    if isinstance(target_config, RVC4Config):
+    if isinstance(platform_config, RVC4Config):
         return _drop_none(
             {
                 "quantization_mode": (
-                    target_config.quantization_mode.value.lower()
+                    platform_config.quantization_mode.value.lower()
                 ),
-                "optimization_level": target_config.optimization_level,
+                "optimization_level": platform_config.optimization_level,
                 "use_per_channel_quantization": (
-                    target_config.use_per_channel_quantization
+                    platform_config.use_per_channel_quantization
                 ),
                 "use_per_row_quantization": (
-                    target_config.use_per_row_quantization
+                    platform_config.use_per_row_quantization
                 ),
-                "keep_raw_images": target_config.keep_raw_images,
+                "keep_raw_images": platform_config.keep_raw_images,
                 "htp_soc_count_bucket": bucket_count(
-                    len(target_config.htp_socs)
+                    len(platform_config.htp_socs)
                 ),
                 "has_quantization_overrides": (
-                    target_config.encodings is not None
+                    platform_config.encodings is not None
                 ),
             }
         )
 
-    if isinstance(target_config, HailoConfig):
+    if isinstance(platform_config, HailoConfig):
         return _drop_none(
             {
-                "optimization_level": target_config.optimization_level,
-                "compression_level": target_config.compression_level,
-                "batch_size_bucket": bucket_count(target_config.batch_size),
-                "disable_compilation": target_config.disable_compilation,
-                "hw_arch": target_config.hw_arch,
-                "alls_count_bucket": bucket_count(len(target_config.alls)),
+                "optimization_level": platform_config.optimization_level,
+                "compression_level": platform_config.compression_level,
+                "batch_size_bucket": bucket_count(platform_config.batch_size),
+                "disable_compilation": platform_config.disable_compilation,
+                "hw_arch": platform_config.hw_arch,
+                "alls_count_bucket": bucket_count(len(platform_config.alls)),
             }
         )
 

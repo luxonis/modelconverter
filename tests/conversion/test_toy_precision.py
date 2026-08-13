@@ -23,17 +23,17 @@ import pytest
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
-from modelconverter.packages.getters import get_inferer
+from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.conversion import write_toy_conv_config
+from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import platform_params
 from tests.helpers.precision import (
     cosine_similarity,
     golden_reference_outputs,
     locate_converted_model,
 )
-from tests.helpers.target_options import target_options
 
 _SIZE = 32
 # Constant the fidelity comparison runs on, inside the calibration range so the
@@ -77,19 +77,19 @@ def _to_nchw(arr: np.ndarray, platform: str) -> np.ndarray:
 def test_toy_precision(
     platform: str, toy_conv_config: Path, constant_image: Path
 ):
-    target = Target(platform)
-    opts = (*target_options(target), *_PLATFORM_OPTS.get(platform, ()))
+    platform = Platform(platform)
+    opts = (*platform_options(platform), *_PLATFORM_OPTS.get(platform, ()))
     output_name = f"_toy-prec-{platform}"
 
     convert(
-        target,
+        platform,
         *opts,
         path=str(toy_conv_config),
         output_dir=output_name,
         to="native",
     )
 
-    cfg, _, _ = get_configs(target, str(toy_conv_config), list(opts))
+    cfg, _, _ = get_configs(platform, str(toy_conv_config), list(opts))
     stage = next(iter(cfg.stages.values()))
 
     reference = golden_reference_outputs(
@@ -100,7 +100,7 @@ def test_toy_precision(
     )
     model_path = locate_converted_model(OUTPUTS_DIR / output_name, platform)
     inferer = get_inferer(
-        target,
+        platform,
         str(model_path),
         constant_image.parent,
         OUTPUTS_DIR / f"{output_name}_infer",

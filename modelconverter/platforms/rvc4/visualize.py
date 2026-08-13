@@ -3,7 +3,7 @@ from pathlib import Path
 import plotly.graph_objects as go
 import polars as pl
 
-from modelconverter.packages.base_visualize import Visualizer
+from modelconverter.platforms.base_visualize import Visualizer
 from modelconverter.utils import constants
 
 

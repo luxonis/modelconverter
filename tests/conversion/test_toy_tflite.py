@@ -27,13 +27,13 @@ import pytest
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
-from modelconverter.packages.getters import get_inferer
+from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.conversion import assert_produced
+from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import platform_params
 from tests.helpers.precision import cosine_similarity, locate_converted_model
-from tests.helpers.target_options import target_options
 from tests.helpers.tflite_factory import build_toy_tflite
 
 PLATFORMS = ("rvc2", "rvc3", "rvc4")
@@ -62,11 +62,11 @@ def solid_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.mark.parametrize("platform", _PARAMS)
 def test_toy_tflite_conversion(platform: str, toy_tflite: Path):
-    target = Target(platform)
+    platform = Platform(platform)
     output_name = f"_toy-tflite-{platform}"
     convert(
-        target,
-        *target_options(target),
+        platform,
+        *platform_options(platform),
         path=str(toy_tflite),
         output_dir=output_name,
         to="native",
@@ -78,11 +78,11 @@ def test_toy_tflite_conversion(platform: str, toy_tflite: Path):
 def test_toy_tflite_precision(
     platform: str, toy_tflite: Path, solid_image: Path
 ):
-    target = Target(platform)
-    options = target_options(target)
+    platform = Platform(platform)
+    options = platform_options(platform)
     output_name = f"_toy-tflite-prec-{platform}"
     convert(
-        target,
+        platform,
         *options,
         path=str(toy_tflite),
         output_dir=output_name,
@@ -92,12 +92,12 @@ def test_toy_tflite_precision(
     # A bare model path is not a config file -- pass it as an `input_model`
     # override with `path=None`, exactly as `convert` does internally.
     cfg, _, _ = get_configs(
-        target, None, ["input_model", str(toy_tflite), *options]
+        platform, None, ["input_model", str(toy_tflite), *options]
     )
     stage = next(iter(cfg.stages.values()))
     model_path = locate_converted_model(OUTPUTS_DIR / output_name, platform)
     inferer = get_inferer(
-        target,
+        platform,
         str(model_path),
         solid_image.parent,
         OUTPUTS_DIR / f"{output_name}_infer",

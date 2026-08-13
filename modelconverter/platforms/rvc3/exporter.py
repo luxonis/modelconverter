@@ -4,8 +4,8 @@ from pathlib import Path
 import cv2
 from loguru import logger
 
-from modelconverter.packages.base_exporter import Exporter
-from modelconverter.packages.rvc2.exporter import RVC2Exporter
+from modelconverter.platforms.base_exporter import Exporter
+from modelconverter.platforms.rvc2.exporter import RVC2Exporter
 from modelconverter.utils import exit_with, read_image
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
@@ -16,12 +16,12 @@ from modelconverter.utils.types import (
     DataType,
     Encoding,
     InputFileType,
-    Target,
+    Platform,
 )
 
 
 class RVC3Exporter(RVC2Exporter):
-    target: Target = Target.RVC3
+    platform: Platform = Platform.RVC3
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         Exporter.__init__(self, config=config, output_dir=output_dir)
@@ -63,13 +63,13 @@ class RVC3Exporter(RVC2Exporter):
             self._inference_model_path = calibrated_xml_path
             output_path = (
                 self.output_dir
-                / f"{self.model_name}-{self.target.name.lower()}-int8"
+                / f"{self.model_name}-{self.platform.name.lower()}-int8"
             )
             args += ["-m", calibrated_xml_path]
         else:
             output_path = (
                 self.output_dir
-                / f"{self.model_name}-{self.target.name.lower()}"
+                / f"{self.model_name}-{self.platform.name.lower()}"
             )
             args += ["-m", xml_path]
 

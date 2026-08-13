@@ -40,8 +40,8 @@ from modelconverter.utils.filesystem_utils import get_protocol
 from modelconverter.utils.general import dir_stats, human_size, parse_size
 from modelconverter.utils.onnx_compatibility import get_external_data_paths
 
-# Target names are positional tokens that must not be mistaken for paths.
-_TARGET_NAMES = {"rvc2", "rvc3", "rvc4", "hailo"}
+# Platform names are positional tokens that must not be mistaken for paths.
+_PLATFORM_NAMES = {"rvc2", "rvc3", "rvc4", "hailo"}
 
 # Extensions that clearly denote a file input.
 _KNOWN_EXTS = {
@@ -205,7 +205,8 @@ def _maybe_stage_token(
         if kind == "args":
             return _stage_arg_list_token(token, prev, inputs_dir)
 
-    # A bare positional token (target, unknown override value, ...). Only stage
+    # A bare positional token (platform, unknown override value, ...). Only
+    # stage
     # it when it clearly looks like an existing local path.
     if _is_path_like(token):
         return _stage_value(token, inputs_dir)
@@ -288,7 +289,7 @@ def _is_path_like(value: str) -> bool:
     says so, or when it is a file with a known model/config extension.
     Anything else has to be written with a ``./`` prefix to be staged.
     """
-    if value in _TARGET_NAMES:
+    if value in _PLATFORM_NAMES:
         return False
     if get_protocol(value) != "file":
         return False

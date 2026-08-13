@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from modelconverter.packages.base_inferer import Inferer
+from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.utils import ModelconverterException
 from modelconverter.utils.constants import INFERENCE_MARKER
 

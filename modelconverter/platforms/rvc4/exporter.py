@@ -7,7 +7,7 @@ from typing import Any, NamedTuple, cast
 
 from loguru import logger
 
-from modelconverter.packages.base_exporter import Exporter
+from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
     exit_with,
@@ -24,14 +24,14 @@ from modelconverter.utils.types import (
     DataType,
     Encoding,
     InputFileType,
+    Platform,
     QuantizationMode,
     ResizeMethod,
-    Target,
 )
 
 
 class RVC4Exporter(Exporter):
-    target: Target = Target.RVC4
+    platform: Platform = Platform.RVC4
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)

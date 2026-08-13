@@ -4,7 +4,7 @@ from typing import Any
 import depthai as dai
 import numpy as np
 
-from modelconverter.packages.base_benchmark import Benchmark, Configuration
+from modelconverter.platforms.base_benchmark import Benchmark, Configuration
 from modelconverter.utils import create_progress_handler, environ
 from modelconverter.utils.log_latency import (
     RVC2_INFERENCE_LATENCY_RE,

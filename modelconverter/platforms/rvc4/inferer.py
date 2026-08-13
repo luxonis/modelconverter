@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from modelconverter.packages.base_inferer import Inferer
+from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.utils import read_image, subprocess_run
 from modelconverter.utils.types import DataType
 

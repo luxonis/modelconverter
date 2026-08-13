@@ -30,7 +30,7 @@ from modelconverter.utils.constants import (
 )
 from modelconverter.utils.filesystem_utils import set_input_base
 from modelconverter.utils.hub_requests import Request
-from modelconverter.utils.types import DataType, Encoding, Target
+from modelconverter.utils.types import DataType, Encoding, Platform
 
 
 class ModelType(str, Enum):
@@ -79,7 +79,7 @@ def resolve_output_dir(output_dir: str) -> Path:
 
 
 def get_output_dir_name(
-    target: Target, name: str, output_dir: str | None
+    platform: Platform, name: str, output_dir: str | None
 ) -> Path:
     name = sanitize_net_name(name)
     date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
@@ -102,7 +102,7 @@ def get_output_dir_name(
                 )
             shutil.rmtree(dest)
         return dest
-    return OUTPUTS_DIR / f"{name}_to_{target.name.lower()}_{date}"
+    return OUTPUTS_DIR / f"{name}_to_{platform.name.lower()}_{date}"
 
 
 def init_dirs() -> None:
@@ -112,7 +112,7 @@ def init_dirs() -> None:
 
 
 def get_configs(
-    target: Target,
+    platform: Platform,
     path: str | None,
     opts: list[str] | dict[str, Any] | None = None,
 ) -> tuple[Config, NNArchiveConfig | None, str | None]:
@@ -144,7 +144,7 @@ def get_configs(
     if path is not None:
         path_ = resolve_path(path, MISC_DIR)
         if path_.is_dir() or is_nn_archive(path_):
-            return process_nn_archive(target, path_, overrides)
+            return process_nn_archive(platform, path_, overrides)
         # Resolve files referenced *inside* the config (calibration data,
         # scripts, encodings, ...) relative to the config file's directory.
         set_input_base(path_.parent)

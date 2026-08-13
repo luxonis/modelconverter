@@ -27,11 +27,11 @@ from modelconverter.utils.onnx_compatibility import (
     save_onnx_model,
 )
 from modelconverter.utils.subprocess import SubprocessResult
-from modelconverter.utils.types import InputFileType, Target
+from modelconverter.utils.types import InputFileType, Platform
 
 
 class Exporter(ABC):
-    target: Target
+    platform: Platform
 
     def __init__(
         self,
@@ -117,14 +117,14 @@ class Exporter(ABC):
             self.input_model = self.simplify_onnx()
 
         self._disable_calibration = getattr(
-            self.config, self.target.name.lower()
+            self.config, self.platform.name.lower()
         ).disable_calibration
 
-        if self.target != Target.RVC2 and self._disable_calibration:
+        if self.platform != Platform.RVC2 and self._disable_calibration:
             logger.warning("Calibration has been disabled.")
             logger.warning("The quantization step will be skipped.")
 
-        if self.target != Target.RVC2 and not self._disable_calibration:
+        if self.platform != Platform.RVC2 and not self._disable_calibration:
             self._prepare_random_calibration_data()
 
     @property

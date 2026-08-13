@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from modelconverter.packages.base_inferer import Inferer
+from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.utils.config import Config
 from modelconverter.utils.types import Encoding, ResizeMethod
 from tests.helpers.onnx_factory import single_io_onnx

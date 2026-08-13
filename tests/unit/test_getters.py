@@ -1,4 +1,4 @@
-"""Host-side unit tests for ``modelconverter.packages.getters``.
+"""Host-side unit tests for ``modelconverter.platforms.getters``.
 
 ``getters`` is pure dispatch: each factory lazily imports a backend class and
 constructs it. Those backends live in vendor-heavy modules (RVC2/RVC3 need
@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from modelconverter.packages import getters
-from modelconverter.utils.types import Target
+from modelconverter.platforms import getters
+from modelconverter.utils.types import Platform
 from tests.helpers.onnx_factory import single_io_onnx
 
 
@@ -50,35 +50,35 @@ def _inject_fake_backend(
 
 
 GET_EXPORTER_FAKE_CASES = [
-    (Target.RVC2, "modelconverter.packages.rvc2.exporter", "RVC2Exporter"),
-    (Target.RVC3, "modelconverter.packages.rvc3.exporter", "RVC3Exporter"),
-    (Target.RVC4, "modelconverter.packages.rvc4.exporter", "RVC4Exporter"),
+    (Platform.RVC2, "modelconverter.platforms.rvc2.exporter", "RVC2Exporter"),
+    (Platform.RVC3, "modelconverter.platforms.rvc3.exporter", "RVC3Exporter"),
+    (Platform.RVC4, "modelconverter.platforms.rvc4.exporter", "RVC4Exporter"),
     (
-        Target.HAILO,
-        "modelconverter.packages.hailo.exporter",
+        Platform.HAILO,
+        "modelconverter.platforms.hailo.exporter",
         "HailoExporter",
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    ("target", "path", "cls_name"), GET_EXPORTER_FAKE_CASES
+    ("platform", "path", "cls_name"), GET_EXPORTER_FAKE_CASES
 )
 def test_get_exporter_dispatch(
     monkeypatch: pytest.MonkeyPatch,
-    target: Target,
+    platform: Platform,
     path: str,
     cls_name: str,
 ):
     _inject_fake_backend(monkeypatch, path, cls_name)
-    exporter = getters.get_exporter(target, "cfg", "out_dir")
+    exporter = getters.get_exporter(platform, "cfg", "out_dir")
     assert isinstance(exporter, _Recorder)
     assert exporter.args == ("cfg", "out_dir")
 
 
 def test_get_exporter_rvc4_real_construction(work_dir: Path):
     """Smoke test the RVC4 branch against the real exporter class."""
-    from modelconverter.packages.rvc4.exporter import RVC4Exporter
+    from modelconverter.platforms.rvc4.exporter import RVC4Exporter
     from modelconverter.utils.config import Config
 
     model = single_io_onnx(work_dir / "m.onnx").resolve()
@@ -93,33 +93,33 @@ def test_get_exporter_rvc4_real_construction(work_dir: Path):
     stage = next(iter(cfg.stages.values()))
     output_dir = work_dir / "out"
     output_dir.mkdir()
-    exporter = getters.get_exporter(Target.RVC4, stage, output_dir)
+    exporter = getters.get_exporter(Platform.RVC4, stage, output_dir)
     assert isinstance(exporter, RVC4Exporter)
 
 
 GET_INFERER_FAKE_CASES = [
-    (Target.RVC2, "modelconverter.packages.rvc2.inferer", "RVC2Inferer"),
-    (Target.RVC3, "modelconverter.packages.rvc3.inferer", "RVC3Inferer"),
-    (Target.RVC4, "modelconverter.packages.rvc4.inferer", "RVC4Inferer"),
+    (Platform.RVC2, "modelconverter.platforms.rvc2.inferer", "RVC2Inferer"),
+    (Platform.RVC3, "modelconverter.platforms.rvc3.inferer", "RVC3Inferer"),
+    (Platform.RVC4, "modelconverter.platforms.rvc4.inferer", "RVC4Inferer"),
     (
-        Target.HAILO,
-        "modelconverter.packages.hailo.inferer",
+        Platform.HAILO,
+        "modelconverter.platforms.hailo.inferer",
         "HailoInferer",
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    ("target", "path", "cls_name"), GET_INFERER_FAKE_CASES
+    ("platform", "path", "cls_name"), GET_INFERER_FAKE_CASES
 )
 def test_get_inferer_dispatch(
     monkeypatch: pytest.MonkeyPatch,
-    target: Target,
+    platform: Platform,
     path: str,
     cls_name: str,
 ):
     _inject_fake_backend(monkeypatch, path, cls_name)
-    inferer = getters.get_inferer(target, "cfg")
+    inferer = getters.get_inferer(platform, "cfg")
     assert isinstance(inferer, _Recorder)
     # Inferers are built through the ``from_config`` classmethod.
     assert inferer.via_from_config
@@ -127,70 +127,74 @@ def test_get_inferer_dispatch(
 
 GET_BENCHMARK_FAKE_CASES = [
     (
-        Target.RVC2,
-        "modelconverter.packages.rvc2.benchmark",
+        Platform.RVC2,
+        "modelconverter.platforms.rvc2.benchmark",
         "RVC2Benchmark",
     ),
     (
-        Target.RVC3,
-        "modelconverter.packages.rvc3.benchmark",
+        Platform.RVC3,
+        "modelconverter.platforms.rvc3.benchmark",
         "RVC3Benchmark",
     ),
     (
-        Target.RVC4,
-        "modelconverter.packages.rvc4.benchmark",
+        Platform.RVC4,
+        "modelconverter.platforms.rvc4.benchmark",
         "RVC4Benchmark",
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    ("target", "path", "cls_name"), GET_BENCHMARK_FAKE_CASES
+    ("platform", "path", "cls_name"), GET_BENCHMARK_FAKE_CASES
 )
 def test_get_benchmark_dispatch(
     monkeypatch: pytest.MonkeyPatch,
-    target: Target,
+    platform: Platform,
     path: str,
     cls_name: str,
 ):
     _inject_fake_backend(monkeypatch, path, cls_name)
-    benchmark = getters.get_benchmark(target, "model")
+    benchmark = getters.get_benchmark(platform, "model")
     assert isinstance(benchmark, _Recorder)
     assert benchmark.args == ("model",)
 
 
 def test_get_benchmark_hailo_not_implemented():
     with pytest.raises(NotImplementedError, match="Hailo Benchmark"):
-        getters.get_benchmark(Target.HAILO)
+        getters.get_benchmark(Platform.HAILO)
 
 
 def test_get_analyzer_rvc4_dispatch(monkeypatch: pytest.MonkeyPatch):
     _inject_fake_backend(
         monkeypatch,
-        "modelconverter.packages.rvc4.analyze",
+        "modelconverter.platforms.rvc4.analyze",
         "RVC4Analyzer",
     )
-    analyzer = getters.get_analyzer(Target.RVC4, "arg")
+    analyzer = getters.get_analyzer(Platform.RVC4, "arg")
     assert isinstance(analyzer, _Recorder)
 
 
-@pytest.mark.parametrize("target", [Target.RVC2, Target.RVC3, Target.HAILO])
-def test_get_analyzer_unsupported_target(target: Target):
+@pytest.mark.parametrize(
+    "platform", [Platform.RVC2, Platform.RVC3, Platform.HAILO]
+)
+def test_get_analyzer_unsupported_target(platform: Platform):
     with pytest.raises(ValueError, match="Analyzer not available"):
-        getters.get_analyzer(target)
+        getters.get_analyzer(platform)
 
 
 def test_get_visualizer_rvc4_dispatch(monkeypatch: pytest.MonkeyPatch):
     _inject_fake_backend(
         monkeypatch,
-        "modelconverter.packages.rvc4.visualize",
+        "modelconverter.platforms.rvc4.visualize",
         "RVC4Visualizer",
     )
-    visualizer = getters.get_visualizer(Target.RVC4, "arg")
+    visualizer = getters.get_visualizer(Platform.RVC4, "arg")
     assert isinstance(visualizer, _Recorder)
 
 
-@pytest.mark.parametrize("target", [Target.RVC2, Target.RVC3, Target.HAILO])
-def test_get_visualizer_unsupported_target(target: Target):
+@pytest.mark.parametrize(
+    "platform", [Platform.RVC2, Platform.RVC3, Platform.HAILO]
+)
+def test_get_visualizer_unsupported_target(platform: Platform):
     with pytest.raises(ValueError, match="Visualizer not available"):
-        getters.get_visualizer(target)
+        getters.get_visualizer(platform)

@@ -13,7 +13,7 @@ from typing import Any, Final, NamedTuple
 import tflite2onnx
 from loguru import logger
 
-from modelconverter.packages.base_exporter import Exporter
+from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
     SubprocessHandle,
@@ -26,7 +26,7 @@ from modelconverter.utils.types import (
     DataType,
     Encoding,
     InputFileType,
-    Target,
+    Platform,
 )
 
 OV_2021: Final[bool] = env.get("VERSION") == "2021.4.0"
@@ -40,7 +40,7 @@ class CompileResult(NamedTuple):
 
 
 class RVC2Exporter(Exporter):
-    target: Target = Target.RVC2
+    platform: Platform = Platform.RVC2
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)
@@ -264,7 +264,7 @@ class RVC2Exporter(Exporter):
 
     def compile_blob(self, args: list) -> CompileResult:
         output_path = (
-            self.output_dir / f"{self.model_name}-{self.target.name.lower()}"
+            self.output_dir / f"{self.model_name}-{self.platform.name.lower()}"
         )
 
         if "-o" not in args:

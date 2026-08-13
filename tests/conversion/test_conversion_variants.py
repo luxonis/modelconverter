@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 from modelconverter.__main__ import convert
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.conversion import (
     HAILO_FAST_OPTS,
     assert_produced,
@@ -24,7 +24,7 @@ from tests.helpers.conversion import (
     write_toy_conv_config,
 )
 from tests.helpers.onnx_factory import build_relu_onnx
-from tests.helpers.target_options import target_options
+from tests.helpers.platform_options import platform_options
 from tests.helpers.tflite_factory import build_toy_tflite
 
 
@@ -34,7 +34,9 @@ def test_rvc4_raw_calibration(tmp_path: Path):
     # reader every other test goes through.
     config = write_toy_conv_config(tmp_path, calibration="raw")
     output_name = "_rvc4-raw-calib"
-    convert(Target.RVC4, path=str(config), output_dir=output_name, to="native")
+    convert(
+        Platform.RVC4, path=str(config), output_dir=output_name, to="native"
+    )
     assert_produced(output_name)
 
 
@@ -44,7 +46,7 @@ def test_hailo_without_calibration(tmp_path: Path):
     config = write_toy_conv_config(tmp_path, calibration="none")
     output_name = "_hailo-no-calib"
     convert(
-        Target.HAILO,
+        Platform.HAILO,
         "hailo.disable_calibration",
         "True",
         path=str(config),
@@ -79,8 +81,8 @@ def test_rvc2_hwc_input(tmp_path: Path):
     )
     output_name = "_rvc2-hwc"
     convert(
-        Target.RVC2,
-        *target_options(Target.RVC2),
+        Platform.RVC2,
+        *platform_options(Platform.RVC2),
         path=str(config_path),
         output_dir=output_name,
         to="native",
@@ -95,8 +97,8 @@ def test_rvc2_tflite_hwc_input(tmp_path: Path):
     tflite_path = build_toy_tflite(tmp_path / "hwc.tflite", shape=(8, 8, 3))
     output_name = "_rvc2-tflite-hwc"
     convert(
-        Target.RVC2,
-        *target_options(Target.RVC2),
+        Platform.RVC2,
+        *platform_options(Platform.RVC2),
         path=str(tflite_path),
         output_dir=output_name,
         to="native",
@@ -113,7 +115,7 @@ def test_rvc4_ncd_layout(tmp_path: Path):
     onnx_path = build_relu_onnx(tmp_path / "ncd.onnx", [1, 4, 5])
     output_name = "_rvc4-ncd"
     convert(
-        Target.RVC4,
+        Platform.RVC4,
         "rvc4.disable_calibration",
         "True",
         path=str(onnx_path),
@@ -160,7 +162,7 @@ def test_hailo_tflite_conversion(tmp_path: Path):
     )
     output_name = "_hailo-tflite"
     convert(
-        Target.HAILO,
+        Platform.HAILO,
         *HAILO_FAST_OPTS,
         path=str(config_path),
         output_dir=output_name,
@@ -177,7 +179,7 @@ def test_hailo_npy_calibration(tmp_path: Path):
     config = write_toy_conv_config(tmp_path, calibration="npy")
     output_name = "_hailo-npy-calib"
     convert(
-        Target.HAILO,
+        Platform.HAILO,
         *HAILO_FAST_OPTS,
         path=str(config),
         output_dir=output_name,

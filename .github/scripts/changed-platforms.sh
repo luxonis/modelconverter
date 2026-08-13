@@ -40,10 +40,10 @@ while IFS= read -r file; do
       ;;
     .github/*) ;;
 
-    modelconverter/packages/rvc2/*) select_platforms rvc2 ;;
-    modelconverter/packages/rvc3/*) select_platforms rvc3 ;;
-    modelconverter/packages/rvc4/*) select_platforms rvc4 ;;
-    modelconverter/packages/hailo/*) select_platforms hailo ;;
+    modelconverter/platforms/rvc2/*) select_platforms rvc2 ;;
+    modelconverter/platforms/rvc3/*) select_platforms rvc3 ;;
+    modelconverter/platforms/rvc4/*) select_platforms rvc4 ;;
+    modelconverter/platforms/hailo/*) select_platforms hailo ;;
 
     # RVC3's image is built on OpenVINO like RVC2's and reuses its entrypoint,
     # so the shared OpenVINO tooling and RVC2's docker directory affect both.

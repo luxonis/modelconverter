@@ -10,16 +10,16 @@ from pathlib import Path
 
 import pytest
 
-from modelconverter.packages.base_exporter import Exporter
+from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils.config import Config, SingleStageConfig
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.onnx_factory import multi_file_external_onnx
 
 
 class StubExporter(Exporter):
     """``Exporter`` with only its abstract vendor half stubbed out."""
 
-    target = Target.RVC2
+    platform = Platform.RVC2
 
     def exporter_buildinfo(self) -> dict:
         return {}

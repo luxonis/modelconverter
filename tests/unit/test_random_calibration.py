@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from modelconverter.packages.base_exporter import Exporter
+from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils.config import InputConfig, RandomCalibrationConfig
 
 

@@ -16,8 +16,8 @@ from loguru import logger
 from PIL import Image
 from rich.progress import track
 
-from modelconverter.packages.base_analyze import Analyzer
-from modelconverter.packages.rvc4.benchmark import get_device_info
+from modelconverter.platforms.base_analyze import Analyzer
+from modelconverter.platforms.rvc4.benchmark import get_device_info
 from modelconverter.utils import constants, create_handler, subprocess_run
 
 

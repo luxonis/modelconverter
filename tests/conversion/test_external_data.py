@@ -22,14 +22,14 @@ from pathlib import Path
 import pytest
 
 from modelconverter.__main__ import convert
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.conversion import (
     HAILO_FAST_OPTS,
     assert_produced,
     write_toy_conv_config,
 )
+from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import platform_params
-from tests.helpers.target_options import target_options
 
 
 @pytest.fixture(scope="module")
@@ -44,12 +44,12 @@ def external_data_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.mark.parametrize("platform", platform_params())
 def test_external_data(platform: str, external_data_config: Path):
-    target = Target(platform)
+    platform = Platform(platform)
     output_name = f"_external-data-{platform}"
     extra = HAILO_FAST_OPTS if platform == "hailo" else ()
     convert(
-        target,
-        *target_options(target),
+        platform,
+        *platform_options(platform),
         *extra,
         path=str(external_data_config),
         output_dir=output_name,

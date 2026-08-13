@@ -17,10 +17,10 @@ from typing import Literal
 import pytest
 
 from modelconverter.__main__ import convert
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.conversion import HAILO_FAST_OPTS, assert_produced
+from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import ALL_PLATFORMS, platform_marks
-from tests.helpers.target_options import target_options
 
 GS = "gs://luxonis-test-bucket/modelconverter"
 
@@ -85,7 +85,7 @@ def _scenario_options(platform: str, scenario: Scenario) -> tuple[str, ...]:
     if scenario.id != "ir-to-archive":
         return scenario.opts
 
-    version = os.environ["MODELCONVERTER_TARGET_VERSION"].replace(".", "_")
+    version = os.environ["MODELCONVERTER_TOOL_VERSION"].replace(".", "_")
     model = f"{IR_MODELS}/resnet18_{platform}_{version}.xml"
     return (*scenario.opts, "input_model", model)
 
@@ -104,13 +104,13 @@ _CASES = [
 
 @pytest.mark.parametrize(("platform", "scenario"), _CASES)
 def test_convert(platform: str, scenario: Scenario):
-    target = Target(platform)
+    platform = Platform(platform)
     output_name = f"_{platform}-{scenario.id}"
     extra = HAILO_FAST_OPTS if platform == "hailo" else ()
     convert(
-        target,
+        platform,
         *_scenario_options(platform, scenario),
-        *target_options(target),
+        *platform_options(platform),
         *extra,
         path=scenario.path,
         output_dir=output_name,

@@ -256,7 +256,7 @@ def _get_metadata_tflite(model_path: Path) -> Metadata:
 
 
 def _get_metadata_hailo(model_path: Path) -> Metadata:
-    from modelconverter.packages.hailo.exporter import ClientRunner
+    from modelconverter.platforms.hailo.exporter import ClientRunner
 
     input_shapes = {}
     input_dtypes = {}

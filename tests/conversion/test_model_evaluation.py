@@ -20,14 +20,14 @@ import pytest
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
-from modelconverter.packages.getters import get_inferer
+from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.constants import CALIBRATION_DIR, OUTPUTS_DIR
 from modelconverter.utils.general import sanitize_net_name
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.evaluation import assert_quality, ordered_outputs
 from tests.helpers.onnx_reference import ONNXReferenceInferer
+from tests.helpers.platform_options import platform_options
 from tests.helpers.precision import locate_converted_model
-from tests.helpers.target_options import target_options
 
 COCO_SAMPLE = "gs://luxonis-test-bucket/luxonis-ml-test-data/coco_sample.zip"
 DATASET_NAME = "modelconverter-coco-sample-evaluation"
@@ -217,13 +217,13 @@ def test_real_model_task_metrics(
         "mask": MaskMeanAveragePrecision,
     }
 
-    target = Target(platform)
-    options = target_options(target)
+    platform = Platform(platform)
+    options = platform_options(platform)
     archive = HubAIClient().instances.download_instance(
         case.instance_id, str(tmp_path / "models")
     )
 
-    cfg, _, _ = get_configs(target, str(archive), list(options))
+    cfg, _, _ = get_configs(platform, str(archive), list(options))
     stage_name, stage = next(iter(cfg.stages.items()))
     # The reference inferer and the metric context both assume NCHW at the
     # fixture's geometry.
@@ -251,7 +251,7 @@ def test_real_model_task_metrics(
     output_name = sanitize_net_name(f"eval_{platform}_{case.id}")
     try:
         convert(
-            target,
+            platform,
             *convert_options,
             path=str(archive),
             output_dir=output_name,
@@ -265,7 +265,7 @@ def test_real_model_task_metrics(
         )
         reference = ONNXReferenceInferer.from_stage(stage)
         inferer = get_inferer(
-            target,
+            platform,
             str(model_path),
             images[0].parent,
             OUTPUTS_DIR / f"{output_name}_infer",

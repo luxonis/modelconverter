@@ -9,17 +9,17 @@ import tensorflow as tf
 from hailo_sdk_client import ClientRunner
 from loguru import logger
 
-from modelconverter.packages.base_exporter import Exporter
+from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import exit_with, read_image
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
 )
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 
 
 class HailoExporter(Exporter):
-    target: Target = Target.HAILO
+    platform: Platform = Platform.HAILO
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)

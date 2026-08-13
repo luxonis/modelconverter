@@ -42,9 +42,9 @@ from modelconverter.utils.types import (
     DataType,
     Encoding,
     InputFileType,
+    Platform,
     QuantizationMode,
     ResizeMethod,
-    Target,
 )
 from tests.helpers.onnx_factory import (
     dynamic_batch_onnx,
@@ -511,12 +511,12 @@ def test_encodings_none():
     assert RVC4Config(encodings=None).encodings is None
 
 
-def test_target_config_dispatch():
+def test_platform_config_dispatch():
     cfg = SingleStageConfig.model_construct()
-    assert cfg.get_target_config(Target.HAILO) is cfg.hailo
-    assert cfg.get_target_config(Target.RVC2) is cfg.rvc2
-    assert cfg.get_target_config(Target.RVC3) is cfg.rvc3
-    assert cfg.get_target_config(Target.RVC4) is cfg.rvc4
+    assert cfg.get_platform_config(Platform.HAILO) is cfg.hailo
+    assert cfg.get_platform_config(Platform.RVC2) is cfg.rvc2
+    assert cfg.get_platform_config(Platform.RVC3) is cfg.rvc3
+    assert cfg.get_platform_config(Platform.RVC4) is cfg.rvc4
 
 
 def test_is_symmetric_json_serialization():
@@ -821,7 +821,7 @@ def test_top_level_and_input_calibration_merged(tmp_path: Path):
 
 def test_disable_calibration_fans_out_to_all_targets():
     # ``rvc4`` is already present in the data, exercising the branch
-    # that skips re-creating an existing target dict.
+    # that skips re-creating an existing platform dict.
     config = Config.get_config(
         None,
         {

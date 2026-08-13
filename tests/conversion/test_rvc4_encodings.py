@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 
 from modelconverter.__main__ import convert
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.conversion import (
     assert_produced_suffix,
     write_toy_conv_config,
@@ -88,7 +88,7 @@ def test_rvc4_encodings(encodings_config: tuple[Path, Path]):
     # `ast.literal_eval` parses the list/bool opts; the path string for
     # `rvc4.encodings` falls through as-is.
     convert(
-        Target.RVC4,
+        Platform.RVC4,
         "rvc4.encodings",
         str(encodings_path),
         "rvc4.use_per_row_quantization",

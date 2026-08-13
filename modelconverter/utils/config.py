@@ -31,10 +31,10 @@ from modelconverter.utils.types import (
     DataType,
     Encoding,
     InputFileType,
+    Platform,
     PotDevice,
     QuantizationMode,
     ResizeMethod,
-    Target,
 )
 
 NAMED_VALUES = {
@@ -248,11 +248,11 @@ class InputConfig(OutputConfig):
         )
 
 
-class TargetConfig(BaseModelExtraForbid):
+class PlatformConfig(BaseModelExtraForbid):
     disable_calibration: bool = False
 
 
-class HailoConfig(TargetConfig):
+class HailoConfig(PlatformConfig):
     force_onnx_names: bool = True
     optimization_level: Literal[-100, 0, 1, 2, 3, 4] = 2
     compression_level: Literal[0, 1, 2, 3, 4, 5] = 2
@@ -264,7 +264,7 @@ class HailoConfig(TargetConfig):
     ] = "hailo8"
 
 
-class BlobBaseConfig(TargetConfig):
+class BlobBaseConfig(PlatformConfig):
     mo_args: list[str] = []
     compile_tool_args: list[str] = []
     compress_to_fp16: bool = True
@@ -310,7 +310,7 @@ class Encodings(BaseModelExtraForbid):
     param_encodings: dict[str, list[QuantizationOverridesItem]]
 
 
-class RVC4Config(TargetConfig):
+class RVC4Config(PlatformConfig):
     snpe_onnx_to_dlc_args: list[str] = []
     snpe_dlc_quant_args: list[str] = []
     snpe_dlc_graph_prepare_args: list[str] = []
@@ -426,15 +426,15 @@ class SingleStageConfig(BaseModelExtraForbid):
             data["onnx_simplification"] = False
         return data
 
-    def get_target_config(self, target: Target) -> TargetConfig:
-        """Returns the target configuration for the given target."""
-        if target == Target.HAILO:
+    def get_platform_config(self, platform: Platform) -> PlatformConfig:
+        """Returns the platform configuration for the given platform."""
+        if platform == Platform.HAILO:
             return self.hailo
-        if target == Target.RVC2:
+        if platform == Platform.RVC2:
             return self.rvc2
-        if target == Target.RVC3:
+        if platform == Platform.RVC3:
             return self.rvc3
-        if target == Target.RVC4:  # pragma: no branch
+        if platform == Platform.RVC4:  # pragma: no branch
             return self.rvc4
 
     @model_validator(mode="before")
@@ -616,11 +616,11 @@ class SingleStageConfig(BaseModelExtraForbid):
         if disable_calibration is None:
             return data
 
-        for target in ["hailo", "rvc2", "rvc3", "rvc4"]:
-            if target not in data:
-                data[target] = {}
+        for platform in ["hailo", "rvc2", "rvc3", "rvc4"]:
+            if platform not in data:
+                data[platform] = {}
 
-            data[target]["disable_calibration"] = disable_calibration
+            data[platform]["disable_calibration"] = disable_calibration
         return data
 
     @model_validator(mode="before")

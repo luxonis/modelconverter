@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from onnx.onnx_pb import TensorProto
 
-__all__ = ["DataType", "Encoding", "PotDevice", "ResizeMethod", "Target"]
+__all__ = ["DataType", "Encoding", "Platform", "PotDevice", "ResizeMethod"]
 
 if TYPE_CHECKING:
     import depthai as dai
@@ -317,7 +317,7 @@ class PotDevice(Enum):
     ANY = "ANY"
 
 
-class Target(Enum):
+class Platform(Enum):
     HAILO = "hailo"
     RVC2 = "rvc2"
     RVC3 = "rvc3"

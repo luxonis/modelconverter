@@ -1,12 +1,12 @@
-"""Conversion options and skips forced by the target's tool version.
+"""Conversion options and skips forced by the platform's tool version.
 
-``MODELCONVERTER_TARGET_VERSION`` is injected by ``modelconverter shell``, so a
+``MODELCONVERTER_TOOL_VERSION`` is injected by ``modelconverter shell``, so a
 test can tell which vendor toolchain it is running against.
 """
 
 import os
 
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 
 
 def superblob_skip_reason() -> str | None:
@@ -17,18 +17,18 @@ def superblob_skip_reason() -> str | None:
     plain blob there. It is a runtime budget, not a capability: superblob works
     on 2021.4.0, it is just too expensive to compile on every run.
     """
-    if os.getenv("MODELCONVERTER_TARGET_VERSION") == "2021.4.0":
+    if os.getenv("MODELCONVERTER_TOOL_VERSION") == "2021.4.0":
         return "superblob compilation is too slow on OpenVINO 2021.4.0"
     return None
 
 
-def target_options(target: Target) -> tuple[str, ...]:
-    """Conversion overrides this target's tool version requires.
+def platform_options(platform: Platform) -> tuple[str, ...]:
+    """Conversion overrides this platform's tool version requires.
 
     Every conversion test threads these into ``convert`` (and into any
     ``get_configs`` call that has to agree with it), so a tool version that
     needs different settings is handled in one place rather than per test.
     """
-    if target is Target.RVC2 and superblob_skip_reason() is not None:
+    if platform is Platform.RVC2 and superblob_skip_reason() is not None:
         return ("rvc2.superblob", "False")
     return ()

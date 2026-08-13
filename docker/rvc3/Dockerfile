@@ -104,7 +104,7 @@ COPY --link --from=base /usr/local/lib /usr/local/lib
 
 
 COPY --link requirements.txt requirements.txt
-COPY --link modelconverter/packages/rvc3/requirements.txt requirements-rvc3.txt
+COPY --link modelconverter/platforms/rvc3/requirements.txt requirements-rvc3.txt
 
 RUN <<EOF
 
