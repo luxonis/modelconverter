@@ -50,8 +50,8 @@ class StubExporter:
     def __init__(self, config: SingleStageConfig, output_dir: Path) -> None:
         self.config = config
         self.output_dir = output_dir
-        self.inputs = {inp.name: inp for inp in config.inputs}
-        self.model_name = config.input_model.stem
+        self._inputs = {inp.name: inp for inp in config.inputs}
+        self._model_name = config.input_model.stem
         self.inference_model_path = config.input_model
 
 
@@ -161,7 +161,9 @@ def test_inference_results_are_marked(exporter: MultiStageExporter):
     to be there even though the linking code skips it."""
     exporter._produce_calibration_data(exporter.exporters["second"])
 
-    results_dir = exporter.intermediate_outputs_dir / "dummy_model_calibration"
+    results_dir = (
+        exporter._intermediate_outputs_dir / "dummy_model_calibration"
+    )
     assert (results_dir / INFERENCE_MARKER).is_file()
     assert sorted(p.name for p in results_dir.iterdir() if p.is_dir()) == [
         "output0",

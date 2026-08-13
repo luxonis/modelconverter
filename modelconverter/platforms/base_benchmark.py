@@ -13,20 +13,18 @@ Configuration: TypeAlias = dict[str, Any]
 
 
 class Benchmark(ABC):
-    VALID_EXTENSIONS = (".tar.xz", ".blob", ".dlc")
-    HUB_MODEL_PATTERN = re.compile(r"^(?:([^/]+)/)?([^:]+):([^:]+)(?::(.+))?$")
+    _VALID_EXTENSIONS = (".tar.xz", ".blob", ".dlc")
+    _HUB_MODEL_PATTERN = re.compile(
+        r"^(?:([^/]+)/)?([^:]+):([^:]+)(?::(.+))?$"
+    )
 
-    def __init__(
-        self,
-        model_path: str,
-        dataset_path: Path | None = None,
-    ):
-        if any(model_path.endswith(ext) for ext in self.VALID_EXTENSIONS):
+    def __init__(self, model_path: str):
+        if any(model_path.endswith(ext) for ext in self._VALID_EXTENSIONS):
             self.model_path = resolve_path(model_path, Path.cwd())
             self.model_name = self.model_path.stem
-            self.model_instance = None
+            self._model_instance = None
         else:
-            hub_match = self.HUB_MODEL_PATTERN.match(model_path)
+            hub_match = self._HUB_MODEL_PATTERN.match(model_path)
             if not hub_match:
                 raise ValueError(
                     "Invalid 'model-path' format. Expected either:\n"
@@ -42,19 +40,11 @@ class Benchmark(ABC):
             if is_hubai_available(model_name, model_variant):
                 self.model_path = model_path
                 self.model_name = model_name
-                self.model_instance = model_instance
+                self._model_instance = model_instance
             else:
                 raise ValueError(
                     f"Model {team_name + '/' if team_name else ''}{model_name}:{model_variant}{':' + model_instance if model_instance else ''} not found in HubAI."
                 )
-
-        self.dataset_path = dataset_path
-
-        self.header = [
-            *self.default_configuration.keys(),
-            "fps",
-            "latency (ms)",
-        ]
 
     @abstractmethod
     def benchmark(self, configuration: Configuration) -> dict[str, Any]:

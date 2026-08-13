@@ -109,7 +109,7 @@ def test_rvc2_tflite_hwc_input(tmp_path: Path):
 @pytest.mark.rvc4
 def test_rvc4_ncd_layout(tmp_path: Path):
     # A rank-3 `[1, C, D]` input gets the fallback `NCD` layout, which SNPE
-    # rewrites to `NCF`. That happens in `onnx_to_dlc`, before and independently
+    # rewrites to `NCF`. That happens in `_onnx_to_dlc`, before and independently
     # of quantization, so calibration is disabled -- a non-image `[1, 4, 5]`
     # shape has no meaningful random-image calibration anyway.
     onnx_path = build_relu_onnx(tmp_path / "ncd.onnx", [1, 4, 5])

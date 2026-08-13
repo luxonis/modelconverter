@@ -256,63 +256,63 @@ class ONNXModifier:
         skip_constant_folding: bool = False,
     ) -> None:
         self.model_path = model_path
-        self.has_external_data = has_external_data(model_path)
+        self._has_external_data = has_external_data(model_path)
         self.output_path = output_path
-        self.skip_optimization = skip_optimization
-        self.skip_constant_folding = skip_constant_folding
-        self.load_onnx()
-        self.prev_onnx_model = self.onnx_model
-        self.prev_onnx_gs = self.onnx_gs
+        self._skip_optimization = skip_optimization
+        self._skip_constant_folding = skip_constant_folding
+        self._load_onnx()
+        self._prev_onnx_model = self._onnx_model
+        self._prev_onnx_gs = self._onnx_gs
 
-    def load_onnx(self) -> None:
+    def _load_onnx(self) -> None:
         """Load the ONNX model and store it as onnx.ModelProto and
         onnx_graphsurgeon.GraphSurgeon graph."""
         logger.info(f"Loading model: {self.model_path.stem}")
 
         try:
-            self.onnx_model, _ = simplify(
+            self._onnx_model, _ = simplify(
                 self.model_path.as_posix(),
-                perform_optimization=not self.skip_optimization,
-                skip_constant_folding=self.skip_constant_folding,
+                perform_optimization=not self._skip_optimization,
+                skip_constant_folding=self._skip_constant_folding,
             )
         except Exception as e:
             logger.warning(
                 f"Failed to load and simplify ONNX model: {self.model_path.stem} with error: {e}\nLoading without simplification."
             )
-            self.onnx_model = onnx.load(self.model_path.as_posix())
-        onnx.checker.check_model(self.onnx_model)
+            self._onnx_model = onnx.load(self.model_path.as_posix())
+        onnx.checker.check_model(self._onnx_model)
 
-        self.dtype = helper.tensor_dtype_to_np_dtype(
-            self.onnx_model.graph.input[0].type.tensor_type.elem_type
+        self._dtype = helper.tensor_dtype_to_np_dtype(
+            self._onnx_model.graph.input[0].type.tensor_type.elem_type
         )
-        self.input_shape = [
+        self._input_shape = [
             dim.dim_value
-            for dim in self.onnx_model.graph.input[
+            for dim in self._onnx_model.graph.input[
                 0
             ].type.tensor_type.shape.dim
         ]
-        self.has_dynamic_shape = any(
-            dim == 0 or dim is None for dim in self.input_shape
+        self._has_dynamic_shape = any(
+            dim == 0 or dim is None for dim in self._input_shape
         )
 
-        self.onnx_gs = gs.import_onnx(self.onnx_model)
+        self._onnx_gs = gs.import_onnx(self._onnx_model)
 
-    def optimize_onnx(self) -> None:
+    def _optimize_onnx(self) -> None:
         """Optimize and simplify the ONNX model's graph.
 
         @param passes: List of optimization passes to apply to the ONNX
             model
         @type passes: Optional[List[str]]
         """
-        self.onnx_model.ir_version = min(self.onnx_model.ir_version, 10)
+        self._onnx_model.ir_version = min(self._onnx_model.ir_version, 10)
 
-        if self.skip_optimization:
-            optimized_onnx_model = self.onnx_model
+        if self._skip_optimization:
+            optimized_onnx_model = self._onnx_model
         else:
             with tempfile.NamedTemporaryFile(
                 suffix=".onnx", delete=True
             ) as tmp_file:
-                onnx.save(self.onnx_model, tmp_file.name)
+                onnx.save(self._onnx_model, tmp_file.name)
 
                 sess_options = ort.SessionOptions()
                 sess_options.graph_optimization_level = (
@@ -334,14 +334,14 @@ class ONNXModifier:
             optimized_onnx_model, _ = simplify(
                 optimized_onnx_model,
                 perform_optimization=False,
-                skip_constant_folding=self.skip_constant_folding,
+                skip_constant_folding=self._skip_constant_folding,
             )
         except Exception as e:
             logger.warning(
                 f"Failed to simplify optimized ONNX model with error: {e}\nProceeding without simplification."
             )
 
-        if self.has_external_data:
+        if self._has_external_data:
             with tempfile.NamedTemporaryFile(
                 delete=True, suffix=".onnx"
             ) as tmp_onnx_file:
@@ -355,44 +355,44 @@ class ONNXModifier:
         else:
             onnx.checker.check_model(optimized_onnx_model)
 
-        self.onnx_model, self.onnx_gs = (
+        self._onnx_model, self._onnx_gs = (
             optimized_onnx_model,
             gs.import_onnx(optimized_onnx_model),
         )
 
-    def export_onnx(self) -> None:
+    def _export_onnx(self) -> None:
         """Export the modified ONNX model to the output path.
 
         @param passes: List of optimization passes to apply to the ONNX
             model
         @type passes: Optional[List[str]]
         """
-        self.optimize_onnx()
+        self._optimize_onnx()
 
-        self.onnx_model.ir_version = min(self.onnx_model.ir_version, 10)
+        self._onnx_model.ir_version = min(self._onnx_model.ir_version, 10)
 
         save_onnx_model(
-            self.onnx_model,
+            self._onnx_model,
             self.output_path,
-            save_as_external_data=self.has_external_data,
+            save_as_external_data=self._has_external_data,
             location=f"{self.output_path.name}_data",
         )
         onnx.checker.check_model(str(self.output_path))
 
-    def add_outputs(self, output_names: list[str]) -> None:
+    def _add_outputs(self, output_names: list[str]) -> None:
         """Add output nodes to the ONNX model.
 
         @param output_names: List of output node names to add to the
             ONNX model
         @type output_names: List[str]
         """
-        graph_outputs = [output.name for output in self.onnx_gs.outputs]
-        for name, tensor in self.onnx_gs.tensors().items():
+        graph_outputs = [output.name for output in self._onnx_gs.outputs]
+        for name, tensor in self._onnx_gs.tensors().items():
             if name in output_names and name not in graph_outputs:
-                self.onnx_gs.outputs.append(tensor)
-        self.onnx_model = gs.export_onnx(self.onnx_gs)
+                self._onnx_gs.outputs.append(tensor)
+        self._onnx_model = gs.export_onnx(self._onnx_gs)
 
-    def get_constant_map(self, graph: gs.Graph) -> dict[str, np.ndarray]:
+    def _get_constant_map(self, graph: gs.Graph) -> dict[str, np.ndarray]:
         """Extract constant tensors from the GraphSurgeon graph.
 
         @param graph: GraphSurgeon graph
@@ -408,7 +408,7 @@ class ONNXModifier:
         }
 
     @staticmethod
-    def get_constant_value(
+    def _get_constant_value(
         node: gs.Node, constant_map: dict[str, np.ndarray]
     ) -> tuple[np.ndarray, int] | None:
         """Returns the constant value of a node if it is a constant
@@ -429,7 +429,7 @@ class ONNXModifier:
         return None
 
     @staticmethod
-    def get_variable_input(node: gs.Node) -> tuple[gs.Variable, int] | None:
+    def _get_variable_input(node: gs.Node) -> tuple[gs.Variable, int] | None:
         """Returns the variable input of a node.
 
         @param node: Node to check
@@ -443,7 +443,7 @@ class ONNXModifier:
 
         return None
 
-    def graph_cleanup(
+    def _graph_cleanup(
         self,
         nodes_to_add: list[gs.Node],
         nodes_to_remove: list[gs.Node],
@@ -461,22 +461,22 @@ class ONNXModifier:
         @type connections_to_fix: List[Tuple[gs.Variable, gs.Variable]]
         """
         for node in nodes_to_add:
-            self.onnx_gs.nodes.append(node)
+            self._onnx_gs.nodes.append(node)
 
         for old_input, new_input in connections_to_fix:
-            for node in self.onnx_gs.nodes:
+            for node in self._onnx_gs.nodes:
                 for idx, input in enumerate(node.inputs):
                     if input == old_input:
                         node.inputs[idx] = new_input
 
         for node in nodes_to_remove:
-            self.onnx_gs.nodes.remove(node)
+            self._onnx_gs.nodes.remove(node)
 
-        self.onnx_gs.cleanup(
+        self._onnx_gs.cleanup(
             remove_unused_node_outputs=True, remove_unused_graph_inputs=True
         ).toposort()
 
-    def substitute_node_by_type(
+    def _substitute_node_by_type(
         self, source_node: str, target_node: str
     ) -> None:
         """Substitute a source node of a particular type with a target
@@ -503,7 +503,7 @@ class ONNXModifier:
                 "Invalid substitution. Available substitutions: Sub -> Add, Div -> Mul"
             )
 
-        constant_map = self.get_constant_map(self.onnx_gs)
+        constant_map = self._get_constant_map(self._onnx_gs)
 
         def create_new_node(
             node: gs.Node, target_node: str, const_idx: int
@@ -556,13 +556,13 @@ class ONNXModifier:
         nodes_to_remove = []
         connections_to_fix = []
 
-        graph_output_names = {output.name for output in self.onnx_gs.outputs}
+        graph_output_names = {output.name for output in self._onnx_gs.outputs}
 
-        for node in self.onnx_gs.nodes:
+        for node in self._onnx_gs.nodes:
             if node.op == source_node:
                 next_nodes = [
                     n
-                    for n in self.onnx_gs.nodes
+                    for n in self._onnx_gs.nodes
                     if node.outputs[0] in n.inputs
                 ]
                 # Skip optimization for nodes followed by Erf operations due to conversion compatibility issues with SNPE 2.32.6.
@@ -573,7 +573,7 @@ class ONNXModifier:
                         "because it is followed by an 'Erf' node."
                     )
                     continue
-                constant = self.get_constant_value(node, constant_map)
+                constant = self._get_constant_value(node, constant_map)
                 if constant is not None:
                     _, const_idx = constant
                     new_node = create_new_node(node, target_node, const_idx)
@@ -588,7 +588,7 @@ class ONNXModifier:
 
                         if node.outputs[0].name in graph_output_names:
                             for i, graph_output in enumerate(
-                                self.onnx_gs.outputs
+                                self._onnx_gs.outputs
                             ):
                                 if graph_output.name == node.outputs[0].name:
                                     new_output_var = gs.Variable(
@@ -597,7 +597,7 @@ class ONNXModifier:
                                         shape=node.outputs[0].shape,
                                     )
                                     new_node.outputs[0] = new_output_var
-                                    self.onnx_gs.outputs[i] = new_output_var
+                                    self._onnx_gs.outputs[i] = new_output_var
                                     break
 
                         nodes_to_remove.append(node)
@@ -608,12 +608,12 @@ class ONNXModifier:
             )
             return
 
-        self.graph_cleanup(nodes_to_add, nodes_to_remove, connections_to_fix)
-        self.onnx_model = gs.export_onnx(self.onnx_gs)
+        self._graph_cleanup(nodes_to_add, nodes_to_remove, connections_to_fix)
+        self._onnx_model = gs.export_onnx(self._onnx_gs)
 
-        self.optimize_onnx()
+        self._optimize_onnx()
 
-    def fuse_add_mul_to_bn(self) -> None:
+    def _fuse_add_mul_to_bn(self) -> None:
         """Fuse Add/Sub and Mul nodes that come immediately after a Conv
         node into a BatchNormalization node.
 
@@ -630,17 +630,17 @@ class ONNXModifier:
             ("Conv", "Add"),
         ]
 
-        constant_map = self.get_constant_map(self.onnx_gs)
+        constant_map = self._get_constant_map(self._onnx_gs)
 
         def create_batch_norm_node(
             name: str, input_tensor: gs.Variable, scale: float, bias: float
         ) -> gs.Node:
             conv_channels = input_tensor.shape[1]
             scale_values = np.array(
-                [scale] * conv_channels, dtype=self.dtype
+                [scale] * conv_channels, dtype=self._dtype
             ).squeeze()
             bias_values = np.array(
-                [bias] * conv_channels, dtype=self.dtype
+                [bias] * conv_channels, dtype=self._dtype
             ).squeeze()
             mean_values = np.zeros_like(scale_values)
             var_values = np.ones_like(scale_values)
@@ -676,7 +676,7 @@ class ONNXModifier:
         all_sequences = []
 
         for pattern in FUSION_PATTERNS:
-            for node in self.onnx_gs.nodes:
+            for node in self._onnx_gs.nodes:
                 if node.op != pattern[0]:
                     continue
 
@@ -685,7 +685,7 @@ class ONNXModifier:
                 for op_type in pattern[1:]:
                     next_nodes = [
                         n
-                        for n in self.onnx_gs.nodes
+                        for n in self._onnx_gs.nodes
                         if n.inputs
                         and current_node.outputs[0] in n.inputs
                         and n.op == op_type
@@ -722,7 +722,7 @@ class ONNXModifier:
                     conv_node = seq_node
                     continue
 
-                constant = self.get_constant_value(seq_node, constant_map)
+                constant = self._get_constant_value(seq_node, constant_map)
                 if constant is None:
                     valid_fusion = False
                     break
@@ -768,20 +768,20 @@ class ONNXModifier:
             )
             return
 
-        self.graph_cleanup(nodes_to_add, nodes_to_remove, connections_to_fix)
-        self.onnx_model = gs.export_onnx(self.onnx_gs)
+        self._graph_cleanup(nodes_to_add, nodes_to_remove, connections_to_fix)
+        self._onnx_model = gs.export_onnx(self._onnx_gs)
 
-        self.optimize_onnx()
+        self._optimize_onnx()
 
-    def fuse_single_add_mul_to_conv(self) -> None:
+    def _fuse_single_add_mul_to_conv(self) -> None:
         """Fuse Add and Mul nodes that precede a Conv node directly into
         the Conv node."""
         nodes_to_remove = []
         connections_to_fix = []
 
-        constant_map = self.get_constant_map(self.onnx_gs)
+        constant_map = self._get_constant_map(self._onnx_gs)
 
-        for node in self.onnx_gs.nodes:
+        for node in self._onnx_gs.nodes:
             if node.op == "Mul":
                 mul_node = node
                 if len(mul_node.outputs[0].outputs) > 1:
@@ -794,7 +794,7 @@ class ONNXModifier:
                 if conv_node is None:
                     continue
 
-                constant = self.get_constant_value(mul_node, constant_map)
+                constant = self._get_constant_value(mul_node, constant_map)
                 if constant is None:
                     continue
 
@@ -841,7 +841,7 @@ class ONNXModifier:
                 ):
                     continue
 
-                constant = self.get_constant_value(add_node, constant_map)
+                constant = self._get_constant_value(add_node, constant_map)
                 if constant is None:
                     continue
 
@@ -897,12 +897,12 @@ class ONNXModifier:
             )
             return
 
-        self.graph_cleanup([], nodes_to_remove, connections_to_fix)
-        self.onnx_model = gs.export_onnx(self.onnx_gs)
+        self._graph_cleanup([], nodes_to_remove, connections_to_fix)
+        self._onnx_model = gs.export_onnx(self._onnx_gs)
 
-        self.optimize_onnx()
+        self._optimize_onnx()
 
-    def fuse_comb_add_mul_to_conv(self) -> None:
+    def _fuse_comb_add_mul_to_conv(self) -> None:
         """Fuse combinations of Add and Mul nodes preceding a Conv node
         directly into the Conv node itself.
 
@@ -913,9 +913,9 @@ class ONNXModifier:
         nodes_to_remove = []
         connections_to_fix = []
 
-        constant_map = self.get_constant_map(self.onnx_gs)
+        constant_map = self._get_constant_map(self._onnx_gs)
 
-        for node in self.onnx_gs.nodes:
+        for node in self._onnx_gs.nodes:
             if node.op == "Mul":
                 mul_node = node
 
@@ -944,12 +944,12 @@ class ONNXModifier:
                 ):
                     continue
 
-                constant = self.get_constant_value(mul_node, constant_map)
+                constant = self._get_constant_value(mul_node, constant_map)
                 if constant is None:
                     continue
                 mul_value, _ = constant
 
-                constant = self.get_constant_value(add_node, constant_map)
+                constant = self._get_constant_value(add_node, constant_map)
                 if constant is None:
                     continue
                 add_value, _ = constant
@@ -993,7 +993,7 @@ class ONNXModifier:
                         )
                     )
 
-                variable = self.get_variable_input(mul_node)
+                variable = self._get_variable_input(mul_node)
                 if variable is None:
                     continue
                 _, mul_idx = variable
@@ -1036,12 +1036,12 @@ class ONNXModifier:
                 ):
                     continue
 
-                constant = self.get_constant_value(add_node, constant_map)
+                constant = self._get_constant_value(add_node, constant_map)
                 if constant is None:
                     continue
                 add_value, _ = constant
 
-                constant = self.get_constant_value(mul_node, constant_map)
+                constant = self._get_constant_value(mul_node, constant_map)
                 if constant is None:
                     continue
                 mul_value, _ = constant
@@ -1087,7 +1087,7 @@ class ONNXModifier:
                     values=new_weights,
                 )
 
-                variable = self.get_variable_input(add_node)
+                variable = self._get_variable_input(add_node)
                 if variable is None:
                     continue
                 _, add_idx = variable
@@ -1107,12 +1107,12 @@ class ONNXModifier:
                 "No applicable Add-Mul-Conv pattern found for fusion."
             )
             return
-        self.graph_cleanup([], nodes_to_remove, connections_to_fix)
-        self.onnx_model = gs.export_onnx(self.onnx_gs)
+        self._graph_cleanup([], nodes_to_remove, connections_to_fix)
+        self._onnx_model = gs.export_onnx(self._onnx_gs)
 
-        self.optimize_onnx()
+        self._optimize_onnx()
 
-    def fuse_split_concat_to_conv(self) -> None:
+    def _fuse_split_concat_to_conv(self) -> None:
         """Fuse Split and Concat nodes that come before a Conv node into
         the Conv node.
 
@@ -1122,7 +1122,7 @@ class ONNXModifier:
         nodes_to_remove = []
         connections_to_fix = []
 
-        for node in self.onnx_gs.nodes:
+        for node in self._onnx_gs.nodes:
             if node.op == "Conv":
                 break
 
@@ -1166,8 +1166,8 @@ class ONNXModifier:
                     break
 
                 for inter_node in intermediate_nodes[:-1]:
-                    constant = self.get_constant_value(
-                        inter_node, self.get_constant_map(self.onnx_gs)
+                    constant = self._get_constant_value(
+                        inter_node, self._get_constant_map(self._onnx_gs)
                     )
                     if constant is None:
                         continue
@@ -1209,17 +1209,17 @@ class ONNXModifier:
             )
             return
 
-        self.graph_cleanup([], nodes_to_remove, connections_to_fix)
-        self.onnx_model = gs.export_onnx(self.onnx_gs)
+        self._graph_cleanup([], nodes_to_remove, connections_to_fix)
+        self._onnx_model = gs.export_onnx(self._onnx_gs)
 
-        self.optimize_onnx()
+        self._optimize_onnx()
 
-    def revert_changes(self) -> None:
+    def _revert_changes(self) -> None:
         """Reverts ONNX model to previous state."""
-        self.onnx_model = self.prev_onnx_model
-        self.onnx_gs = self.prev_onnx_gs
+        self._onnx_model = self._prev_onnx_model
+        self._onnx_gs = self._prev_onnx_gs
 
-    def apply_optimization_step(
+    def _apply_optimization_step(
         self, step_name: str, optimization_func: Callable
     ) -> None:
         """Applies a single optimization step to the ONNX model.
@@ -1236,12 +1236,12 @@ class ONNXModifier:
                 logger.warning(
                     f"Failed: {step_name} due to output mismatch, reverting changes..."
                 )
-                self.revert_changes()
+                self._revert_changes()
         except Exception as e:
             logger.warning(
                 f"Failed: {step_name} with error: {e}, reverting changes..."
             )
-            self.revert_changes()
+            self._revert_changes()
 
     def modify_onnx(
         self,
@@ -1258,49 +1258,49 @@ class ONNXModifier:
             model
         @type passes: Optional[List[str]]
         """
-        if self.has_dynamic_shape:
+        if self._has_dynamic_shape:
             logger.warning(
                 "Identified dynamic input shape, skipping model modifications..."
             )
             return False
 
         if substitute_div_with_mul:
-            self.apply_optimization_step(
+            self._apply_optimization_step(
                 "Substitute Div -> Mul nodes",
-                lambda: self.substitute_node_by_type(
+                lambda: self._substitute_node_by_type(
                     source_node="Div", target_node="Mul"
                 ),
             )
         if substitute_sub_with_add:
-            self.apply_optimization_step(
+            self._apply_optimization_step(
                 "Substitute Sub -> Add nodes",
-                lambda: self.substitute_node_by_type(
+                lambda: self._substitute_node_by_type(
                     source_node="Sub", target_node="Add"
                 ),
             )
         if fuse_add_mul_to_bn:
-            self.apply_optimization_step(
+            self._apply_optimization_step(
                 "Fuse Add and Mul nodes to BatchNormalization nodes",
-                self.fuse_add_mul_to_bn,
+                self._fuse_add_mul_to_bn,
             )
         if fuse_comb_add_mul_to_conv:
-            self.apply_optimization_step(
+            self._apply_optimization_step(
                 "Fuse Add and Mul nodes to Conv nodes (combined)",
-                self.fuse_comb_add_mul_to_conv,
+                self._fuse_comb_add_mul_to_conv,
             )
         if fuse_single_add_mul_to_conv:
-            self.apply_optimization_step(
+            self._apply_optimization_step(
                 "Fuse Add and Mul nodes to Conv nodes (single)",
-                self.fuse_single_add_mul_to_conv,
+                self._fuse_single_add_mul_to_conv,
             )
         if fuse_split_concat_to_conv:
-            self.apply_optimization_step(
+            self._apply_optimization_step(
                 "Fuse Split and Concat nodes to Conv nodes",
-                self.fuse_split_concat_to_conv,
+                self._fuse_split_concat_to_conv,
             )
 
         try:
-            self.export_onnx()
+            self._export_onnx()
         except Exception as e:
             logger.error(f"Failed to modify the ONNX model: {e}")
             return False
@@ -1318,8 +1318,8 @@ class ONNXModifier:
         ort.set_default_logger_severity(3)
 
         if from_modelproto:
-            onnx_model_1 = self.prev_onnx_model.SerializeToString()
-            onnx_model_2 = self.onnx_model.SerializeToString()
+            onnx_model_1 = self._prev_onnx_model.SerializeToString()
+            onnx_model_2 = self._onnx_model.SerializeToString()
         else:
             onnx_model_1 = self.model_path.as_posix()
             onnx_model_2 = self.output_path.as_posix()

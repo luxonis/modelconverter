@@ -1,7 +1,6 @@
 import shutil
 from contextlib import suppress
 from datetime import datetime, timezone
-from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
@@ -31,29 +30,6 @@ from modelconverter.utils.constants import (
 from modelconverter.utils.filesystem_utils import set_input_base
 from modelconverter.utils.hub_requests import Request
 from modelconverter.utils.types import DataType, Encoding, Platform
-
-
-class ModelType(str, Enum):
-    ONNX = "ONNX"
-    IR = "IR"
-    PYTORCH = "PYTORCH"
-    TFLITE = "TFLITE"
-    RVC2 = "RVC2"
-    RVC3 = "RVC3"
-    RVC4 = "RVC4"
-    HAILO = "HAILO"
-
-    @classmethod
-    def from_suffix(cls, suffix: str) -> "ModelType":
-        if suffix == ".onnx":
-            return cls.ONNX
-        if suffix == ".tflite":
-            return cls.TFLITE
-        if suffix in [".xml", ".bin"]:
-            return cls.IR
-        if suffix in [".pt", ".pth"]:
-            return cls.PYTORCH
-        raise ValueError(f"Unsupported model format: {suffix}")
 
 
 def resolve_output_dir(output_dir: str) -> Path:

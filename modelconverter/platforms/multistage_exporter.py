@@ -21,14 +21,13 @@ class MultiStageExporter:
         self, platform: Platform, config: Config, output_dir: Path
     ) -> None:
         self.config = config
-        self.name = config.name
         self.platform = platform
 
         self.output_dir = output_dir
-        self.intermediate_outputs_dir = (
+        self._intermediate_outputs_dir = (
             self.output_dir / "intermediate_outputs"
         )
-        self.intermediate_outputs_dir.mkdir(parents=True, exist_ok=True)
+        self._intermediate_outputs_dir.mkdir(parents=True, exist_ok=True)
 
         with open(self.output_dir / "config.yaml", "w") as f:
             f.write(config.model_dump_json(indent=4))
@@ -43,9 +42,9 @@ class MultiStageExporter:
         }
 
     def _create_source_dir(self, exporter: Exporter, stage_name: str) -> Path:
-        dest = self.intermediate_outputs_dir / "inference_data" / stage_name
+        dest = self._intermediate_outputs_dir / "inference_data" / stage_name
         dest.mkdir(parents=True, exist_ok=True)
-        for inp_name, inp_config in exporter.inputs.items():
+        for inp_name, inp_config in exporter._inputs.items():
             calib = inp_config.calibration
             assert isinstance(calib, ImageCalibrationConfig)
             path = calib.path
@@ -58,7 +57,7 @@ class MultiStageExporter:
         return dest
 
     def _produce_calibration_data(self, exporter: Exporter) -> None:
-        for inp_name, inp_config in exporter.inputs.items():
+        for inp_name, inp_config in exporter._inputs.items():
             calib = inp_config.calibration
             if not isinstance(calib, LinkCalibrationConfig):
                 continue
@@ -71,8 +70,8 @@ class MultiStageExporter:
 
             source_dir = self._create_source_dir(linked_exporter, stage)
             dest_dir = (
-                self.intermediate_outputs_dir
-                / f"{linked_exporter.model_name}_calibration"
+                self._intermediate_outputs_dir
+                / f"{linked_exporter._model_name}_calibration"
             )
             model_path = linked_exporter.inference_model_path
             # ``get_inferer`` returns a ready ``from_config`` instance (same
@@ -99,7 +98,7 @@ class MultiStageExporter:
                 # several inputs of this stage may link to the same previous
                 # stage, each with a script of its own.
                 dest = (
-                    self.intermediate_outputs_dir
+                    self._intermediate_outputs_dir
                     / "inference_output"
                     / stage
                     / inp_name

@@ -10,30 +10,30 @@ from modelconverter.utils import constants
 class RVC4Visualizer(Visualizer):
     def __init__(self, dir_path: str | None = None) -> None:
         super().__init__(dir_path=dir_path)
-        self.layer_csvs = self._get_csv_paths(
-            dir_path=self.dir_path, comparison_type="layer_comparison"
+        self._layer_csvs = self._get_csv_paths(
+            dir_path=self._dir_path, comparison_type="layer_comparison"
         )
-        self.cycle_csvs = self._get_csv_paths(
-            dir_path=self.dir_path, comparison_type="layer_cycles"
+        self._cycle_csvs = self._get_csv_paths(
+            dir_path=self._dir_path, comparison_type="layer_cycles"
         )
 
     def visualize(self) -> None:
         fig_layers = self._visualize_layer_outputs()
         fig_layers.write_html(
-            self.dir_path / "layer_outputs_visual.html",
+            self._dir_path / "layer_outputs_visual.html",
             include_plotlyjs="cdn",
         )
 
         fig_cycles = self._visualize_cycles()
         fig_cycles.write_html(
-            self.dir_path / "layer_cycles_visual.html", include_plotlyjs="cdn"
+            self._dir_path / "layer_cycles_visual.html", include_plotlyjs="cdn"
         )
         fig_layers.show()
         fig_cycles.show()
 
     def _visualize_cycles(self) -> go.Figure:
         layer_lists = []
-        for model_name, csv_path in self.cycle_csvs.items():
+        for model_name, csv_path in self._cycle_csvs.items():
             df = pl.read_csv(csv_path)
             df = df.with_columns(pl.lit(model_name).alias("model_name"))
             df.columns = df.columns
@@ -47,7 +47,7 @@ class RVC4Visualizer(Visualizer):
         initial_metric = metrics[0]
 
         traces_data = {}
-        for model_name, csv_path in self.cycle_csvs.items():
+        for model_name, csv_path in self._cycle_csvs.items():
             df = pl.read_csv(csv_path)
             new_columns = {col: col.strip() for col in df.columns}
             df = df.rename(new_columns)
@@ -90,7 +90,7 @@ class RVC4Visualizer(Visualizer):
         for metric in metrics:
             new_y = []
             new_hovertemplates = []
-            for model in self.layer_csvs:
+            for model in self._layer_csvs:
                 new_y.append(traces_data[model][metric])
                 new_hovertemplates.append(
                     f"Model: {model}<br>Layer: %{{x}}<br>{metric}: %{{y}}<extra></extra>"
@@ -133,7 +133,7 @@ class RVC4Visualizer(Visualizer):
 
     def _visualize_layer_outputs(self) -> go.Figure:
         layer_lists = []
-        for csv_path in self.layer_csvs.values():
+        for csv_path in self._layer_csvs.values():
             df = pl.read_csv(csv_path)
             new_columns = {col: col.strip() for col in df.columns}
             df = df.rename(new_columns)
@@ -145,7 +145,7 @@ class RVC4Visualizer(Visualizer):
         initial_metric = metrics[0]
 
         traces_data = {}
-        for model_name, csv_path in self.layer_csvs.items():
+        for model_name, csv_path in self._layer_csvs.items():
             df = pl.read_csv(csv_path)
             new_columns = {col: col.strip() for col in df.columns}
             df = df.rename(new_columns)
@@ -167,7 +167,7 @@ class RVC4Visualizer(Visualizer):
             traces_data[model_name] = model_data
 
         fig = go.Figure()
-        for model in self.layer_csvs:
+        for model in self._layer_csvs:
             fig.add_trace(
                 go.Scatter(
                     x=traces_data[model]["x_axis"],
@@ -181,7 +181,7 @@ class RVC4Visualizer(Visualizer):
         for metric in metrics:
             new_y = []
             new_hovertemplates = []
-            for model in self.layer_csvs:
+            for model in self._layer_csvs:
                 new_y.append(traces_data[model][metric])
                 new_hovertemplates.append(
                     f"Model: {model}<br>Layer: %{{x}}<br>{metric}: %{{y}}<extra></extra>"

@@ -57,7 +57,7 @@ RUNTIMES: dict[str, str] = {
 
 
 class RVC4Benchmark(Benchmark):
-    MAX_REAL_SNPE_INPUTS = 100
+    _MAX_REAL_SNPE_INPUTS = 100
 
     @property
     def default_configuration(self) -> Configuration:
@@ -127,16 +127,16 @@ class RVC4Benchmark(Benchmark):
             content = csv_path.read_text()
             csv_path.unlink()
         elif (
-            self.handler is not None
-            and self.handler.shell("snpe-dlc-info -h", check=False)[0] == 0
+            self._handler is not None
+            and self._handler.shell("snpe-dlc-info -h", check=False)[0] == 0
         ):
-            self.handler.shell(f"mkdir -p {self.device_pwd}")
-            self.handler.push(model_path, self.device_pwd / "model.dlc")
-            device_csv_path = self.device_pwd / "info.csv"
-            self.handler.shell(
-                f"snpe-dlc-info -i {self.device_pwd / 'model.dlc'} -s {device_csv_path}",
+            self._handler.shell(f"mkdir -p {self._device_pwd}")
+            self._handler.push(model_path, self._device_pwd / "model.dlc")
+            device_csv_path = self._device_pwd / "info.csv"
+            self._handler.shell(
+                f"snpe-dlc-info -i {self._device_pwd / 'model.dlc'} -s {device_csv_path}",
             )
-            _, content, _ = self.handler.shell(f"cat {device_csv_path}")
+            _, content, _ = self._handler.shell(f"cat {device_csv_path}")
         else:
             raise RuntimeError(
                 "Neither local nor remote `snpe-dlc-info` "
@@ -169,7 +169,7 @@ class RVC4Benchmark(Benchmark):
     def _prepare_raw_inputs(
         self, input_specs: list[InputSpec], num_images: int
     ) -> None:
-        if self.handler is None:
+        if self._handler is None:
             raise RuntimeError(
                 "Device handler is not initialized. "
                 "Cannot prepare `.raw` inputs on the device."
@@ -178,10 +178,10 @@ class RVC4Benchmark(Benchmark):
         if num_images < 1:
             raise ValueError("num_images must be at least 1.")
 
-        inputs_dir = self.device_pwd / "inputs"
-        real_input_count = min(num_images, self.MAX_REAL_SNPE_INPUTS)
+        inputs_dir = self._device_pwd / "inputs"
+        real_input_count = min(num_images, self._MAX_REAL_SNPE_INPUTS)
 
-        self.handler.shell(f"mkdir -p {self.device_pwd}")
+        self._handler.shell(f"mkdir -p {self._device_pwd}")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             local_model_dir = Path(tmp_dir) / self.model_name
@@ -193,7 +193,7 @@ class RVC4Benchmark(Benchmark):
                 for i in track(
                     range(num_images),
                     description="Preparing inputs",
-                    total=min(num_images, self.MAX_REAL_SNPE_INPUTS),
+                    total=min(num_images, self._MAX_REAL_SNPE_INPUTS),
                 ):
                     input_paths: list[str] = []
                     for spec in input_specs:
@@ -210,7 +210,7 @@ class RVC4Benchmark(Benchmark):
                     f.write(" ".join(input_paths))
                     f.write(" \n")
 
-            self.handler.push(local_model_dir, self.device_pwd.parent)
+            self._handler.push(local_model_dir, self._device_pwd.parent)
 
         if num_images > real_input_count and input_specs:
             logger.info(
@@ -218,7 +218,7 @@ class RVC4Benchmark(Benchmark):
                 f"to the first {real_input_count} inputs to avoid filling "
                 "up the device storage."
             )
-            self.handler.shell(
+            self._handler.shell(
                 self._create_raw_input_link_script(
                     input_specs,
                     str(inputs_dir),
@@ -298,18 +298,18 @@ class RVC4Benchmark(Benchmark):
             configuration.get("device_ip"), configuration.get("device_id")
         )
         if device_monitor or not dai_benchmark:
-            self.handler = create_handler(device_ip, device_adb_id)
+            self._handler = create_handler(device_ip, device_adb_id)
         else:
-            self.handler = None
+            self._handler = None
 
         configuration["device_ip"] = device_ip
-        self.device_pwd = Path("/", "data", "modelconverter", self.model_name)
+        self._device_pwd = Path("/", "data", "modelconverter", self.model_name)
 
-        self.monitor = None
+        self._monitor = None
         idle_measurements = {}
-        if device_monitor and self.handler is not None:
-            self.monitor = DeviceMonitor(self.handler)
-            idle_measurements = self.monitor.get_idle_measurements()
+        if device_monitor and self._handler is not None:
+            self._monitor = DeviceMonitor(self._handler)
+            idle_measurements = self._monitor.get_idle_measurements()
 
         try:
             if dai_benchmark:
@@ -336,14 +336,14 @@ class RVC4Benchmark(Benchmark):
                 logger.info("Running SNPE benchmark directly on the device...")
                 result = self._benchmark_snpe(self.model_path, **configuration)
 
-            if self.monitor is not None:
-                result |= self.monitor.get_stats()
+            if self._monitor is not None:
+                result |= self._monitor.get_stats()
                 result |= idle_measurements
             return result
         finally:
-            if self.monitor is not None:
-                self.monitor.stop()
-            if not dai_benchmark and self.handler is not None:
+            if self._monitor is not None:
+                self._monitor.stop()
+            if not dai_benchmark and self._handler is not None:
                 # so we don't delete the wrong directory
                 # if `model_name` gets unset for any reason
                 if not self.model_name:
@@ -352,7 +352,7 @@ class RVC4Benchmark(Benchmark):
                         "cannot clean up model files on the device."
                     )
 
-                self.handler.shell(f"rm -rf {self.device_pwd}")
+                self._handler.shell(f"rm -rf {self._device_pwd}")
 
     def _benchmark_snpe(
         self,
@@ -408,25 +408,25 @@ class RVC4Benchmark(Benchmark):
         )
         logger.info(f"Moving model '{dlc_path.name}' to the device.")
 
-        if self.handler is None:
+        if self._handler is None:
             raise RuntimeError(
                 "Handler is not initialized. Cannot benchmark directly on the device."
             )
-        self.handler.shell(f"mkdir -p {self.device_pwd}")
-        self.handler.push(str(dlc_path), f"{self.device_pwd}/model.dlc")
+        self._handler.shell(f"mkdir -p {self._device_pwd}")
+        self._handler.push(str(dlc_path), f"{self._device_pwd}/model.dlc")
         self._prepare_raw_inputs(input_specs, num_images)
 
         logger.info("Starting SNPE benchmark...")
 
-        if self.monitor is not None:
-            self.monitor.start()
+        if self._monitor is not None:
+            self._monitor.start()
 
         try:
-            _, stdout, _ = self.handler.shell(
+            _, stdout, _ = self._handler.shell(
                 "snpe-parallel-run "
-                f"--container {self.device_pwd}/model.dlc "
-                f"--input_list {self.device_pwd}/input_list.txt "
-                f"--output_dir {self.device_pwd}/outputs "
+                f"--container {self._device_pwd}/model.dlc "
+                f"--input_list {self._device_pwd}/input_list.txt "
+                f"--output_dir {self._device_pwd}/outputs "
                 f"--perf_profile {profile} "
                 "--cpu_fallback true "
                 f"--{runtime}",
@@ -525,8 +525,8 @@ class RVC4Benchmark(Benchmark):
             f"Using {device.getPlatformAsString()} device on IP {device.getDeviceInfo().name}."
         )
 
-        if self.monitor is not None:
-            self.monitor.start()
+        if self._monitor is not None:
+            self._monitor.start()
 
         latencies: list[float] = []
 
@@ -605,7 +605,7 @@ class RVC4Benchmark(Benchmark):
         results: list[tuple[Configuration, dict[str, Any]]],
     ) -> list[str]:
         heads = []
-        if self.monitor is not None:
+        if self._monitor is not None:
             heads.append("power_sys (W)")
             heads.append("power_core (W)")
             heads.append("dsp (%)")
@@ -624,7 +624,7 @@ class RVC4Benchmark(Benchmark):
         memory = result.get("ram_used")
         cpu = result.get("cpu_utilization")
 
-        if self.monitor is not None:
+        if self._monitor is not None:
             yield f"{power_sys:.2f}" if power_sys else "[orange3]N/A"
             yield f"{power_core:.2f}" if power_core else "[orange3]N/A"
             yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
@@ -706,7 +706,7 @@ class RVC4Benchmark(Benchmark):
 
         if not isinstance(
             self.model_path, str
-        ) or not self.HUB_MODEL_PATTERN.match(self.model_path):
+        ) or not self._HUB_MODEL_PATTERN.match(self.model_path):
             return None
 
         model_id = slug_to_id(self.model_name, "models")
@@ -744,8 +744,8 @@ class RVC4Benchmark(Benchmark):
         model_precision_type = None
         for instance in model_instances:
             if instance["platforms"] == ["RVC4"] and (
-                self.model_instance is None
-                or instance["hash_short"] == self.model_instance
+                self._model_instance is None
+                or instance["hash_short"] == self._model_instance
             ):
                 model_precision_type = instance.get("model_precision_type")
                 break

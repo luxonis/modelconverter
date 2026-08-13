@@ -25,7 +25,7 @@ class StubExporter(Exporter):
         return {}
 
     def export(self) -> Path:
-        return self.input_model
+        return self._input_model
 
 
 @pytest.fixture

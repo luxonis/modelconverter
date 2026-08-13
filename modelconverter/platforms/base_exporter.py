@@ -42,17 +42,17 @@ class Exporter(ABC):
 
         self.config = config
         self.output_dir = output_dir
-        self.input_file_type = config.input_file_type
-        self.inputs = {inp.name: inp for inp in config.inputs}
+        self._input_file_type = config.input_file_type
+        self._inputs = {inp.name: inp for inp in config.inputs}
         self._inference_model_path: Path | None = None
 
-        self.outputs = {out.name: out for out in config.outputs}
-        self.keep_intermediate_outputs = config.keep_intermediate_outputs
-        self.onnx_simplification = config.onnx_simplification
-        self.onnx_optimizations = config.onnx_optimizations
+        self._outputs = {out.name: out for out in config.outputs}
+        self._keep_intermediate_outputs = config.keep_intermediate_outputs
+        self._onnx_simplification = config.onnx_simplification
+        self._onnx_optimizations = config.onnx_optimizations
 
-        self.model_name = sanitize_net_name(input_model.stem)
-        self.original_model_name = sanitize_net_name(
+        self._model_name = sanitize_net_name(input_model.stem)
+        self._original_model_name = sanitize_net_name(
             input_model.name, with_suffix=True
         )
 
@@ -62,7 +62,7 @@ class Exporter(ABC):
         self.intermediate_outputs_dir.mkdir(parents=True, exist_ok=True)
 
         self._cmd_info: dict[str, list[str]] = {}
-        self.is_tflite = self.input_file_type == InputFileType.TFLITE
+        self._is_tflite = self._input_file_type == InputFileType.TFLITE
 
         with open(self.output_dir / "config.yaml", "w") as f:
             f.write(config.model_dump_json(indent=4))
@@ -79,7 +79,7 @@ class Exporter(ABC):
         # (e.g. an OpenVINO IR .xml/.bin) as ONNX would fail.
         external_data_paths = (
             get_external_data_paths(input_model)
-            if self.input_file_type == InputFileType.ONNX
+            if self._input_file_type == InputFileType.ONNX
             else []
         )
         # A model saved with `all_tensors_to_one_file=False` has one companion
@@ -95,7 +95,7 @@ class Exporter(ABC):
                 dest = directory / relative
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(external_data_path, dest)
-        if self.input_file_type == InputFileType.IR:
+        if self._input_file_type == InputFileType.IR:
             assert self.config.input_bin is not None
             shutil.copy(
                 self.config.input_bin,
@@ -108,13 +108,15 @@ class Exporter(ABC):
                 self.config.input_bin.parent
                 / sanitize_net_name(self.config.input_bin.stem)
             ).with_suffix(".bin")
-        self.input_model = self.intermediate_outputs_dir / sanitized_model_name
+        self._input_model = (
+            self.intermediate_outputs_dir / sanitized_model_name
+        )
 
         if (
-            self.onnx_simplification
-            and self.input_file_type == InputFileType.ONNX
+            self._onnx_simplification
+            and self._input_file_type == InputFileType.ONNX
         ):
-            self.input_model = self.simplify_onnx()
+            self._input_model = self._simplify_onnx()
 
         self._disable_calibration = getattr(
             self.config, self.platform.name.lower()
@@ -135,14 +137,14 @@ class Exporter(ABC):
             )
         return self._inference_model_path
 
-    def simplify_onnx(self) -> Path:  # pragma: no cover
+    def _simplify_onnx(self) -> Path:  # pragma: no cover
         logger.info("Simplifying ONNX.")
         try:
-            if self.onnx_simplification == "onnxsim":
+            if self._onnx_simplification == "onnxsim":
                 from onnxsim import simplify
 
                 logger.info("Using `onnxsim` for simplification.")
-            elif self.onnx_simplification == "onnxslim":
+            elif self._onnx_simplification == "onnxslim":
                 from onnxslim import slim
 
                 logger.info("Using `onnxslim` for simplification.")
@@ -152,35 +154,35 @@ class Exporter(ABC):
                     return slimmed, bool(slimmed)  # type: ignore
 
         except ImportError:
-            backend = self.onnx_simplification
+            backend = self._onnx_simplification
             logger.warning(
                 f"`{backend}` not installed, proceeding without simplification."
                 f"Please install it using `pip install {backend}`."
             )
-            return self.input_model
+            return self._input_model
 
         try:
-            onnx_sim, check = simplify(str(self.input_model))
+            onnx_sim, check = simplify(str(self._input_model))
         except Exception as e:  # pragma: no cover
             logger.warning(
                 f"Failed to simplify ONNX: {e}. Proceeding without simplification."
             )
-            return self.input_model
+            return self._input_model
         if not check:  # pragma: no cover
             logger.warning(
                 "Provided ONNX could not be simplified. "
                 "Proceeding without simplification."
             )
-            return self.input_model
+            return self._input_model
         logger.info("ONNX successfully simplified.")
         onnx_sim_path = self._attach_suffix(
-            self.input_model, "simplified.onnx"
+            self._input_model, "simplified.onnx"
         )
         logger.info(f"Saving simplified ONNX to {onnx_sim_path}")
         save_onnx_model(
             onnx_sim,
             onnx_sim_path,
-            save_as_external_data=has_external_data(self.input_model),
+            save_as_external_data=has_external_data(self._input_model),
             location=f"{onnx_sim_path.name}_data",
         )
         return onnx_sim_path
@@ -196,7 +198,7 @@ class Exporter(ABC):
     def run(self) -> Path:
         output_path = self.export()
         new_output_path = self.output_dir / Path(
-            self.original_model_name
+            self._original_model_name
         ).with_suffix(output_path.suffix)
         shutil.move(
             str(output_path),
@@ -205,7 +207,7 @@ class Exporter(ABC):
         if self._inference_model_path == output_path:
             self._inference_model_path = new_output_path
 
-        if not self.keep_intermediate_outputs:  # pragma: no cover
+        if not self._keep_intermediate_outputs:  # pragma: no cover
             shutil.rmtree(self.intermediate_outputs_dir)
 
         buildinfo = {
@@ -219,7 +221,7 @@ class Exporter(ABC):
 
         return new_output_path
 
-    def read_img_dir(self, path: Path, max_images: int) -> list[Path]:
+    def _read_img_dir(self, path: Path, max_images: int) -> list[Path]:
         imgs = read_calib_dir(path)
         if not imgs:
             exit_with(FileNotFoundError(f"No images found in {path}"))
@@ -232,7 +234,7 @@ class Exporter(ABC):
         return imgs
 
     def _prepare_random_calibration_data(self) -> None:
-        for name, inp in self.inputs.items():
+        for name, inp in self._inputs.items():
             calib = inp.calibration
             if not isinstance(calib, RandomCalibrationConfig):
                 continue
@@ -273,7 +275,7 @@ class Exporter(ABC):
                 else:
                     np.save(dest / f"{i}.npy", arr)
 
-            self.inputs[name].calibration = ImageCalibrationConfig(path=dest)
+            self._inputs[name].calibration = ImageCalibrationConfig(path=dest)
 
     @staticmethod
     def _attach_suffix(path: Path | str, suffix: str) -> Path:

@@ -78,16 +78,16 @@ class SubprocessHandle:
             will be
         """
         if isinstance(cmd, str):
-            self.cmd = cmd.split()
+            self._cmd = cmd.split()
         else:
-            self.cmd = [str(arg) for arg in cmd]
+            self._cmd = [str(arg) for arg in cmd]
 
-        self.cmd_name = self.cmd[0]
-        self.silent = silent
-        self.peak_mem: int = 0
-        self.stdout_buf: list[str] = []
-        self.stderr_buf: list[str] = []
-        self.timeout = timeout
+        self._cmd_name = self._cmd[0]
+        self._silent = silent
+        self._peak_mem: int = 0
+        self._stdout_buf: list[str] = []
+        self._stderr_buf: list[str] = []
+        self._timeout = timeout
 
         self._threads: list[threading.Thread] = []
         self._start_time: float = 0.0
@@ -117,14 +117,14 @@ class SubprocessHandle:
 
         Also checks for timeout and raises TimeoutExpired if exceeded.
         """
-        if time.time() - self._start_time > (self.timeout or float("inf")):
+        if time.time() - self._start_time > (self._timeout or float("inf")):
             with suppress(psutil.NoSuchProcess):
                 self.ps_proc.terminate()
             raise subprocess.TimeoutExpired(
-                self.cmd,
-                self.timeout or 0,
-                output="".join(self.stdout_buf).encode(),
-                stderr="".join(self.stderr_buf).encode(),
+                self._cmd,
+                self._timeout or 0,
+                output="".join(self._stdout_buf).encode(),
+                stderr="".join(self._stderr_buf).encode(),
             )
         return self.poll() is None
 
@@ -157,20 +157,20 @@ class SubprocessHandle:
 
         Returns returncode.
         """
-        return self.proc.wait(timeout=self.timeout or timeout)
+        return self.proc.wait(timeout=self._timeout or timeout)
 
     def __enter__(self) -> Self:
-        if shutil.which(self.cmd_name) is None:
+        if shutil.which(self._cmd_name) is None:
             raise subprocess.SubprocessError(
-                f"Command `{self.cmd_name}` not found. Ensure it is in PATH."
+                f"Command `{self._cmd_name}` not found. Ensure it is in PATH."
             )
 
-        if not self.silent:
-            logger.info(f"Executing `{' '.join(self.cmd)}`")
+        if not self._silent:
+            logger.info(f"Executing `{' '.join(self._cmd)}`")
 
         self._start_time = time.time()
         self._proc = subprocess.Popen(
-            self.cmd,
+            self._cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=1,
@@ -184,23 +184,23 @@ class SubprocessHandle:
             for line in iter(stream.readline, ""):
                 line = strip_ansi(line)
                 buf.append(line)
-                if not self.silent:
+                if not self._silent:
                     logger.info(line.strip())
             stream.close()
 
         def _memory_monitor() -> None:
             while self.poll() is None:
-                self.monitor_memory(interval=0.1)
+                self._monitor_memory(interval=0.1)
 
         self._threads = [
             threading.Thread(
                 target=_reader,
-                args=(self._proc.stdout, self.stdout_buf),
+                args=(self._proc.stdout, self._stdout_buf),
                 daemon=True,
             ),
             threading.Thread(
                 target=_reader,
-                args=(self._proc.stderr, self.stderr_buf),
+                args=(self._proc.stderr, self._stderr_buf),
                 daemon=True,
             ),
             threading.Thread(target=_memory_monitor, daemon=True),
@@ -217,11 +217,11 @@ class SubprocessHandle:
         traceback: TracebackType | None,
     ) -> None:
         if self.poll() is None:
-            self.wait(self.timeout)
+            self.wait(self._timeout)
         for t in self._threads:
             t.join(timeout=1.0)
 
-    def current_memory(self) -> int:
+    def _current_memory(self) -> int:
         """Return current memory usage of the process and its
         children."""
         if self._ps_proc is None:
@@ -236,10 +236,10 @@ class SubprocessHandle:
         else:
             return mem
 
-    def monitor_memory(self, interval: float = 0.1) -> None:
+    def _monitor_memory(self, interval: float = 0.1) -> None:
         """Call periodically to update peak memory usage."""
         try:
-            self.peak_mem = max(self.peak_mem, self.current_memory())
+            self._peak_mem = max(self._peak_mem, self._current_memory())
             time.sleep(interval)
         except psutil.NoSuchProcess:
             pass
@@ -249,19 +249,19 @@ class SubprocessHandle:
             t.join(timeout=1.0)
         total_time = time.time() - self._start_time
         res = SubprocessResult(
-            self.cmd,
+            self._cmd,
             self.proc.returncode,
-            "".join(self.stdout_buf).encode(),
-            "".join(self.stderr_buf).encode(),
-            peak_memory=self.peak_mem,
+            "".join(self._stdout_buf).encode(),
+            "".join(self._stderr_buf).encode(),
+            peak_memory=self._peak_mem,
             total_time=total_time,
         )
         info_string = (
-            f"Command `{self.cmd_name}` finished in {total_time:.2f} s "
+            f"Command `{self._cmd_name}` finished in {total_time:.2f} s "
             f"with return code {res.returncode}."
         )
         log_message = logger.error if res.returncode != 0 else logger.info
-        if not self.silent:
+        if not self._silent:
             log_message(info_string)
         if res.returncode != 0:
             raise subprocess.SubprocessError(info_string)

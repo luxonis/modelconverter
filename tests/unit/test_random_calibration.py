@@ -32,10 +32,10 @@ def _prepare(
     inp = InputConfig.model_validate(data)
     inp.calibration = RandomCalibrationConfig(max_images=2)
 
-    # The method only touches `inputs` and `intermediate_outputs_dir`, so a
+    # The method only touches `_inputs` and `intermediate_outputs_dir`, so a
     # lightweight stand-in stands in for a fully constructed exporter.
     stub = SimpleNamespace(
-        inputs={"x": inp}, intermediate_outputs_dir=tmp_path
+        _inputs={"x": inp}, intermediate_outputs_dir=tmp_path
     )
     Exporter._prepare_random_calibration_data(stub)  # type: ignore[arg-type]
     return sorted(p.suffix for p in (tmp_path / "random" / "x").iterdir())

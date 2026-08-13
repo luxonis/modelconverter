@@ -10,8 +10,8 @@ from modelconverter.utils.types import DataType
 
 class RVC4Inferer(Inferer):
     def setup(self) -> None:
-        self.raw_images_path = Path("raw_images")
-        self.header = f"%{' '.join(name for name in self.out_shapes)}"
+        self._raw_images_path = Path("raw_images")
+        self._header = f"%{' '.join(name for name in self.out_shapes)}"
 
     def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
         # Scratch directory for SNPE's raw outputs. Must NOT be literally
@@ -19,12 +19,12 @@ class RVC4Inferer(Inferer):
         # is the bind-mounted results directory the inferer writes into. Using
         # it here would wipe previously-saved results on every image.
         outputs_path = Path("snpe_output")
-        shutil.rmtree(self.raw_images_path, ignore_errors=True)
-        self.raw_images_path.mkdir(parents=True)
+        shutil.rmtree(self._raw_images_path, ignore_errors=True)
+        self._raw_images_path.mkdir(parents=True)
         shutil.rmtree(outputs_path, ignore_errors=True)
 
         with open("input_list.txt", "w") as f:
-            f.write(self.header + "\n")
+            f.write(self._header + "\n")
             for input_name, path in inputs.items():
                 raw_path = Path(f"raw_images/{input_name}.raw")
                 arr = read_image(

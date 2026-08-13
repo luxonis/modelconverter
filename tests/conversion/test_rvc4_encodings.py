@@ -7,13 +7,13 @@ RVC4 exporter actually consuming those encodings, nor the two related SNPE knobs
 so this e2e converts the toy conv net with:
 
   * a custom ``encodings.json`` referenced by path, driving
-    ``generate_io_encodings`` -> ``snpe-onnx-to-dlc --quantization_overrides``
+    ``_generate_io_encodings`` -> ``snpe-onnx-to-dlc --quantization_overrides``
     and ``snpe-dlc-quant --override_params``;
   * ``use_per_row_quantization`` -> ``snpe-dlc-quant --use_per_row_quantization``
     (off by default, so otherwise never exercised);
   * a non-default ``htp_socs`` -> ``snpe-dlc-graph-prepare --htp_socs``.
 
-``generate_io_encodings`` normalizes the *exposed* input/output activation
+``_generate_io_encodings`` normalizes the *exposed* input/output activation
 encodings to default int8 IO whatever we pass, so the custom values mainly
 exercise the internal-tensor / param path. The point is the exporter code, not
 numeric fidelity, so asserting a quantized ``.dlc`` is produced is enough.

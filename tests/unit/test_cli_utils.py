@@ -8,7 +8,6 @@ from requests.exceptions import HTTPError
 
 from modelconverter.cli import utils as cli_utils
 from modelconverter.cli.utils import (
-    ModelType,
     extract_preprocessing,
     get_configs,
     get_output_dir_name,
@@ -36,26 +35,6 @@ def _single_stage_config(dummy_onnx: Path, **overrides) -> Config:
     opts = {"input_model": str(dummy_onnx), "shape": [1, 3, 64, 64]}
     opts.update(overrides)
     return Config.get_config(None, opts)
-
-
-@pytest.mark.parametrize(
-    ("suffix", "expected"),
-    [
-        (".onnx", ModelType.ONNX),
-        (".tflite", ModelType.TFLITE),
-        (".xml", ModelType.IR),
-        (".bin", ModelType.IR),
-        (".pt", ModelType.PYTORCH),
-        (".pth", ModelType.PYTORCH),
-    ],
-)
-def test_model_type_from_suffix(suffix: str, expected: ModelType):
-    assert ModelType.from_suffix(suffix) == expected
-
-
-def test_model_type_from_unsupported_suffix():
-    with pytest.raises(ValueError, match="Unsupported model format"):
-        ModelType.from_suffix(".foo")
 
 
 def test_output_dir_default_name():
