@@ -62,7 +62,7 @@ class RVC4Analyzer(Analyzer):
             "if [ -d "
             f"{output_dir}"
             " ]; then "
-            f"find {output_dir} -type f | while read -r file; do rm -f \"$file\"; done; "
+            f'find {output_dir} -type f | while read -r file; do rm -f "$file"; done; '
             "fi"
         )
 
@@ -168,7 +168,8 @@ class RVC4Analyzer(Analyzer):
         }
         if self.image_subset is not None:
             image_names = {
-                k: paths[: self.image_subset] for k, paths in image_names.items()
+                k: paths[: self.image_subset]
+                for k, paths in image_names.items()
             }
         return image_names
 
@@ -252,9 +253,7 @@ class RVC4Analyzer(Analyzer):
                     )
                     f.close()
 
-                input_row += (
-                    f"{input_name}:={self._device_input_dir()}/{raw_file_name} "
-                )
+                input_row += f"{input_name}:={self._device_input_dir()}/{raw_file_name} "
             input_list += input_row
             input_list += "\n"
 
@@ -312,7 +311,6 @@ class RVC4Analyzer(Analyzer):
         work_dir = self._device_work_dir()
         try:
             self.handler.shell(f"cd {work_dir} && {command}")
-            return
         except subprocess.CalledProcessError as e:
             stderr = e.stderr.decode(errors="ignore") if e.stderr else ""
             missing_dirs = self._extract_missing_output_dirs(stderr)
@@ -330,7 +328,7 @@ class RVC4Analyzer(Analyzer):
                 )
                 self.handler.shell(f"mkdir -p {mkdir_args}")
 
-        self.handler.shell(f"cd {work_dir} && {command}")
+            self.handler.shell(f"cd {work_dir} && {command}")
 
     def _add_outputs_to_all_layers(self, onnx_file_path: str) -> Path:
         onnx_path = Path(onnx_file_path)
