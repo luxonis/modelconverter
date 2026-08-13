@@ -75,8 +75,8 @@ class RVC2Benchmark(Benchmark):
         inputSizes = []
         inputNames = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            modelArhive = dai.NNArchive(str(modelPath))  # type: ignore[arg-type]
-            for input in modelArhive.getConfig().model.inputs:
+            modelArchive = dai.NNArchive(str(modelPath))  # type: ignore[arg-type]
+            for input in modelArchive.getConfig().model.inputs:
                 inputSizes.append(input.shape[::-1])
                 inputNames.append(input.name)
         elif str(model_path).endswith(".blob"):
@@ -118,7 +118,7 @@ class RVC2Benchmark(Benchmark):
                 if isinstance(model_path, str) or str(model_path).endswith(
                     ".tar.xz"
                 ):
-                    neuralNetwork.setNNArchive(modelArhive)
+                    neuralNetwork.setNNArchive(modelArchive)
                 elif str(model_path).endswith(".blob"):
                     neuralNetwork.setBlobPath(modelPath)
                 neuralNetwork.setNumInferenceThreads(num_threads)

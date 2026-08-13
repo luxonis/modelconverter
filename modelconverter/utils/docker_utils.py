@@ -243,7 +243,7 @@ def docker_build(
 
     tag_version = rvc4_tag_version(version) if platform == "rvc4" else version
     if platform == "rvc4" and bare_tag != "dev":
-        build_dir = prepare_build_environemnt(platform, version)
+        build_dir = prepare_build_environment(platform, version)
     else:
         build_dir = Path()
 
@@ -278,7 +278,7 @@ def docker_build(
     return image
 
 
-def prepare_build_environemnt(
+def prepare_build_environment(
     platform: Literal["rvc2", "rvc3", "rvc4", "hailo"], version: str
 ) -> Path:
     if platform != "rvc4":

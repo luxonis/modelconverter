@@ -181,7 +181,7 @@ def test_from_dtype_unsupported(name: str):
 @pytest.mark.parametrize("name", STRING_CONVERTERS)
 @given(spelling=st.text(max_size=12))
 def test_unknown_spellings_are_rejected(name: str, spelling: str):
-    """Any spelling outside the table raises, rather than mis-mapping.
+    """Any spelling outside the table raises, rather than mismapping.
 
     The vendor tables are keyed by exact strings, so a near-miss such as
     ``"fp32"`` for ``"FP32"`` must be an error and never silently fall

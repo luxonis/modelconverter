@@ -147,7 +147,7 @@ def convert(
     main_stage: str | None
         Name of the stage with the main model.
         Only needed for multistage configs and when converting to NN Archive.
-        When converting fron NN Archive, the stage names are named the
+        When converting from NN Archive, the stage names are named the
         same as the model files without the suffix.
     archive_preprocess: bool
         Add the pre-processing to the NN archive instead of the model.

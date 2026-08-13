@@ -520,7 +520,7 @@ class ONNXModifier:
                     inputs=[
                         first_input,
                         gs.Constant(
-                            name=f"{node.name}_{second_input.name}/Subtitute",
+                            name=f"{node.name}_{second_input.name}/Substitute",
                             values=np.array(
                                 new_cost_val, dtype=second_input.dtype
                             ),
@@ -542,7 +542,7 @@ class ONNXModifier:
                     inputs=[
                         first_input,
                         gs.Constant(
-                            name=f"{node.name}_{second_input.name}/Subtitute",
+                            name=f"{node.name}_{second_input.name}/Substitute",
                             values=np.array(
                                 new_cost_val, dtype=second_input.dtype
                             ),
