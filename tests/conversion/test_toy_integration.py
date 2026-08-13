@@ -113,6 +113,10 @@ PRECISIONS: dict[str, list[Precision]] = {
         # the CPU reference backend (all CI has) cannot run, so it stays
         # conversion-only. int8 folds preprocessing into quantization and runs
         # on CPU, hence the correctness check on those.
+        Precision(
+            "int16",
+            ("rvc4.quantization_mode", "INT16_STANDARD"),
+        ),
         Precision("fp16", ("rvc4.quantization_mode", "FP16_STANDARD")),
     ],
     "hailo": [
