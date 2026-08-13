@@ -6,4 +6,5 @@ hypothesis~=6.163
 hubai-sdk~=0.3
 depthai>=3.8.0,<4
 # Lets the tests emit tiny .tflite fixtures directly (no TensorFlow needed).
-flatbuffers
+flatbuffers~=25.12
+tflite2onnx~=0.1
