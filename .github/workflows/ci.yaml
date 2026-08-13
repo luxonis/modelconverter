@@ -75,10 +75,40 @@ env:
   LUXONIS_TELEMETRY_ENABLED: "false"
 
 jobs:
-  # Gates the test jobs: a docstring that pydoctor cannot render is a cheap
-  # failure to find, and finding it here keeps it out of a test log.
+  # `pre-commit` and `docs` gate every test job below. Lint, formatting and a
+  # docstring pydoctor cannot render are all cheap failures to find, and
+  # finding them here keeps them out of a test log -- and off a self-hosted
+  # runner with a device attached.
+  pre-commit:
+    name: Pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install prek
+        run: python -m pip install 'prek~=0.4.13'
+
+      - name: Run hooks
+        run: prek run --all-files --show-diff-on-failure --color=always
+        env:
+          # CI can run from a checked-out protected branch via `workflow_call`.
+          # Keep the hook for local commits, but skip it for a full lint run.
+          SKIP: no-commit-to-branch
+
   docs:
     name: Build docs
+    needs: pre-commit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
