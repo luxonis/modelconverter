@@ -15,7 +15,7 @@ from typing_extensions import Self
 
 
 class SubprocessResult(subprocess.CompletedProcess):
-    """Extension of `subprocess.CompletedProcess` that also carries peak
+    """Extension of ``subprocess.CompletedProcess`` that also carries peak
     memory usage.
 
     Attributes:
@@ -81,7 +81,7 @@ class SubprocessHandle:
             silent: If ``True``, suppress all output from the command.
             timeout: If given, the maximum time in seconds to allow the
                 process to run. If the timeout is exceeded, the process
-                is terminated and `subprocess.TimeoutExpired` is raised.
+                is terminated and ``subprocess.TimeoutExpired`` is raised.
 
         """
         if isinstance(cmd, str):
@@ -300,7 +300,7 @@ def subprocess_run(
         silent: If ``True``, suppress all output from the command.
         timeout: If given, the maximum time in seconds to allow the
             process to run. If the timeout is exceeded, the process is
-            terminated and `subprocess.TimeoutExpired` is raised.
+            terminated and ``subprocess.TimeoutExpired`` is raised.
 
     Returns:
         Result of the command.

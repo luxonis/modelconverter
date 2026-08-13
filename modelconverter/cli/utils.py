@@ -124,7 +124,7 @@ def get_configs(
         opts: Optional CLI overrides of the config file.
 
     Returns:
-        Tuple of the parsed modelconverter `Config`, `NNArchiveConfig`
+        Tuple of the parsed modelconverter `Config`, ``NNArchiveConfig``
         and the main stage key.
 
     """

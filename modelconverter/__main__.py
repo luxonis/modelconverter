@@ -839,7 +839,7 @@ def _refuse_while_in_use(console: Console, root: Path) -> bool:
 def _confirm(question: str) -> bool:
     """Ask ``question``, treating anything but an answer as a decline.
 
-    Piped or closed stdin (a CI step, `</dev/null`) makes ``input()``
+    Piped or closed stdin (a CI step, ``</dev/null``) makes ``input()``
     raise ``EOFError``, and Ctrl-C at the prompt raises
     ``KeyboardInterrupt``. A destructive command must not abort with a
     traceback on either, nor read silence for consent nobody gave.
@@ -915,59 +915,41 @@ def launcher(
             json_list=False,
         ),
     ],
-    dev: Annotated[
-        bool,
-        Parameter(
-            group=docker_parameters,
-            help="If ``True``, builds a new image and uses the development docker-compose file.",
-        ),
-    ] = False,
-    gpu: Annotated[
-        bool,
-        Parameter(
-            group=docker_parameters,
-            help="If ``True``, uses the GPU version of the docker-compose file. ",
-        ),
-    ] = True,
+    dev: Annotated[bool, Parameter(group=docker_parameters)] = False,
+    gpu: Annotated[bool, Parameter(group=docker_parameters)] = True,
     tool_version: Annotated[
-        str | None,
-        Parameter(
-            group=docker_parameters,
-            help="Version of the underlying conversion tools to use. "
-            "Available options differ based on the target platform. ",
-        ),
+        str | None, Parameter(group=docker_parameters)
     ] = None,
     image: Annotated[
         str | None,
-        Parameter(
-            ["image", "docker-image"],
-            group=docker_parameters,
-            help="Full name of the docker image to use. "
-            "If the name includes a tag (e.g. ':latest'), "
-            "it will be used as is and the `--tool-version` "
-            "argument will be ignored.",
-        ),
+        Parameter(["image", "docker-image"], group=docker_parameters),
     ] = None,
-    memory: Annotated[
-        str | None,
-        Parameter(
-            group=docker_parameters,
-            help="Amount of memory to allocate to the docker container, "
-            "as a number with an optional binary unit: '4g' for four "
-            "gibibytes, '512m', '2GiB', or a bare count of bytes. "
-            "By default, uses all available system memory.",
-        ),
-    ] = None,
-    cpus: Annotated[
-        float | None,
-        Parameter(
-            group=docker_parameters,
-            help="Number of CPU cores to allocate to the docker container. "
-            "Can be a fractional number, e.g. '0.5' for half a core. "
-            "By default, uses all available CPU cores.",
-        ),
-    ] = None,
+    memory: Annotated[str | None, Parameter(group=docker_parameters)] = None,
+    cpus: Annotated[float | None, Parameter(group=docker_parameters)] = None,
 ):
+    """Run a command, in a docker container unless already inside one.
+
+    Args:
+        *tokens: The command and its arguments, parsed by the wrapped
+            app.
+        dev: If ``True``, builds a new image and uses the development
+            docker-compose file.
+        gpu: If ``True``, uses the GPU version of the docker-compose
+            file.
+        tool_version: Version of the underlying conversion tools to use.
+            Available options differ based on the target platform.
+        image: Full name of the docker image to use. If the name
+            includes a tag (e.g. ``:latest``), it will be used as is and
+            the ``--tool-version`` argument will be ignored.
+        memory: Amount of memory to allocate to the docker container, as
+            a number with an optional binary unit: ``4g`` for four
+            gibibytes, ``512m``, ``2GiB``, or a bare count of bytes. By
+            default, uses all available system memory.
+        cpus: Number of CPU cores to allocate to the docker container.
+            Can be a fractional number, e.g. ``0.5`` for half a core. By
+            default, uses all available CPU cores.
+
+    """
     command, bound, _ = app.parse_args(tokens)
     target = bound.arguments.get("target")
     is_convert_command = getattr(command, "__name__", "") == "convert"

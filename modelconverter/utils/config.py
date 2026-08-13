@@ -125,9 +125,9 @@ class OutputConfig(BaseModelExtraForbid):
 
 
 class EncodingConfig(BaseModelExtraForbid):
-    from_: Annotated[
-        Encoding, Field(alias="from", serialization_alias="from")
-    ] = Encoding.RGB
+    from_: Encoding = Field(
+        default=Encoding.RGB, alias="from", serialization_alias="from"
+    )
     to: Encoding = Encoding.BGR
 
 
