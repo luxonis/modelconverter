@@ -224,17 +224,20 @@ class EncodingConfig(BaseModelExtraForbid):
 
 
 class InputConfig(OutputConfig):
-    """Description of a single input of the model.
+    r"""Description of a single input of the model.
 
     Extends `OutputConfig` with the pre-processing and calibration
     settings of the input.
 
     Attributes:
         calibration: Source of the calibration data for this input.
-        scale_values: Per-channel scale values. Can be given as a single
-            number, a list, or the name of a preset such as
+        scale_values: Per-channel :math:`\mathrm{scale}` divisors of
+            the normalization :math:`y_c = (x_c - \mathrm{mean}_c)
+            \cdot \frac{1}{\mathrm{scale}_c}`. Can be given as a
+            single number, a list, or the name of a preset such as
             ``"imagenet"``.
-        mean_values: Per-channel mean values, with the same options as
+        mean_values: Per-channel :math:`\mathrm{mean}` subtrahends of
+            the same normalization, with the same options as
             ``scale_values``.
         frozen_value: List of constant values the input is frozen to.
             Used only by the OpenVINO-based conversions (RVC2 and
@@ -748,6 +751,9 @@ class SingleStageConfig(BaseModelExtraForbid):
     ) -> dict[str, Any]:
         """Translate the deprecated ``disable_onnx_simplification``.
 
+        .. deprecated:: 0.5.6
+            Use ``onnx_simplification: false`` instead.
+
         Args:
             data: Raw stage configuration.
 
@@ -825,6 +831,9 @@ class SingleStageConfig(BaseModelExtraForbid):
         cls, data: dict[str, Any]
     ) -> dict[str, Any]:
         """Translate the deprecated ``disable_onnx_optimizations``.
+
+        .. deprecated:: 0.5.6
+            Use ``onnx_optimizations: false`` instead.
 
         Args:
             data: Raw stage configuration.
@@ -1023,7 +1032,20 @@ class Config(LuxonisConfig):
 
     A single-stage configuration is accepted as well: the stage fields
     can be given at the top level and are wrapped into a single stage
-    during validation.
+    during validation, so the shorthand
+
+    .. code-block:: yaml
+
+        input_model: models/yolov6n.onnx
+        encoding:
+          from: RGB
+          to: BGR
+        calibration:
+          path: models/coco128
+
+    is equivalent to the same fields nested under a single entry of
+    ``stages``. See ``configs/defaults.yaml`` for every field with its
+    default.
 
     Attributes:
         stages: Configurations of the individual stages, keyed by stage

@@ -584,6 +584,12 @@ def bucket_count(value: int | None) -> str | None:
         One of ``"0"``, ``"1"``, ``"2_4"`` or ``"5_plus"``, or ``None``
         if ``value`` is ``None``.
 
+    Example:
+        >>> [bucket_count(n) for n in (0, 1, 3, 9)]
+        ['0', '1', '2_4', '5_plus']
+        >>> bucket_count(None) is None
+        True
+
     """
     if value is None:
         return None
@@ -606,6 +612,12 @@ def bucket_memory_bytes(value: int | None) -> str | None:
     Returns:
         One of ``"under_512m"``, ``"512m_1g"``, ``"1g_4g"`` or
         ``"above_4g"``, or ``None`` if ``value`` is ``None``.
+
+    Example:
+        >>> bucket_memory_bytes(256 * 1024**2)
+        'under_512m'
+        >>> bucket_memory_bytes(2 * 1024**3)
+        '1g_4g'
 
     """
     if value is None:

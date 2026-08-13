@@ -29,6 +29,14 @@ def sanitize_net_name(name: str, with_suffix: bool = False) -> str:
     Returns:
         The sanitized name or path.
 
+    Example:
+        >>> sanitize_net_name("my model!.onnx")
+        'my_model_onnx'
+        >>> sanitize_net_name("my model!.onnx", with_suffix=True)
+        'my_model_.onnx'
+        >>> sanitize_net_name("a/b/my model!.onnx")
+        'a/b/my_model_onnx'
+
     """
     p = Path(name)
     base, stem, suffix = p.name, p.stem, p.suffix
@@ -74,6 +82,12 @@ def human_size(num: float) -> str:
     Returns:
         The size with one decimal place and a binary unit, such as
         ``"1.5 GiB"``.
+
+    Example:
+        >>> human_size(1536)
+        '1.5 KiB'
+        >>> human_size(5 * 1024**3)
+        '5.0 GiB'
 
     """
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
@@ -125,6 +139,14 @@ def parse_size(value: str | int) -> int:
 
     Raises:
         ValueError: If ``value`` is not a size.
+
+    Example:
+        >>> parse_size("50GiB") == parse_size("50GB") == parse_size("50G")
+        True
+        >>> parse_size("512m")
+        536870912
+        >>> parse_size(1024)
+        1024
 
     """
     if isinstance(value, int):

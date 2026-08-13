@@ -126,6 +126,12 @@ def rvc4_tag_version(version: str) -> str:
     Returns:
         The version without its build component, e.g. ``2.41.0``.
 
+    Example:
+        >>> rvc4_tag_version("2.41.0.251128")
+        '2.41.0'
+        >>> rvc4_tag_version("2.41.0")
+        '2.41.0'
+
     """
     parts = version.split(".")
     if len(parts) <= 3:
@@ -714,6 +720,11 @@ def docker_exec(
     temporary Compose file for it and runs the command with
     ``docker compose run``. The arguments are handed to the container's
     entrypoint as ``argv`` and never re-evaluated by a shell.
+
+    .. note::
+        This never returns. The host process exits with the container's
+        return code, so anything the caller means to do afterwards has
+        to happen before the call.
 
     Args:
         target: Target platform whose image the command runs in.

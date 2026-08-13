@@ -368,6 +368,12 @@ class DataType(Enum):
             ``True`` if `as_dai_dtype` can convert this data type,
             ``False`` otherwise.
 
+        Example:
+            >>> DataType.FLOAT32.supports_dai_dtype()
+            True
+            >>> DataType.STRING.supports_dai_dtype()
+            False
+
         """
         return self.value in {
             "float16",
@@ -391,6 +397,14 @@ class DataType(Enum):
 
         Returns:
             The matching ``numpy`` scalar type.
+
+        Example:
+            >>> DataType.FLOAT32.as_numpy_dtype()
+            <class 'numpy.float32'>
+            >>> DataType.BFLOAT16.as_numpy_dtype()
+            <class 'numpy.float32'>
+            >>> DataType.INT4.as_numpy_dtype()
+            <class 'numpy.int8'>
 
         """
         return self._transform(
@@ -467,6 +481,14 @@ class DataType(Enum):
 
         Returns:
             The data type name to store in an NN Archive.
+
+        Example:
+            >>> DataType.UFXP8.as_nn_archive_dtype()
+            'uint8'
+            >>> DataType.FXP8.as_nn_archive_dtype()
+            'int8'
+            >>> DataType.FLOAT32.as_nn_archive_dtype()
+            'float32'
 
         """
         if self.value.startswith("ufxp"):
@@ -558,6 +580,12 @@ class InputFileType(Enum):
 
         Raises:
             ValueError: If the suffix belongs to no known format.
+
+        Example:
+            >>> InputFileType.from_path("models/yolov6n.onnx")
+            <InputFileType.ONNX: 'ONNX'>
+            >>> InputFileType.from_path("m.tflite")
+            <InputFileType.TFLITE: 'TFLITE'>
 
         """
         path = Path(path)

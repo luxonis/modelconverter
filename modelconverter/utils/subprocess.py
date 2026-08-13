@@ -162,6 +162,12 @@ class SubprocessHandle:
     def __bool__(self) -> bool:
         """Return whether the process is still running.
 
+        .. warning::
+            Truth-testing the handle is not side-effect free: once the
+            configured timeout is exceeded it terminates the process
+            and raises, so a ``while handle:`` loop is what enforces
+            the timeout.
+
         Raises:
             subprocess.TimeoutExpired: If the configured timeout has
                 been exceeded. The process is terminated first.
@@ -394,13 +400,17 @@ def subprocess_run(
 
 
 def strip_ansi(s: str) -> str:
-    """Remove ANSI escape sequences from a string.
+    r"""Remove ANSI escape sequences from a string.
 
     Args:
         s: String to strip.
 
     Returns:
         The string without ANSI escape sequences.
+
+    Example:
+        >>> strip_ansi("\x1b[31mred\x1b[0m")
+        'red'
 
     """
     return re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])").sub("", s)

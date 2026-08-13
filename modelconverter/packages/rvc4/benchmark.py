@@ -342,11 +342,14 @@ class RVC4Benchmark(Benchmark):
         Whatever the SNPE backend put on the device is removed again
         afterwards.
 
+        .. warning::
+            ``configuration`` is modified **in place**: the keys the
+            chosen backend does not take are removed from it, and
+            ``device_ip`` is filled in with the address the device was
+            found at.
+
         Args:
-            configuration: Options for this run. The keys the chosen
-                backend does not take are removed from it, and
-                ``device_ip`` is filled in with the address the device
-                was found at.
+            configuration: Options for this run.
 
         Returns:
             The measured ``fps`` and ``latency``, together with the
@@ -827,6 +830,10 @@ def device_id_to_adb_id(device_id: str) -> str:
         The hexadecimal form of the ID if it is a number, otherwise the
         hex encoding of its ASCII bytes.
 
+    Example:
+        >>> device_id_to_adb_id("1844301")
+        '1c244d'
+
     """
     if device_id.isdigit():
         return format(int(device_id), "x")
@@ -842,6 +849,10 @@ def adb_id_to_device_id(adb_id: str) -> str:
     Returns:
         The decimal form of the serial if it reads as a hexadecimal
         number, otherwise the ASCII text its bytes spell out.
+
+    Example:
+        >>> adb_id_to_device_id(device_id_to_adb_id("1844301"))
+        '1844301'
 
     """
     try:
