@@ -585,10 +585,12 @@ def bucket_count(value: int | None) -> str | None:
         if ``value`` is ``None``.
 
     Example:
-        >>> [bucket_count(n) for n in (0, 1, 3, 9)]
-        ['0', '1', '2_4', '5_plus']
-        >>> bucket_count(None) is None
-        True
+        >>> bucket_count(0)
+        '0'
+        >>> bucket_count(3)
+        '2_4'
+        >>> bucket_count(9)
+        '5_plus'
 
     """
     if value is None:

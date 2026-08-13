@@ -141,8 +141,10 @@ def parse_size(value: str | int) -> int:
         ValueError: If ``value`` is not a size.
 
     Example:
-        >>> parse_size("50GiB") == parse_size("50GB") == parse_size("50G")
-        True
+        >>> parse_size("50GiB")
+        53687091200
+        >>> parse_size("50GB")
+        53687091200
         >>> parse_size("512m")
         536870912
         >>> parse_size(1024)

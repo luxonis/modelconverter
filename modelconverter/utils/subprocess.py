@@ -163,10 +163,8 @@ class SubprocessHandle:
         """Return whether the process is still running.
 
         .. warning::
-            Truth-testing the handle is not side-effect free: once the
-            configured timeout is exceeded it terminates the process
-            and raises, so a ``while handle:`` loop is what enforces
-            the timeout.
+            Truth-testing the handle is not side-effect free: a
+            ``while handle:`` loop is what enforces the timeout.
 
         Raises:
             subprocess.TimeoutExpired: If the configured timeout has

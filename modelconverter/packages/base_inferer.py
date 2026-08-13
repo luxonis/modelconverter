@@ -72,14 +72,13 @@ class Inferer(ABC):
     def __post_init__(self):
         """Prepare the output directory and set up the runtime.
 
-        .. warning::
-            An existing destination directory is **deleted** before the
-            run. That only happens when it is empty or holds the
-            results of an earlier inference run -- recognized by a
-            marker file the recreated directory is tagged with -- so a
-            directory holding anything else is refused instead.
-
+        The recreated directory is tagged with a marker file, which is
+        how a later run recognizes the results as its own.
         `Inferer.setup` is called last.
+
+        .. warning::
+            An existing destination directory is deleted before the
+            run.
 
         Raises:
             ModelconverterException: If the destination exists but is

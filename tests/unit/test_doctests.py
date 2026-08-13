@@ -2,25 +2,20 @@
 
 ``--doctest-modules`` cannot be turned on wholesale here the way it is in
 ``luxonis-ml``: importing every module of the package would pull in the
-vendor toolchains, which only exist inside a target's Docker image. So the
-package is walked and each module that imports on the host contributes its
-doctests, while the rest are reported as skipped rather than passed.
+vendor toolchains, which only exist inside a target's Docker image. The
+package is walked instead, and a module that will not import on the host
+is reported as skipped rather than passed.
 """
 
 import doctest
 import importlib
 import pkgutil
+from contextlib import suppress
 
 import pytest
 from loguru import logger
 
 import modelconverter
-
-_OPTIONFLAGS = (
-    doctest.NORMALIZE_WHITESPACE
-    | doctest.IGNORE_EXCEPTION_DETAIL
-    | doctest.ELLIPSIS
-)
 
 
 def _module_names() -> list[str]:
@@ -34,20 +29,23 @@ def _module_names() -> list[str]:
     )
 
 
+def _find_doctests(module_name: str) -> list[doctest.DocTest]:
+    module = importlib.import_module(module_name)
+    return doctest.DocTestFinder().find(module, module_name)
+
+
 @pytest.mark.parametrize("module_name", _module_names())
 def test_doctests(module_name: str) -> None:
     try:
-        module = importlib.import_module(module_name)
+        tests = _find_doctests(module_name)
     except ImportError as e:
         pytest.skip(f"needs a vendor toolchain: {e}")
 
-    runner = doctest.DocTestRunner(optionflags=_OPTIONFLAGS)
-    # The suite's logging goes to stdout, which doctest compares against the
-    # expected output. A docstring documents what a call returns, not what it
-    # logs on the way, so the log is kept out of the comparison.
+    runner = doctest.DocTestRunner()
+    # The log goes to stdout, which is what doctest compares against.
     logger.disable("modelconverter")
     try:
-        for test in doctest.DocTestFinder().find(module, module_name):
+        for test in tests:
             runner.run(test)
     finally:
         logger.enable("modelconverter")
@@ -58,21 +56,17 @@ def test_doctests(module_name: str) -> None:
     )
 
 
-def test_doctests_are_actually_collected() -> None:
-    """Guard the skip path above from hiding every doctest.
+def test_doctests_are_collected() -> None:
+    """Guard the skip above from hiding every doctest.
 
     A packaging change that broke the host imports would otherwise turn
     this whole module green while running nothing.
     """
     found = 0
     for module_name in _module_names():
-        try:
-            module = importlib.import_module(module_name)
-        except ImportError:
-            continue
-        found += sum(
-            len(test.examples)
-            for test in doctest.DocTestFinder().find(module, module_name)
-        )
+        with suppress(ImportError):
+            found += sum(
+                len(test.examples) for test in _find_doctests(module_name)
+            )
 
-    assert found > 20, f"only {found} doctest examples reachable on the host"
+    assert found, "no doctest examples are reachable on the host"

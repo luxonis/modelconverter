@@ -722,9 +722,8 @@ def docker_exec(
     entrypoint as ``argv`` and never re-evaluated by a shell.
 
     .. note::
-        This never returns. The host process exits with the container's
-        return code, so anything the caller means to do afterwards has
-        to happen before the call.
+        This never returns: the host process exits with the container's
+        return code.
 
     Args:
         target: Target platform whose image the command runs in.

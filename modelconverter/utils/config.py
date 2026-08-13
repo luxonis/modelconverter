@@ -224,21 +224,21 @@ class EncodingConfig(BaseModelExtraForbid):
 
 
 class InputConfig(OutputConfig):
-    r"""Description of a single input of the model.
+    """Description of a single input of the model.
 
     Extends `OutputConfig` with the pre-processing and calibration
-    settings of the input.
+    settings of the input. ``mean_values`` and ``scale_values`` are the
+    normalization `onnx_attach_normalization_to_inputs` bakes into the
+    graph.
 
     Attributes:
         calibration: Source of the calibration data for this input.
-        scale_values: Per-channel :math:`\mathrm{scale}` divisors of
-            the normalization :math:`y_c = (x_c - \mathrm{mean}_c)
-            \cdot \frac{1}{\mathrm{scale}_c}`. Can be given as a
+        scale_values: Per-channel values the input is divided by, after
+            ``mean_values`` has been subtracted. Can be given as a
             single number, a list, or the name of a preset such as
             ``"imagenet"``.
-        mean_values: Per-channel :math:`\mathrm{mean}` subtrahends of
-            the same normalization, with the same options as
-            ``scale_values``.
+        mean_values: Per-channel values subtracted from the input, with
+            the same options as ``scale_values``.
         frozen_value: List of constant values the input is frozen to.
             Used only by the OpenVINO-based conversions (RVC2 and
             RVC3), which pass it on to the model optimizer.

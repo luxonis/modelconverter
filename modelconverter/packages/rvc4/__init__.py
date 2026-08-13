@@ -9,8 +9,7 @@ classes in this package are picked by target through the getters in
 `modelconverter.packages`.
 
 .. note::
-    The SNPE tools these modules call live in the RVC4 Docker image and
-    not on the host, so they can only be run inside that image.
-    Benchmarking and analysis additionally need a real RVC4 device,
-    reachable over ADB or SSH.
+    The SNPE tools these modules call live inside the RVC4 Docker
+    image, not on the host. Benchmarking and analysis additionally
+    need a real RVC4 device, reachable over ADB or SSH.
 """

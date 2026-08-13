@@ -7,7 +7,6 @@ name. It accepts the same inputs as RVC2: an ONNX model, an OpenVINO
 IR pair, or a TFLite model, which is converted to ONNX first.
 
 .. note::
-    The modules here import the OpenVINO toolchain, which is installed
-    in the RVC3 Docker image and not on the host, so they can only be
-    imported inside that image.
+    As with RVC2, the OpenVINO toolchain exists only inside the RVC3
+    Docker image, so these modules do not import on the host.
 """

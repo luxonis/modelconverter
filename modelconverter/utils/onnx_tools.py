@@ -72,14 +72,14 @@ def onnx_attach_normalization_to_inputs(
         y_c = (x_c - \mathrm{mean}_c) \cdot \frac{1}{\mathrm{scale}_c}
 
     for every channel :math:`c`. The resulting model is saved and
-    validated with the ONNX checker. Inputs whose layout is neither ``"NCHW"`` nor ``"NHWC"``,
-    and inputs with a known channel count other than 3, are skipped with
-    a warning.
+    validated with the ONNX checker. Inputs whose layout is neither
+    ``"NCHW"`` nor ``"NHWC"``, and inputs with a known channel count
+    other than 3, are skipped with a warning.
 
     .. warning::
         The mean and scale values of an input whose channels are
-        reversed are reversed **in place**, so the `InputConfig`
-        objects the caller passed in are modified.
+        reversed are reversed in place, so the `InputConfig` objects
+        the caller passed in are modified.
 
     Args:
         model_path: Path to the source ONNX model.

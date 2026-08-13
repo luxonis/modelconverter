@@ -343,8 +343,8 @@ class RVC4Benchmark(Benchmark):
         afterwards.
 
         .. warning::
-            ``configuration`` is modified **in place**: the keys the
-            chosen backend does not take are removed from it, and
+            ``configuration`` is modified in place: the keys the chosen
+            backend does not take are removed from it, and
             ``device_ip`` is filled in with the address the device was
             found at.
 
@@ -851,7 +851,7 @@ def adb_id_to_device_id(adb_id: str) -> str:
         number, otherwise the ASCII text its bytes spell out.
 
     Example:
-        >>> adb_id_to_device_id(device_id_to_adb_id("1844301"))
+        >>> adb_id_to_device_id("1c244d")
         '1844301'
 
     """
