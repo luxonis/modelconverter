@@ -65,8 +65,9 @@ def process_nn_archive(
 
     Args:
         target: Conversion target the config is built for.
-        path: Path to the archive.
-        overrides: Config overrides.
+        path: Path to the ``.tar.xz`` archive to unpack.
+        overrides: CLI overrides applied on top of the archive's own
+            configuration.
 
     Returns:
         Tuple of the parsed `Config`, ``NNArchiveConfig`` and the main

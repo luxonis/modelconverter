@@ -38,7 +38,7 @@ def get_opset_version(model: onnx.ModelProto) -> int:
     """Return the default domain opset version of an ONNX model.
 
     Args:
-        model: Model to inspect.
+        model: Model whose ``opset_import`` is searched.
 
     Returns:
         Opset version declared for the default (empty) domain.
@@ -446,7 +446,7 @@ class ONNXModifier:
         """Extract constant tensors from the GraphSurgeon graph.
 
         Args:
-            graph: GraphSurgeon graph.
+            graph: Graph whose ``gs.Constant`` tensors are collected.
 
         Returns:
             Constant tensor map with tensor name as key and tensor value
@@ -466,7 +466,7 @@ class ONNXModifier:
         """Return the constant value of a node if it is a constant node.
 
         Args:
-            node: Node to check.
+            node: Node whose inputs are searched for a constant.
             constant_map: Constant tensor map with tensor name as key
                 and tensor value as value.
 
@@ -486,7 +486,7 @@ class ONNXModifier:
         """Return the variable input of a node.
 
         Args:
-            node: Node to check.
+            node: Node whose inputs are searched for a variable.
 
         Returns:
             Variable input and index, or ``None`` if the node has no
@@ -1289,7 +1289,7 @@ class ONNXModifier:
         reverted to its previous state.
 
         Args:
-            step_name: Name of the optimization step.
+            step_name: Name of the step, used in the debug log.
             optimization_func: Optimization function to apply.
 
         """

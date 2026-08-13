@@ -341,7 +341,8 @@ class RVC4Exporter(Exporter):
         internal tensors are written out unchanged.
 
         Args:
-            encodings: Encodings to write out.
+            encodings: Encodings as resolved from the configuration,
+                before the exposed tensors are normalized.
 
         Returns:
             Path to the written ``encodings.json``.

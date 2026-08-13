@@ -216,9 +216,12 @@ def build_command_properties(
         gpu_enabled: Whether GPU access was requested.
         target_tool_version: Resolved tool version of the target, or
             ``None`` if it is determined by a custom image tag.
-        custom_image_provided: Whether a custom Docker image was given.
-        memory_limit_set: Whether a memory limit was given.
-        cpu_limit_set: Whether a CPU limit was given.
+        custom_image_provided: Whether a custom Docker image was
+            given. The image name itself is never reported.
+        memory_limit_set: Whether a memory limit was given. The limit
+            itself is never reported.
+        cpu_limit_set: Whether a CPU limit was given. The limit itself
+            is never reported.
         result: Outcome of the command.
         duration_ms: Wall-clock duration of the command in
             milliseconds.
@@ -388,9 +391,10 @@ def build_conversion_result_properties(
             were uploaded to a remote location.
         failure_reason: Reason the conversion failed, or ``None`` if it
             did not fail.
-        output_artifact_count: Number of produced output artifacts,
-            reported as a bucket.
-        peak_ram_bytes: Peak RAM usage in bytes, reported as a bucket.
+        output_artifact_count: Number of produced output artifacts.
+            Bucketed by `bucket_count` before it is reported.
+        peak_ram_bytes: Peak RAM usage in bytes. Bucketed by
+            `bucket_memory_bytes` before it is reported.
 
     Returns:
         Event properties, with the ``None`` values dropped.
@@ -573,7 +577,8 @@ def bucket_count(value: int | None) -> str | None:
     """Reduce a count to a coarse bucket label.
 
     Args:
-        value: Count to bucket.
+        value: Count to report. Bucketing keeps a telemetry event from
+            carrying the exact shape of the converted model.
 
     Returns:
         One of ``"0"``, ``"1"``, ``"2_4"`` or ``"5_plus"``, or ``None``
@@ -595,7 +600,8 @@ def bucket_memory_bytes(value: int | None) -> str | None:
     """Reduce a memory size in bytes to a coarse bucket label.
 
     Args:
-        value: Memory size in bytes.
+        value: Memory size in bytes, as `peak_ram_usage_bytes` measures
+            it.
 
     Returns:
         One of ``"under_512m"``, ``"512m_1g"``, ``"1g_4g"`` or

@@ -59,9 +59,9 @@ def guess_new_layout(
     values are the same, the order of their labels will be preserved.
 
     Args:
-        old_layout: Old layout.
-        old_shape: Old shape.
-        new_shape: New shape to guess the layout of.
+        old_layout: Layout that describes ``old_shape``.
+        old_shape: Shape the layout is known for.
+        new_shape: Reordering of ``old_shape`` to label.
 
     Returns:
         Lettercode representation of the new layout.
