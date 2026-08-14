@@ -722,12 +722,21 @@ def _as_shape(value: ParamValue, name: str) -> list[int]:
     return dims
 
 
-def _extract_bin_xml_from_ir(ir_path: PathType) -> tuple[Path, Path]:
+def _extract_bin_xml_from_ir(ir_path: ParamValue | Path) -> tuple[Path, Path]:
     """Extracts the corresponding second path from a single IR path.
 
     We assume that the base filename matches between the .bin and .xml
     file. Otherwise, an error will be thrown.
+
+    @type ir_path: ParamValue | Path
+    @param ir_path: The path of either the C{.bin} or the C{.xml} file.
+        It arrives unvalidated, straight out of the configuration, so it
+        is only a path once the check below has run.
+    @rtype: tuple[Path, Path]
+    @return: The C{.bin} path and the C{.xml} path.
     """
+    if not isinstance(ir_path, PathType):
+        raise TypeError("`input_path` must be str or Path.")
     path = Path(ir_path)
 
     if path.suffix == ".bin":
