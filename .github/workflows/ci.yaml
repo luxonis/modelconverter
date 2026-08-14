@@ -75,11 +75,6 @@ env:
   LUXONIS_TELEMETRY_ENABLED: "false"
 
 jobs:
-  # Guards the test jobs: a type error is cheaper to find here than after a
-  # platform image has built and run. The conversion code imports vendor
-  # packages that live only in those images, so pyright cannot resolve a single
-  # one of them from `.[dev]` alone. They are installed with `--no-deps`,
-  # because their pins target the images and would otherwise downgrade NumPy.
   typecheck:
     name: Type check
     runs-on: ubuntu-latest
@@ -103,10 +98,6 @@ jobs:
       - name: Install package
         run: pip install -e .[dev]
 
-      # Every run but a release PR builds against luxonis-ml `main`, so a
-      # breaking change upstream surfaces here before it is published. A
-      # release PR must validate against the published package instead,
-      # because that is what users will install.
       - name: Install LuxonisML from main
         if: ${{ inputs.ml_ref || !startsWith(github.head_ref, 'release/') }}
         env:
@@ -123,8 +114,6 @@ jobs:
           credentials_json: ${{ secrets.GCP_CREDENTIALS }}
           token_format: access_token
 
-      # The Hailo Dataflow Compiler is not on PyPI. Its wheel sits next to the
-      # platform image archives in the build-artifacts bucket.
       - name: Install platform dependencies
         run: |
           gcloud storage cp "${GS_BUILD_ARTIFACTS}/${HAILO_WHEEL}" .
@@ -132,12 +121,9 @@ jobs:
             -r requirements-typecheck.txt \
             "./${HAILO_WHEEL}"
 
-      # `version: PATH` runs the pyright that `.[dev]` pins, so CI and a local
-      # run agree. The action adds the findings to the pull request diff.
       - name: Run pyright
         uses: jakebailey/pyright-action@8ec14b5cfe41f26e5f41686a31eb6012758217ef
         with:
-          version: PATH
           warnings: true
 
   unit:
@@ -161,7 +147,6 @@ jobs:
       - name: Install package
         run: pip install -e .[dev]
 
-      # Same policy as the `typecheck` job above.
       - name: Install LuxonisML from main
         if: ${{ inputs.ml_ref || !startsWith(github.head_ref, 'release/') }}
         env:
@@ -186,7 +171,7 @@ jobs:
             --cov-report xml:coverage-unit.xml
 
       - name: Upload test results to Codecov
-        if: ${{ always() }}
+        if: ${{ always() && github.event_name == 'pull_request' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -198,9 +183,6 @@ jobs:
           disable_search: true
           handle_no_reports_found: true
 
-      # The coverage itself is uploaded by the `coverage` job, once every test
-      # job has finished. The artifact is what that job collects, and it keeps
-      # the report available for CI diagnostics.
       - name: Upload coverage artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -319,12 +301,6 @@ jobs:
 
       - name: Run integration tests
         env:
-          # Only an explicit `ml_ref` replaces luxonis-ml here. Each platform
-          # image pins the dependency set its vendor tools were built against
-          # (RVC4 holds `numpy<2`, Hailo holds `protobuf==3.20.3`), and
-          # installing luxonis-ml from git overrides those pins. The type
-          # check job is where every run validates against luxonis-ml `main`,
-          # because it needs no vendor runtime.
           ML_REF: ${{ inputs.ml_ref }}
         run: |
           if [[ -n "${ML_REF}" ]]; then
@@ -358,7 +334,7 @@ jobs:
                 --cov-report xml:output/coverage-${PACKAGE}-${VERSION}.xml"
 
       - name: Upload test results to Codecov
-        if: ${{ always() }}
+        if: ${{ always() && github.event_name == 'pull_request' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -370,9 +346,6 @@ jobs:
           disable_search: true
           handle_no_reports_found: true
 
-      # The coverage itself is uploaded by the `coverage` job, once every test
-      # job has finished. The artifact is what that job collects, and it keeps
-      # the report available for CI diagnostics.
       - name: Upload coverage artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -381,15 +354,10 @@ jobs:
           path: output/coverage-${{ matrix.package }}-${{ matrix.version }}.xml
           if-no-files-found: ignore
 
-  # Codecov evaluates the commit every time a report arrives, so uploading from
-  # the test jobs themselves makes it judge the run against whichever reports
-  # happen to have landed and report a coverage drop that is not real. The
-  # reports are collected from the artifacts and uploaded here instead, once
-  # every test job has finished.
   coverage:
     name: Upload coverage
     needs: [unit, integration]
-    if: ${{ always() && needs.unit.result == 'success' && (needs.integration.result == 'success' || needs.integration.result == 'skipped') }}
+    if: ${{ always() && github.event_name == 'pull_request' && needs.unit.result == 'success' && (needs.integration.result == 'success' || needs.integration.result == 'skipped') }}
     runs-on: ubuntu-latest
 
     permissions:
@@ -397,8 +365,6 @@ jobs:
       contents: read
 
     steps:
-      # Required by codecov-action, it builds the path-fixing file network
-      # from the checked out repository.
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
