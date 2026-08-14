@@ -159,6 +159,40 @@ class Exporter(ABC):
         """
         return self._model_name
 
+    @abstractmethod
+    def exporter_buildinfo(self) -> Params:
+        pass
+
+    @abstractmethod
+    def export(self) -> Path:
+        pass
+
+    def run(self) -> Path:
+        output_path = self.export()
+        new_output_path = self.output_dir / Path(
+            self._original_model_name
+        ).with_suffix(output_path.suffix)
+        shutil.move(
+            str(output_path),
+            new_output_path,
+        )
+        if self._inference_model_path == output_path:
+            self._inference_model_path = new_output_path
+
+        if not self._keep_intermediate_outputs:  # pragma: no cover
+            shutil.rmtree(self.intermediate_outputs_dir)
+
+        buildinfo = {
+            "cmd_info": self._cmd_info,
+            "modelconverter_version": version("modelconv"),
+            **self.exporter_buildinfo(),
+        }
+
+        with open(self.output_dir / "buildinfo.json", "w") as f:
+            json.dump(buildinfo, f, indent=4)
+
+        return new_output_path
+
     def _simplify_onnx(self) -> Path:  # pragma: no cover
         logger.info("Simplifying ONNX.")
         try:
@@ -209,40 +243,6 @@ class Exporter(ABC):
             location=f"{onnx_sim_path.name}_data",
         )
         return onnx_sim_path
-
-    @abstractmethod
-    def exporter_buildinfo(self) -> Params:
-        pass
-
-    @abstractmethod
-    def export(self) -> Path:
-        pass
-
-    def run(self) -> Path:
-        output_path = self.export()
-        new_output_path = self.output_dir / Path(
-            self._original_model_name
-        ).with_suffix(output_path.suffix)
-        shutil.move(
-            str(output_path),
-            new_output_path,
-        )
-        if self._inference_model_path == output_path:
-            self._inference_model_path = new_output_path
-
-        if not self._keep_intermediate_outputs:  # pragma: no cover
-            shutil.rmtree(self.intermediate_outputs_dir)
-
-        buildinfo = {
-            "cmd_info": self._cmd_info,
-            "modelconverter_version": version("modelconv"),
-            **self.exporter_buildinfo(),
-        }
-
-        with open(self.output_dir / "buildinfo.json", "w") as f:
-            json.dump(buildinfo, f, indent=4)
-
-        return new_output_path
 
     def _read_img_dir(self, path: Path, max_images: int) -> list[Path]:
         imgs = read_calib_dir(path)

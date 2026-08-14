@@ -25,20 +25,6 @@ ensure_onnx_helper_compatibility()
 import onnx_graphsurgeon as gs  # noqa: E402
 
 
-def _output_names(graph: gs.Graph) -> list[str]:
-    """The names of the outputs of the graph.
-
-    GraphSurgeon declares an output as the abstract C{gs.Tensor}, which
-    has no C{name}. Only the two concrete subclasses carry one, and an
-    imported graph holds nothing else.
-    """
-    names = []
-    for tensor in graph.outputs:
-        assert isinstance(tensor, gs.Variable | gs.Constant)
-        names.append(tensor.name)
-    return names
-
-
 def get_opset_version(model: onnx.ModelProto) -> int:
     for imp in model.opset_import:
         if imp.domain == "":
@@ -277,6 +263,132 @@ class ONNXModifier:
         self._load_onnx()
         self._prev_onnx_model = self._onnx_model
         self._prev_onnx_gs = self._onnx_gs
+
+    def modify_onnx(
+        self,
+        substitute_sub_with_add: bool = True,
+        substitute_div_with_mul: bool = True,
+        fuse_add_mul_to_bn: bool = True,
+        fuse_comb_add_mul_to_conv: bool = True,
+        fuse_single_add_mul_to_conv: bool = True,
+        fuse_split_concat_to_conv: bool = True,
+    ) -> bool:
+        """Modify the ONNX model by applying a series of optimizations.
+
+        @param passes: List of optimization passes to apply to the ONNX
+            model
+        @type passes: Optional[List[str]]
+        """
+        if self._has_dynamic_shape:
+            logger.warning(
+                "Identified dynamic input shape, skipping model modifications..."
+            )
+            return False
+
+        if substitute_div_with_mul:
+            self._apply_optimization_step(
+                "Substitute Div -> Mul nodes",
+                lambda: self._substitute_node_by_type(
+                    source_node="Div", target_node="Mul"
+                ),
+            )
+        if substitute_sub_with_add:
+            self._apply_optimization_step(
+                "Substitute Sub -> Add nodes",
+                lambda: self._substitute_node_by_type(
+                    source_node="Sub", target_node="Add"
+                ),
+            )
+        if fuse_add_mul_to_bn:
+            self._apply_optimization_step(
+                "Fuse Add and Mul nodes to BatchNormalization nodes",
+                self._fuse_add_mul_to_bn,
+            )
+        if fuse_comb_add_mul_to_conv:
+            self._apply_optimization_step(
+                "Fuse Add and Mul nodes to Conv nodes (combined)",
+                self._fuse_comb_add_mul_to_conv,
+            )
+        if fuse_single_add_mul_to_conv:
+            self._apply_optimization_step(
+                "Fuse Add and Mul nodes to Conv nodes (single)",
+                self._fuse_single_add_mul_to_conv,
+            )
+        if fuse_split_concat_to_conv:
+            self._apply_optimization_step(
+                "Fuse Split and Concat nodes to Conv nodes",
+                self._fuse_split_concat_to_conv,
+            )
+
+        try:
+            self._export_onnx()
+        except Exception as e:
+            logger.error(f"Failed to modify the ONNX model: {e}")
+            return False
+
+        return True
+
+    def compare_outputs(self, from_modelproto: bool = False) -> bool:
+        """Compare the outputs of two ONNX models.
+
+        @param half: Flag to use half precision for the input tensors
+        @type half: bool
+        """
+        import onnxruntime as ort
+
+        ort.set_default_logger_severity(3)
+
+        if from_modelproto:
+            onnx_model_1 = self._prev_onnx_model.SerializeToString()
+            onnx_model_2 = self._onnx_model.SerializeToString()
+        else:
+            onnx_model_1 = self.model_path.as_posix()
+            onnx_model_2 = self.output_path.as_posix()
+
+        ort_session_1 = ort.InferenceSession(onnx_model_1)
+        ort_session_2 = ort.InferenceSession(onnx_model_2)
+
+        inputs = {}
+        for input in ort_session_1.get_inputs():
+            if input.type == "tensor(float64)":
+                input_type = np.float64
+            elif input.type in {"tensor(float32)", "tensor(float)"}:
+                input_type = np.float32
+            elif input.type == "tensor(float16)":
+                input_type = np.float16
+            elif input.type == "tensor(int64)":
+                input_type = np.int64
+            elif input.type == "tensor(int32)":
+                input_type = np.int32
+            elif input.type == "tensor(int16)":
+                input_type = np.int16
+            elif input.type == "tensor(int8)":
+                input_type = np.int8
+            elif input.type == "tensor(bool)":
+                input_type = "bool"
+
+            inputs[input.name] = np.random.rand(*input.shape).astype(
+                input_type
+            )
+
+        outputs_1 = ort_session_1.run(None, inputs)
+
+        outputs_2 = ort_session_2.run(None, inputs)
+
+        equal_outputs = True
+        for out1, out2 in zip(outputs_1, outputs_2, strict=True):
+            # A sequence or map output has nothing to compare numerically.
+            if not isinstance(out1, np.ndarray) or not isinstance(
+                out2, np.ndarray
+            ):
+                raise ONNXException(
+                    "Can only compare models whose outputs are all tensors."
+                )
+            equal_outputs = equal_outputs and np.allclose(
+                out1, out2, rtol=5e-3, atol=5e-3
+            )
+
+        return equal_outputs
 
     def _load_onnx(self) -> None:
         """Load the ONNX model and store it as onnx.ModelProto and
@@ -1269,128 +1381,16 @@ class ONNXModifier:
             )
             self._revert_changes()
 
-    def modify_onnx(
-        self,
-        substitute_sub_with_add: bool = True,
-        substitute_div_with_mul: bool = True,
-        fuse_add_mul_to_bn: bool = True,
-        fuse_comb_add_mul_to_conv: bool = True,
-        fuse_single_add_mul_to_conv: bool = True,
-        fuse_split_concat_to_conv: bool = True,
-    ) -> bool:
-        """Modify the ONNX model by applying a series of optimizations.
 
-        @param passes: List of optimization passes to apply to the ONNX
-            model
-        @type passes: Optional[List[str]]
-        """
-        if self._has_dynamic_shape:
-            logger.warning(
-                "Identified dynamic input shape, skipping model modifications..."
-            )
-            return False
+def _output_names(graph: gs.Graph) -> list[str]:
+    """The names of the outputs of the graph.
 
-        if substitute_div_with_mul:
-            self._apply_optimization_step(
-                "Substitute Div -> Mul nodes",
-                lambda: self._substitute_node_by_type(
-                    source_node="Div", target_node="Mul"
-                ),
-            )
-        if substitute_sub_with_add:
-            self._apply_optimization_step(
-                "Substitute Sub -> Add nodes",
-                lambda: self._substitute_node_by_type(
-                    source_node="Sub", target_node="Add"
-                ),
-            )
-        if fuse_add_mul_to_bn:
-            self._apply_optimization_step(
-                "Fuse Add and Mul nodes to BatchNormalization nodes",
-                self._fuse_add_mul_to_bn,
-            )
-        if fuse_comb_add_mul_to_conv:
-            self._apply_optimization_step(
-                "Fuse Add and Mul nodes to Conv nodes (combined)",
-                self._fuse_comb_add_mul_to_conv,
-            )
-        if fuse_single_add_mul_to_conv:
-            self._apply_optimization_step(
-                "Fuse Add and Mul nodes to Conv nodes (single)",
-                self._fuse_single_add_mul_to_conv,
-            )
-        if fuse_split_concat_to_conv:
-            self._apply_optimization_step(
-                "Fuse Split and Concat nodes to Conv nodes",
-                self._fuse_split_concat_to_conv,
-            )
-
-        try:
-            self._export_onnx()
-        except Exception as e:
-            logger.error(f"Failed to modify the ONNX model: {e}")
-            return False
-
-        return True
-
-    def compare_outputs(self, from_modelproto: bool = False) -> bool:
-        """Compare the outputs of two ONNX models.
-
-        @param half: Flag to use half precision for the input tensors
-        @type half: bool
-        """
-        import onnxruntime as ort
-
-        ort.set_default_logger_severity(3)
-
-        if from_modelproto:
-            onnx_model_1 = self._prev_onnx_model.SerializeToString()
-            onnx_model_2 = self._onnx_model.SerializeToString()
-        else:
-            onnx_model_1 = self.model_path.as_posix()
-            onnx_model_2 = self.output_path.as_posix()
-
-        ort_session_1 = ort.InferenceSession(onnx_model_1)
-        ort_session_2 = ort.InferenceSession(onnx_model_2)
-
-        inputs = {}
-        for input in ort_session_1.get_inputs():
-            if input.type == "tensor(float64)":
-                input_type = np.float64
-            elif input.type in {"tensor(float32)", "tensor(float)"}:
-                input_type = np.float32
-            elif input.type == "tensor(float16)":
-                input_type = np.float16
-            elif input.type == "tensor(int64)":
-                input_type = np.int64
-            elif input.type == "tensor(int32)":
-                input_type = np.int32
-            elif input.type == "tensor(int16)":
-                input_type = np.int16
-            elif input.type == "tensor(int8)":
-                input_type = np.int8
-            elif input.type == "tensor(bool)":
-                input_type = "bool"
-
-            inputs[input.name] = np.random.rand(*input.shape).astype(
-                input_type
-            )
-
-        outputs_1 = ort_session_1.run(None, inputs)
-
-        outputs_2 = ort_session_2.run(None, inputs)
-
-        equal_outputs = True
-        for out1, out2 in zip(outputs_1, outputs_2, strict=True):
-            # A sequence or map output has nothing to compare numerically.
-            if not isinstance(out1, np.ndarray) or not isinstance(
-                out2, np.ndarray
-            ):
-                raise ONNXException(
-                    "Can only compare models whose outputs are all tensors."
-                )
-            equal_outputs = equal_outputs and np.allclose(
-                out1, out2, rtol=5e-3, atol=5e-3
-            )
-
-        return equal_outputs
+    GraphSurgeon declares an output as the abstract C{gs.Tensor}, which
+    has no C{name}. Only the two concrete subclasses carry one, and an
+    imported graph holds nothing else.
+    """
+    names = []
+    for tensor in graph.outputs:
+        assert isinstance(tensor, gs.Variable | gs.Constant)
+        names.append(tensor.name)
+    return names

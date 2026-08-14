@@ -20,23 +20,6 @@ from modelconverter.platforms.rvc4.utils import get_device_info
 from modelconverter.utils import constants, create_handler, subprocess_run
 
 
-def _static_spatial_shape(
-    shape: list[int | str | None], input_name: str
-) -> list[int]:
-    """The spatial dimensions of an input, reversed to width-height
-    order.
-
-    A dynamic dimension carries a name or nothing at all, so it gives no
-    size to resize an image to.
-    """
-    spatial = [dim for dim in shape[2:][::-1] if isinstance(dim, int)]
-    if len(spatial) != len(shape) - 2:
-        raise ValueError(
-            f"Input `{input_name}` has a dynamic spatial shape: {shape}"
-        )
-    return spatial
-
-
 class RVC4Analyzer(Analyzer):
     _SUPPORTED_INPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".npy")
 
@@ -703,3 +686,20 @@ class RVC4Analyzer(Analyzer):
         )
         if output_dir.exists() and output_dir.is_dir():
             shutil.rmtree(output_dir)
+
+
+def _static_spatial_shape(
+    shape: list[int | str | None], input_name: str
+) -> list[int]:
+    """The spatial dimensions of an input, reversed to width-height
+    order.
+
+    A dynamic dimension carries a name or nothing at all, so it gives no
+    size to resize an image to.
+    """
+    spatial = [dim for dim in shape[2:][::-1] if isinstance(dim, int)]
+    if len(spatial) != len(shape) - 2:
+        raise ValueError(
+            f"Input `{input_name}` has a dynamic spatial shape: {shape}"
+        )
+    return spatial

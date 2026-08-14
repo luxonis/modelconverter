@@ -221,29 +221,6 @@ class SubprocessHandle:
         for t in self._threads:
             t.join(timeout=1.0)
 
-    def _current_memory(self) -> int:
-        """Return current memory usage of the process and its
-        children."""
-        if self._ps_proc is None:
-            return 0
-        try:
-            mem = self._ps_proc.memory_info().rss
-            for child in self._ps_proc.children(recursive=True):
-                with suppress(psutil.NoSuchProcess):
-                    mem += child.memory_info().rss
-        except psutil.NoSuchProcess:
-            return 0
-        else:
-            return mem
-
-    def _monitor_memory(self, interval: float = 0.1) -> None:
-        """Call periodically to update peak memory usage."""
-        try:
-            self._peak_mem = max(self._peak_mem, self._current_memory())
-            time.sleep(interval)
-        except psutil.NoSuchProcess:
-            pass
-
     def result(self) -> SubprocessResult:
         for t in self._threads:
             t.join(timeout=1.0)
@@ -266,6 +243,29 @@ class SubprocessHandle:
         if res.returncode != 0:
             raise subprocess.SubprocessError(info_string)
         return res
+
+    def _current_memory(self) -> int:
+        """Return current memory usage of the process and its
+        children."""
+        if self._ps_proc is None:
+            return 0
+        try:
+            mem = self._ps_proc.memory_info().rss
+            for child in self._ps_proc.children(recursive=True):
+                with suppress(psutil.NoSuchProcess):
+                    mem += child.memory_info().rss
+        except psutil.NoSuchProcess:
+            return 0
+        else:
+            return mem
+
+    def _monitor_memory(self, interval: float = 0.1) -> None:
+        """Call periodically to update peak memory usage."""
+        try:
+            self._peak_mem = max(self._peak_mem, self._current_memory())
+            time.sleep(interval)
+        except psutil.NoSuchProcess:
+            pass
 
 
 def subprocess_run(
