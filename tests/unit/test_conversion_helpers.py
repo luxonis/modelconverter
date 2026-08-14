@@ -40,7 +40,7 @@ def test_superblob_skip_reason(
     assert (superblob_skip_reason() is not None) is skipped
 
 
-def test_no_target_version_keeps_superblob(
+def test_no_tool_version_keeps_superblob(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Outside a conversion container nothing is forced off.

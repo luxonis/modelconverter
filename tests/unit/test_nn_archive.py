@@ -472,7 +472,7 @@ def _config_to_nn(
         (Platform.HAILO, {}, DataType.INT8),
     ],
 )
-def test_archive_precision_per_target(
+def test_archive_precision_per_platform(
     dummy_onnx: Path,
     platform: Platform,
     overrides: Mapping[str, ParamValue],

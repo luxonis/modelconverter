@@ -819,7 +819,7 @@ def test_top_level_and_input_calibration_merged(tmp_path: Path):
     assert cal1.max_images == -1
 
 
-def test_disable_calibration_fans_out_to_all_targets():
+def test_disable_calibration_fans_out_to_all_platforms():
     # ``rvc4`` is already present in the data, exercising the branch
     # that skips re-creating an existing platform dict.
     config = Config.get_config(

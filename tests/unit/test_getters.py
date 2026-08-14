@@ -177,7 +177,7 @@ def test_get_analyzer_rvc4_dispatch(monkeypatch: pytest.MonkeyPatch):
 @pytest.mark.parametrize(
     "platform", [Platform.RVC2, Platform.RVC3, Platform.HAILO]
 )
-def test_get_analyzer_unsupported_target(platform: Platform):
+def test_get_analyzer_unsupported_platform(platform: Platform):
     with pytest.raises(ValueError, match="Analyzer not available"):
         getters.get_analyzer(platform)
 
@@ -195,6 +195,6 @@ def test_get_visualizer_rvc4_dispatch(monkeypatch: pytest.MonkeyPatch):
 @pytest.mark.parametrize(
     "platform", [Platform.RVC2, Platform.RVC3, Platform.HAILO]
 )
-def test_get_visualizer_unsupported_target(platform: Platform):
+def test_get_visualizer_unsupported_platform(platform: Platform):
     with pytest.raises(ValueError, match="Visualizer not available"):
         getters.get_visualizer(platform)
