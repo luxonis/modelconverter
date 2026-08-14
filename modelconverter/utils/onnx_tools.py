@@ -244,8 +244,6 @@ class ONNXModifier:
         Path to the base ONNX model
     output_path : Path
         Path to save the modified ONNX model
-    skip_optimization : bool
-        Flag to skip optimization of the ONNX model
     """
 
     def __init__(
@@ -698,7 +696,7 @@ class ONNXModifier:
                 # Skip optimization for nodes followed by Erf operations due to conversion compatibility issues with SNPE 2.32.6.
                 if any(n.op == "Erf" for n in next_nodes):
                     logger.warning(
-                        f"Skipping `substitute_node_by_type ({source_node} -> {target_node})` "
+                        f"Skipping the `{source_node} -> {target_node}` substitution "
                         f"optimization for node '{node.name}' with op '{node.op}' "
                         "because it is followed by an 'Erf' node."
                     )

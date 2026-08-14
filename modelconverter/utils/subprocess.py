@@ -66,16 +66,17 @@ class SubprocessHandle:
     ):
         """Initialize the subprocess handle.
 
-        @type args: str | Sequence[PathType]
-        @param args: Command to execute. If a string is given, it will
-            be split on whitespace. If a list is given, each element
-            will be converted to a string.
+        @type cmd: str | Sequence[PathType]
+        @param cmd: Command to execute. If a string is given, it will be
+            split on whitespace. If a list is given, each element will
+            be converted to a string.
         @type silent: bool
         @param silent: If True, suppress all output from the command.
         @type timeout: float | None
         @param timeout: If given, the maximum time in seconds to allow
             the process to run. If the timeout is exceeded, the process
-            will be
+            will be terminated and a TimeoutExpired exception will be
+            raised.
         """
         if isinstance(cmd, str):
             self._cmd = cmd.split()
