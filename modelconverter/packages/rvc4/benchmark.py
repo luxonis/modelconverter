@@ -709,22 +709,19 @@ class RVC4Benchmark(Benchmark):
             return None
 
         client = create_hubai_client()
-        model = client.models.get_model(self.hub_model_identifier)
-
-        model_variants = client.variants.list_variants(
-            model_id=model.id,
-            variant_slug=self.model_variant,
-            is_public=None,
-            limit=1,
+        model_variant = client.variants.get_variant(
+            f"{self.hub_model_identifier}:{self.model_variant}"
         )
-        if not model_variants:
-            return DataType.INT8
 
-        model_instances = client.instances.list_instances(
-            model_id=model.id,
-            variant_id=model_variants[0].id,
-            is_public=None,
-        )
+        model_instances = []
+        for is_public in (True, False):
+            model_instances.extend(
+                client.instances.list_instances(
+                    model_id=model_variant.model_id,
+                    variant_id=model_variant.id,
+                    is_public=is_public,
+                )
+            )
         for instance in model_instances:
             if [platform.value for platform in instance.platforms or []] == [
                 "RVC4"

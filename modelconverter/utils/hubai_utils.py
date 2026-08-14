@@ -17,15 +17,7 @@ def is_hubai_model_variant_available(
     """Return whether a model variant is visible to the configured HubAI key."""
     client = create_hubai_client()
     try:
-        model = client.models.get_model(model_identifier)
+        client.variants.get_variant(f"{model_identifier}:{model_variant}")
     except ResourceNotFoundError:
         return False
-
-    return bool(
-        client.variants.list_variants(
-            model_id=model.id,
-            variant_slug=model_variant,
-            is_public=None,
-            limit=1,
-        )
-    )
+    return True

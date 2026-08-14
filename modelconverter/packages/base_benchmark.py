@@ -40,9 +40,7 @@ class Benchmark(ABC):
                 model_instance,
             ) = hub_match.groups()
             hub_model_identifier = (
-                f"{team_name}/{model_name}:{model_variant}"
-                if team_name
-                else model_name
+                f"{team_name}/{model_name}" if team_name else model_name
             )
             if is_hubai_model_variant_available(
                 hub_model_identifier, model_variant
