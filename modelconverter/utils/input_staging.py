@@ -208,9 +208,8 @@ def _maybe_stage_token(
         if kind == "args":
             return _stage_arg_list_token(token, prev, inputs_dir)
 
-    # A bare positional token (platform, unknown override value, ...). Only
-    # stage
-    # it when it clearly looks like an existing local path.
+    # A bare positional token (platform, unknown override value, ...).
+    # Only stage it when it clearly looks like an existing local path.
     if _is_path_like(token):
         return _stage_value(token, inputs_dir)
     return None
