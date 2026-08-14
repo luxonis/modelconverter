@@ -272,7 +272,7 @@ class Exporter(ABC):
                         channel_dim = layout.index("C")
                         if channel_dim == 0 and len(arr.shape) == 3:
                             arr = arr.transpose(1, 2, 0)
-                    elif arr.shape[0] in {1, 3}:
+                    elif len(arr.shape) == 3 and arr.shape[0] in {1, 3}:
                         arr = arr.transpose(1, 2, 0)
                     cv2.imwrite(str(dest / f"{i}.png"), arr)
                 else:
