@@ -319,22 +319,29 @@ jobs:
 
       - name: Run integration tests
         env:
+          # Only an explicit `ml_ref` replaces luxonis-ml here. Each platform
+          # image pins the dependency set its vendor tools were built against
+          # (RVC4 holds `numpy<2`, Hailo holds `protobuf==3.20.3`), and
+          # installing luxonis-ml from git overrides those pins. The type
+          # check job is where every run validates against luxonis-ml `main`,
+          # because it needs no vendor runtime.
           ML_REF: ${{ inputs.ml_ref }}
-          # A release PR validates against the published package; every
-          # other run builds against luxonis-ml `main`.
-          RELEASE_PR: ${{ startsWith(github.head_ref, 'release/') }}
         run: |
-          if [[ -z "${ML_REF}" && "${RELEASE_PR}" != "true" ]]; then
-            ML_REF=main
-          fi
-
           if [[ -n "${ML_REF}" ]]; then
             if [[ ! "${ML_REF}" =~ ^[A-Za-z0-9._/-]+$ ]]; then
               echo "Invalid luxonis-ml ref: ${ML_REF}" >&2
               exit 1
             fi
-            ML_INSTALL_COMMAND="pip uninstall luxonis-ml -y && \
-              pip install \
+            # Each image pins the NumPy that its vendor tools were built
+            # against. RVC4 holds NumPy 1.x, because `snpe-onnx-to-dlc` is
+            # a C extension that reads garbage under the 2.x ABI. A plain
+            # `--force-reinstall` of luxonis-ml pulls NumPy 2.x in and
+            # corrupts the conversion, so constrain the install to the
+            # NumPy already in the image. A genuine conflict then fails
+            # the install, which is the signal we want.
+            ML_INSTALL_COMMAND="python -c \"import numpy; open('/tmp/numpy-constraint.txt', 'w').write('numpy==' + numpy.__version__)\" && \
+              pip uninstall luxonis-ml -y && \
+              PIP_CONSTRAINT=/tmp/numpy-constraint.txt pip install \
               \"luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}\" \
               --upgrade --force-reinstall &&"
           else
