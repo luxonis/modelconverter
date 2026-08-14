@@ -44,7 +44,7 @@ class MultiStageExporter:
     def _create_source_dir(self, exporter: Exporter, stage_name: str) -> Path:
         dest = self._intermediate_outputs_dir / "inference_data" / stage_name
         dest.mkdir(parents=True, exist_ok=True)
-        for inp_name, inp_config in exporter._inputs.items():
+        for inp_name, inp_config in exporter.inputs.items():
             calib = inp_config.calibration
             assert isinstance(calib, ImageCalibrationConfig)
             path = calib.path
@@ -57,7 +57,7 @@ class MultiStageExporter:
         return dest
 
     def _produce_calibration_data(self, exporter: Exporter) -> None:
-        for inp_name, inp_config in exporter._inputs.items():
+        for inp_name, inp_config in exporter.inputs.items():
             calib = inp_config.calibration
             if not isinstance(calib, LinkCalibrationConfig):
                 continue
@@ -71,7 +71,7 @@ class MultiStageExporter:
             source_dir = self._create_source_dir(linked_exporter, stage)
             dest_dir = (
                 self._intermediate_outputs_dir
-                / f"{linked_exporter._model_name}_calibration"
+                / f"{linked_exporter.model_name}_calibration"
             )
             model_path = linked_exporter.inference_model_path
             # ``get_inferer`` returns a ready ``from_config`` instance (same

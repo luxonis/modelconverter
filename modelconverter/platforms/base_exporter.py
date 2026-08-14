@@ -18,6 +18,7 @@ from modelconverter.utils import (
 )
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
+    InputConfig,
     RandomCalibrationConfig,
     SingleStageConfig,
 )
@@ -136,6 +137,27 @@ class Exporter(ABC):
                 "Inference model path not yet set. Export must be run first."
             )
         return self._inference_model_path
+
+    @property
+    def inputs(self) -> dict[str, InputConfig]:
+        """The configured inputs, keyed by input name.
+
+        @rtype: dict[str, InputConfig]
+        @return: The inputs of this stage. C{MultiStageExporter} reads
+            them to resolve a linked calibration, so every exporter must
+            provide them.
+        """
+        return self._inputs
+
+    @property
+    def model_name(self) -> str:
+        """The sanitized name of the input model, without a suffix.
+
+        @rtype: str
+        @return: The model name. C{MultiStageExporter} uses it to name
+            the calibration directory of a linked stage.
+        """
+        return self._model_name
 
     def _simplify_onnx(self) -> Path:  # pragma: no cover
         logger.info("Simplifying ONNX.")

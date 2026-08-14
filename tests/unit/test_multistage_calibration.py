@@ -50,8 +50,8 @@ class StubExporter:
     def __init__(self, config: SingleStageConfig, output_dir: Path) -> None:
         self.config = config
         self.output_dir = output_dir
-        self._inputs = {inp.name: inp for inp in config.inputs}
-        self._model_name = config.input_model.stem
+        self.inputs = {inp.name: inp for inp in config.inputs}
+        self.model_name = config.input_model.stem
         self.inference_model_path = config.input_model
 
 
