@@ -7,7 +7,7 @@ from typing import Any, TypeAlias
 import polars as pl
 from loguru import logger
 
-from modelconverter.utils import is_hubai_available, resolve_path
+from modelconverter.utils import is_hubai_model_variant_available, resolve_path
 
 Configuration: TypeAlias = dict[str, Any]
 
@@ -39,10 +39,19 @@ class Benchmark(ABC):
                 model_variant,
                 model_instance,
             ) = hub_match.groups()
-            if is_hubai_available(model_name, model_variant):
+            hub_model_identifier = (
+                f"{team_name}/{model_name}:{model_variant}"
+                if team_name
+                else model_name
+            )
+            if is_hubai_model_variant_available(
+                hub_model_identifier, model_variant
+            ):
                 self.model_path = model_path
                 self.model_name = model_name
+                self.model_variant = model_variant
                 self.model_instance = model_instance
+                self.hub_model_identifier = hub_model_identifier
             else:
                 raise ValueError(
                     f"Model {team_name + '/' if team_name else ''}{model_name}:{model_variant}{':' + model_instance if model_instance else ''} not found in HubAI."

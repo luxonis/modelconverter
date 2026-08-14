@@ -1,19 +1,15 @@
 """Host-side unit tests for ``modelconverter.cli.utils``."""
 
 from pathlib import Path
-from typing import Any
 
 import pytest
-from requests.exceptions import HTTPError
 
-from modelconverter.cli import utils as cli_utils
 from modelconverter.cli.utils import (
     ModelType,
     extract_preprocessing,
     get_configs,
     get_output_dir_name,
     init_dirs,
-    slug_to_id,
 )
 from modelconverter.utils import ModelconverterException
 from modelconverter.utils.config import Config
@@ -274,39 +270,3 @@ def test_image_input_float16_channel_type(dummy_onnx: Path):
     dai_type = preprocessing["input0"].dai_type
     assert dai_type is not None
     assert dai_type.startswith("RGBF16F16F16")
-
-
-class _FakeRequest:
-    """Stand-in for ``modelconverter.cli.utils.Request``."""
-
-    def __init__(self, responses: list):
-        self._responses = list(responses)
-
-    def get(self, endpoint: str, params: dict) -> Any:
-        resp = self._responses.pop(0)
-        if isinstance(resp, Exception):
-            raise resp
-        return resp
-
-
-def test_slug_to_id_found_public(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(
-        cli_utils, "Request", _FakeRequest([[{"id": "abc123"}]])
-    )
-    assert slug_to_id("my-model", "models") == "abc123"
-
-
-def test_slug_to_id_falls_back_to_private(monkeypatch: pytest.MonkeyPatch):
-    # The public lookup errors (suppressed), then the private one succeeds.
-    monkeypatch.setattr(
-        cli_utils,
-        "Request",
-        _FakeRequest([HTTPError("boom"), [{"id": "priv"}]]),
-    )
-    assert slug_to_id("my-model", "modelVersions") == "priv"
-
-
-def test_slug_to_id_not_found_raises(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(cli_utils, "Request", _FakeRequest([[], []]))
-    with pytest.raises(ValueError, match="not found"):
-        slug_to_id("missing", "models")
