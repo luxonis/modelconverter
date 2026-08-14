@@ -9,8 +9,8 @@ RUN <<EOF
 
     echo 'deb http://deb.debian.org/debian oldstable main' >> /etc/apt/sources.list
 
-    apt-get update
-    apt-get install -y --fix-missing \
+    apt-get update -qq
+    apt-get install -y -qq --fix-missing \
         cmake           \
         unzip           \
         perl            \
@@ -30,7 +30,7 @@ RUN <<EOF
 
     set -e
 
-    unzip snpe.zip -d /opt
+    unzip -q snpe.zip -d /opt
 
     # The SNPE archive from README.md contains an extra directory
     if [ -d /opt/qairt ]; then
@@ -112,8 +112,8 @@ ARG DEV=false
 COPY --link requirements-dev.txt /app/requirements-dev.txt
 COPY --link requirements-eval.txt /app/requirements-eval.txt
 RUN if [ "$DEV" = "true" ]; then \
-        apt-get update && \
-        apt-get install -y --no-install-recommends git && \
+        apt-get update -qq && \
+        apt-get install -y -qq --no-install-recommends git && \
         rm -rf /var/lib/apt/lists/* && \
         pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli && \
         pip install --no-cache-dir --no-deps -r /app/requirements-eval.txt; \
