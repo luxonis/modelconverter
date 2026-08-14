@@ -14,7 +14,7 @@ from luxonis_ml.typing import PathType
 from typing_extensions import Self
 
 
-class SubprocessResult(subprocess.CompletedProcess):
+class SubprocessResult(subprocess.CompletedProcess[bytes]):
     """Extension of subprocess.CompletedProcess that also carries peak
     memory usage."""
 
@@ -44,7 +44,9 @@ class SubprocessResult(subprocess.CompletedProcess):
     def __str__(self) -> str:
         return repr(self)
 
-    def __rich_repr__(self) -> Iterator[tuple[str, list[str] | int | str]]:
+    def __rich_repr__(
+        self,
+    ) -> Iterator[tuple[str, list[str] | int | str | bytes]]:
         yield "args", self.args
         yield "returncode", self.returncode
         yield "stdout", self.stdout
