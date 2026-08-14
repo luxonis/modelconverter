@@ -263,9 +263,7 @@ jobs:
             # against. RVC4 holds NumPy 1.x, because `snpe-onnx-to-dlc` is
             # a C extension that reads garbage under the 2.x ABI. A plain
             # `--force-reinstall` of luxonis-ml pulls NumPy 2.x in and
-            # corrupts the conversion, so constrain the install to the
-            # NumPy already in the image. A genuine conflict then fails
-            # the install, which is the signal we want.
+            # corrupts the conversion.
             ML_INSTALL_COMMAND="python -c \"import numpy; open('/tmp/numpy-constraint.txt', 'w').write('numpy==' + numpy.__version__)\" && \
               pip uninstall luxonis-ml -y && \
               PIP_CONSTRAINT=/tmp/numpy-constraint.txt pip install \
