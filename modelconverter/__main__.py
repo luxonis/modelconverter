@@ -7,7 +7,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from cyclopts import App, Group, Parameter
 from loguru import logger
@@ -1005,9 +1005,10 @@ def launcher(
     if cpus is not None and cpus <= 0:
         raise ValueError("CPUs value must be a positive number.")
 
-    def run_in_configured_environment() -> Any:
+    def run_in_configured_environment() -> None:
         if running_in_docker:
-            return command(*bound.args, **bound.kwargs)
+            command(*bound.args, **bound.kwargs)
+            return
 
         assert platform is not None
         tag = "dev" if dev else "latest"
@@ -1038,7 +1039,7 @@ def launcher(
             memory=memory_bytes,
             cpus=cpus,
         )
-        return None
+        return
 
     if not is_convert_command:
         return run_in_configured_environment()
