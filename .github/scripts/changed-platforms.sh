@@ -25,8 +25,9 @@ select_platforms() {
 while IFS= read -r file; do
   [ -n "${file}" ] || continue
   case "${file}" in
-    # Documentation and repository chores never reach an image.
-    *.md | LICENSE | .gitignore | .dockerignore | .pre-commit-config.yaml) ;;
+    # Documentation and repository chores never reach an image. `.dockerignore`
+    # is not in this group: it defines the build context of every image.
+    *.md | LICENSE | .gitignore | .pre-commit-config.yaml) ;;
 
     # The conversion tests are unaffected by the other test suites, and the
     # unit tests run on every pull request anyway.
@@ -40,7 +41,9 @@ while IFS= read -r file; do
       ;;
     .github/*) ;;
 
-    modelconverter/platforms/rvc2/*) select_platforms rvc2 ;;
+    # `RVC3Exporter` subclasses `RVC2Exporter`, and `RVC3Inferer` is an alias of
+    # `RVC2Inferer`, so a change to the RVC2 code can break RVC3.
+    modelconverter/platforms/rvc2/*) select_platforms rvc2 rvc3 ;;
     modelconverter/platforms/rvc3/*) select_platforms rvc3 ;;
     modelconverter/platforms/rvc4/*) select_platforms rvc4 ;;
     modelconverter/platforms/hailo/*) select_platforms hailo ;;
