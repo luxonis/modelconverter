@@ -112,8 +112,10 @@ def path_flags_for(command: Callable[..., object] | None) -> set[str]:
     staging follows the CLI rather than duplicating its knowledge: a path
     option that is added or renamed is picked up without touching this module.
     """
+    if command is None:
+        return set()
     try:
-        parameters = inspect.signature(command).parameters  # type: ignore[arg-type]
+        parameters = inspect.signature(command).parameters
     except (TypeError, ValueError):
         return set()
 

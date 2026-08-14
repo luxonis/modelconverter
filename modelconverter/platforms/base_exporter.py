@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import onnx
 from loguru import logger
-from luxonis_ml.typing import Params
+from luxonis_ml.typing import Params, PathType
 
 from modelconverter.utils import (
     exit_with,
@@ -281,7 +281,7 @@ class Exporter(ABC):
             self._inputs[name].calibration = ImageCalibrationConfig(path=dest)
 
     @staticmethod
-    def _attach_suffix(path: Path | str, suffix: str) -> Path:
+    def _attach_suffix(path: PathType, suffix: str) -> Path:
         return Path(str(Path(path).with_suffix("")) + f"-{suffix.lstrip('-')}")
 
     @staticmethod

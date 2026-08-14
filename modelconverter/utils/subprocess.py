@@ -10,6 +10,7 @@ from types import TracebackType
 
 import psutil
 from loguru import logger
+from luxonis_ml.typing import PathType
 from typing_extensions import Self
 
 
@@ -43,7 +44,7 @@ class SubprocessResult(subprocess.CompletedProcess):
     def __str__(self) -> str:
         return repr(self)
 
-    def __rich_repr__(self) -> Iterator[tuple[str, object]]:
+    def __rich_repr__(self) -> Iterator[tuple[str, list[str] | int | str]]:
         yield "args", self.args
         yield "returncode", self.returncode
         yield "stdout", self.stdout
@@ -58,14 +59,14 @@ class SubprocessHandle:
 
     def __init__(
         self,
-        cmd: str | Sequence[object],
+        cmd: str | Sequence[PathType],
         *,
         silent: bool = False,
         timeout: float | None = None,
     ):
         """Initialize the subprocess handle.
 
-        @type args: str | Sequence[object]
+        @type args: str | Sequence[PathType]
         @param args: Command to execute. If a string is given, it will
             be split on whitespace. If a list is given, each element
             will be converted to a string.
@@ -268,7 +269,7 @@ class SubprocessHandle:
 
 
 def subprocess_run(
-    cmd: str | Sequence[object],
+    cmd: str | Sequence[PathType],
     *,
     silent: bool = False,
     timeout: float | None = None,
@@ -276,7 +277,7 @@ def subprocess_run(
     """Backwards-compatible wrapper.
 
     Blocks until done and returns result.
-    @type cmd: str | Sequence[object]
+    @type cmd: str | Sequence[PathType]
     @param cmd: Command to execute. If a string is given, it will be
         split on whitespace. If a list is given, each element will be
         converted to a string.

@@ -191,9 +191,7 @@ def build_conversion_summary(
         platform_cfg.disable_calibration for platform_cfg in platform_configs
     )
     calibration_sources = {
-        _calibration_source(inp.calibration)
-        for inp in inputs
-        if _calibration_source(inp.calibration) is not None
+        _calibration_source(inp.calibration) for inp in inputs
     }
 
     return _drop_none(
@@ -467,14 +465,16 @@ def _platform_configuration(
     return None
 
 
-def _calibration_source(calibration: object) -> CalibrationSource | None:
+def _calibration_source(
+    calibration: ImageCalibrationConfig
+    | RandomCalibrationConfig
+    | LinkCalibrationConfig,
+) -> CalibrationSource:
     if isinstance(calibration, ImageCalibrationConfig):
         return CalibrationSource.IMAGE_DIRECTORY
     if isinstance(calibration, RandomCalibrationConfig):
         return CalibrationSource.RANDOM
-    if isinstance(calibration, LinkCalibrationConfig):
-        return CalibrationSource.REMOTE_LINK
-    return None
+    return CalibrationSource.REMOTE_LINK
 
 
 def _drop_none(properties: Mapping[str, ParamValue]) -> dict[str, ParamValue]:

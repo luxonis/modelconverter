@@ -2,6 +2,7 @@ from pathlib import Path
 
 import depthai as dai
 import numpy as np
+from luxonis_ml.typing import PathType
 
 from modelconverter.platforms.base_benchmark import (
     Benchmark,
@@ -51,7 +52,7 @@ class RVC2Benchmark(Benchmark):
 
     @staticmethod
     def _benchmark(
-        model_path: str | Path,
+        model_path: PathType,
         repetitions: int,
         num_messages: int,
         num_threads: int,

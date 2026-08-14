@@ -12,9 +12,7 @@ from modelconverter.utils import is_hubai_available, resolve_path
 ConfigValue: TypeAlias = str | int | bool | None
 Configuration: TypeAlias = dict[str, ConfigValue]
 
-# A measurement is a string, such as "N/A", when the device does not report it.
-ResultValue: TypeAlias = float | str | None
-Result: TypeAlias = dict[str, ResultValue]
+Result: TypeAlias = dict[str, float | str | None]
 
 OptionT = TypeVar("OptionT", bound=str | int | bool)
 

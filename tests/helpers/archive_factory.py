@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Literal
 
-from luxonis_ml.typing import Params, ParamValue
+from luxonis_ml.typing import Params, ParamValue, PathType
 
 
 def default_archive_config(*, heads: Sequence[ParamValue] = ()) -> Params:
@@ -52,18 +52,18 @@ def default_archive_config(*, heads: Sequence[ParamValue] = ()) -> Params:
     }
 
 
-def write_json(data: Mapping[str, ParamValue], path: str | Path) -> Path:
+def write_json(data: Mapping[str, ParamValue], path: PathType) -> Path:
     path = Path(path)
     path.write_text(json.dumps(data))
     return path
 
 
 def pack_archive(
-    tar_path: str | Path,
-    model_path: str | Path,
+    tar_path: PathType,
+    model_path: PathType,
     config: Mapping[str, ParamValue],
     *,
-    extra_files: dict[str, str | Path] | None = None,
+    extra_files: dict[str, PathType] | None = None,
     mode: Literal["w", "w:xz", "w:gz", "w:bz2"] = "w",
 ) -> Path:
     """Packs ``model_path`` + ``config.json`` (+ optional extras) into a

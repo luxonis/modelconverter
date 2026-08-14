@@ -464,7 +464,7 @@ class RVC2Exporter(Exporter):
         }
 
 
-def _lst_join(args: Iterable[object], sep: str = ",") -> str:
+def _lst_join(args: Iterable[int | float], sep: str = ",") -> str:
     return f"[{sep.join(map(str, args))}]"
 
 

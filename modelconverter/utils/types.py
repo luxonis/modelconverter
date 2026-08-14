@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
+from luxonis_ml.typing import PathType
 from onnx.onnx_pb import TensorProto
 
 __all__ = ["DataType", "Encoding", "Platform", "PotDevice", "ResizeMethod"]
@@ -344,7 +345,7 @@ class InputFileType(Enum):
     PYTORCH = "PYTORCH"
 
     @classmethod
-    def from_path(cls, path: str | Path) -> "InputFileType":
+    def from_path(cls, path: PathType) -> "InputFileType":
         path = Path(path)
         if path.suffix == ".onnx":
             return cls.ONNX

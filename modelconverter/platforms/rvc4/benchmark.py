@@ -15,17 +15,17 @@ import numpy as np
 import polars as pl
 from depthai import XLinkPlatform
 from loguru import logger
-from luxonis_ml.typing import BaseModelExtraForbid
+from luxonis_ml.typing import BaseModelExtraForbid, PathType
 from rich.progress import track
 
 from modelconverter.platforms.base_benchmark import (
     Benchmark,
     Configuration,
     Result,
-    ResultValue,
     get_option,
     get_optional_option,
 )
+from modelconverter.platforms.rvc4.utils import get_device_info
 from modelconverter.utils import (
     DataType,
     DeviceMonitor,
@@ -63,20 +63,6 @@ RUNTIMES: dict[str, str] = {
     "dsp": "use_dsp",
     "cpu": "use_cpu",
 }
-
-
-def format_measurement(value: ResultValue) -> str:
-    """Formats a device measurement for the results table.
-
-    @type value: ResultValue
-    @param value: The measured value.
-    @rtype: str
-    @return: The formatted value, or a placeholder if the measurement
-        is missing.
-    """
-    if not isinstance(value, int | float) or not value:
-        return "[orange3]N/A"
-    return f"{value:.2f}"
 
 
 class RVC4Benchmark(Benchmark):
@@ -119,7 +105,7 @@ class RVC4Benchmark(Benchmark):
         ]
 
     def _get_dlc_input_specs(
-        self, model_path: str | Path | None = None
+        self, model_path: PathType | None = None
     ) -> list[InputSpec]:
         """Retrieve normalized input specs from a DLC or NNArchive."""
         model_path = self.model_path if model_path is None else model_path
@@ -398,7 +384,7 @@ class RVC4Benchmark(Benchmark):
 
     def _benchmark_snpe(
         self,
-        model_path: Path | str,
+        model_path: PathType,
         num_images: int,
         profile: str,
         runtime: str,
@@ -498,7 +484,7 @@ class RVC4Benchmark(Benchmark):
 
     def _benchmark_dai(
         self,
-        model_path: Path | str,
+        model_path: PathType,
         profile: str,
         runtime: str,
         repetitions: int,
@@ -663,11 +649,11 @@ class RVC4Benchmark(Benchmark):
         if self._monitor is None:
             return
 
-        yield format_measurement(result.get("power_system"))
-        yield format_measurement(result.get("power_processor"))
-        yield format_measurement(result.get("dsp_utilization"))
-        yield format_measurement(result.get("ram_used"))
-        yield format_measurement(result.get("cpu_utilization"))
+        yield self._format_measurement(result.get("power_system"))
+        yield self._format_measurement(result.get("power_processor"))
+        yield self._format_measurement(result.get("dsp_utilization"))
+        yield self._format_measurement(result.get("ram_used"))
+        yield self._format_measurement(result.get("cpu_utilization"))
 
     def _get_archive_input_specs(
         self, archive: dai.NNArchive
@@ -792,43 +778,8 @@ class RVC4Benchmark(Benchmark):
             return DataType.from_hubai_dtype(model_precision_type)
         return None
 
-
-def device_id_to_adb_id(device_id: str) -> str:
-    if device_id.isdigit():
-        return format(int(device_id), "x")
-    return device_id.encode("ascii").hex()
-
-
-def adb_id_to_device_id(adb_id: str) -> str:
-    try:
-        int_id = int(adb_id, 16)
-        return str(int_id)
-    except ValueError:
-        bytes_id = bytes.fromhex(adb_id)
-        return bytes_id.decode("ascii")
-
-
-def get_device_info(
-    device_ip: str | None, device_id: str | None
-) -> tuple[str | None, str | None]:
-    if not device_ip and not device_id:
-        return None, None
-
-    if device_id:
-        if device_id.isdecimal():
-            adb_id = device_id_to_adb_id(device_id)
-        else:
-            adb_id = device_id
-            device_id = adb_id_to_device_id(adb_id)
-        for info in dai.Device.getAllAvailableDevices():
-            if device_id == info.getDeviceId():
-                if device_ip and device_ip != info.name:
-                    logger.warning(
-                        f"Both device_id and device_ip provided, but they refer to different devices. Using device with device_id: {device_id} and device_ip: {info.name}."
-                    )
-                return info.name, adb_id
-    if device_ip:
-        with dai.Device(device_ip) as device:
-            inferred_device_id = device.getDeviceId()
-            return device_ip, device_id_to_adb_id(inferred_device_id)
-    return None, None
+    @staticmethod
+    def _format_measurement(value: float | str | None) -> str:
+        if not isinstance(value, int | float) or not value:
+            return "[orange3]N/A[reset]"
+        return f"{value:.2f}"

@@ -265,7 +265,7 @@ def test_extract_bin_xml_bad_suffix_raises_value_error():
 
 def test_extract_bin_xml_non_path_raises_type_error():
     with pytest.raises(TypeError, match="must be str or Path"):
-        _extract_bin_xml_from_ir(123)
+        _extract_bin_xml_from_ir(123)  # type: ignore[arg-type]
 
 
 def test_extract_bin_xml_missing_bin_raises_value_error():
