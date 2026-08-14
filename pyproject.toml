@@ -40,6 +40,10 @@ version = { attr = "modelconverter.__version__" }
 bench = { file = ["requirements-bench.txt"] }
 analysis = { file = ["requirements-analysis.txt"] }
 dev = { file = ["requirements-dev.txt", "requirements-bench.txt"] }
+rvc2 = { file = ["modelconverter/platforms/rvc2/requirements.txt"] }
+rvc3 = { file = ["modelconverter/platforms/rvc3/requirements.txt"] }
+rvc4 = { file = ["modelconverter/platforms/rvc4/requirements.txt"] }
+hailo = { file = ["modelconverter/platforms/hailo/requirements.txt"] }
 
 
 [tool.ruff]
