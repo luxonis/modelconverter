@@ -259,8 +259,16 @@ jobs:
               echo "Invalid luxonis-ml ref: ${ML_REF}" >&2
               exit 1
             fi
-            ML_INSTALL_COMMAND="pip uninstall luxonis-ml -y && \
-              pip install \
+            # Each image pins the NumPy that its vendor tools were built
+            # against. RVC4 holds NumPy 1.x, because `snpe-onnx-to-dlc` is
+            # a C extension that reads garbage under the 2.x ABI. A plain
+            # `--force-reinstall` of luxonis-ml pulls NumPy 2.x in and
+            # corrupts the conversion, so constrain the install to the
+            # NumPy already in the image. A genuine conflict then fails
+            # the install, which is the signal we want.
+            ML_INSTALL_COMMAND="python -c \"import numpy; open('/tmp/numpy-constraint.txt', 'w').write('numpy==' + numpy.__version__)\" && \
+              pip uninstall luxonis-ml -y && \
+              PIP_CONSTRAINT=/tmp/numpy-constraint.txt pip install \
               \"luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}\" \
               --upgrade --force-reinstall &&"
           else
