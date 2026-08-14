@@ -1,9 +1,9 @@
 """Host-side unit tests for ``modelconverter.cli.utils``."""
 
 from pathlib import Path
-from typing import Any
 
 import pytest
+from luxonis_ml.typing import ParamValue
 from requests.exceptions import HTTPError
 
 from modelconverter.cli import utils as cli_utils
@@ -267,7 +267,9 @@ class _FakeRequest:
     def __init__(self, responses: list):
         self._responses = list(responses)
 
-    def get(self, endpoint: str, params: dict) -> Any:
+    def get_records(
+        self, endpoint: str, params: dict
+    ) -> list[dict[str, ParamValue]]:
         resp = self._responses.pop(0)
         if isinstance(resp, Exception):
             raise resp

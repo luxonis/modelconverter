@@ -5,7 +5,6 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import cast
 
 import numpy as np
 import onnx
@@ -19,6 +18,23 @@ from rich.progress import track
 from modelconverter.platforms.base_analyze import Analyzer
 from modelconverter.platforms.rvc4.benchmark import get_device_info
 from modelconverter.utils import constants, create_handler, subprocess_run
+
+
+def _static_spatial_shape(
+    shape: list[int | str | None], input_name: str
+) -> list[int]:
+    """The spatial dimensions of an input, reversed to width-height
+    order.
+
+    A dynamic dimension carries a name or nothing at all, so it gives no
+    size to resize an image to.
+    """
+    spatial = [dim for dim in shape[2:][::-1] if isinstance(dim, int)]
+    if len(spatial) != len(shape) - 2:
+        raise ValueError(
+            f"Input `{input_name}` has a dynamic spatial shape: {shape}"
+        )
+    return spatial
 
 
 class RVC4Analyzer(Analyzer):
@@ -227,9 +243,12 @@ class RVC4Analyzer(Analyzer):
                 if img_path.lower().endswith(
                     ".npy"
                 ):  # expects numpy array to already be in correct format
-                    raw_image = cast(np.ndarray, np.load(img_path)).astype(
-                        type
-                    )
+                    loaded = np.load(img_path)
+                    if not isinstance(loaded, np.ndarray):
+                        raise TypeError(
+                            f"Input `{img_name}` is not a single array."
+                        )
+                    raw_image = loaded.astype(type)
 
                     if raw_image.shape != tuple(width_height):
                         raise ValueError(
@@ -237,8 +256,7 @@ class RVC4Analyzer(Analyzer):
                         )
                 else:
                     image = self._resize_image(img_path, width_height)
-                    image = image.astype(type)
-                    raw_image = cast(np.ndarray, image).astype(type)
+                    raw_image = image.astype(type)
 
                 raw_file_name = (
                     f"{input_name}.raw"
@@ -405,7 +423,9 @@ class RVC4Analyzer(Analyzer):
         for i, input_dict in input_matcher.items():
             onnx_input_dict = {}
             for input_name, img_path in input_dict.items():
-                shape = onnx_input_shapes[input_name][2:][::-1]
+                shape = _static_spatial_shape(
+                    onnx_input_shapes[input_name], input_name
+                )
                 if img_path.lower().endswith(".npy"):
                     image = np.load(img_path)
                     if image.shape != tuple(shape):
@@ -433,6 +453,13 @@ class RVC4Analyzer(Analyzer):
                 dlc_layer_size = self._output_sizes.get(layer_name)
                 if dlc_layer_size is None:
                     continue
+
+                # A sequence or map output has no statistics to compare.
+                if not isinstance(onnx_layer_output, np.ndarray):
+                    raise TypeError(
+                        f"Output `{layer_name}` is not a tensor: "
+                        f"{type(onnx_layer_output).__name__}"
+                    )
 
                 with open(dlc_output_path / f"{layer_name}.raw", "rb") as f:
                     raw_data = f.read()

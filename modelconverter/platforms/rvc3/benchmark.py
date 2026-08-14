@@ -1,13 +1,17 @@
 import sys
 from datetime import datetime, timezone
 from statistics import median
-from typing import Any
 
 from loguru import logger
 from openvino.inference_engine.ie_api import IECore, StatusCode
 from rich.progress import track
 
-from modelconverter.platforms.base_benchmark import Benchmark, Configuration
+from modelconverter.platforms.base_benchmark import (
+    Benchmark,
+    Configuration,
+    Result,
+    get_option,
+)
 
 
 class RVC3Benchmark(Benchmark):
@@ -24,11 +28,14 @@ class RVC3Benchmark(Benchmark):
     def all_configurations(self) -> list[Configuration]:
         return [{"requests": i} for i in range(1, 6)]
 
-    def benchmark(self, configuration: Configuration) -> dict[str, Any]:
-        return self._benchmark(str(self.model_path), **configuration)
+    def benchmark(self, configuration: Configuration) -> Result:
+        return self._benchmark(
+            str(self.model_path),
+            requests=get_option(configuration, "requests", int),
+        )
 
     @staticmethod
-    def _benchmark(model_path: str, requests: int) -> dict[str, Any]:
+    def _benchmark(model_path: str, requests: int) -> Result:
         ie = IECore()
         exe_network = ie.load_network(
             model_path,
@@ -73,8 +80,10 @@ class RVC3Benchmark(Benchmark):
         total_duration_sec = (
             datetime.now(timezone.utc) - start_time
         ).total_seconds()
-        for infer_request_id in in_fly:
-            times.append(infer_requests[infer_request_id].latency)
+        times.extend(
+            infer_requests[infer_request_id].latency
+            for infer_request_id in in_fly
+        )
         times.sort()
         latency = median(times)
         fps = i / total_duration_sec

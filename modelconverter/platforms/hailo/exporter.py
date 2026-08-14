@@ -1,13 +1,12 @@
 import shutil
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
 
 import hailo_sdk_client
 import numpy as np
 import tensorflow as tf
 from hailo_sdk_client import ClientRunner
 from loguru import logger
+from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import exit_with, read_image
@@ -52,7 +51,7 @@ class HailoExporter(Exporter):
 
         logger.info("Translating model to Hailo IR.")
         if self._is_tflite:
-            cast(Callable[..., None], runner.translate_tf_model)(
+            runner.translate_tf_model(
                 str(self._input_model),
                 net_name=self._model_name,
                 start_node_names=start_nodes,
@@ -60,7 +59,7 @@ class HailoExporter(Exporter):
                 end_node_names=list(self._outputs.keys()),
             )
         else:
-            cast(Callable[..., None], runner.translate_onnx_model)(
+            runner.translate_onnx_model(
                 str(self._input_model),
                 net_name=self._model_name,
                 start_node_names=start_nodes,
@@ -259,7 +258,7 @@ class HailoExporter(Exporter):
         self._alls = alls
         return "\n".join(alls)
 
-    def exporter_buildinfo(self) -> dict[str, Any]:
+    def exporter_buildinfo(self) -> Params:
         return {
             "hailo_version": hailo_sdk_client.__version__,
             "optimization_level": self._optimization_level,

@@ -1,9 +1,9 @@
 import os
 import resource
 import sys
+from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
-from typing import Any
 from uuid import uuid4
 
 from luxonis_ml.nn_archive import is_nn_archive
@@ -15,6 +15,7 @@ from luxonis_ml.telemetry import (
     get_or_init,
     system_context_provider,
 )
+from luxonis_ml.typing import ParamValue
 
 from modelconverter import __version__
 from modelconverter.utils.config import (
@@ -145,7 +146,7 @@ def build_command_properties(
     result: CommandResult,
     duration_ms: int,
     failure_reason: FailureReason | None = None,
-) -> dict[str, Any]:
+) -> dict[str, ParamValue]:
     return _drop_none(
         {
             "conversion_run_id": conversion_run_id,
@@ -175,7 +176,7 @@ def build_conversion_summary(
     archive_output_mode: ArchiveOutputMode,
     archive_preprocess: bool,
     main_stage_provided: bool,
-) -> dict[str, Any]:
+) -> dict[str, ParamValue]:
     stages = list(cfg.stages.values())
     inputs = [inp for stage in stages for inp in stage.inputs]
     outputs = [out for stage in stages for out in stage.outputs]
@@ -247,8 +248,8 @@ def build_conversion_summary(
 def build_flow_properties(
     conversion_run_id: str,
     flow_step: TelemetryFlowStep,
-    properties: dict[str, Any],
-) -> dict[str, Any]:
+    properties: Mapping[str, ParamValue],
+) -> dict[str, ParamValue]:
     return {
         "flow_name": FLOW_NAME,
         "conversion_run_id": conversion_run_id,
@@ -266,7 +267,7 @@ def build_conversion_result_properties(
     failure_reason: FailureReason | None = None,
     output_artifact_count: int | None = None,
     peak_ram_bytes: int | None = None,
-) -> dict[str, Any]:
+) -> dict[str, ParamValue]:
     return _drop_none(
         {
             "result": result.value,
@@ -404,7 +405,7 @@ def peak_ram_usage_bytes() -> int:
 
 def _platform_configuration(
     platform: Platform, stages: list[SingleStageConfig]
-) -> dict[str, Any] | None:
+) -> dict[str, ParamValue] | None:
     first_stage = stages[0]
     platform_config = first_stage.get_platform_config(platform)
 
@@ -466,7 +467,7 @@ def _platform_configuration(
     return None
 
 
-def _calibration_source(calibration: Any) -> CalibrationSource | None:
+def _calibration_source(calibration: object) -> CalibrationSource | None:
     if isinstance(calibration, ImageCalibrationConfig):
         return CalibrationSource.IMAGE_DIRECTORY
     if isinstance(calibration, RandomCalibrationConfig):
@@ -476,7 +477,7 @@ def _calibration_source(calibration: Any) -> CalibrationSource | None:
     return None
 
 
-def _drop_none(properties: dict[str, Any]) -> dict[str, Any]:
+def _drop_none(properties: Mapping[str, ParamValue]) -> dict[str, ParamValue]:
     return {
         key: value for key, value in properties.items() if value is not None
     }

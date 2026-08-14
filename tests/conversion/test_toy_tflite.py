@@ -60,10 +60,10 @@ def solid_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
-@pytest.mark.parametrize("platform", _PARAMS)
-def test_toy_tflite_conversion(platform: str, toy_tflite: Path):
-    platform = Platform(platform)
-    output_name = f"_toy-tflite-{platform}"
+@pytest.mark.parametrize("platform_name", _PARAMS)
+def test_toy_tflite_conversion(platform_name: str, toy_tflite: Path):
+    platform = Platform(platform_name)
+    output_name = f"_toy-tflite-{platform_name}"
     convert(
         platform,
         *platform_options(platform),
@@ -74,13 +74,13 @@ def test_toy_tflite_conversion(platform: str, toy_tflite: Path):
     assert_produced(output_name)
 
 
-@pytest.mark.parametrize("platform", _PARAMS)
+@pytest.mark.parametrize("platform_name", _PARAMS)
 def test_toy_tflite_precision(
-    platform: str, toy_tflite: Path, solid_image: Path
+    platform_name: str, toy_tflite: Path, solid_image: Path
 ):
-    platform = Platform(platform)
+    platform = Platform(platform_name)
     options = platform_options(platform)
-    output_name = f"_toy-tflite-prec-{platform}"
+    output_name = f"_toy-tflite-prec-{platform_name}"
     convert(
         platform,
         *options,
@@ -95,7 +95,9 @@ def test_toy_tflite_precision(
         platform, None, ["input_model", str(toy_tflite), *options]
     )
     stage = next(iter(cfg.stages.values()))
-    model_path = locate_converted_model(OUTPUTS_DIR / output_name, platform)
+    model_path = locate_converted_model(
+        OUTPUTS_DIR / output_name, platform_name
+    )
     inferer = get_inferer(
         platform,
         str(model_path),
@@ -113,5 +115,5 @@ def test_toy_tflite_precision(
     )
     cos = cosine_similarity(reference, values)
     assert cos >= _THRESHOLD, (
-        f"{platform} tflite precision: cosine {cos:.5f} < {_THRESHOLD}"
+        f"{platform_name} tflite precision: cosine {cos:.5f} < {_THRESHOLD}"
     )

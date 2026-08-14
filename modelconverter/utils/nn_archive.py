@@ -2,7 +2,7 @@ import json
 import tarfile
 from itertools import pairwise
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator
@@ -15,8 +15,14 @@ from luxonis_ml.nn_archive.config_building_blocks import (
     InputType,
     PreprocessingBlock,
 )
+from luxonis_ml.typing import Params
 
-from modelconverter.utils.config import BlobBaseConfig, Config, PlatformConfig
+from modelconverter.utils.config import (
+    BlobBaseConfig,
+    Config,
+    InputConfig,
+    PlatformConfig,
+)
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
 from modelconverter.utils.metadata import Metadata, get_metadata
@@ -36,13 +42,13 @@ def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
 
 
 def process_nn_archive(
-    platform: Platform, path: Path, overrides: dict[str, Any] | None
+    platform: Platform, path: Path, overrides: Params | None
 ) -> tuple[Config, NNArchiveConfig, str]:
     """Extracts the archive from tar and parses its config.
 
     @type path: Path
     @param path: Path to the archive.
-    @type overrides: Optional[Dict[str, Any]]
+    @type overrides: Optional[Params]
     @param overrides: Config overrides.
     @rtype: Tuple[Config, NNArchiveConfig, str]
     @return: Tuple of the parsed config, NNArchiveConfig and the main
@@ -418,11 +424,11 @@ def _default_archive_input_type(
 
 
 def _default_archive_preprocessing(
-    inp: Any,
+    inp: InputConfig,
     layout: str,
     *,
     input_type: Literal["raw", "image"],
-) -> dict[str, Any]:
+) -> Params:
     if input_type == "raw":
         return {
             "mean": None,

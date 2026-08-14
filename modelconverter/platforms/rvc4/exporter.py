@@ -3,9 +3,10 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import NamedTuple
 
 from loguru import logger
+from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
@@ -215,7 +216,7 @@ class RVC4Exporter(Exporter):
                 )
             if not all(x is not None for x in inp.shape):
                 exit_with(ValueError(f"Input `{name}` has dynamic shape."))
-            shape = cast(list[int], inp.shape)
+            shape = inp.shape
             if self._is_tflite:
                 shape = [shape[0], shape[3], shape[1], shape[2]]
             entries.append(
@@ -355,7 +356,7 @@ class RVC4Exporter(Exporter):
         logger.info("Exported for RVC4")
         return self._input_model.with_suffix(".dlc")
 
-    def exporter_buildinfo(self) -> dict[str, Any]:
+    def exporter_buildinfo(self) -> Params:
         snpe_version = subprocess.run(
             ["snpe-dlc-quant", "--version"], capture_output=True, check=False
         )

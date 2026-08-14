@@ -81,12 +81,14 @@ SCENARIOS: list[Scenario] = [
 ]
 
 
-def _scenario_options(platform: str, scenario: Scenario) -> tuple[str, ...]:
+def _scenario_options(
+    platform_name: str, scenario: Scenario
+) -> tuple[str, ...]:
     if scenario.id != "ir-to-archive":
         return scenario.opts
 
     version = os.environ["MODELCONVERTER_TOOL_VERSION"].replace(".", "_")
-    model = f"{IR_MODELS}/resnet18_{platform}_{version}.xml"
+    model = f"{IR_MODELS}/resnet18_{platform_name}_{version}.xml"
     return (*scenario.opts, "input_model", model)
 
 
@@ -102,14 +104,14 @@ _CASES = [
 ]
 
 
-@pytest.mark.parametrize(("platform", "scenario"), _CASES)
-def test_convert(platform: str, scenario: Scenario):
-    platform = Platform(platform)
-    output_name = f"_{platform}-{scenario.id}"
-    extra = HAILO_FAST_OPTS if platform == "hailo" else ()
+@pytest.mark.parametrize(("platform_name", "scenario"), _CASES)
+def test_convert(platform_name: str, scenario: Scenario):
+    platform = Platform(platform_name)
+    output_name = f"_{platform_name}-{scenario.id}"
+    extra = HAILO_FAST_OPTS if platform_name == "hailo" else ()
     convert(
         platform,
-        *_scenario_options(platform, scenario),
+        *_scenario_options(platform_name, scenario),
         *platform_options(platform),
         *extra,
         path=scenario.path,

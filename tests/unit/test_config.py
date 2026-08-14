@@ -7,10 +7,10 @@ full ``Config.get_config`` pipeline.
 
 import json
 from pathlib import Path
-from typing import Any
 
 import onnx
 import pytest
+from luxonis_ml.typing import ParamValue
 from onnx import TensorProto, checker, helper
 from pydantic import ValidationError
 
@@ -53,12 +53,12 @@ from tests.helpers.onnx_factory import (
 )
 
 
-def _input_config(**data: Any) -> InputConfig:
+def _input_config(**data: ParamValue) -> InputConfig:
     """Validate raw user configuration through Pydantic's public API."""
     return InputConfig.model_validate(data)
 
 
-def _rvc4_config(**data: Any) -> RVC4Config:
+def _rvc4_config(**data: ParamValue) -> RVC4Config:
     """Validate raw user configuration through Pydantic's public API."""
     return RVC4Config.model_validate(data)
 

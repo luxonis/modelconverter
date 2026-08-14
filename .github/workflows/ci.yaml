@@ -75,8 +75,74 @@ env:
   LUXONIS_TELEMETRY_ENABLED: "false"
 
 jobs:
+  # Guards the test jobs: a type error is cheaper to find here than after a
+  # platform image has built and run. The conversion code imports vendor
+  # packages that live only in those images, so pyright cannot resolve a single
+  # one of them from `.[dev]` alone. They are installed with `--no-deps`,
+  # because their pins target the images and would otherwise downgrade NumPy.
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    env:
+      GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
+      HAILO_WHEEL: hailo_dataflow_compiler-5.3.0-py3-none-linux_x86_64.whl
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install package
+        run: pip install -e .[dev]
+
+      # Every run but a release PR builds against luxonis-ml `main`, so a
+      # breaking change upstream surfaces here before it is published. A
+      # release PR must validate against the published package instead,
+      # because that is what users will install.
+      - name: Install LuxonisML from main
+        if: ${{ inputs.ml_ref || !startsWith(github.head_ref, 'release/') }}
+        env:
+          ML_REF: ${{ inputs.ml_ref || 'main' }}
+        run: |
+          pip uninstall luxonis-ml -y
+          pip install \
+            "luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
+            --upgrade --force-reinstall
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          token_format: access_token
+
+      # The Hailo Dataflow Compiler is not on PyPI. Its wheel sits next to the
+      # platform image archives in the build-artifacts bucket.
+      - name: Install platform dependencies
+        run: |
+          gcloud storage cp "${GS_BUILD_ARTIFACTS}/${HAILO_WHEEL}" .
+          pip install --no-deps \
+            -r requirements-typecheck.txt \
+            "./${HAILO_WHEEL}"
+
+      # `version: PATH` runs the pyright that `.[dev]` pins, so CI and a local
+      # run agree. The action adds the findings to the pull request diff.
+      - name: Run pyright
+        uses: jakebailey/pyright-action@8ec14b5cfe41f26e5f41686a31eb6012758217ef
+        with:
+          version: PATH
+          warnings: true
+
   unit:
     name: Unit tests
+    needs: [typecheck]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -95,14 +161,15 @@ jobs:
       - name: Install package
         run: pip install -e .[dev]
 
-      - name: Install specified LuxonisML
-        if: ${{ inputs.ml_ref != '' }}
+      # Same policy as the `typecheck` job above.
+      - name: Install LuxonisML from main
+        if: ${{ inputs.ml_ref || !startsWith(github.head_ref, 'release/') }}
         env:
-          ML_REF: ${{ inputs.ml_ref }}
+          ML_REF: ${{ inputs.ml_ref || 'main' }}
         run: |
           pip uninstall luxonis-ml -y
           pip install \
-            "luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
+            "luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
             --upgrade --force-reinstall
 
       - name: Run unit tests
@@ -253,7 +320,14 @@ jobs:
       - name: Run integration tests
         env:
           ML_REF: ${{ inputs.ml_ref }}
+          # A release PR validates against the published package; every
+          # other run builds against luxonis-ml `main`.
+          RELEASE_PR: ${{ startsWith(github.head_ref, 'release/') }}
         run: |
+          if [[ -z "${ML_REF}" && "${RELEASE_PR}" != "true" ]]; then
+            ML_REF=main
+          fi
+
           if [[ -n "${ML_REF}" ]]; then
             if [[ ! "${ML_REF}" =~ ^[A-Za-z0-9._/-]+$ ]]; then
               echo "Invalid luxonis-ml ref: ${ML_REF}" >&2
@@ -261,7 +335,7 @@ jobs:
             fi
             ML_INSTALL_COMMAND="pip uninstall luxonis-ml -y && \
               pip install \
-              \"luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}\" \
+              \"luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}\" \
               --upgrade --force-reinstall &&"
           else
             ML_INSTALL_COMMAND=""

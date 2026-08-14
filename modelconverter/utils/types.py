@@ -1,11 +1,13 @@
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 from onnx.onnx_pb import TensorProto
 
 __all__ = ["DataType", "Encoding", "Platform", "PotDevice", "ResizeMethod"]
+
+_T = TypeVar("_T")
 
 if TYPE_CHECKING:
     import depthai as dai
@@ -127,7 +129,7 @@ class DataType(Enum):
 
     @classmethod
     def from_onnx_dtype(cls, dtype: int) -> "DataType":
-        dtype_map = {
+        dtype_map: dict[int, str] = {
             TensorProto.BFLOAT16: "bfloat16",
             TensorProto.FLOAT16: "float16",
             TensorProto.FLOAT: "float32",
@@ -150,7 +152,7 @@ class DataType(Enum):
         return cls(dtype_map[dtype])
 
     @classmethod
-    def from_numpy_dtype(cls, dtype: np.dtype) -> "DataType":
+    def from_numpy_dtype(cls, dtype: type[np.generic]) -> "DataType":
         dtype_map = {
             np.float16: "float16",
             np.float32: "float32",
@@ -239,7 +241,7 @@ class DataType(Enum):
             "ufxp16",
         }
 
-    def as_numpy_dtype(self) -> np.dtype:
+    def as_numpy_dtype(self) -> type[np.generic]:
         return self._transform(
             {
                 "bfloat16": np.float32,  # Preserve bfloat16 range better than float16.
@@ -298,7 +300,7 @@ class DataType(Enum):
             return self.value.replace("fxp", "int")
         return self.value
 
-    def _transform(self, mapping: dict[str, Any], desc: str) -> Any:
+    def _transform(self, mapping: dict[str, _T], desc: str) -> _T:
         if self.value not in mapping:
             raise ValueError(
                 f"`{self.value}` cannot be transformed to {desc} data type"

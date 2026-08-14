@@ -7,11 +7,12 @@ the per-input dictionaries is exercised through a minimal stand-in
 subclass instead.
 """
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pytest
+from luxonis_ml.typing import ParamValue
 
 from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.utils.config import Config
@@ -29,7 +30,9 @@ class _StubInferer(Inferer):
         return {}
 
 
-def _build(work_dir: Path, shape: list[int], **overrides: Any) -> _StubInferer:
+def _build(
+    work_dir: Path, shape: list[int], **overrides: ParamValue
+) -> _StubInferer:
     """Build an inferer from a single-input model of the given shape."""
     model = single_io_onnx(
         work_dir / "m.onnx",
@@ -56,7 +59,7 @@ def _build(work_dir: Path, shape: list[int], **overrides: Any) -> _StubInferer:
 def test_encoding_follows_the_config(
     work_dir: Path,
     shape: list[int],
-    overrides: dict[str, Any],
+    overrides: Mapping[str, ParamValue],
     expected: Encoding,
 ):
     """``encoding.to`` is passed through whatever the calibration is.

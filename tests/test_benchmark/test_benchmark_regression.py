@@ -1,10 +1,13 @@
 import json
 import platform
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Protocol
 
 import pytest
 from hil_framework.lib_testbed.db_source.InfluxClient import InfluxClient
+from hil_framework.lib_testbed.utils.Testbed import Testbed
+from luxonis_ml.typing import Params
 
 from modelconverter.platforms import get_benchmark
 from modelconverter.utils.types import Platform
@@ -12,6 +15,30 @@ from modelconverter.utils.types import Platform
 PLATFORMS_FILE = Path(__file__).parent / "benchmark_platforms.json"
 
 _platforms_data = json.loads(PLATFORMS_FILE.read_text())
+
+
+class BenchmarkCamera(Protocol):
+    """The part of the HIL framework camera API that this suite uses."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def mxid(self) -> str: ...
+
+    @property
+    def model(self) -> str: ...
+
+    @property
+    def revision(self) -> str: ...
+
+    @property
+    def hostname(self) -> str: ...
+
+    @property
+    def platform(self) -> str: ...
+
+    def get_os_version(self) -> str: ...
 
 
 def _model_slugs(platform: str) -> list[str]:
@@ -31,7 +58,7 @@ def _build_fps_benchmark_data(
     model_slug: str,
     benchmark_platform: str,
     benchmark_run_id: str,
-    benchmark_camera: Any,
+    benchmark_camera: BenchmarkCamera,
     testbed_name: str | None,
     depthai_version: str | None,
     actual_fps: float,
@@ -42,7 +69,7 @@ def _build_fps_benchmark_data(
     fps_max: float,
     deviation_pct: float,
     success: bool,
-) -> dict[str, Any]:
+) -> Params:
     camera_os_version = _get_camera_os_version(benchmark_camera)
     server_os = platform.system().strip().lower() or None
     benchmark_device_ip = _get_benchmark_device_ip(benchmark_camera)
@@ -96,7 +123,7 @@ def _write_fps_benchmark_result(
     model_slug: str,
     benchmark_platform: str,
     benchmark_run_id: str,
-    benchmark_camera: Any,
+    benchmark_camera: BenchmarkCamera,
     testbed_name: str | None,
     depthai_version: str | None,
     actual_fps: float,
@@ -137,7 +164,7 @@ def _write_fps_benchmark_result(
         client.close()
 
 
-def _get_camera_os_version(benchmark_camera: Any) -> str:
+def _get_camera_os_version(benchmark_camera: BenchmarkCamera) -> str:
     if not hasattr(benchmark_camera, "get_os_version"):
         raise RuntimeError(
             f"Camera {benchmark_camera.name} does not expose get_os_version()."
@@ -150,7 +177,7 @@ def _get_camera_os_version(benchmark_camera: Any) -> str:
         ) from exc
 
 
-def _get_benchmark_device_ip(benchmark_camera: Any) -> str:
+def _get_benchmark_device_ip(benchmark_camera: BenchmarkCamera) -> str:
     device_ip = getattr(benchmark_camera, "hostname", None)
     if not device_ip:
         raise RuntimeError(
@@ -159,7 +186,7 @@ def _get_benchmark_device_ip(benchmark_camera: Any) -> str:
     return device_ip
 
 
-def _require_metadata(metadata: dict[str, Any]) -> None:
+def _require_metadata(metadata: Mapping[str, str | None]) -> None:
     missing_fields = [
         field_name
         for field_name, value in metadata.items()
@@ -173,9 +200,9 @@ def _require_metadata(metadata: dict[str, Any]) -> None:
 
 
 def _select_benchmark_camera(
-    hil_testbed: Any,
+    hil_testbed: Testbed,
     benchmark_platform: str,
-) -> Any:
+) -> BenchmarkCamera:
     platform_matches = [
         camera
         for camera in hil_testbed.cameras
@@ -212,7 +239,7 @@ def test_benchmark_fps(
     influx_bucket: str | None,
     influx_token: str | None,
     depthai_version: str | None,
-    hil_testbed: Any,
+    hil_testbed: Testbed,
 ) -> None:
     assert influx_bucket is not None
     assert influx_token is not None
@@ -242,6 +269,12 @@ def test_benchmark_fps(
 
     result = bench.benchmark(configuration)
     actual_fps = result["fps"]
+    # A benchmark reports a string, for example "N/A", if the
+    # measurement is not available.
+    assert isinstance(actual_fps, int | float), (
+        f"The benchmark did not measure the FPS of {model_slug}: "
+        f"{actual_fps!r}."
+    )
 
     tolerance_low = model_config["tolerance_low"]
     tolerance_high = model_config["tolerance_high"]

@@ -42,11 +42,11 @@ def external_data_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return config_path
 
 
-@pytest.mark.parametrize("platform", platform_params())
-def test_external_data(platform: str, external_data_config: Path):
-    platform = Platform(platform)
-    output_name = f"_external-data-{platform}"
-    extra = HAILO_FAST_OPTS if platform == "hailo" else ()
+@pytest.mark.parametrize("platform_name", platform_params())
+def test_external_data(platform_name: str, external_data_config: Path):
+    platform = Platform(platform_name)
+    output_name = f"_external-data-{platform_name}"
+    extra = HAILO_FAST_OPTS if platform_name == "hailo" else ()
     convert(
         platform,
         *platform_options(platform),

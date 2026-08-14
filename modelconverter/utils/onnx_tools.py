@@ -25,6 +25,20 @@ ensure_onnx_helper_compatibility()
 import onnx_graphsurgeon as gs  # noqa: E402
 
 
+def _output_names(graph: gs.Graph) -> list[str]:
+    """The names of the outputs of the graph.
+
+    GraphSurgeon declares an output as the abstract C{gs.Tensor}, which
+    has no C{name}. Only the two concrete subclasses carry one, and an
+    imported graph holds nothing else.
+    """
+    names = []
+    for tensor in graph.outputs:
+        assert isinstance(tensor, gs.Variable | gs.Constant)
+        names.append(tensor.name)
+    return names
+
+
 def get_opset_version(model: onnx.ModelProto) -> int:
     for imp in model.opset_import:
         if imp.domain == "":
@@ -386,7 +400,7 @@ class ONNXModifier:
             ONNX model
         @type output_names: List[str]
         """
-        graph_outputs = [output.name for output in self._onnx_gs.outputs]
+        graph_outputs = _output_names(self._onnx_gs)
         for name, tensor in self._onnx_gs.tensors().items():
             if name in output_names and name not in graph_outputs:
                 self._onnx_gs.outputs.append(tensor)
@@ -460,17 +474,21 @@ class ONNXModifier:
             graph
         @type connections_to_fix: List[Tuple[gs.Variable, gs.Variable]]
         """
+        # GraphSurgeon declares the nodes as an immutable sequence, but
+        # the graph keeps them in a list that this surgery edits in place.
+        nodes = self._onnx_gs.nodes
+        assert isinstance(nodes, list)
         for node in nodes_to_add:
-            self._onnx_gs.nodes.append(node)
+            nodes.append(node)
 
         for old_input, new_input in connections_to_fix:
-            for node in self._onnx_gs.nodes:
+            for node in nodes:
                 for idx, input in enumerate(node.inputs):
                     if input == old_input:
                         node.inputs[idx] = new_input
 
         for node in nodes_to_remove:
-            self._onnx_gs.nodes.remove(node)
+            nodes.remove(node)
 
         self._onnx_gs.cleanup(
             remove_unused_node_outputs=True, remove_unused_graph_inputs=True
@@ -556,7 +574,7 @@ class ONNXModifier:
         nodes_to_remove = []
         connections_to_fix = []
 
-        graph_output_names = {output.name for output in self._onnx_gs.outputs}
+        graph_output_names = set(_output_names(self._onnx_gs))
 
         for node in self._onnx_gs.nodes:
             if node.op == source_node:
@@ -587,10 +605,10 @@ class ONNXModifier:
                         )
 
                         if node.outputs[0].name in graph_output_names:
-                            for i, graph_output in enumerate(
-                                self._onnx_gs.outputs
+                            for i, graph_output_name in enumerate(
+                                _output_names(self._onnx_gs)
                             ):
-                                if graph_output.name == node.outputs[0].name:
+                                if graph_output_name == node.outputs[0].name:
                                     new_output_var = gs.Variable(
                                         name=node.outputs[0].name,
                                         dtype=node.outputs[0].dtype,
@@ -633,9 +651,13 @@ class ONNXModifier:
         constant_map = self._get_constant_map(self._onnx_gs)
 
         def create_batch_norm_node(
-            name: str, input_tensor: gs.Variable, scale: float, bias: float
+            name: str,
+            input_tensor: gs.Variable,
+            scale: float | np.ndarray,
+            bias: float | np.ndarray,
         ) -> gs.Node:
-            conv_channels = input_tensor.shape[1]
+            assert input_tensor.shape is not None
+            conv_channels = int(input_tensor.shape[1])
             scale_values = np.array(
                 [scale] * conv_channels, dtype=self._dtype
             ).squeeze()
@@ -758,9 +780,9 @@ class ONNXModifier:
                     )
                 )
 
-            for seq_node in sequence:
-                if seq_node.op != "Conv":
-                    nodes_to_remove.append(seq_node)
+            nodes_to_remove.extend(
+                seq_node for seq_node in sequence if seq_node.op != "Conv"
+            )
 
         if not any([nodes_to_add, nodes_to_remove, connections_to_fix]):
             logger.warning(
@@ -1162,6 +1184,10 @@ class ONNXModifier:
                     )
 
                 channels_axis = split_node.attrs["axis"]
+                if not isinstance(channels_axis, int):
+                    raise ValueError(
+                        f"Split node axis must be an integer, got: {channels_axis}"
+                    )
                 if conv_weights.shape[channels_axis] not in [1, 3]:
                     break
 
@@ -1356,6 +1382,13 @@ class ONNXModifier:
 
         equal_outputs = True
         for out1, out2 in zip(outputs_1, outputs_2, strict=True):
+            # A sequence or map output has nothing to compare numerically.
+            if not isinstance(out1, np.ndarray) or not isinstance(
+                out2, np.ndarray
+            ):
+                raise ONNXException(
+                    "Can only compare models whose outputs are all tensors."
+                )
             equal_outputs = equal_outputs and np.allclose(
                 out1, out2, rtol=5e-3, atol=5e-3
             )

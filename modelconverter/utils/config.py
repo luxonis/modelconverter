@@ -1,11 +1,11 @@
 import warnings
 from itertools import chain
 from pathlib import Path
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Literal
 
 import onnx
 from loguru import logger
-from luxonis_ml.typing import BaseModelExtraForbid, PathType
+from luxonis_ml.typing import BaseModelExtraForbid, ParamValue, PathType
 from luxonis_ml.utils import LuxonisConfig
 from onnx import TypeProto
 from pydantic import (
@@ -60,7 +60,7 @@ class LinkCalibrationConfig(BaseModelExtraForbid):
 
     @field_validator("script", mode="after")
     @staticmethod
-    def _download_calibration_script(script: Any) -> Path | None:
+    def _download_calibration_script(script: str | None) -> str | None:
         if script is None:
             return None
         if script.endswith(".py"):
@@ -76,7 +76,7 @@ class ImageCalibrationConfig(BaseModelExtraForbid):
 
     @field_validator("path", mode="before")
     @staticmethod
-    def _download_calibration_data(value: Any) -> Path | None:
+    def _download_calibration_data(value: object) -> Path | None:
         if value is None:
             return None
         return download_calibration_data(str(value))
@@ -99,7 +99,9 @@ class OutputConfig(BaseModelExtraForbid):
 
     @model_validator(mode="before")
     @classmethod
-    def _make_default_layout(cls, data: dict[str, Any]) -> dict[str, Any]:
+    def _make_default_layout(
+        cls, data: dict[str, object]
+    ) -> dict[str, object]:
         shape = data.get("shape")
         layout = data.get("layout")
         if shape is None and layout is not None:
@@ -107,7 +109,9 @@ class OutputConfig(BaseModelExtraForbid):
         if shape is None:
             return data
         if layout is None:
-            layout = make_default_layout(shape)
+            layout = make_default_layout(_as_shape(shape, "shape"))
+        elif not isinstance(layout, str):
+            raise TypeError("`layout` must be a string.")
         data["layout"] = layout.upper()
         return data
 
@@ -139,7 +143,7 @@ class InputConfig(OutputConfig):
     ) = RandomCalibrationConfig()
     scale_values: Annotated[list[float], Field(min_length=1)] | None = None
     mean_values: Annotated[list[float], Field(min_length=1)] | None = None
-    frozen_value: Any | None = None
+    frozen_value: list[int | float] | None = None
     encoding: EncodingConfig = EncodingConfig()
 
     @property
@@ -186,7 +190,7 @@ class InputConfig(OutputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def _validate_encoding(cls, data: dict[str, Any]) -> dict[str, Any]:
+    def _validate_encoding(cls, data: dict[str, object]) -> dict[str, object]:
         encoding = data.get("encoding")
         if encoding is None or encoding == {}:
             data["encoding"] = {"from": "RGB", "to": "BGR"}
@@ -202,27 +206,27 @@ class InputConfig(OutputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def _random_calibration(cls, data: dict[str, Any]) -> dict[str, Any]:
+    def _random_calibration(cls, data: dict[str, object]) -> dict[str, object]:
         if data.get("calibration") in ["random", None]:
             data["calibration"] = RandomCalibrationConfig()
         return data
 
     @field_validator("scale_values", mode="before")
     @staticmethod
-    def _parse_scale_values(value: Any) -> Any:
+    def _parse_scale_values(value: ParamValue) -> ParamValue:
         """Parses the scale_values from the config."""
         return InputConfig._parse_values("scale", value)
 
     @field_validator("mean_values", mode="before")
     @staticmethod
-    def _parse_mean_values(value: Any) -> Any:
+    def _parse_mean_values(value: ParamValue) -> ParamValue:
         """Parses the mean_values from the config."""
         return InputConfig._parse_values("mean", value)
 
     @staticmethod
     def _parse_values(
-        values_type: Literal["mean", "scale"], value: Any
-    ) -> Any:
+        values_type: Literal["mean", "scale"], value: ParamValue
+    ) -> ParamValue:
         """Resolves named values from the config."""
         if value is None:
             return None
@@ -344,7 +348,7 @@ class RVC4Config(PlatformConfig):
 
     @field_validator("encodings", mode="before")
     @staticmethod
-    def validate_encodings(value: Any) -> Encodings | None:
+    def validate_encodings(value: ParamValue | Encodings) -> Encodings | None:
         if value is None:
             return None
 
@@ -408,8 +412,8 @@ class SingleStageConfig(BaseModelExtraForbid):
     @model_validator(mode="before")
     @classmethod
     def validate_onnx_simplification(
-        cls, data: dict[str, Any]
-    ) -> dict[str, Any]:
+        cls, data: dict[str, object]
+    ) -> dict[str, object]:
         if data.pop("disable_onnx_simplification", False):
             if "onnx_simplification" in data:
                 raise ValueError(
@@ -440,8 +444,8 @@ class SingleStageConfig(BaseModelExtraForbid):
     @model_validator(mode="before")
     @classmethod
     def validate_onnx_optimizations(
-        cls, data: dict[str, Any]
-    ) -> dict[str, Any]:
+        cls, data: dict[str, object]
+    ) -> dict[str, object]:
         if "onnx_optimizations" not in data:
             return data
         optimizations = data["onnx_optimizations"]
@@ -461,8 +465,8 @@ class SingleStageConfig(BaseModelExtraForbid):
     @model_validator(mode="before")
     @classmethod
     def validate_disable_onnx_optimizations(
-        cls, data: dict[str, Any]
-    ) -> dict[str, Any]:
+        cls, data: dict[str, object]
+    ) -> dict[str, object]:
         if "disable_onnx_optimizations" not in data:
             return data
         if data.pop("disable_onnx_optimizations", False):
@@ -489,7 +493,7 @@ class SingleStageConfig(BaseModelExtraForbid):
 
     @model_validator(mode="before")
     @classmethod
-    def _validate_model(cls, data: dict[str, Any]) -> dict[str, Any]:
+    def _validate_model(cls, data: dict[str, object]) -> dict[str, object]:
         mean_values = data.pop("mean_values", None)
         scale_values = data.pop("scale_values", None)
         encoding = data.pop("encoding", {})
@@ -498,23 +502,29 @@ class SingleStageConfig(BaseModelExtraForbid):
         layout = data.pop("layout", None)
         top_level_calibration = data.pop("calibration", {})
 
-        input_file_type = InputFileType.from_path(data["input_model"])
+        input_model = data["input_model"]
+        if not isinstance(input_model, str | Path):
+            raise TypeError("`input_model` must be a string or a path.")
+        model_path = Path(input_model)
+
+        input_file_type = InputFileType.from_path(model_path)
         data["input_file_type"] = input_file_type
         if input_file_type == InputFileType.PYTORCH:
             logger.info(
                 "Detected PyTorch model. Only YOLO models are supported."
             )
-            input_shape = data.pop("yolo_input_shape", [640, 640])
-            if isinstance(input_shape, str):
+            raw_shape = data.pop("yolo_input_shape", [640, 640])
+            if isinstance(raw_shape, str):
                 input_shape = (
-                    list(map(int, input_shape.split(" ")))
-                    if " " in input_shape
-                    else [int(input_shape)] * 2
+                    [int(size) for size in raw_shape.split(" ")]
+                    if " " in raw_shape
+                    else [int(raw_shape)] * 2
                 )
             else:
                 logger.warning(
                     "yolo_input_shape is not provided. Using default shape [640, 640]."
                 )
+                input_shape = _as_shape(raw_shape, "yolo_input_shape")
             input_shapes = {"images": input_shape[::-1]}
             input_dtypes = {"images": DataType.FLOAT32}
             output_shapes = {"dummy": [0]}
@@ -527,18 +537,18 @@ class SingleStageConfig(BaseModelExtraForbid):
                 output_dtypes=output_dtypes,
             )
         else:
-            metadata = get_metadata(Path(data["input_model"]))
+            metadata = get_metadata(model_path)
 
-        inputs = data.get("inputs")
+        inputs: list[dict[str, object]] = _as_entries(
+            data.get("inputs"), "inputs"
+        )
         if not inputs:
-            inputs = [
-                {"name": cast(Any, name)} for name in metadata.input_shapes
-            ]
-        outputs = data.get("outputs")
+            inputs = [{"name": name} for name in metadata.input_shapes]
+        outputs: list[dict[str, object]] = _as_entries(
+            data.get("outputs"), "outputs"
+        )
         if not outputs:
-            outputs = [
-                {"name": cast(Any, name)} for name in metadata.output_shapes
-            ]
+            outputs = [{"name": name} for name in metadata.output_shapes]
 
         for inp in inputs:
             if "name" not in inp:
@@ -546,20 +556,19 @@ class SingleStageConfig(BaseModelExtraForbid):
                     f"Unable to determine name for input: `{inp}`."
                 )
             inp_name = str(inp["name"])
-            if inp_name not in metadata.input_shapes:
-                tensor_shape, tensor_dtype = _get_onnx_inter_info(
-                    data["input_model"], inp_name
+            if inp_name in metadata.input_shapes:
+                onnx_shape, onnx_dtype = (
+                    metadata.input_shapes[inp_name],
+                    metadata.input_dtypes[inp_name],
                 )
-                metadata.input_shapes[inp_name] = tensor_shape  # type: ignore
-                metadata.input_dtypes[inp_name] = tensor_dtype  # type: ignore
+            else:
+                onnx_shape, onnx_dtype = _get_onnx_inter_info(
+                    model_path, inp_name
+                )
                 logger.warning(
                     f"Input `{inp_name}` is not present in inputs of the ONNX model. "
                     f"Assuming it is an intermediate node."
                 )
-            onnx_shape, onnx_dtype = (
-                metadata.input_shapes[inp_name],
-                metadata.input_dtypes[inp_name],
-            )
             inp["shape"] = inp.get("shape") or shape or onnx_shape
             inp["layout"] = inp.get("layout") or layout
             inp["data_type"] = inp.get("data_type") or data_type or onnx_dtype
@@ -575,15 +584,15 @@ class SingleStageConfig(BaseModelExtraForbid):
                 else scale_values
             )
 
-            inp_calibration: dict[str, Any] = inp.get("calibration", {})
+            inp_calibration = inp.get("calibration", {})
             if not inp_calibration and not top_level_calibration:
                 inp["calibration"] = None
             elif top_level_calibration == "random":
                 inp["calibration"] = "random"
             else:
                 inp["calibration"] = {
-                    **top_level_calibration,
-                    **inp_calibration,
+                    **_as_dict(top_level_calibration, "calibration"),
+                    **_as_dict(inp_calibration, "calibration"),
                 }
 
         for out in outputs:
@@ -593,10 +602,9 @@ class SingleStageConfig(BaseModelExtraForbid):
                 and out.get("data_type") is None
                 and out.get("shape") is None
             ):
-                tensor_shape, tensor_dtype = _get_onnx_inter_info(
-                    data["input_model"], out_name
+                onnx_shape, onnx_dtype = _get_onnx_inter_info(
+                    model_path, out_name
                 )
-                onnx_shape, onnx_dtype = tensor_shape, tensor_dtype
             elif out_name in metadata.output_shapes:
                 onnx_shape, onnx_dtype = (
                     metadata.output_shapes[out_name],
@@ -610,35 +618,32 @@ class SingleStageConfig(BaseModelExtraForbid):
         data["inputs"] = inputs
         data["outputs"] = outputs
 
-        disable_calibration: bool | None = data.pop(
-            "disable_calibration", None
-        )
+        disable_calibration = data.pop("disable_calibration", None)
         if disable_calibration is None:
             return data
 
         for platform in ["hailo", "rvc2", "rvc3", "rvc4"]:
-            if platform not in data:
-                data[platform] = {}
-
-            data[platform]["disable_calibration"] = disable_calibration
+            platform_data = _as_dict(data.setdefault(platform, {}), platform)
+            platform_data["disable_calibration"] = disable_calibration
         return data
 
     @model_validator(mode="before")
     @classmethod
-    def _download_input_model(cls, value: dict[str, Any]) -> dict[str, Any]:
+    def _download_input_model(
+        cls, value: dict[str, object]
+    ) -> dict[str, object]:
         if "input_model" not in value:
             raise ValueError("`input_model` must be provided.")
-        input_file_type = InputFileType.from_path(value["input_model"])
+        input_model = value["input_model"]
+        if not isinstance(input_model, str | Path):
+            raise TypeError("`input_model` must be a string or a path.")
+        input_file_type = InputFileType.from_path(input_model)
         if input_file_type == InputFileType.IR:
-            bin_path, xml_path = _extract_bin_xml_from_ir(
-                value.get("input_model")
-            )
+            bin_path, xml_path = _extract_bin_xml_from_ir(input_model)
             value["input_bin"] = bin_path
             value["input_model"] = xml_path
         else:
-            value["input_model"] = resolve_path(
-                value["input_model"], MODELS_DIR
-            )
+            value["input_model"] = resolve_path(str(input_model), MODELS_DIR)
         return value
 
 
@@ -657,31 +662,34 @@ class Config(LuxonisConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def _validate_name(cls, data: dict[str, Any]) -> dict[str, Any]:
+    def _validate_name(cls, data: dict[str, object]) -> dict[str, object]:
         if data.get("name") is None:
-            data["name"] = "-".join(data["stages"].keys())
+            stages = _as_dict(data["stages"], "stages")
+            data["name"] = "-".join(stages.keys())
         return data
 
     @model_validator(mode="before")
     @classmethod
-    def _validate_stages(cls, data: dict[str, Any]) -> dict[str, Any]:
+    def _validate_stages(cls, data: dict[str, object]) -> dict[str, object]:
         if "stages" not in data:
             name = data.pop("name", "default_stage")
             rich_logging = data.pop("rich_logging", True)
-            data = {
+            return {
                 "name": name,
                 "rich_logging": rich_logging,
                 "stages": {name: data},
             }
-        else:
-            extra = {}
-            for key in list(data.keys()):
-                if key not in cls.model_fields:
-                    extra[key] = data.pop(key)
-            for stage in data["stages"].values():
-                for key, value in extra.items():
-                    if key not in stage:
-                        stage[key] = value
+
+        extra: dict[str, object] = {}
+        for key in list(data.keys()):
+            if key not in cls.model_fields:
+                extra[key] = data.pop(key)
+        stages = _as_dict(data["stages"], "stages")
+        for stage_name, stage in stages.items():
+            stage_data = _as_dict(stage, f"stages.{stage_name}")
+            for key, value in extra.items():
+                if key not in stage_data:
+                    stage_data[key] = value
         return data
 
     @model_validator(mode="after")
@@ -696,33 +704,88 @@ class Config(LuxonisConfig):
         return self
 
 
-def _extract_bin_xml_from_ir(ir_path: Any) -> tuple[Path, Path]:
+def _as_dict(value: object, name: str) -> dict[str, object]:
+    """Reads a raw configuration section as a dictionary.
+
+    @type value: object
+    @param value: The raw value taken from the configuration.
+    @type name: str
+    @param name: The name of the section. Used in the error message.
+    @rtype: dict[str, object]
+    @return: The same object, typed as a dictionary.
+    """
+    if not isinstance(value, dict):
+        raise TypeError(f"`{name}` must be a dictionary.")
+    return value
+
+
+def _as_entries(value: object, name: str) -> list[dict[str, object]]:
+    """Reads a raw C{inputs} or C{outputs} section as a list of
+    dictionaries.
+
+    @type value: object
+    @param value: The raw value taken from the configuration.
+    @type name: str
+    @param name: The name of the section. Used in the error message.
+    @rtype: list[dict[str, object]]
+    @return: The entries of the section. Empty if the section is not
+        present.
+    """
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise TypeError(f"`{name}` must be a list of dictionaries.")
+    entries = [entry for entry in value if isinstance(entry, dict)]
+    if len(entries) != len(value):
+        raise TypeError(f"`{name}` must be a list of dictionaries.")
+    return entries
+
+
+def _as_shape(value: object, name: str) -> list[int]:
+    """Reads a raw shape from the configuration.
+
+    @type value: object
+    @param value: The raw value taken from the configuration.
+    @type name: str
+    @param name: The name of the field. Used in the error message.
+    @rtype: list[int]
+    @return: The shape as a list of integers.
+    """
+    if not isinstance(value, list):
+        raise TypeError(f"`{name}` must be a list of integers.")
+    dims = [dim for dim in value if isinstance(dim, int)]
+    if len(dims) != len(value):
+        raise TypeError(f"`{name}` must be a list of integers.")
+    return dims
+
+
+def _extract_bin_xml_from_ir(ir_path: object) -> tuple[Path, Path]:
     """Extracts the corresponding second path from a single IR path.
 
     We assume that the base filename matches between the .bin and .xml
     file. Otherwise, an error will be thrown.
     """
-    if not isinstance(ir_path, str) and not isinstance(ir_path, Path):
+    if not isinstance(ir_path, str | Path):
         raise TypeError("`input_path` must be str or Path.")
-    ir_path = Path(ir_path)
+    path = Path(ir_path)
 
-    if ir_path.suffix == ".bin":
-        bin_path = ir_path
-        xml_path = str(bin_path.with_suffix(".xml"))
-    elif ir_path.suffix == ".xml":
-        xml_path = ir_path
-        bin_path = str(xml_path.with_suffix(".bin"))
+    if path.suffix == ".bin":
+        bin_path = str(path)
+        xml_path = str(path.with_suffix(".xml"))
+    elif path.suffix == ".xml":
+        xml_path = str(path)
+        bin_path = str(path.with_suffix(".bin"))
     else:
         raise ValueError(
             "`ir_path` is invalid: does not have .bin or .xml extension."
         )
 
     # fix any remote path corruption from pathlib
-    bin_path = str(bin_path).replace(":/", "://")
-    xml_path = str(xml_path).replace(":/", "://")
+    bin_path = bin_path.replace(":/", "://")
+    xml_path = xml_path.replace(":/", "://")
 
     try:
-        bin_path = resolve_path(bin_path, MODELS_DIR)
+        resolved_bin = resolve_path(bin_path, MODELS_DIR)
     except Exception as e:
         raise ValueError(
             f"`bin_path` {bin_path} was not found. "
@@ -730,7 +793,7 @@ def _extract_bin_xml_from_ir(ir_path: Any) -> tuple[Path, Path]:
             "and are located in the same directory."
         ) from e
     try:
-        xml_path = resolve_path(xml_path, MODELS_DIR)
+        resolved_xml = resolve_path(xml_path, MODELS_DIR)
     except Exception as e:
         raise ValueError(
             f"`xml_path` {xml_path} was not found. "
@@ -738,7 +801,7 @@ def _extract_bin_xml_from_ir(ir_path: Any) -> tuple[Path, Path]:
             "are located in the same directory."
         ) from e
 
-    return bin_path, xml_path
+    return resolved_bin, resolved_xml
 
 
 def _get_onnx_node_info(

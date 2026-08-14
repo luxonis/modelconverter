@@ -134,11 +134,13 @@ def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
     )
 
 
-@pytest.mark.parametrize("platform", platform_params(xfails=_CONVERT_XFAILS))
-def test_toy_multistage(platform: str, multistage_config: Path):
-    platform = Platform(platform)
-    output_name = f"_toy-multistage-{platform}"
-    extra = HAILO_FAST_OPTS if platform == "hailo" else ()
+@pytest.mark.parametrize(
+    "platform_name", platform_params(xfails=_CONVERT_XFAILS)
+)
+def test_toy_multistage(platform_name: str, multistage_config: Path):
+    platform = Platform(platform_name)
+    output_name = f"_toy-multistage-{platform_name}"
+    extra = HAILO_FAST_OPTS if platform_name == "hailo" else ()
     convert(
         platform,
         *platform_options(platform),
@@ -189,11 +191,13 @@ def _golden_pipeline(
     return np.asarray(out), from_first, from_second
 
 
-@pytest.mark.parametrize("platform", platform_params(CORRECTNESS_PLATFORMS))
-def test_toy_multistage_precision(platform: str, multistage_config: Path):
-    platform = Platform(platform)
+@pytest.mark.parametrize(
+    "platform_name", platform_params(CORRECTNESS_PLATFORMS)
+)
+def test_toy_multistage_precision(platform_name: str, multistage_config: Path):
+    platform = Platform(platform_name)
     options = platform_options(platform)
-    output_name = f"_toy-multistage-prec-{platform}"
+    output_name = f"_toy-multistage-prec-{platform_name}"
     convert(
         platform,
         *options,
@@ -213,7 +217,7 @@ def test_toy_multistage_precision(platform: str, multistage_config: Path):
     # layout that backend expects: SNPE (rvc4) consumes NHWC, OpenVINO (rvc2)
     # NCHW, and `from_*_arr` is NCHW.
     def as_input(arr: np.ndarray) -> np.ndarray:
-        return arr[0].transpose(1, 2, 0) if platform == "rvc4" else arr
+        return arr[0].transpose(1, 2, 0) if platform_name == "rvc4" else arr
 
     from_first = work / "from_first.npy"
     from_second = work / "from_second.npy"
@@ -221,7 +225,7 @@ def test_toy_multistage_precision(platform: str, multistage_config: Path):
     np.save(from_second, as_input(from_second_arr))
 
     model_path = locate_converted_model(
-        OUTPUTS_DIR / output_name / "third", platform
+        OUTPUTS_DIR / output_name / "third", platform_name
     )
     inferer = get_inferer(
         platform,
@@ -237,5 +241,6 @@ def test_toy_multistage_precision(platform: str, multistage_config: Path):
     (conv_out,) = converted.values()
     cos = cosine_similarity(golden, conv_out)
     assert cos >= _THRESHOLD, (
-        f"{platform} multistage final output: cosine {cos:.5f} < {_THRESHOLD}"
+        f"{platform_name} multistage final output: "
+        f"cosine {cos:.5f} < {_THRESHOLD}"
     )

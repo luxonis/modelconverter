@@ -1,7 +1,6 @@
 import contextlib
 from io import StringIO
 from pathlib import Path
-from typing import cast
 
 import numpy as np
 from hailo_sdk_client import ClientRunner, InferenceContext
@@ -19,7 +18,7 @@ class HailoInferer(Inferer):
             else "hailo8",
             har=str(self.model_path),
         )
-        hn_dict = cast(dict, self._runner.get_hn_dict())
+        hn_dict = self._runner.get_hn_dict()
         output_hn_names = hn_dict["net_params"]["output_layers_order"]
         orig_meta = self._runner._original_model_meta
         if orig_meta is None:  # pragma: no cover

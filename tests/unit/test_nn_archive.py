@@ -6,16 +6,18 @@ No network, cloud, Docker or vendor tooling: the dummy ONNX models and NN-archiv
 """
 
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 import pytest
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import (
     Head,
+    HeadMetadata,
     InputType,
     PreprocessingBlock,
 )
+from luxonis_ml.typing import Params, ParamValue
 
 from modelconverter.utils.config import (
     Config,
@@ -49,20 +51,20 @@ from tests.helpers.onnx_factory import (
 )
 
 
-def _input_config(**data: Any) -> InputConfig:
+def _input_config(**data: ParamValue) -> InputConfig:
     """Validate raw user configuration through Pydantic's public API."""
     return InputConfig.model_validate(data)
 
 
 def _single_input_archive_config(
-    preprocessing: dict[str, Any],
+    preprocessing: Mapping[str, ParamValue],
     *,
     shape: list[int] | None = None,
     layout: str = "NCHW",
     input_type: str = "image",
     dtype: str = "float32",
     model_name: str = "model.onnx",
-) -> dict[str, Any]:
+) -> Params:
     """A one-input / one-output NN-archive ``config.json`` dict whose
     single input's ``preprocessing`` block is fully controllable."""
     return {
@@ -93,20 +95,23 @@ def _single_input_archive_config(
 
 def _pack_single_input(
     work_dir: Path,
-    preprocessing: dict[str, Any],
+    preprocessing: Mapping[str, ParamValue],
     *,
     grayscale: bool = False,
-    **cfg_kwargs: Any,
+    input_type: str = "image",
 ) -> Path:
     """Builds a matching dummy ONNX + single-input archive and returns
     the ``.tar`` path."""
     model_path = work_dir / "model.onnx"
+    shape = None
     if grayscale:
         grayscale_onnx(model_path)
-        cfg_kwargs.setdefault("shape", [1, 1, 64, 64])
+        shape = [1, 1, 64, 64]
     else:
         single_io_onnx(model_path)
-    config = _single_input_archive_config(preprocessing, **cfg_kwargs)
+    config = _single_input_archive_config(
+        preprocessing, shape=shape, input_type=input_type
+    )
     return pack_archive(work_dir / "model.tar", model_path, config)
 
 
@@ -365,20 +370,22 @@ def test_raw_input_keeps_none_encoding(work_dir: Path):
 def test_postprocessor_path_adds_stage(work_dir: Path):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     post = single_io_onnx(work_dir / "post.onnx")
-    config_dict = default_archive_config()
-    config_dict["model"]["heads"] = [
-        # A head without a postprocessor_path is skipped (loop continues).
-        {
-            "parser": "Classification",
-            "metadata": {},
-            "outputs": ["output1"],
-        },
-        {
-            "parser": "Classification",
-            "metadata": {"postprocessor_path": "post.onnx"},
-            "outputs": ["output0"],
-        },
-    ]
+    config_dict = default_archive_config(
+        heads=[
+            # A head without a postprocessor_path is skipped (the loop
+            # continues).
+            {
+                "parser": "Classification",
+                "metadata": {},
+                "outputs": ["output1"],
+            },
+            {
+                "parser": "Classification",
+                "metadata": {"postprocessor_path": "post.onnx"},
+                "outputs": ["output0"],
+            },
+        ]
+    )
     tar = pack_archive(
         work_dir / "dummy_model.tar",
         onnx,
@@ -392,8 +399,10 @@ def test_postprocessor_path_adds_stage(work_dir: Path):
     assert "post" in config.stages
 
 
-def _config_from_overrides(dummy_onnx: Path, **overrides: Any) -> Config:
-    opts: dict[str, Any] = {"input_model": str(dummy_onnx)}
+def _config_from_overrides(
+    dummy_onnx: Path, **overrides: ParamValue
+) -> Config:
+    opts: Params = {"input_model": str(dummy_onnx)}
     opts.update(overrides)
     return Config.get_config(None, opts)
 
@@ -466,7 +475,7 @@ def _config_to_nn(
 def test_archive_precision_per_target(
     dummy_onnx: Path,
     platform: Platform,
-    overrides: dict[str, Any],
+    overrides: Mapping[str, ParamValue],
     expected: DataType,
 ):
     config = _config_from_overrides(dummy_onnx, **overrides)
@@ -586,7 +595,7 @@ def test_multistage_two_stages_sets_postprocessor(dummy_onnx: Path):
         Head(
             name="head",
             parser="Classification",
-            metadata={},  # type: ignore
+            metadata=HeadMetadata(postprocessor_path=None),
             outputs=["output0"],
         )
     ]

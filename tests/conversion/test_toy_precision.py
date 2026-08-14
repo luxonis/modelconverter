@@ -64,22 +64,25 @@ def constant_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
-def _to_nchw(arr: np.ndarray, platform: str) -> np.ndarray:
+def _to_nchw(arr: np.ndarray, platform_name: str) -> np.ndarray:
     """The Hailo inferer returns spatial outputs channels-last; the others, and
     the golden reference, are already NCHW."""
     arr = np.asarray(arr)
-    if arr.ndim == 3 and platform == "hailo":
+    if arr.ndim == 3 and platform_name == "hailo":
         return arr.transpose(2, 0, 1)[np.newaxis]
     return arr
 
 
-@pytest.mark.parametrize("platform", platform_params())
+@pytest.mark.parametrize("platform_name", platform_params())
 def test_toy_precision(
-    platform: str, toy_conv_config: Path, constant_image: Path
+    platform_name: str, toy_conv_config: Path, constant_image: Path
 ):
-    platform = Platform(platform)
-    opts = (*platform_options(platform), *_PLATFORM_OPTS.get(platform, ()))
-    output_name = f"_toy-prec-{platform}"
+    platform = Platform(platform_name)
+    opts = (
+        *platform_options(platform),
+        *_PLATFORM_OPTS.get(platform_name, ()),
+    )
+    output_name = f"_toy-prec-{platform_name}"
 
     convert(
         platform,
@@ -98,7 +101,9 @@ def test_toy_precision(
         OUTPUTS_DIR / f"{output_name}_golden",
         float(_INFER_VALUE),
     )
-    model_path = locate_converted_model(OUTPUTS_DIR / output_name, platform)
+    model_path = locate_converted_model(
+        OUTPUTS_DIR / output_name, platform_name
+    )
     inferer = get_inferer(
         platform,
         str(model_path),
@@ -111,7 +116,7 @@ def test_toy_precision(
     for (name, ref), conv in zip(
         reference.items(), converted.values(), strict=True
     ):
-        cos = cosine_similarity(ref, _to_nchw(conv, platform))
+        cos = cosine_similarity(ref, _to_nchw(conv, platform_name))
         assert cos >= _THRESHOLD, (
-            f"{platform} output {name!r}: cosine {cos:.5f} < {_THRESHOLD}"
+            f"{platform_name} output {name!r}: cosine {cos:.5f} < {_THRESHOLD}"
         )

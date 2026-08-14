@@ -28,11 +28,12 @@ import time
 from collections.abc import Callable, Collection, Iterator
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import psutil
 import yaml
 from loguru import logger
+from luxonis_ml.typing import ParamValue
 
 from modelconverter.utils.constants import CONTAINER_SHARED_DIR, get_cache_dir
 from modelconverter.utils.environ import environ
@@ -104,7 +105,7 @@ _OUTPUT_FIELDS = {"output_remote_url", "intermediate_outputs_remote_url"}
 _IGNORED_DIR_NAMES = {".git"}
 
 
-def path_flags_for(command: Callable[..., Any] | None) -> set[str]:
+def path_flags_for(command: Callable[..., object] | None) -> set[str]:
     """Returns the CLI flags of ``command`` whose value is a local path.
 
     Derived from the command signature the launcher has already parsed, so
@@ -132,7 +133,7 @@ def path_flags_for(command: Callable[..., Any] | None) -> set[str]:
     return flags
 
 
-def _is_path_parameter(name: str, annotation: Any) -> bool:
+def _is_path_parameter(name: str, annotation: object) -> bool:
     return (
         name in {"path", "config"}
         or name.endswith("_path")
@@ -531,12 +532,12 @@ def _stage_config_text(content: str, src: Path, inputs_dir: Path) -> Path:
 
 
 def _rewrite_config_paths(
-    value: Any,
+    value: ParamValue,
     config_dir: Path,
     inputs_dir: Path,
     key: str | None = None,
     parent: str | None = None,
-) -> tuple[Any, bool]:
+) -> tuple[ParamValue, bool]:
     """Stages the local paths ``value`` names and returns it with those
     references replaced by their container-side paths."""
     if isinstance(value, dict):
@@ -584,18 +585,18 @@ def _rewrite_config_paths(
 
 
 def _rewrite_arg_list(
-    args: list[Any],
+    args: list[ParamValue],
     path_flags: frozenset[str],
     config_dir: Path,
     inputs_dir: Path,
-) -> tuple[list[Any], bool]:
+) -> tuple[list[ParamValue], bool]:
     """Stages the values ``path_flags`` introduce in a raw argument list.
 
     The list is passed to the conversion tool verbatim, so everything
     else in it -- the flags themselves, numeric options, tool-specific
     switches -- has to survive untouched.
     """
-    rewritten: list[Any] = []
+    rewritten: list[ParamValue] = []
     changed = False
     for index, item in enumerate(args):
         previous = args[index - 1] if index else None

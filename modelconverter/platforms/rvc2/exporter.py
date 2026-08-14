@@ -8,10 +8,11 @@ from multiprocessing import cpu_count
 from os import environ as env
 from pathlib import Path
 from threading import Lock
-from typing import Any, Final, NamedTuple
+from typing import Final, NamedTuple
 
 import tflite2onnx
 from loguru import logger
+from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
@@ -437,7 +438,7 @@ class RVC2Exporter(Exporter):
         logger.info(f"Superblob compiled to {superblob_path}")
         return superblob_path
 
-    def exporter_buildinfo(self) -> dict[str, Any]:
+    def exporter_buildinfo(self) -> Params:
         mo_version = (
             subprocess.run(
                 ["mo", "--version"], capture_output=True, check=False
@@ -463,7 +464,7 @@ class RVC2Exporter(Exporter):
         }
 
 
-def _lst_join(args: Iterable[Any], sep: str = ",") -> str:
+def _lst_join(args: Iterable[object], sep: str = ",") -> str:
     return f"[{sep.join(map(str, args))}]"
 
 

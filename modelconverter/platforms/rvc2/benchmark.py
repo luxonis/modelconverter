@@ -1,10 +1,14 @@
 from pathlib import Path
-from typing import Any
 
 import depthai as dai
 import numpy as np
 
-from modelconverter.platforms.base_benchmark import Benchmark, Configuration
+from modelconverter.platforms.base_benchmark import (
+    Benchmark,
+    Configuration,
+    Result,
+    get_option,
+)
 from modelconverter.utils import create_progress_handler, environ
 from modelconverter.utils.log_latency import (
     RVC2_INFERENCE_LATENCY_RE,
@@ -36,8 +40,14 @@ class RVC2Benchmark(Benchmark):
     def all_configurations(self) -> list[Configuration]:
         return [{"num_threads": i} for i in [1, 2, 3]]
 
-    def benchmark(self, configuration: Configuration) -> dict[str, Any]:
-        return self._benchmark(self.model_path, **configuration)
+    def benchmark(self, configuration: Configuration) -> Result:
+        return self._benchmark(
+            self.model_path,
+            repetitions=get_option(configuration, "repetitions", int),
+            num_messages=get_option(configuration, "num_messages", int),
+            num_threads=get_option(configuration, "num_threads", int),
+            benchmark_time=get_option(configuration, "benchmark_time", int),
+        )
 
     @staticmethod
     def _benchmark(
@@ -46,7 +56,7 @@ class RVC2Benchmark(Benchmark):
         num_messages: int,
         num_threads: int,
         benchmark_time: int,
-    ) -> dict[str, Any]:
+    ) -> Result:
         device = dai.Device()
         if device.getPlatform() != dai.Platform.RVC2:
             raise ValueError(

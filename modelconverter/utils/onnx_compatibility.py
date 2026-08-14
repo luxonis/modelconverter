@@ -3,6 +3,7 @@ from pathlib import Path
 
 import ml_dtypes
 import numpy as np
+import numpy.typing as npt
 import onnx
 from onnx.external_data_helper import ExternalDataInfo, uses_external_data
 
@@ -11,7 +12,7 @@ def ensure_onnx_helper_compatibility() -> None:
     helper = onnx.helper
 
     def _convert_scalar(
-        value: float, dtype: np.dtype, container: np.dtype
+        value: float, dtype: npt.DTypeLike, container: npt.DTypeLike
     ) -> int:
         arr = np.asarray(value, dtype=dtype)
         return arr.view(container).item()

@@ -3,12 +3,12 @@ import shutil
 from abc import ABC, abstractmethod
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any
 
 import cv2
 import numpy as np
 import onnx
 from loguru import logger
+from luxonis_ml.typing import Params
 
 from modelconverter.utils import (
     exit_with,
@@ -151,7 +151,8 @@ class Exporter(ABC):
 
                 def simplify(model: str) -> tuple[onnx.ModelProto, bool]:
                     slimmed = slim(onnx.load(model))
-                    return slimmed, bool(slimmed)  # type: ignore
+                    assert isinstance(slimmed, onnx.ModelProto)
+                    return slimmed, True
 
         except ImportError:
             backend = self._onnx_simplification
@@ -188,7 +189,7 @@ class Exporter(ABC):
         return onnx_sim_path
 
     @abstractmethod
-    def exporter_buildinfo(self) -> dict[str, Any]:
+    def exporter_buildinfo(self) -> Params:
         pass
 
     @abstractmethod
@@ -251,7 +252,9 @@ class Exporter(ABC):
                 )
 
             for i in range(calib.max_images):
-                arr = np.random.normal(calib.mean, calib.std, inp.shape)
+                arr: np.ndarray = np.random.normal(
+                    calib.mean, calib.std, inp.shape
+                )
                 arr = np.clip(arr, calib.min_value, calib.max_value)
 
                 arr = arr.astype(calib.data_type.as_numpy_dtype())
@@ -269,7 +272,7 @@ class Exporter(ABC):
                         channel_dim = layout.index("C")
                         if channel_dim == 0 and len(arr.shape) == 3:
                             arr = arr.transpose(1, 2, 0)
-                    elif arr.shape[0] in {1, 3}:  # type: ignore
+                    elif arr.shape[0] in {1, 3}:
                         arr = arr.transpose(1, 2, 0)
                     cv2.imwrite(str(dest / f"{i}.png"), arr)
                 else:

@@ -2,7 +2,7 @@ import shutil
 from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
@@ -90,7 +90,7 @@ def init_dirs() -> None:
 def get_configs(
     platform: Platform,
     path: str | None,
-    opts: list[str] | dict[str, Any] | None = None,
+    opts: list[str] | Params | None = None,
 ) -> tuple[Config, NNArchiveConfig | None, str | None]:
     """Sets up the configuration.
 
@@ -197,7 +197,12 @@ def slug_to_id(
                 "is_public": is_public,
                 "slug": slug,
             }
-            data = Request.get(f"{endpoint}/", params=params)
-            if data:
-                return data[0]["id"]
+            records = Request.get_records(f"{endpoint}/", params=params)
+            if records:
+                identifier = records[0]["id"]
+                if not isinstance(identifier, str):
+                    raise ValueError(
+                        f"Hub returned a non-string id for `{slug}`."
+                    )
+                return identifier
     raise ValueError(f"Model with slug '{slug}' not found.")

@@ -8,16 +8,24 @@ from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
 from subprocess import CalledProcessError, SubprocessError
-from typing import Any, Final
+from typing import Final
 
 import depthai as dai
 import numpy as np
 import polars as pl
 from depthai import XLinkPlatform
 from loguru import logger
+from luxonis_ml.typing import BaseModelExtraForbid
 from rich.progress import track
 
-from modelconverter.platforms.base_benchmark import Benchmark, Configuration
+from modelconverter.platforms.base_benchmark import (
+    Benchmark,
+    Configuration,
+    Result,
+    ResultValue,
+    get_option,
+    get_optional_option,
+)
 from modelconverter.utils import (
     DataType,
     DeviceMonitor,
@@ -26,15 +34,16 @@ from modelconverter.utils import (
     environ,
     subprocess_run,
 )
-from modelconverter.utils.config import OutputConfig
 from modelconverter.utils.log_latency import (
     RVC4_INFERENCE_LATENCY_RE,
     parse_inference_latency,
 )
 
 
-class InputSpec(OutputConfig):
-    shape: list[int]  # type: ignore
+class InputSpec(BaseModelExtraForbid):
+    name: str
+    shape: list[int]
+    data_type: DataType
 
 
 PROFILES: Final[list[str]] = [
@@ -54,6 +63,20 @@ RUNTIMES: dict[str, str] = {
     "dsp": "use_dsp",
     "cpu": "use_cpu",
 }
+
+
+def format_measurement(value: ResultValue) -> str:
+    """Formats a device measurement for the results table.
+
+    @type value: ResultValue
+    @param value: The measured value.
+    @rtype: str
+    @return: The formatted value, or a placeholder if the measurement
+        is missing.
+    """
+    if not isinstance(value, int | float) or not value:
+        return "[orange3]N/A"
+    return f"{value:.2f}"
 
 
 class RVC4Benchmark(Benchmark):
@@ -290,12 +313,13 @@ class RVC4Benchmark(Benchmark):
                 "models."
             )
 
-    def benchmark(self, configuration: Configuration) -> dict[str, Any]:
-        dai_benchmark = configuration.get("dai_benchmark")
-        device_monitor = configuration.get("device_monitor")
+    def benchmark(self, configuration: Configuration) -> Result:
+        dai_benchmark = get_option(configuration, "dai_benchmark", bool)
+        device_monitor = get_option(configuration, "device_monitor", bool)
 
         device_ip, device_adb_id = get_device_info(
-            configuration.get("device_ip"), configuration.get("device_id")
+            get_optional_option(configuration, "device_ip", str),
+            get_optional_option(configuration, "device_id", str),
         )
         if device_monitor or not dai_benchmark:
             self._handler = create_handler(device_ip, device_adb_id)
@@ -306,7 +330,7 @@ class RVC4Benchmark(Benchmark):
         self._device_pwd = Path("/", "data", "modelconverter", self.model_name)
 
         self._monitor = None
-        idle_measurements = {}
+        idle_measurements: dict[str, float | None] = {}
         if device_monitor and self._handler is not None:
             self._monitor = DeviceMonitor(self._handler)
             idle_measurements = self._monitor.get_idle_measurements()
@@ -320,7 +344,20 @@ class RVC4Benchmark(Benchmark):
                     "device_monitor",
                 ]:
                     configuration.pop(key)
-                result = self._benchmark_dai(self.model_path, **configuration)
+                result = self._benchmark_dai(
+                    self.model_path,
+                    profile=get_option(configuration, "profile", str),
+                    runtime=get_option(configuration, "runtime", str),
+                    repetitions=get_option(configuration, "repetitions", int),
+                    num_threads=get_option(configuration, "num_threads", int),
+                    num_messages=get_option(
+                        configuration, "num_messages", int
+                    ),
+                    benchmark_time=get_option(
+                        configuration, "benchmark_time", int
+                    ),
+                    device_ip=device_ip,
+                )
             else:
                 for key in [
                     "dai_benchmark",
@@ -334,7 +371,12 @@ class RVC4Benchmark(Benchmark):
                 ]:
                     configuration.pop(key, None)
                 logger.info("Running SNPE benchmark directly on the device...")
-                result = self._benchmark_snpe(self.model_path, **configuration)
+                result = self._benchmark_snpe(
+                    self.model_path,
+                    num_images=get_option(configuration, "num_images", int),
+                    profile=get_option(configuration, "profile", str),
+                    runtime=get_option(configuration, "runtime", str),
+                )
 
             if self._monitor is not None:
                 result |= self._monitor.get_stats()
@@ -360,7 +402,7 @@ class RVC4Benchmark(Benchmark):
         num_images: int,
         profile: str,
         runtime: str,
-    ) -> dict[str, Any]:
+    ) -> Result:
         runtime = RUNTIMES.get(runtime, "use_dsp")
 
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
@@ -464,7 +506,7 @@ class RVC4Benchmark(Benchmark):
         num_messages: int,
         benchmark_time: int,
         device_ip: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> Result:
         if isinstance(model_path, str):
             resolved_model_path = Path(
                 dai.getModelFromZoo(
@@ -602,7 +644,7 @@ class RVC4Benchmark(Benchmark):
 
     def _extra_header(
         self,
-        results: list[tuple[Configuration, dict[str, Any]]],
+        results: list[tuple[Configuration, Result]],
     ) -> list[str]:
         heads = []
         if self._monitor is not None:
@@ -616,20 +658,16 @@ class RVC4Benchmark(Benchmark):
     def _extra_row_cells(
         self,
         configuration: Configuration,
-        result: dict[str, Any],
+        result: Result,
     ) -> Iterable[str]:
-        power_sys = result.get("power_system")
-        power_core = result.get("power_processor")
-        dsp = result.get("dsp_utilization")
-        memory = result.get("ram_used")
-        cpu = result.get("cpu_utilization")
+        if self._monitor is None:
+            return
 
-        if self._monitor is not None:
-            yield f"{power_sys:.2f}" if power_sys else "[orange3]N/A"
-            yield f"{power_core:.2f}" if power_core else "[orange3]N/A"
-            yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
-            yield f"{memory:.2f}" if memory else "[orange3]N/A"
-            yield f"{cpu:.2f}" if cpu else "[orange3]N/A"
+        yield format_measurement(result.get("power_system"))
+        yield format_measurement(result.get("power_processor"))
+        yield format_measurement(result.get("dsp_utilization"))
+        yield format_measurement(result.get("ram_used"))
+        yield format_measurement(result.get("cpu_utilization"))
 
     def _get_archive_input_specs(
         self, archive: dai.NNArchive
@@ -715,7 +753,7 @@ class RVC4Benchmark(Benchmark):
         model_variants = []
         for is_public in [True, False, None]:
             with suppress(Exception):
-                model_variants += Request.get(
+                model_variants += Request.get_records(
                     "modelVersions/",
                     params={"model_id": model_id, "is_public": is_public},
                 )
@@ -732,7 +770,7 @@ class RVC4Benchmark(Benchmark):
         model_instances = []
         for is_public in [True, False]:
             with suppress(Exception):
-                model_instances += Request.get(
+                model_instances += Request.get_records(
                     "modelInstances/",
                     params={
                         "model_id": model_id,

@@ -4,10 +4,9 @@ import shutil
 import subprocess
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import suppress
 from types import TracebackType
-from typing import Any
 
 import psutil
 from loguru import logger
@@ -44,7 +43,7 @@ class SubprocessResult(subprocess.CompletedProcess):
     def __str__(self) -> str:
         return repr(self)
 
-    def __rich_repr__(self) -> Iterator[tuple[str, Any]]:
+    def __rich_repr__(self) -> Iterator[tuple[str, object]]:
         yield "args", self.args
         yield "returncode", self.returncode
         yield "stdout", self.stdout
@@ -59,14 +58,14 @@ class SubprocessHandle:
 
     def __init__(
         self,
-        cmd: str | list[Any],
+        cmd: str | Sequence[object],
         *,
         silent: bool = False,
         timeout: float | None = None,
     ):
         """Initialize the subprocess handle.
 
-        @type args: str | list[Any]
+        @type args: str | Sequence[object]
         @param args: Command to execute. If a string is given, it will
             be split on whitespace. If a list is given, each element
             will be converted to a string.
@@ -269,12 +268,15 @@ class SubprocessHandle:
 
 
 def subprocess_run(
-    cmd: str | list[Any], *, silent: bool = False, timeout: float | None = None
+    cmd: str | Sequence[object],
+    *,
+    silent: bool = False,
+    timeout: float | None = None,
 ) -> SubprocessResult:
     """Backwards-compatible wrapper.
 
     Blocks until done and returns result.
-    @type cmd: str | list[Any]
+    @type cmd: str | Sequence[object]
     @param cmd: Command to execute. If a string is given, it will be
         split on whitespace. If a list is given, each element will be
         converted to a string.

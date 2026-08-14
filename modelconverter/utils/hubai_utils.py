@@ -15,7 +15,7 @@ def is_hubai_available(model_name: str, model_variant: str) -> bool:
     model_variants = []
     for is_public in [True, False]:
         with suppress(Exception):
-            model_variants += Request.get(
+            model_variants += Request.get_records(
                 "modelVersions/",
                 params={"model_id": model_id, "is_public": is_public},
             )

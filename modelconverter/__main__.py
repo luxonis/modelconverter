@@ -6,11 +6,13 @@ import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from types import FrameType
 from typing import Annotated, Any, Literal
 
 from cyclopts import App, Group, Parameter
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator, is_nn_archive
+from luxonis_ml.typing import ParamValue
 from luxonis_ml.utils import LuxonisFileSystem, setup_logging
 from rich import box
 from rich.console import Console
@@ -155,7 +157,7 @@ def convert(
         preprocessing to the new archive.
     """
 
-    def handle_signal(signum: int, frame: Any) -> None:
+    def handle_signal(signum: int, frame: FrameType | None) -> None:
         signame = signal.Signals(signum).name
         logger.error(f"{signame} received, exiting...")
         sys.exit(130)
@@ -168,9 +170,9 @@ def convert(
     runtime_telemetry = get_component_telemetry()
     conversion_run_id = get_conversion_run_id()
     original_path = path
-    opts: list[str] = list(opts or [])
+    overrides: list[str] = list(opts)
     conversion_start: float | None = None
-    conversion_summary: dict[str, Any] | None = None
+    conversion_summary: dict[str, ParamValue] | None = None
     output_artifact_count: int | None = None
     uploaded_output = False
     uploaded_intermediate_outputs = False
@@ -189,26 +191,28 @@ def convert(
                     f"OpenVINO IR format is not supported for platform {platform.name}."
                 )
             if suffix in {".onnx", ".xml", ".dlc", ".tflite"}:
-                opts = ["input_model", path, *opts]
+                overrides = ["input_model", path, *overrides]
                 if suffix == ".xml":
-                    opts = [
+                    overrides = [
                         "input_bin",
                         str(Path(path).with_suffix(".bin")),
-                        *opts,
+                        *overrides,
                     ]
                 path = None
             elif suffix == ".bin":
-                opts = [
+                overrides = [
                     "input_model",
                     str(Path(path).with_suffix(".xml")),
                     "input_bin",
                     path,
-                    *opts,
+                    *overrides,
                 ]
                 path = None
 
         init_dirs()
-        cfg, archive_cfg, _main_stage = get_configs(platform, path, list(opts))
+        cfg, archive_cfg, _main_stage = get_configs(
+            platform, path, list(overrides)
+        )
         main_stage = main_stage or _main_stage
         is_multistage = len(cfg.stages) > 1
         if is_multistage and main_stage is None:
@@ -244,7 +248,7 @@ def convert(
                 cfg,
                 platform=platform,
                 config_source=detect_config_source(
-                    original_path, opts, archive_cfg
+                    original_path, overrides, archive_cfg
                 ),
                 archive_output_mode=ArchiveOutputMode(to),
                 archive_preprocess=archive_preprocess,
@@ -476,7 +480,7 @@ def shell(
     args = ["bash"]
     if command is not None:
         args.extend(["-c", command])
-    os.execle("/bin/bash", *args, os.environ)
+    os.execle("/bin/bash", *args, os.environ)  # noqa: S606
 
 
 @app.meta.command(group=device_commands)

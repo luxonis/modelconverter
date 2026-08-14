@@ -1,7 +1,8 @@
+from collections.abc import Mapping
 from json import JSONDecodeError
-from typing import Any
 
 import requests
+from luxonis_ml.typing import ParamValue
 from requests import HTTPError, Response
 
 from modelconverter.utils import environ
@@ -27,7 +28,7 @@ class Request:
         }
 
     @staticmethod
-    def _process_response(response: Response) -> Any:
+    def _process_response(response: Response) -> ParamValue:
         return Request._get_json(Request._check_response(response))
 
     @staticmethod
@@ -37,7 +38,7 @@ class Request:
         return response
 
     @staticmethod
-    def _get_json(response: Response) -> Any:
+    def _get_json(response: Response) -> ParamValue:
         try:
             return response.json()
         except JSONDecodeError as e:
@@ -47,7 +48,7 @@ class Request:
             ) from e
 
     @staticmethod
-    def get(endpoint: str = "", **kwargs) -> Any:
+    def get(endpoint: str = "", **kwargs) -> ParamValue:
         return Request._process_response(
             requests.get(
                 Request._get_url(endpoint),
@@ -58,7 +59,24 @@ class Request:
         )
 
     @staticmethod
-    def dag_get(endpoint: str = "", **kwargs) -> Any:
+    def get_records(
+        endpoint: str = "", **kwargs
+    ) -> list[dict[str, ParamValue]]:
+        """The response as the list of records a Hub endpoint returns.
+
+        Every listing endpoint answers with an array of objects, so the
+        shape is checked once here instead of at each call site.
+        """
+        data = Request.get(endpoint, **kwargs)
+        if not isinstance(data, list):
+            raise HTTPError(f"Expected a list of records from `{endpoint}`.")
+        records = [item for item in data if isinstance(item, Mapping)]
+        if len(records) != len(data):
+            raise HTTPError(f"Expected only objects from `{endpoint}`.")
+        return [dict(record) for record in records]
+
+    @staticmethod
+    def dag_get(endpoint: str = "", **kwargs) -> ParamValue:
         return Request._process_response(
             requests.get(
                 Request._get_url(endpoint, Request.dag_url()),
@@ -69,7 +87,7 @@ class Request:
         )
 
     @staticmethod
-    def post(endpoint: str = "", **kwargs) -> Any:
+    def post(endpoint: str = "", **kwargs) -> ParamValue:
         headers = Request.headers()
         if "headers" in kwargs:
             headers = {**Request.headers(), **kwargs.pop("headers")}
@@ -83,7 +101,7 @@ class Request:
         )
 
     @staticmethod
-    def delete(endpoint: str = "", **kwargs) -> Any:
+    def delete(endpoint: str = "", **kwargs) -> ParamValue:
         return Request._process_response(
             requests.delete(
                 Request._get_url(endpoint),
@@ -94,7 +112,7 @@ class Request:
         )
 
     @staticmethod
-    def put(endpoint: str = "", **kwargs) -> Any:
+    def put(endpoint: str = "", **kwargs) -> ParamValue:
         headers = Request.headers()
         if "headers" in kwargs:
             headers = {**headers, **kwargs.pop("headers")}
@@ -108,7 +126,7 @@ class Request:
         )
 
     @staticmethod
-    def patch(endpoint: str = "", **kwargs) -> Any:
+    def patch(endpoint: str = "", **kwargs) -> ParamValue:
         headers = Request.headers()
         if "headers" in kwargs:
             headers = {**headers, **kwargs.pop("headers")}

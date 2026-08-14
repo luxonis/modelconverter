@@ -69,11 +69,11 @@ _PARAMS = [
 ]
 
 
-@pytest.mark.parametrize(("platform", "case"), _PARAMS)
-def test_precision(platform: str, case: PrecisionCase):
-    platform = Platform(platform)
+@pytest.mark.parametrize(("platform_name", "case"), _PARAMS)
+def test_precision(platform_name: str, case: PrecisionCase):
+    platform = Platform(platform_name)
     options = platform_options(platform)
-    output_name = sanitize_net_name(f"prec_{platform}_{case.id}")
+    output_name = sanitize_net_name(f"prec_{platform_name}_{case.id}")
 
     convert(
         platform,
@@ -85,7 +85,9 @@ def test_precision(platform: str, case: PrecisionCase):
 
     cfg, _, _ = get_configs(platform, case.config, list(options))
     stage = next(iter(cfg.stages.values()))
-    model_path = locate_converted_model(OUTPUTS_DIR / output_name, platform)
+    model_path = locate_converted_model(
+        OUTPUTS_DIR / output_name, platform_name
+    )
 
     reference = ONNXReferenceInferer.from_stage(stage).infer(case.image)
     inferer = get_inferer(
@@ -100,10 +102,10 @@ def test_precision(platform: str, case: PrecisionCase):
     assert set(reference) == set(converted), (
         f"output names mismatch: {list(reference)} vs {list(converted)}"
     )
-    threshold = case.thresholds.get(platform, DEFAULT_THRESHOLD)
+    threshold = case.thresholds.get(platform_name, DEFAULT_THRESHOLD)
     for name, ref in reference.items():
         cos = cosine_similarity(ref, converted[name])
         assert cos >= threshold, (
-            f"{platform} {case.id} output {name!r}: "
+            f"{platform_name} {case.id} output {name!r}: "
             f"cosine {cos:.4f} < {threshold}"
         )

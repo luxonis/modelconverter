@@ -239,15 +239,15 @@ _CASES = [
 ]
 
 
-@pytest.mark.parametrize(("platform", "precision"), _CASES)
+@pytest.mark.parametrize(("platform_name", "precision"), _CASES)
 def test_toy_integration(
-    platform: str,
+    platform_name: str,
     precision: Precision,
     toy_config: Path,
     constant_image: Path,
 ):
-    platform = Platform(platform)
-    output_name = f"_toy-{platform}-{precision.name}"
+    platform = Platform(platform_name)
+    output_name = f"_toy-{platform_name}-{precision.name}"
     convert(
         platform,
         *precision.opts,
