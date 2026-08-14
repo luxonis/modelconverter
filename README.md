@@ -349,6 +349,7 @@ output/
     ├── resnet18.dlc
     ├── modelconverter.log
     ├── config.yaml
+    ├── buildinfo.json
     └── intermediate_outputs/
         └── <intermediate files generated during the conversion>
 ```
@@ -373,7 +374,7 @@ with:
 ```bash
 modelconverter cache info    # show cache location and disk usage
 modelconverter cache clean       # remove cache contents after confirmation
-modelconverter cache clean --yes # remove it non-interactively
+modelconverter cache clean -y    # remove it non-interactively
 ```
 
 Inputs are cached in full — directories included — and ModelConverter warns
@@ -482,7 +483,7 @@ Below is a table of common command-line options available when using the `modelc
 | -------------------------------------------------- | ----- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--path`                                           |       | PATH   | Path to the configuration file or NN Archive                                                                                                               |
 | `--to`                                             |       | CHOICE | Output format: `native` or `nn_archive`                                                                                                                    |
-| `--main-stage`                                     | `-m`  | TEXT   | Name of the stage with the main model                                                                                                                      |
+| `--main-stage`                                     |       | TEXT   | Name of the stage with the main model                                                                                                                      |
 | `--tool-version`                                   |       | TEXT   | Version of the underlying conversion tools to use. Available options differ based on the platform (RVC2, RVC3, RVC4, HAILO)                                |
 | `--image/docker-image`                             |       | TEXT   | Full Docker image name to use. If a tag is included, it is used as-is and overrides `--tool-version`, otherwise, the tag is derived from `--tool-version`. |
 | `--archive-preprocess` / `--no-archive-preprocess` |       | FLAG   | Add pre-processing to the NN archive instead of the model                                                                                                  |
@@ -710,7 +711,7 @@ modelconverter benchmark rvc4 --model-path <path_to_model.tar.xz>
 ```
 
 The command prints a table with the benchmark results to the console and
-kptionally saves the results to a `.csv` file.
+optionally saves the results to a `.csv` file.
 
 > [!IMPORTANT]
 > **Device Connection Requirements for RVC4**: The device must be connected and accessible either using the [Android Debug Bridge (ADB)](https://developer.android.com/tools/adb) or via SSH for the benchmarking to work in the following cases:
@@ -786,7 +787,7 @@ For other usage instructions run `modelconverter analyze --help`
 > [!NOTE]
 > It is important to ensure that you are using the correct ONNX model for comparison. Before converting to DLC, ModelConverter can modify the ONNX files by adding normalization layers or simplifying the graph. The ONNX model that is actually converted to DLC is typically located at `output/<output_dir>/intermediate_outputs/model_name-modified.onnx`
 >
-> For the DLC argument, you should use the final top-level DLC from the conversion output directory (for example `shared_with_container/outputs/model_name/model_name.dlc`), not the intermediate DLCs in `intermediate_outputs/`. This is because `modelconverter analyze` compares the ONNX reference model against the DLC that will actually run on the device, so the final deployable DLC is the correct default target. If you need to debug where differences are introduced during conversion, you can also analyze the intermediate `*-modified.dlc` or `*-modified-quantized.dlc` artifacts, but they represent earlier conversion stages rather than the final device-ready model.
+> For the DLC argument, you should use the final top-level DLC from the conversion output directory (for example `output/<output_dir>/model_name.dlc`), not the intermediate DLCs in `intermediate_outputs/`. This is because `modelconverter analyze` compares the ONNX reference model against the DLC that will actually run on the device, so the final deployable DLC is the correct default target. If you need to debug where differences are introduced during conversion, you can also analyze the intermediate `*-modified.dlc` or `*-modified-quantized.dlc` artifacts, but they represent earlier conversion stages rather than the final device-ready model.
 >
 > If the model has multiple inputs, make sure that each input directory has the same number of images. The tool alphabetically sorts images in each directory and assumes that images with the same index are used as one input.
 >
@@ -800,7 +801,7 @@ The tool creates two CSV files located in `output/analysis/model_name/`. One fil
 There is also a visualization option that displays all CSV files in `output/analysis/`. This offers a fast and easy way to inspect different model conversion parameters. For more usage instructions, run `modelconverter visualize --help`. To create the visualizations, simply run:
 
 ```bash
-modelconverter visualize <optional_path_to_dir>
+modelconverter visualize <path_to_dir>
 ```
 
 This command will create interactive pyplot scatter plots and cycle usage bar plots in a local web browser, as well as save both HTML files for easier access in the future.
