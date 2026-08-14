@@ -313,11 +313,19 @@ jobs:
             # a C extension that reads garbage under the 2.x ABI. A plain
             # `--force-reinstall` of luxonis-ml pulls NumPy 2.x in and
             # corrupts the conversion.
-            ML_INSTALL_COMMAND="python -c \"import numpy; open('/tmp/numpy-constraint.txt', 'w').write('numpy==' + numpy.__version__)\" && \
+            #
+            # luxonis-ml requires NumPy 2.x, so pip cannot satisfy the pin
+            # and that requirement at the same time. The image build has the
+            # same conflict. It installs the packages first, then it puts
+            # the pinned NumPy back. The commands below do the same. A wheel
+            # that is built against NumPy 2.x also runs with NumPy 1.x, so
+            # the downgrade keeps the environment usable.
+            ML_INSTALL_COMMAND="python -c \"import numpy; open('/tmp/numpy-pin.txt', 'w').write('numpy==' + numpy.__version__)\" && \
               pip uninstall luxonis-ml -y && \
-              PIP_CONSTRAINT=/tmp/numpy-constraint.txt pip install \
+              pip install \
               \"luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}\" \
-              --upgrade --force-reinstall &&"
+              --upgrade --force-reinstall && \
+              pip install -r /tmp/numpy-pin.txt &&"
           else
             ML_INSTALL_COMMAND=""
           fi
