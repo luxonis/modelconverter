@@ -490,10 +490,7 @@ class SingleStageConfig(BaseModelExtraForbid):
         layout = data.pop("layout", None)
         top_level_calibration = data.pop("calibration", {})
 
-        input_model = data["input_model"]
-        if not isinstance(input_model, PathType):
-            raise TypeError("`input_model` must be a string or a path.")
-        model_path = Path(input_model)
+        model_path = Path(_as_path_type(data["input_model"], "input_model"))
 
         input_file_type = InputFileType.from_path(model_path)
         data["input_file_type"] = input_file_type.value
@@ -618,9 +615,7 @@ class SingleStageConfig(BaseModelExtraForbid):
     def _download_input_model(cls, value: Params) -> Params:
         if "input_model" not in value:
             raise ValueError("`input_model` must be provided.")
-        input_model = value["input_model"]
-        if not isinstance(input_model, PathType):
-            raise TypeError("`input_model` must be a string or a path.")
+        input_model = _as_path_type(value["input_model"], "input_model")
         input_file_type = InputFileType.from_path(input_model)
         if input_file_type == InputFileType.IR:
             bin_path, xml_path = _extract_bin_xml_from_ir(input_model)
@@ -720,6 +715,18 @@ def _as_shape(value: ParamValue, name: str) -> list[int]:
     if len(dims) != len(value):
         raise TypeError(f"`{name}` must be a list of integers.")
     return dims
+
+
+def _as_path_type(value: ParamValue, name: str) -> PathType:
+    """Narrows a raw configuration value to something C{Path} accepts.
+
+    Returned as it arrived rather than as a C{Path}: a remote location
+    is carried in these fields as a string, and C{Path} would fold the
+    C{//} of its protocol away.
+    """
+    if not isinstance(value, PathType):
+        raise TypeError(f"`{name}` must be a string or a path.")
+    return value
 
 
 def _extract_bin_xml_from_ir(ir_path: ParamValue | Path) -> tuple[Path, Path]:
