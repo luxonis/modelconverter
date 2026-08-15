@@ -74,6 +74,19 @@ def test_output_dir_refuses_a_directory_it_did_not_produce():
     assert (foreign / "keep.txt").read_text() == "mine"
 
 
+def test_output_dir_refuses_a_path_that_is_not_a_directory():
+    """A rerun clears the directory a previous conversion produced. A
+    file of the same name is not that, and deleting it would take the
+    user's data with it."""
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    taken = OUTPUTS_DIR / "taken"
+    taken.write_text("mine")
+
+    with pytest.raises(ModelconverterException, match="it is not a directory"):
+        get_output_dir_name(Platform.RVC2, "model", "taken")
+    assert taken.read_text() == "mine"
+
+
 @pytest.mark.parametrize("output_dir", ["/abs/results", "../escape", ""])
 def test_output_dir_must_stay_under_outputs_dir_in_docker(
     output_dir: str, monkeypatch: pytest.MonkeyPatch
@@ -297,3 +310,12 @@ def test_slug_to_id_not_found_raises(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(cli_utils, "Request", _FakeRequest([[], []]))
     with pytest.raises(ValueError, match="not found"):
         slug_to_id("missing", "models")
+
+
+def test_slug_to_id_rejects_a_non_string_id(monkeypatch: pytest.MonkeyPatch):
+    """The id is passed straight back into a URL, so a Hub response that
+    carries something else has to be reported here."""
+    monkeypatch.setattr(cli_utils, "Request", _FakeRequest([[{"id": 7}]]))
+
+    with pytest.raises(ValueError, match="non-string id"):
+        slug_to_id("weird", "models")
