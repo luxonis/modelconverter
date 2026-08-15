@@ -249,3 +249,31 @@ def test_entrypoint_leaves_ownership_alone_without_a_host_identity(
     _run_handover(entrypoint, env)
 
     assert not log.exists()
+
+
+def test_wait_for_gives_up_on_a_path_that_never_appears(
+    tmp_path: Path,
+) -> None:
+    """The helper bounds every wait, so a step the entrypoint never
+    reaches fails the test instead of hanging the run."""
+    assert _wait_for(tmp_path / "never", timeout=0.05) is False
+
+
+def test_a_running_entrypoint_is_killed_with_its_child(
+    tmp_path: Path, entrypoint: Path
+) -> None:
+    """The entrypoint runs the converter as a background child.
+
+    A test that leaves the pair running must not leak it into the rest
+    of the session, so the helper kills the whole group on the way out.
+    """
+    ready_file = tmp_path / "ready"
+    env = _entrypoint_env(tmp_path, f'touch "{ready_file}"\nsleep 60\n')
+
+    with _entrypoint_process(
+        entrypoint, "convert", "rvc2", env=env
+    ) as process:
+        assert _wait_for(ready_file)
+        assert process.poll() is None
+
+    assert process.poll() is not None
