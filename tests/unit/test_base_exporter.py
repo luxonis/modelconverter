@@ -6,6 +6,7 @@ directories -- is plain filesystem work and is what a user is left with
 afterwards.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -65,3 +66,23 @@ def test_every_external_data_file_travels_with_the_model(
         assert (
             exporter.intermediate_outputs_dir / data.name
         ).read_bytes() == data.read_bytes()
+
+
+def test_run_moves_the_export_and_records_the_buildinfo(
+    work_dir: Path, stage_config: tuple[SingleStageConfig, list[Path]]
+):
+    """`run` is the half of the exporter that is not vendor-specific.
+
+    It calls both abstract methods, renames what `export` produced to
+    the original model name, and leaves the buildinfo beside it.
+    """
+    config, _ = stage_config
+
+    exporter = StubExporter(config=config, output_dir=work_dir / "output")
+    output = exporter.run()
+
+    assert output.is_file()
+    assert output.parent == exporter.output_dir
+    buildinfo = exporter.output_dir / "buildinfo.json"
+    assert buildinfo.is_file()
+    assert "modelconverter_version" in json.loads(buildinfo.read_text())
