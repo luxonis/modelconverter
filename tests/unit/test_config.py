@@ -30,6 +30,9 @@ from modelconverter.utils.config import (
     RVC3Config,
     RVC4Config,
     SingleStageConfig,
+    _as_dict,
+    _as_entries,
+    _as_shape,
     _extract_bin_xml_from_ir,
     _get_onnx_inter_info,
     _get_onnx_node_info,
@@ -129,6 +132,13 @@ def test_flat_config_with_explicit_name_kept():
     assert set(config.stages) == {"custom"}
 
 
+def test_stage_name_must_be_a_string():
+    """A single-stage config takes its stage name from `name`, which
+    then keys the stage dictionary."""
+    with pytest.raises(TypeError, match="`name` must be a string"):
+        Config.get_config(None, {"name": 123, "input_model": "model.onnx"})
+
+
 def test_multistage_extras_fanned_into_each_stage():
     """Top-level extras are distributed to stages missing them, and the
     derived name joins the stage keys."""
@@ -194,6 +204,13 @@ def test_get_stage_config_explicit_key():
 def test_missing_input_model_raises():
     with pytest.raises(ValueError, match="`input_model` must be provided"):
         Config.get_config(None, {})
+
+
+def test_input_model_must_be_a_path():
+    with pytest.raises(
+        TypeError, match="`input_model` must be a string or a path"
+    ):
+        Config.get_config(None, {"input_model": 123})
 
 
 def test_onnx_path_resolved_absolute():
@@ -308,6 +325,13 @@ def test_output_layout_length_mismatch_raises():
 def test_output_explicit_layout_uppercased():
     out = OutputConfig(name="o", shape=[1, 10], layout="nc")
     assert out.layout == "NC"
+
+
+def test_layout_must_be_a_string():
+    """`layout` reaches the validator as raw input, so a caller can put
+    anything there."""
+    with pytest.raises(TypeError, match="`layout` must be a string"):
+        OutputConfig(name="o", shape=[1, 10], layout=5)  # type: ignore[arg-type]
 
 
 def test_encoding_config_defaults():
@@ -970,3 +994,32 @@ def test_renames_node_io():
     }
     assert "renamed" in tensors
     assert "described_node" not in tensors
+
+
+def test_as_dict_rejects_a_non_dictionary():
+    with pytest.raises(TypeError, match="`calibration` must be a dictionary"):
+        _as_dict([1, 2], "calibration")
+
+
+def test_as_entries_rejects_a_non_list():
+    with pytest.raises(
+        TypeError, match="`inputs` must be a list of dictionaries"
+    ):
+        _as_entries("input0", "inputs")
+
+
+def test_as_entries_rejects_a_non_dictionary_entry():
+    with pytest.raises(
+        TypeError, match="`inputs` must be a list of dictionaries"
+    ):
+        _as_entries([{"name": "input0"}, "input1"], "inputs")
+
+
+def test_as_shape_rejects_a_non_list():
+    with pytest.raises(TypeError, match="`shape` must be a list of integers"):
+        _as_shape("1,3,8,8", "shape")
+
+
+def test_as_shape_rejects_a_non_integer_dimension():
+    with pytest.raises(TypeError, match="`shape` must be a list of integers"):
+        _as_shape([1, 3, "8"], "shape")
