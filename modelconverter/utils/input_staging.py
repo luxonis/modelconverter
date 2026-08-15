@@ -1155,7 +1155,7 @@ def _entry_size(entry: Path) -> int:
     try:
         if entry.is_file():
             return entry.stat().st_size
-    except OSError:
+    except OSError:  # pragma: no cover
         return 0
     return dir_stats(entry)[0]
 
@@ -1174,7 +1174,7 @@ def _used_time(entry: Path) -> float:
         pass
     try:
         return entry.stat().st_mtime
-    except OSError:
+    except OSError:  # pragma: no cover
         return 0.0
 
 
