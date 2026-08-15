@@ -11,12 +11,14 @@ dispatches to them, leaving their bodies to the conversion tests.
 import sys
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import Mock
 
 import pytest
 from onnx import TensorProto
 
 from modelconverter.utils.metadata import (
     Metadata,
+    _read_tflite_tensor,
     get_metadata,
 )
 from modelconverter.utils.types import DataType
@@ -234,3 +236,25 @@ def test_tflite_missing_subgraph_raises(
     path.write_bytes(b"dummy")
     with pytest.raises(ValueError, match="Failed to load TFLite model"):
         get_metadata(path)
+
+
+def test_read_tflite_tensor_without_a_tensor_raises():
+    """A subgraph indexes its tensors, and an index it does not hold
+    says the model is malformed rather than empty."""
+    subgraph = Mock()
+    subgraph.Tensors.return_value = None
+
+    with pytest.raises(ValueError, match="has no tensor at index 3"):
+        _read_tflite_tensor(subgraph, 3)
+
+
+def test_read_tflite_tensor_without_a_name_raises():
+    """The name keys the shape and dtype dictionaries, so a tensor
+    without one cannot be recorded."""
+    tensor = Mock()
+    tensor.Name.return_value = None
+    subgraph = Mock()
+    subgraph.Tensors.return_value = tensor
+
+    with pytest.raises(ValueError, match="has no name"):
+        _read_tflite_tensor(subgraph, 1)
