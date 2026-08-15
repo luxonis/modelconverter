@@ -105,3 +105,10 @@ def test_file_destination_is_refused(work_dir: Path):
         _infer_into(dest)
 
     assert dest.read_bytes() == b"not a directory"
+
+
+def test_the_stand_in_reports_no_outputs(work_dir: Path):
+    """`Inferer` is abstract; the stand-in exists so the destination
+    handling can run, and its forward pass has no vendor runtime to
+    produce anything with."""
+    assert _infer_into(work_dir / "dest").infer({}) == {}
