@@ -8,7 +8,7 @@ import zipfile
 from contextlib import suppress
 from functools import cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -34,6 +34,16 @@ from modelconverter.utils.tool_versions import (
 )
 
 UserNamespaceMode = Literal["rootless", "userns", "rootful", "unknown"]
+
+
+class _HeaderGetter(Protocol):
+    """The one method `_download_file` reads off a response.
+
+    `urlopen` is typed to return `Any`, so the response gives the header
+    lookup no type of its own.
+    """
+
+    def __call__(self, name: str, /) -> str | None: ...
 
 
 @cache
@@ -359,7 +369,9 @@ def _download_file(
                     f"HTTP {response.status} while downloading {url}"
                 )
             total = None
-            getheader: str | None = getattr(response, "getheader", None)
+            getheader: _HeaderGetter | None = getattr(
+                response, "getheader", None
+            )
             if callable(getheader):
                 length = getheader("Content-Length")
                 if length and length.isdigit():
