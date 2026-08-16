@@ -41,8 +41,8 @@ class BenchmarkCamera(Protocol):
     def get_os_version(self) -> str: ...
 
 
-def _model_slugs(platform: str) -> list[str]:
-    return list(_platforms_data.get(platform, {}).keys())
+def _model_slugs(benchmark_platform: str) -> list[str]:
+    return list(_platforms_data.get(benchmark_platform, {}).keys())
 
 
 def _model_id(slug: str) -> str:
