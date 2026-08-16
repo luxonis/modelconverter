@@ -5,10 +5,12 @@ import shutil
 import subprocess
 import sys
 import threading
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
+import psutil
 import pytest
 import yaml
 
@@ -1296,3 +1298,319 @@ def test_a_claim_from_a_recycled_pid_is_ignored(tmp_path: Path) -> None:
 
     assert not input_staging._is_in_use(entry)
     assert not marker.exists()
+
+
+def test_path_flags_of_no_command() -> None:
+    """The launcher parses the command before staging; when it has none
+    there is nothing whose signature could name a path."""
+    assert input_staging.path_flags_for(None) == set()
+
+
+def test_path_flags_of_an_uninspectable_command() -> None:
+    """Staging follows the command signature, so a command it cannot
+    read leaves every token alone rather than guessing."""
+    assert input_staging.path_flags_for(object()) == set()  # type: ignore[arg-type]
+
+
+def test_stages_a_path_joined_to_its_flag(
+    tmp_path: Path, cache_dir: Path
+) -> None:
+    """`--model-path=<path>` carries the path in the same token as the
+    flag, so the token has to be rewritten around it."""
+    model = tmp_path / "model.dlc"
+    model.write_bytes(b"dlc")
+
+    (token,) = input_staging.stage_inputs(
+        [f"--model-path={model}"], {"--model-path"}
+    )
+
+    flag, _, staged = token.partition("=")
+    assert flag == "--model-path"
+    assert _host_staged_path(staged, cache_dir).read_bytes() == b"dlc"
+
+
+def test_leaves_a_joined_value_of_another_flag_alone(cache_dir: Path) -> None:
+    assert input_staging.stage_inputs(
+        ["--to=nn_archive"], {"--model-path"}
+    ) == ["--to=nn_archive"]
+
+
+def test_arg_list_override_that_is_not_a_list(tmp_path: Path) -> None:
+    """The override is read the way `LuxonisConfig` reads it, and a
+    value that is not a list holds no arguments to rewrite."""
+    assert (
+        input_staging._stage_arg_list_token(
+            "42", "snpe_onnx_to_dlc_args", tmp_path
+        )
+        is None
+    )
+
+
+def test_a_remote_url_is_not_path_like() -> None:
+    assert input_staging._is_path_like("s3://bucket/model.onnx") is False
+
+
+def test_a_dot_prefixed_name_is_path_like(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A leading `.` says the user meant a path, so the name is staged
+    even without a known extension."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".hidden").write_text("x")
+
+    assert input_staging._is_path_like(".hidden") is True
+
+
+def test_a_value_naming_no_home_is_not_a_path() -> None:
+    """`~` for a user that does not exist is not something `Path` can
+    represent."""
+    assert input_staging._as_path("~nosuchuser4242/model.onnx") is None
+
+
+def test_a_remote_url_is_never_staged(tmp_path: Path) -> None:
+    assert input_staging._stage_value("s3://bucket/m.onnx", tmp_path) is None
+
+
+def test_publishing_reraises_an_unexpected_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Losing the rename race is normal and accepted; anything else is
+    not staging's to swallow."""
+
+    def refuse_rename(self: Path, target: Path) -> Path:
+        raise OSError(errno.EACCES, "denied")
+
+    monkeypatch.setattr(Path, "rename", refuse_rename)
+
+    with pytest.raises(OSError, match="denied"):
+        input_staging._publish_directory(tmp_path / "src", tmp_path / "dest")
+
+
+def test_an_unreadable_config_is_staged_verbatim(
+    tmp_path: Path, cache_dir: Path
+) -> None:
+    """Staging must not be what reports a broken config: the container
+    validates it and says something useful."""
+    config = tmp_path / "broken.yaml"
+    config.write_text("a: [1, 2\n")
+
+    (staged,) = input_staging.stage_inputs([str(config)], set())
+
+    assert _host_staged_path(staged, cache_dir).read_text() == "a: [1, 2\n"
+
+
+def test_a_config_reference_to_a_remote_url_is_left_alone(
+    tmp_path: Path,
+) -> None:
+    assert (
+        input_staging._stage_config_reference(
+            "s3://bucket/model.onnx", tmp_path, tmp_path
+        )
+        is None
+    )
+
+
+def test_a_config_reference_that_is_not_a_path_is_left_alone(
+    tmp_path: Path,
+) -> None:
+    """`calibration.script` may hold the script itself rather than a
+    path to one."""
+    assert (
+        input_staging._stage_config_reference(
+            "~nosuchuser4242/x", tmp_path, tmp_path
+        )
+        is None
+    )
+
+
+def test_staging_a_directory_skips_metadata_and_special_files(
+    tmp_path: Path, cache_dir: Path
+) -> None:
+    """Repository metadata is not a model input and would dominate the
+    copy; anything that is not a regular file cannot be copied at all.
+    """
+    src = tmp_path / "calibration"
+    (src / ".git").mkdir(parents=True)
+    (src / ".git" / "HEAD").write_text("ref: refs/heads/main")
+    (src / "image.npy").write_bytes(b"data")
+    os.mkfifo(src / "pipe")
+
+    (staged,) = input_staging.stage_inputs([str(src)], set())
+
+    staged_dir = _host_staged_path(staged, cache_dir)
+    assert (staged_dir / "image.npy").read_bytes() == b"data"
+    assert not (staged_dir / ".git").exists()
+    assert not (staged_dir / "pipe").exists()
+
+
+def _break_stat(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    """Makes ``Path.stat`` fail for the file called ``name``."""
+    real_stat = Path.stat
+
+    def failing_stat(self: Path, **kwargs: bool) -> os.stat_result:
+        if self.name == name:
+            raise OSError("stat failed")
+        # Guards anything else that stats while the patch is in place.
+        return real_stat(self, **kwargs)  # pragma: no cover
+
+    monkeypatch.setattr(Path, "stat", failing_stat)
+
+
+def test_a_directory_that_cannot_be_stat_ed_has_no_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The identity is what a symlink cycle repeats; without one the
+    directory is simply skipped."""
+    _break_stat(monkeypatch, "unstattable")
+
+    assert input_staging._dir_key(tmp_path / "unstattable") is None
+
+
+def test_a_claim_that_cannot_be_written_is_not_fatal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A read-only cache still has to let the conversion run; the claim
+    is an optimisation, not a precondition."""
+
+    def refuse_write(dest: Path, content: str) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(input_staging, "_atomic_write_text", refuse_write)
+
+    input_staging._mark_in_use(tmp_path)
+
+    assert not input_staging._is_in_use(tmp_path)
+
+
+def test_an_entry_whose_claims_cannot_be_listed_is_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A downloaded file is not a directory and holds no claims."""
+
+    def refuse_glob(self: Path, pattern: str) -> Iterator[Path]:
+        raise OSError("not a directory")
+
+    monkeypatch.setattr(Path, "glob", refuse_glob)
+
+    assert input_staging._is_in_use(tmp_path) is False
+
+
+def test_a_claim_without_a_pid_is_ignored(tmp_path: Path) -> None:
+    (tmp_path / f"{input_staging._IN_USE_PREFIX}notapid").write_text("0")
+
+    assert input_staging._is_in_use(tmp_path) is False
+
+
+def test_a_claim_that_cannot_be_inspected_still_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pid exists but belongs to another user, so the entry may
+    still be in use and must not be evicted."""
+    marker = tmp_path / f"{input_staging._IN_USE_PREFIX}{os.getpid()}"
+    marker.write_text("0.0")
+
+    def refuse_inspection(pid: int) -> psutil.Process:
+        raise psutil.AccessDenied(pid)
+
+    monkeypatch.setattr(input_staging.psutil, "Process", refuse_inspection)
+
+    assert input_staging._is_in_use(tmp_path) is True
+
+
+def test_claiming_an_unwritable_cache_is_not_fatal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = tmp_path / "cache"
+    monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache)
+
+    def refuse_mkdir(
+        self: Path, parents: bool = False, exist_ok: bool = False
+    ) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(Path, "mkdir", refuse_mkdir)
+
+    input_staging.claim_cache()
+
+    assert not cache.exists()
+
+
+def test_trash_without_a_pid_in_its_name_is_kept(tmp_path: Path) -> None:
+    """The name records the sweep that made it; one that carries no pid
+    cannot be shown to be stale."""
+    trash = tmp_path / f"{input_staging._TRASH_PREFIX}notapid-entry"
+    trash.mkdir()
+
+    input_staging._discard_stale_trash(trash)
+
+    assert trash.exists()
+
+
+def test_an_uninspectable_process_starts_now(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The start time only protects what this run staged; falling back
+    to now keeps that protection rather than dropping it."""
+
+    def refuse_inspection() -> psutil.Process:
+        raise psutil.AccessDenied(0)
+
+    monkeypatch.setattr(input_staging.psutil, "Process", refuse_inspection)
+
+    assert input_staging._process_start_time() > 0
+
+
+def test_an_entry_that_cannot_be_renamed_is_not_evicted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = tmp_path / "entry"
+    entry.mkdir()
+
+    def refuse_rename(self: Path, target: Path) -> Path:
+        raise OSError("busy")
+
+    monkeypatch.setattr(Path, "rename", refuse_rename)
+
+    assert input_staging._evict(entry) is False
+    assert entry.exists()
+
+
+def test_an_entry_claimed_mid_eviction_that_cannot_be_put_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A claim that landed between the check and the rename normally
+    puts the entry back. When even that fails the copy is dropped, which
+    costs a re-staging rather than leaving it under a trash name."""
+    entry = tmp_path / "entry"
+    entry.mkdir()
+    (entry / f"{input_staging._IN_USE_PREFIX}{os.getpid()}").write_text(
+        str(psutil.Process().create_time())
+    )
+
+    real_rename = Path.rename
+    renames: list[Path] = []
+
+    def refuse_second_rename(self: Path, target: Path) -> Path:
+        renames.append(self)
+        if len(renames) == 1:
+            return real_rename(self, target)
+        raise OSError("busy")
+
+    monkeypatch.setattr(Path, "rename", refuse_second_rename)
+
+    assert input_staging._evict(entry) is False
+    assert not entry.exists()
+
+
+def test_a_file_that_cannot_be_stat_ed_is_hashed_directly(
+    tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The memo is keyed on the stat fingerprint; without one the
+    digest is still a description of the bytes."""
+    path = tmp_path / "model.dlc"
+    path.write_bytes(b"payload")
+    expected = input_staging._hash_file(path)
+
+    _break_stat(monkeypatch, "model.dlc")
+
+    assert input_staging._hash_file_memoized(path) == expected
