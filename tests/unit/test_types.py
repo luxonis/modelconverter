@@ -15,7 +15,7 @@ import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from types import ModuleType
-from typing import NamedTuple
+from typing import NamedTuple, TypeAlias
 
 import numpy as np
 import pytest
@@ -25,14 +25,18 @@ from onnx.onnx_pb import TensorProto
 
 from modelconverter.utils.types import DataType, InputFileType
 
+# A vendor's spelling of a dtype: a protobuf/tflite enum value, a name
+# string, or a numpy scalar type.
+_VendorDtype: TypeAlias = int | str | type[np.generic]
+
 
 class _Converter(NamedTuple):
     """One ``DataType.from_*`` classmethod and everything it accepts."""
 
     convert: Callable[..., DataType]
     error: str
-    unsupported: object
-    cases: Mapping[object, DataType]
+    unsupported: _VendorDtype
+    cases: Mapping[_VendorDtype, DataType]
 
 
 CONVERTERS = {
@@ -166,7 +170,7 @@ STRING_CONVERTERS = ["ir_ie", "ir_runtime", "dlc", "hubai"]
     ],
 )
 def test_from_dtype_supported(
-    converter: Callable[..., DataType], raw: object, expected: DataType
+    converter: Callable[..., DataType], raw: _VendorDtype, expected: DataType
 ):
     assert converter(raw) is expected
 

@@ -222,7 +222,7 @@ class RVC4Visualizer(Visualizer):
 
     def _get_csv_paths(
         self, dir_path: Path, comparison_type: str = "layer_comparison"
-    ) -> dict[str, str]:
+    ) -> dict[str, Path]:
         dir_path = dir_path or constants.OUTPUTS_DIR / "analysis"
         csv_paths = {}
 

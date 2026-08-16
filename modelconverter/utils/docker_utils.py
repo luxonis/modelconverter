@@ -8,7 +8,7 @@ import zipfile
 from contextlib import suppress
 from functools import cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -17,6 +17,7 @@ import psutil
 import yaml
 from docker.utils import parse_repository_tag
 from loguru import logger
+from luxonis_ml.typing import Params
 from luxonis_ml.utils import environ
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
@@ -34,6 +35,16 @@ from modelconverter.utils.tool_versions import (
 )
 
 UserNamespaceMode = Literal["rootless", "userns", "rootful", "unknown"]
+
+
+class _HeaderGetter(Protocol):
+    """The one method `_download_file` reads off a response.
+
+    `urlopen` is typed to return `Any`, so the response gives the header
+    lookup no type of its own.
+    """
+
+    def __call__(self, name: str, /) -> str | None: ...
 
 
 @cache
@@ -176,24 +187,14 @@ def generate_compose_config(
     if is_dev and (cwd / "modelconverter").exists():
         volumes.append(f"{cwd / 'modelconverter'}:/app/modelconverter")
 
-    config = {
-        "services": {
-            "modelconverter": {
-                "environment": environment,
-                "volumes": volumes,
-                "secrets": ["gcp-credentials"],
-                "image": image,
-                "entrypoint": "/app/entrypoint.sh",
-            }
-        },
-        "secrets": {
-            "gcp-credentials": {
-                "file": environ.GOOGLE_APPLICATION_CREDENTIALS.get_secret_value()
-                if environ.GOOGLE_APPLICATION_CREDENTIALS
-                else tempfile.NamedTemporaryFile(delete=False).name,  # noqa: SIM115
-            }
-        },
+    service: Params = {
+        "environment": environment,
+        "volumes": volumes,
+        "secrets": ["gcp-credentials"],
+        "image": image,
+        "entrypoint": "/app/entrypoint.sh",
     }
+
     limits = {}
     if memory is not None:
         # Compose reads a bare number as bytes, so the limit is handed over
@@ -203,12 +204,21 @@ def generate_compose_config(
         limits["cpus"] = str(cpus)
 
     if limits:
-        config["services"]["modelconverter"]["deploy"] = {
-            "resources": {"limits": limits}
-        }
+        service["deploy"] = {"resources": {"limits": limits}}
 
     if gpu:
-        config["services"]["modelconverter"]["runtime"] = "nvidia"
+        service["runtime"] = "nvidia"
+
+    config = {
+        "services": {"modelconverter": service},
+        "secrets": {
+            "gcp-credentials": {
+                "file": environ.GOOGLE_APPLICATION_CREDENTIALS.get_secret_value()
+                if environ.GOOGLE_APPLICATION_CREDENTIALS
+                else tempfile.NamedTemporaryFile(delete=False).name,  # noqa: SIM115
+            }
+        },
+    }
 
     return yaml.dump(config)
 
@@ -359,7 +369,9 @@ def _download_file(
                     f"HTTP {response.status} while downloading {url}"
                 )
             total = None
-            getheader: str | None = getattr(response, "getheader", None)
+            getheader: _HeaderGetter | None = getattr(
+                response, "getheader", None
+            )
             if callable(getheader):
                 length = getheader("Content-Length")
                 if length and length.isdigit():

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
+from luxonis_ml.typing import PathType
 
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
@@ -52,7 +53,7 @@ class ONNXReferenceInferer:
         return ResizeMethod.RESIZE
 
     def _preprocess(
-        self, inp: InputConfig, image_path: str | Path
+        self, inp: InputConfig, image_path: PathType
     ) -> np.ndarray:
         # Feed the original model its native (`from`) encoding, matching what
         # the baked reverse-channel step produces inside the converted model.
@@ -83,7 +84,7 @@ class ONNXReferenceInferer:
 
         return arr[np.newaxis, ...]
 
-    def infer(self, image_path: str | Path) -> dict[str, np.ndarray]:
+    def infer(self, image_path: PathType) -> dict[str, np.ndarray]:
         # Config inputs pair with the session inputs positionally.
         feed = {
             name: self._preprocess(inp, image_path)
