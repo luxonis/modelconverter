@@ -33,7 +33,8 @@ def platform_params(
     platforms: tuple[str, ...] = ALL_PLATFORMS,
     xfails: dict[str, str] | None = None,
 ) -> list:
-    """One ``pytest.param`` per platform, for a ``"platform"`` parametrization."""
+    """One ``pytest.param`` per platform name, for a ``"platform_name"``
+    parametrization."""
     return [
         pytest.param(
             platform,
