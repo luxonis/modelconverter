@@ -12,7 +12,7 @@ Run in an RVC2/RVC4 development image::
 """
 
 import shutil
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, SupportsFloat
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 class Metric(Protocol):
     """The slice of a Luxonis Eval metric that the scoring needs."""
 
-    def compute(self) -> dict[str, SupportsFloat]: ...
+    def compute(self) -> Mapping[str, SupportsFloat]: ...
 
 
 COCO_SAMPLE = "gs://luxonis-test-bucket/luxonis-ml-test-data/coco_sample.zip"
@@ -71,7 +71,8 @@ class EvaluationCase:
     # An immutable HubAI source instance, not a mutable model slug.
     instance_id: str
     parser: str
-    parser_params: dict[str, str | int]
+    subtype: str
+    n_classes: int
     metrics: tuple[str, ...]
     # Floors reject broken source artifacts; the per-platform drops cap how much
     # COCO-sample AP a converted model may lose against that source output.
@@ -84,7 +85,8 @@ CASES = (
         id="yolov6n-detection",
         instance_id="aimi_LCEFX2rJSsMhEjsyeMEcWn",
         parser="detection",
-        parser_params={"subtype": "yolov6r2", "n_classes": 80},
+        subtype="yolov6r2",
+        n_classes=80,
         metrics=("bbox",),
         floors={"bbox.AP": 0.14, "bbox.AP50": 0.22},
         max_drops={
@@ -96,7 +98,8 @@ CASES = (
         id="yolov8n-instance-segmentation",
         instance_id="aimi_QtcY6CKM2cxB2QpmHVU4QL",
         parser="instance_segmentation",
-        parser_params={"subtype": "yolov8", "n_classes": 80},
+        subtype="yolov8",
+        n_classes=80,
         metrics=("bbox", "mask"),
         floors={
             "bbox.AP": 0.15,
@@ -178,7 +181,7 @@ def _link_options(stage: str, post_stage: str, inputs: list[str]) -> list[str]:
     ]  # fmt: skip
 
 
-def _results(metrics: dict[str, Metric]) -> dict[str, float]:
+def _results(metrics: Mapping[str, Metric]) -> dict[str, float]:
     return {
         f"{name}.{key}": float(value)
         for name, metric in metrics.items()
@@ -314,7 +317,8 @@ def test_real_model_task_metrics(
                 predictions = parser.parse(
                     ordered_outputs(outputs, output_names),
                     class_map=class_map,
-                    **case.parser_params,
+                    subtype=case.subtype,
+                    n_classes=case.n_classes,
                 )
                 for metric in metrics.values():
                     metric.update(predictions, labels, **metric_ctx)
