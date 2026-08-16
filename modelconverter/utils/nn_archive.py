@@ -85,11 +85,9 @@ def process_nn_archive(
     with open(untar_path / "config.json") as f:
         archive_config = NNArchiveConfig(**json.load(f))
 
-    main_stage_config = {
+    main_stage_config: Params = {
         "name": archive_config.model.metadata.name,
         "input_model": str(untar_path / archive_config.model.metadata.path),
-        "inputs": [],
-        "outputs": [],
     }
 
     if (
@@ -101,6 +99,7 @@ def process_nn_archive(
             "encodings": json.loads(p.read_text()),
         }
 
+    inputs: list[Params] = []
     for inp in archive_config.model.inputs:
         reverse = inp.preprocessing.reverse_channels
         interleaved_to_planar = inp.preprocessing.interleaved_to_planar
@@ -180,7 +179,7 @@ def process_nn_archive(
             elif _enc == "GRAY":
                 scale = [1]
 
-        main_stage_config["inputs"].append(
+        inputs.append(
             {
                 "name": inp.name,
                 "shape": inp.shape,
@@ -194,15 +193,18 @@ def process_nn_archive(
             }
         )
 
-    for out in archive_config.model.outputs:
-        main_stage_config["outputs"].append(
-            {
-                "name": out.name,
-                "shape": out.shape,
-                "layout": out.layout,
-                "data_type": out.dtype.value,
-            }
-        )
+    outputs: list[Params] = [
+        {
+            "name": out.name,
+            "shape": out.shape,
+            "layout": out.layout,
+            "data_type": out.dtype.value,
+        }
+        for out in archive_config.model.outputs
+    ]
+
+    main_stage_config["inputs"] = inputs
+    main_stage_config["outputs"] = outputs
 
     stages = {}
 
@@ -218,8 +220,17 @@ def process_nn_archive(
             }
             stages[input_model_path.stem] = head_stage_config
 
+    main_stage_key = (
+        main_stage_config.pop("name") if stages else main_stage_config["name"]
+    )
+    if not isinstance(main_stage_key, str):
+        raise TypeError(
+            f"The archive names its model {main_stage_key!r}, "
+            "which is not a string."
+        )
+
+    config: Params = main_stage_config
     if stages:
-        main_stage_key = main_stage_config.pop("name")
         config = {
             "name": main_stage_key,
             "stages": {
@@ -227,9 +238,6 @@ def process_nn_archive(
                 **stages,
             },
         }
-    else:
-        config = main_stage_config
-        main_stage_key = config["name"]
 
     return Config.get_config(config, overrides), archive_config, main_stage_key
 
