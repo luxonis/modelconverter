@@ -234,7 +234,7 @@ class DeviceMonitor:
             "cpu_utilization": self._read_cpu_utilization(),
         }
 
-    def _read_dsp(self) -> dict[str, float]:
+    def _read_dsp(self) -> dict[str, float | None]:
 
         def parse_freq_file(
             text: str,
