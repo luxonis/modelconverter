@@ -1,8 +1,5 @@
 import json
-from collections.abc import Mapping
-from typing import TYPE_CHECKING
-
-from luxonis_ml.typing import ParamValue
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from modelconverter.utils.config import Encodings
@@ -19,15 +16,13 @@ ALLOWED_ENCODING_KEYS = {
 }
 
 
-def _scalarize_encoding_value(value: ParamValue) -> ParamValue:
+def _scalarize_encoding_value(value: Any) -> Any:
     if isinstance(value, list) and len(value) == 1:
         return value[0]
     return value
 
 
-def _normalize_encoding_item(
-    item: Mapping[str, ParamValue],
-) -> dict[str, ParamValue]:
+def _normalize_encoding_item(item: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(item)
 
     if "bitwidth" not in normalized and "bw" in normalized:
@@ -51,9 +46,7 @@ def _normalize_encoding_item(
     }
 
 
-def _expand_encoding_item(
-    item: Mapping[str, ParamValue],
-) -> list[dict[str, ParamValue]]:
+def _expand_encoding_item(item: dict[str, Any]) -> list[dict[str, Any]]:
     normalized = _normalize_encoding_item(item)
     vector_lengths = [
         len(value)
@@ -78,9 +71,7 @@ def _expand_encoding_item(
     return expanded
 
 
-def _normalize_encoding_group(
-    entries: ParamValue,
-) -> dict[str, list[dict[str, ParamValue]]]:
+def _normalize_encoding_group(entries: Any) -> dict[str, list[dict[str, Any]]]:
     if isinstance(entries, dict):
         normalized = {}
         for name, value in entries.items():
@@ -115,7 +106,7 @@ def _normalize_encoding_group(
     return normalized
 
 
-def parse_encodings(value: "ParamValue | Encodings") -> "Encodings":
+def parse_encodings(value: Any) -> "Encodings":
     from modelconverter.utils.config import Encodings
 
     if isinstance(value, Encodings):
@@ -129,13 +120,11 @@ def parse_encodings(value: "ParamValue | Encodings") -> "Encodings":
             f"Expected encodings to deserialize to a dict, got {type(value).__name__}."
         )
 
-    return Encodings.model_validate(
-        {
-            "activation_encodings": _normalize_encoding_group(
-                value.get("activation_encodings", {})
-            ),
-            "param_encodings": _normalize_encoding_group(
-                value.get("param_encodings", {})
-            ),
-        }
+    return Encodings(
+        activation_encodings=_normalize_encoding_group(
+            value.get("activation_encodings", {})
+        ),
+        param_encodings=_normalize_encoding_group(
+            value.get("param_encodings", {})
+        ),
     )

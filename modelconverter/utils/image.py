@@ -2,7 +2,6 @@ from itertools import chain
 from pathlib import Path
 
 import numpy as np
-from luxonis_ml.typing import PathType
 from PIL import Image
 
 from modelconverter.utils.exceptions import ModelconverterException
@@ -10,7 +9,7 @@ from modelconverter.utils.types import DataType, Encoding, ResizeMethod
 
 
 def read_image(
-    path: PathType,
+    path: str | Path,
     shape: list[int],
     encoding: Encoding,
     resize_method: ResizeMethod,

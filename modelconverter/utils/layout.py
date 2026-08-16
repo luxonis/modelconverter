@@ -32,7 +32,7 @@ def make_default_layout(shape: list[int]) -> str:
 
 def guess_new_layout(
     old_layout: str, old_shape: list[int], new_shape: list[int]
-) -> str:
+) -> str | None:
     """Tries to guess the layout of the new shape.
 
     The new shape must contain the same elements as the old one.

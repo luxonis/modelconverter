@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from luxonis_ml.typing import PathType
 
 from modelconverter.utils import filesystem_utils as fsu
 from modelconverter.utils.constants import SHARED_DIR
@@ -54,10 +53,10 @@ def _install_fake_fs(
         def get_file(self, remote: str, local: str) -> None:
             self.get_file_calls.append((remote, local))
 
-        def put_file(self, local: PathType, remote: str) -> None:
+        def put_file(self, local: str | Path, remote: str) -> None:
             self.put_file_calls.append((local, remote))
 
-        def put_dir(self, local: PathType, remote: str) -> None:
+        def put_dir(self, local: str | Path, remote: str) -> None:
             self.put_dir_calls.append((local, remote))
 
     monkeypatch.setattr(fsu, "LuxonisFileSystem", FakeFS)

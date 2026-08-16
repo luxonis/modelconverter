@@ -1,5 +1,4 @@
 pre-commit~=4.6
-pyright~=1.1
 pytest-cov~=7.1
 pytest-xdist~=3.5
 pytest-sugar~=1.1
@@ -7,5 +6,4 @@ hypothesis~=6.163
 hubai-sdk~=0.3
 depthai>=3.8.0,<4
 # Lets the tests emit tiny .tflite fixtures directly (no TensorFlow needed).
-flatbuffers~=25.12
-tflite2onnx~=0.1
+flatbuffers

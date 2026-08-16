@@ -6,10 +6,10 @@ so larger values would only buy runtime.
 """
 
 import string
+from typing import Any
 
 from hypothesis import HealthCheck, settings
 from hypothesis import strategies as st
-from luxonis_ml.typing import Params
 
 # ``work_dir`` and ``monkeypatch`` are function-scoped, so Hypothesis hands the
 # same one to every example of a test instead of a fresh one. A handful of
@@ -92,7 +92,7 @@ _SCALAR_FIELDS = {
 @st.composite
 def encoding_items(
     draw: st.DrawFn, *, vector_length: int | None = None
-) -> Params:
+) -> dict[str, Any]:
     """A single raw quantization-encoding entry.
 
     Values are valid for ``QuantizationOverridesItem``, so one strategy drives
@@ -100,7 +100,7 @@ def encoding_items(
     With ``vector_length``, every per-channel field is drawn as a list of that
     length -- mismatched lengths are a rejected input with its own test.
     """
-    item: Params = {}
+    item: dict[str, Any] = {}
     for key, values in _ENCODING_FIELDS.items():
         if not draw(st.booleans()):
             continue
@@ -121,7 +121,7 @@ def encoding_items(
 
 
 @st.composite
-def encoding_groups(draw: st.DrawFn) -> dict[str, list[Params]]:
+def encoding_groups(draw: st.DrawFn) -> dict[str, list[dict[str, Any]]]:
     """A ``{tensor_name: [entry, ...]}`` encoding group."""
     names = draw(st.lists(tensor_names, min_size=1, max_size=3, unique=True))
     return {

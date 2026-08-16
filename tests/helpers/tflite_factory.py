@@ -10,7 +10,6 @@ that ``tflite2onnx`` (the converter modelconverter's RVC2 path uses) accepts.
 from pathlib import Path
 
 import flatbuffers
-from luxonis_ml.typing import PathType
 
 # TFLite schema enum values (frozen for backward compatibility).
 _RELU = 19  # BuiltinOperator.RELU
@@ -26,7 +25,7 @@ def _int_vector(b: flatbuffers.Builder, values: list[int]) -> int:
 
 
 def build_toy_tflite(
-    path: PathType, *, shape: tuple[int, ...] = (1, 8, 8, 3)
+    path: str | Path, *, shape: tuple[int, ...] = (1, 8, 8, 3)
 ) -> Path:
     """Write a minimal ``input -> Relu -> output`` TFLite model.
 
