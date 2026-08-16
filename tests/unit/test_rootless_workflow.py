@@ -7,6 +7,7 @@ from typing import NamedTuple
 
 import pytest
 import yaml
+from luxonis_ml.typing import Params, ParamValue
 
 from modelconverter.__main__ import app
 from modelconverter.utils import constants, docker_utils
@@ -16,13 +17,13 @@ from tests.helpers.onnx_factory import single_io_onnx
 _IMAGE = "luxonis/modelconverter-rvc4:test"
 
 
-def _mapping(value: object) -> dict[str, object]:
+def _mapping(value: ParamValue) -> Params:
     """The value as the mapping the compose file is known to hold."""
     assert isinstance(value, dict)
     return value
 
 
-def _strings(value: object) -> list[str]:
+def _strings(value: ParamValue) -> list[str]:
     """The value as the list of strings the compose file is known to
     hold."""
     assert isinstance(value, list)
@@ -31,21 +32,21 @@ def _strings(value: object) -> list[str]:
     return strings
 
 
-def _text(value: object) -> str:
+def _text(value: ParamValue) -> str:
     assert isinstance(value, str)
     return value
 
 
 class _Launch(NamedTuple):
     argv: list[str]
-    compose: dict[str, object]
+    compose: Params
 
     @property
     def container_args(self) -> list[str]:
         return self.argv[self.argv.index("modelconverter") + 1 :]
 
     @property
-    def service(self) -> dict[str, object]:
+    def service(self) -> Params:
         services = _mapping(self.compose["services"])
         return _mapping(next(iter(services.values())))
 
