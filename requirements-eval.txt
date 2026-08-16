@@ -9,10 +9,10 @@
 # and RVC4 development-image build supplies ``--no-deps`` when installing this
 # file.
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.5.1+cpu
-torchvision==0.20.1+cpu
-torchmetrics==1.6.1
-lightning-utilities==0.15.3
+torch~=2.13
+torchvision~=0.28
+torchmetrics~=1.9
+lightning-utilities~=0.15
 luxonis-eval @ git+https://github.com/luxonis/luxonis-eval.git@be0742210cd0f8ec7f63d4853d4cb97eeab49458
 depthai-nodes==0.5.2
 pycocotools
