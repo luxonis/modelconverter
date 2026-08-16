@@ -295,6 +295,23 @@ def build_relu_onnx(path: PathType, shape: list[int]) -> Path:
     return _save(helper.make_graph([node], "ReluModel", [inp], [out]), path)
 
 
+def split_concat_onnx(path: PathType) -> Path:
+    """A ``Split`` whose two branches a ``Concat`` rejoins.
+
+    The Concat produces a graph output, so nothing consumes it. The
+    Split-Concat fusion walks forward from the Concat to find a ``Conv``,
+    and this graph gives that walk nowhere to go.
+    """
+    inp = helper.make_tensor_value_info("img", TensorProto.FLOAT, [1, 4, 8, 8])
+    out = helper.make_tensor_value_info("out", TensorProto.FLOAT, [1, 4, 8, 8])
+    nodes = [
+        helper.make_node("Split", ["img"], ["low", "high"], axis=1),
+        helper.make_node("Concat", ["low", "high"], ["out"], axis=1),
+    ]
+    graph = helper.make_graph(nodes, "SplitConcatModel", [inp], [out])
+    return _save(graph, path)
+
+
 def standard_dummy_onnx(path: PathType) -> Path:
     """The canonical two-in/two-out model used across the config tests."""
     inputs = [
