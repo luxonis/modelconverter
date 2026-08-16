@@ -9,6 +9,8 @@ from hypothesis import strategies as st
 
 from modelconverter.utils.general import (
     _normalize_underscores,
+    dir_stats,
+    human_size,
     parse_size,
     sanitize_net_name,
 )
@@ -150,3 +152,40 @@ def test_parse_size_reads_the_units_human_size_writes(
 def test_parse_size_rejects_what_is_not_a_size(value: str):
     with pytest.raises(ValueError, match="not a valid size"):
         parse_size(value)
+
+
+def test_human_size_stops_at_the_unit_parse_size_reads_back():
+    """`cache info` shows a size the user may hand back as a budget, so
+    the largest unit written has to be one that is also read."""
+    shown = human_size(1024**4)
+    assert shown == "1.0 TiB"
+    assert parse_size(shown) == 1024**4
+
+
+def test_parse_size_passes_an_integer_through():
+    """Docker's own byte values arrive as integers, not as strings."""
+    assert parse_size(123) == 123
+
+
+def test_dir_stats_skips_an_entry_it_cannot_stat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A container run killed before its entrypoint could chown the
+    mounts back leaves root-owned files behind.
+
+    Neither reporting on the cache nor keeping it within its budget may
+    be what breaks over one of those.
+    """
+    (tmp_path / "readable.bin").write_bytes(b"x" * 10)
+    (tmp_path / "unreadable.bin").write_bytes(b"y" * 20)
+
+    real_is_file = Path.is_file
+
+    def fake_is_file(self: Path) -> bool:
+        if self.name == "unreadable.bin":
+            raise OSError("stat failed")
+        return real_is_file(self)
+
+    monkeypatch.setattr(Path, "is_file", fake_is_file)
+
+    assert dir_stats(tmp_path) == (10, 1)
