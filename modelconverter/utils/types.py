@@ -154,7 +154,7 @@ class DataType(Enum):
 
     @classmethod
     def from_numpy_dtype(cls, dtype: type[np.generic]) -> "DataType":
-        dtype_map = {
+        dtype_map: dict[type[np.generic], str] = {
             np.float16: "float16",
             np.float32: "float32",
             np.float64: "float64",

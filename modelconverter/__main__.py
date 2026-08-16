@@ -34,6 +34,7 @@ from modelconverter.platforms import (
     get_inferer,
     get_visualizer,
 )
+from modelconverter.platforms.base_benchmark import Configuration
 from modelconverter.platforms.multistage_exporter import MultiStageExporter
 from modelconverter.utils import (
     ModelconverterException,
@@ -559,7 +560,7 @@ def benchmark(
         Whether to monitor the device performance during benchmarking and include it in the results. Only relevant for RVC4 platform.
     """
     if platform in {Platform.RVC2, Platform.RVC4}:
-        kwargs = {
+        kwargs: Configuration = {
             "repetitions": repetitions,
             "benchmark_time": benchmark_time,
             "num_threads": num_threads,

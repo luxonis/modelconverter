@@ -3,6 +3,7 @@ from pathlib import Path
 
 import cv2
 from loguru import logger
+from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.platforms.rvc2.exporter import RVC2Exporter
@@ -65,17 +66,17 @@ class RVC3Exporter(RVC2Exporter):
                 self.output_dir
                 / f"{self._model_name}-{self.platform.name.lower()}-int8"
             )
-            args += ["-m", calibrated_xml_path]
+            args += ["-m", str(calibrated_xml_path)]
         else:
             output_path = (
                 self.output_dir
                 / f"{self._model_name}-{self.platform.name.lower()}"
             )
-            args += ["-m", xml_path]
+            args += ["-m", str(xml_path)]
 
         if "-o" not in args:
             blob_output_path = output_path.with_suffix(".blob")
-            args += ["-o", blob_output_path]
+            args += ["-o", str(blob_output_path)]
         else:  # pragma: no cover
             blob_output_path = Path(args[args.index("-o") + 1])
 
@@ -112,6 +113,16 @@ class RVC3Exporter(RVC2Exporter):
                 str((calibration_img_dir / file.stem).with_suffix(suffix)), img
             )
 
+        dataset: Params = {
+            "name": "calibration",
+            "data_source": str(calibration_img_dir),
+            "reader": "opencv_imread",
+        }
+        if inp.encoding.to == Encoding.GRAY:
+            dataset["preprocessing"] = [{"type": "bgr_to_gray"}]
+        elif not self._reverse_input_channels:
+            dataset["preprocessing"] = [{"type": "bgr_to_rgb"}]
+
         config = {
             "model": {
                 "model_name": f"{xml_path.stem}-int8",
@@ -125,13 +136,7 @@ class RVC3Exporter(RVC2Exporter):
                         "device": "CPU",
                     }
                 ],
-                "datasets": [
-                    {
-                        "name": "calibration",
-                        "data_source": str(calibration_img_dir),
-                        "reader": "opencv_imread",
-                    }
-                ],
+                "datasets": [dataset],
             },
             "compression": {
                 "target_device": self._pot_target_device.name,
@@ -146,15 +151,6 @@ class RVC3Exporter(RVC2Exporter):
                 ],
             },
         }
-
-        if inp.encoding.to == Encoding.GRAY:
-            config["engine"]["datasets"][0]["preprocessing"] = [
-                {"type": "bgr_to_gray"}
-            ]
-        elif not self._reverse_input_channels:
-            config["engine"]["datasets"][0]["preprocessing"] = [
-                {"type": "bgr_to_rgb"}
-            ]
 
         pot_config_path = self.intermediate_outputs_dir / "pot_config.json"
 

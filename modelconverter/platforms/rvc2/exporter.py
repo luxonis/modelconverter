@@ -256,7 +256,7 @@ class RVC2Exporter(Exporter):
         if "-iop" not in args:
             self._add_args(args, ["-ip", "U8"])
 
-        args += ["-m", xml_path]
+        args += ["-m", str(xml_path)]
 
         if self._superblob:
             return self._compile_superblob(args)
@@ -348,7 +348,7 @@ class RVC2Exporter(Exporter):
                 blobs_directory
                 / f"{self._model_name}_{DEFAULT_SUPER_SHAVES}shave.blob"
             )
-            args += ["-o", blob_path]
+            args += ["-o", str(blob_path)]
 
             logger.info(f"Compiling {shaves}-shave patch...")
             with SubprocessHandle(
