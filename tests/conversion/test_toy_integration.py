@@ -24,9 +24,9 @@ import pytest
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
-from modelconverter.packages.getters import get_inferer
+from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.conversion import (
     HAILO_FAST_OPTS,
     assert_produced,
@@ -34,15 +34,15 @@ from tests.helpers.conversion import (
     write_config,
 )
 from tests.helpers.onnx_factory import build_toy_integration_onnx
+from tests.helpers.platform_options import (
+    platform_options,
+    superblob_skip_reason,
+)
 from tests.helpers.platforms import platform_marks
 from tests.helpers.precision import (
     cosine_similarity,
     golden_reference_outputs,
     locate_converted_model,
-)
-from tests.helpers.target_options import (
-    superblob_skip_reason,
-    target_options,
 )
 
 _SIZE = 64
@@ -67,7 +67,7 @@ class Precision:
 
 
 # These two cases own the RVC2 superblob decision explicitly, so unlike the other
-# conversion tests they do not take `target_options` -- where superblob is too
+# conversion tests they do not take `platform_options` -- where superblob is too
 # slow to compile the dedicated case is skipped, rather than quietly flipped to
 # `False`, which would just duplicate `blob`.
 PRECISIONS: dict[str, list[Precision]] = {
@@ -190,14 +190,14 @@ def constant_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def _assert_correct(
-    target: Target,
+    platform: Platform,
     precision: Precision,
     config_path: Path,
     output_name: str,
     image: Path,
     floor: float,
 ) -> None:
-    cfg, _, _ = get_configs(target, str(config_path), list(precision.opts))
+    cfg, _, _ = get_configs(platform, str(config_path), list(precision.opts))
     stage = next(iter(cfg.stages.values()))
     input_configs = {inp.name: inp for inp in stage.inputs}
 
@@ -208,10 +208,10 @@ def _assert_correct(
         float(_CALIB_VALUE),
     )
     model_path = locate_converted_model(
-        OUTPUTS_DIR / output_name, target.value
+        OUTPUTS_DIR / output_name, platform.value
     )
     inferer = get_inferer(
-        target,
+        platform,
         str(model_path),
         image.parent,
         OUTPUTS_DIR / f"{output_name}_infer",
@@ -222,7 +222,7 @@ def _assert_correct(
     for name, ref in reference.items():
         cos = cosine_similarity(ref, converted[name])
         assert cos >= floor, (
-            f"{target.value} {precision.name} output {name!r}: "
+            f"{platform.value} {precision.name} output {name!r}: "
             f"cosine {cos:.5f} < {floor}"
         )
 
@@ -239,17 +239,17 @@ _CASES = [
 ]
 
 
-@pytest.mark.parametrize(("platform", "precision"), _CASES)
+@pytest.mark.parametrize(("platform_name", "precision"), _CASES)
 def test_toy_integration(
-    platform: str,
+    platform_name: str,
     precision: Precision,
     toy_config: Path,
     constant_image: Path,
 ):
-    target = Target(platform)
-    output_name = f"_toy-{platform}-{precision.name}"
+    platform = Platform(platform_name)
+    output_name = f"_toy-{platform_name}-{precision.name}"
     convert(
-        target,
+        platform,
         *precision.opts,
         path=str(toy_config),
         output_dir=output_name,
@@ -259,7 +259,7 @@ def test_toy_integration(
 
     if precision.correctness is not None:
         _assert_correct(
-            target,
+            platform,
             precision,
             toy_config,
             output_name,
@@ -278,8 +278,8 @@ def test_rvc2_input_freezing(frozen_toy_config: Path):
     """
     output_name = "_toy-rvc2-frozen"
     convert(
-        Target.RVC2,
-        *target_options(Target.RVC2),
+        Platform.RVC2,
+        *platform_options(Platform.RVC2),
         path=str(frozen_toy_config),
         output_dir=output_name,
         to="native",

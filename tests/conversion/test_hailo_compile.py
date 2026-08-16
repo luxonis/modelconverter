@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from modelconverter.__main__ import convert
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.conversion import (
     assert_produced_suffix,
     write_toy_conv_config,
@@ -38,7 +38,7 @@ def test_hailo_compile(compile_config: Path):
     output_name = "_hailo-compile"
     # No `disable_compilation` here -- we want the real HEF compile.
     convert(
-        Target.HAILO,
+        Platform.HAILO,
         "hailo.optimization_level",
         "0",
         "hailo.compression_level",

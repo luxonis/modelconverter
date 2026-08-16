@@ -12,22 +12,33 @@ Run in an RVC2/RVC4 development image::
 """
 
 import shutil
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Protocol, SupportsFloat
 
 import pytest
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
-from modelconverter.packages.getters import get_inferer
+from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.constants import CALIBRATION_DIR, OUTPUTS_DIR
 from modelconverter.utils.general import sanitize_net_name
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.evaluation import assert_quality, ordered_outputs
 from tests.helpers.onnx_reference import ONNXReferenceInferer
+from tests.helpers.platform_options import platform_options
 from tests.helpers.precision import locate_converted_model
-from tests.helpers.target_options import target_options
+
+if TYPE_CHECKING:
+    from luxonis_ml.data import LuxonisLoader
+
+
+class Metric(Protocol):
+    """The slice of a Luxonis Eval metric that the scoring needs."""
+
+    def compute(self) -> dict[str, SupportsFloat]: ...
+
 
 COCO_SAMPLE = "gs://luxonis-test-bucket/luxonis-ml-test-data/coco_sample.zip"
 DATASET_NAME = "modelconverter-coco-sample-evaluation"
@@ -60,7 +71,7 @@ class EvaluationCase:
     # An immutable HubAI source instance, not a mutable model slug.
     instance_id: str
     parser: str
-    parser_params: dict[str, Any]
+    parser_params: dict[str, str | int]
     metrics: tuple[str, ...]
     # Floors reject broken source artifacts; the per-platform drops cap how much
     # COCO-sample AP a converted model may lose against that source output.
@@ -112,7 +123,9 @@ CASES = (
 
 
 @pytest.fixture(scope="module")
-def coco_sample(tmp_path_factory: pytest.TempPathFactory) -> Any:
+def coco_sample(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator["LuxonisLoader"]:
     """Parse the shared COCO sample GCS archive into an LDF."""
     from luxonis_ml.data import LuxonisLoader, LuxonisParser
     from luxonis_ml.utils.environ import environ
@@ -165,7 +178,7 @@ def _link_options(stage: str, post_stage: str, inputs: list[str]) -> list[str]:
     ]  # fmt: skip
 
 
-def _results(metrics: dict[str, Any]) -> dict[str, float]:
+def _results(metrics: dict[str, Metric]) -> dict[str, float]:
     return {
         f"{name}.{key}": float(value)
         for name, metric in metrics.items()
@@ -186,9 +199,12 @@ _PARAMS = [
 ]
 
 
-@pytest.mark.parametrize(("platform", "case"), _PARAMS)
+@pytest.mark.parametrize(("platform_name", "case"), _PARAMS)
 def test_real_model_task_metrics(
-    platform: str, case: EvaluationCase, tmp_path: Path, coco_sample: Any
+    platform_name: str,
+    case: EvaluationCase,
+    tmp_path: Path,
+    coco_sample: "LuxonisLoader",
 ):
     """Converted native outputs retain source quality on labelled COCO data."""
     # Imported here, not at module level: the rvc3/hailo jobs collect this module
@@ -217,13 +233,13 @@ def test_real_model_task_metrics(
         "mask": MaskMeanAveragePrecision,
     }
 
-    target = Target(platform)
-    options = target_options(target)
+    platform = Platform(platform_name)
+    options = platform_options(platform)
     archive = HubAIClient().instances.download_instance(
         case.instance_id, str(tmp_path / "models")
     )
 
-    cfg, _, _ = get_configs(target, str(archive), list(options))
+    cfg, _, _ = get_configs(platform, str(archive), list(options))
     stage_name, stage = next(iter(cfg.stages.items()))
     # The reference inferer and the metric context both assume NCHW at the
     # fixture's geometry.
@@ -248,10 +264,10 @@ def test_real_model_task_metrics(
             stage_name, post_name, [inp.name for inp in post_stage.inputs]
         )
 
-    output_name = sanitize_net_name(f"eval_{platform}_{case.id}")
+    output_name = sanitize_net_name(f"eval_{platform_name}_{case.id}")
     try:
         convert(
-            target,
+            platform,
             *convert_options,
             path=str(archive),
             output_dir=output_name,
@@ -261,11 +277,11 @@ def test_real_model_task_metrics(
         assert len(images) == len(coco_sample)
 
         model_path = locate_converted_model(
-            OUTPUTS_DIR / output_name, platform
+            OUTPUTS_DIR / output_name, platform_name
         )
         reference = ONNXReferenceInferer.from_stage(stage)
         inferer = get_inferer(
-            target,
+            platform,
             str(model_path),
             images[0].parent,
             OUTPUTS_DIR / f"{output_name}_infer",
@@ -307,9 +323,9 @@ def test_real_model_task_metrics(
             _results(source),
             _results(converted),
             floors=case.floors,
-            max_drops=case.max_drops[platform],
+            max_drops=case.max_drops[platform_name],
             case_id=case.id,
-            platform=platform,
+            platform=platform_name,
         )
     finally:
         shutil.rmtree(OUTPUTS_DIR / output_name, ignore_errors=True)

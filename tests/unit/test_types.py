@@ -12,10 +12,10 @@ latter needs a faked ``tflite`` module.
 
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from types import ModuleType
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import numpy as np
 import pytest
@@ -29,10 +29,10 @@ from modelconverter.utils.types import DataType, InputFileType
 class _Converter(NamedTuple):
     """One ``DataType.from_*`` classmethod and everything it accepts."""
 
-    convert: Callable[[Any], DataType]
+    convert: Callable[..., DataType]
     error: str
-    unsupported: Any
-    cases: dict[Any, DataType]
+    unsupported: object
+    cases: Mapping[object, DataType]
 
 
 CONVERTERS = {
@@ -166,7 +166,7 @@ STRING_CONVERTERS = ["ir_ie", "ir_runtime", "dlc", "hubai"]
     ],
 )
 def test_from_dtype_supported(
-    converter: Callable[[Any], DataType], raw: Any, expected: DataType
+    converter: Callable[..., DataType], raw: object, expected: DataType
 ):
     assert converter(raw) is expected
 
@@ -181,7 +181,7 @@ def test_from_dtype_unsupported(name: str):
 @pytest.mark.parametrize("name", STRING_CONVERTERS)
 @given(spelling=st.text(max_size=12))
 def test_unknown_spellings_are_rejected(name: str, spelling: str):
-    """Any spelling outside the table raises, rather than mis-mapping.
+    """Any spelling outside the table raises, rather than mismapping.
 
     The vendor tables are keyed by exact strings, so a near-miss such as
     ``"fp32"`` for ``"FP32"`` must be an error and never silently fall
@@ -346,14 +346,14 @@ AS_NUMPY_DTYPE_CASES = [
 
 
 @pytest.mark.parametrize(("dtype", "expected"), AS_NUMPY_DTYPE_CASES)
-def test_as_numpy_dtype_all(dtype: DataType, expected: type):
+def test_as_numpy_dtype_all(dtype: DataType, expected: type[np.generic]):
     assert dtype.as_numpy_dtype() is expected
 
 
 @pytest.mark.parametrize(
     ("np_dtype", "dtype"), list(CONVERTERS["numpy"].cases.items())
 )
-def test_numpy_dtype_round_trips(np_dtype: type, dtype: DataType):
+def test_numpy_dtype_round_trips(np_dtype: type[np.generic], dtype: DataType):
     """The numpy map and its inverse agree on the lossless dtypes."""
     assert dtype.as_numpy_dtype() is np_dtype
     assert DataType.from_numpy_dtype(dtype.as_numpy_dtype()) is dtype

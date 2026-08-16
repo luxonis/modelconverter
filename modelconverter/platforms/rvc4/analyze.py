@@ -5,7 +5,6 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import cast
 
 import numpy as np
 import onnx
@@ -16,13 +15,13 @@ from loguru import logger
 from PIL import Image
 from rich.progress import track
 
-from modelconverter.packages.base_analyze import Analyzer
-from modelconverter.packages.rvc4.benchmark import get_device_info
+from modelconverter.platforms.base_analyze import Analyzer
+from modelconverter.platforms.rvc4.utils import get_device_info
 from modelconverter.utils import constants, create_handler, subprocess_run
 
 
 class RVC4Analyzer(Analyzer):
-    SUPPORTED_INPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".npy")
+    _SUPPORTED_INPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".npy")
 
     def __init__(
         self,
@@ -32,13 +31,13 @@ class RVC4Analyzer(Analyzer):
         image_dirs: dict[str, str],
         image_subset: int | None = None,
     ):
-        self.image_subset = image_subset
+        self._image_subset = image_subset
         super().__init__(dlc_model_path, image_dirs)
         _, device_adb_id = get_device_info(device_ip, device_id)
-        self.handler = create_handler(device_ip, device_adb_id)
+        self._handler = create_handler(device_ip, device_adb_id)
 
     def _device_work_dir(self) -> str:
-        return f"/data/modelconverter/{self.model_name}"
+        return f"/data/modelconverter/{self._model_name}"
 
     def _device_input_dir(self) -> str:
         return f"{self._device_work_dir()}/inputs"
@@ -47,22 +46,22 @@ class RVC4Analyzer(Analyzer):
         return f"{self._device_work_dir()}/output"
 
     def _setup_device_workspace(self) -> None:
-        self.handler.shell(f"rm -rf {self._device_work_dir()}")
-        self.handler.shell(
+        self._handler.shell(f"rm -rf {self._device_work_dir()}")
+        self._handler.shell(
             f"mkdir -p {self._device_input_dir()} {self._device_output_dir()}"
         )
-        self.handler.push(
-            str(self.dlc_model_path),
-            f"{self._device_work_dir()}/{self.model_name}.dlc",
+        self._handler.push(
+            str(self._dlc_model_path),
+            f"{self._device_work_dir()}/{self._model_name}.dlc",
         )
 
     def _clear_device_output_files(self) -> None:
         output_dir = shlex.quote(self._device_output_dir())
-        self.handler.shell(
+        self._handler.shell(
             "if [ -d "
             f"{output_dir}"
             " ]; then "
-            f"find {output_dir} -type f | while read -r file; do rm -f \"$file\"; done; "
+            f'find {output_dir} -type f | while read -r file; do rm -f "$file"; done; '
             "fi"
         )
 
@@ -70,7 +69,7 @@ class RVC4Analyzer(Analyzer):
         self, local_root: Path, *, verbose: bool = True
     ) -> Path:
         local_output_dir = local_root / "output"
-        self.handler.pull(self._device_output_dir(), local_output_dir)
+        self._handler.pull(self._device_output_dir(), local_output_dir)
         if verbose:
             logger.info(
                 f"Raw outputs pulled from device to {local_output_dir}"
@@ -92,7 +91,7 @@ class RVC4Analyzer(Analyzer):
             statistics = []
             device_output_dir = self._device_output_dir()
             command = (
-                f"snpe-net-run --container {self.model_name}.dlc "
+                f"snpe-net-run --container {self._model_name}.dlc "
                 f"--input_list input_list.txt --output_dir {device_output_dir} "
                 "--debug --use_dsp --userbuffer_floatN_output 32 "
                 "--perf_profile balanced --userbuffer_float"
@@ -162,13 +161,14 @@ class RVC4Analyzer(Analyzer):
                 path
                 for path in Path(v).glob("*")
                 if path.is_file()
-                and path.suffix.lower() in self.SUPPORTED_INPUT_SUFFIXES
+                and path.suffix.lower() in self._SUPPORTED_INPUT_SUFFIXES
             )
-            for k, v in self.image_dirs.items()
+            for k, v in self._image_dirs.items()
         }
-        if self.image_subset is not None:
+        if self._image_subset is not None:
             image_names = {
-                k: paths[: self.image_subset] for k, paths in image_names.items()
+                k: paths[: self._image_subset]
+                for k, paths in image_names.items()
             }
         return image_names
 
@@ -208,10 +208,10 @@ class RVC4Analyzer(Analyzer):
         if verbose:
             logger.info("Preparing raw inputs for RVC4 analysis.")
         if reset_workspace:
-            self.handler.shell(f"rm -rf {self._device_work_dir()}")
-            self.handler.shell(f"mkdir -p {self._device_input_dir()}")
+            self._handler.shell(f"rm -rf {self._device_work_dir()}")
+            self._handler.shell(f"mkdir -p {self._device_input_dir()}")
         else:
-            self.handler.shell(f"mkdir -p {self._device_input_dir()}")
+            self._handler.shell(f"mkdir -p {self._device_input_dir()}")
 
         input_list = ""
         dlc_matcher = {}
@@ -222,13 +222,16 @@ class RVC4Analyzer(Analyzer):
             dlc_matcher[sample_id] = f"Result_{result_index}"
             for input_name, img_path in input_dict.items():
                 img_name = Path(img_path).stem
-                width_height = self.input_sizes[input_name][1:3][::-1]
+                width_height = self._input_sizes[input_name][1:3][::-1]
                 if img_path.lower().endswith(
                     ".npy"
                 ):  # expects numpy array to already be in correct format
-                    raw_image = cast(np.ndarray, np.load(img_path)).astype(
-                        type
-                    )
+                    loaded = np.load(img_path)
+                    if not isinstance(loaded, np.ndarray):
+                        raise TypeError(
+                            f"Input `{img_name}` is not a single array."
+                        )
+                    raw_image = loaded.astype(type)
 
                     if raw_image.shape != tuple(width_height):
                         raise ValueError(
@@ -236,8 +239,7 @@ class RVC4Analyzer(Analyzer):
                         )
                 else:
                     image = self._resize_image(img_path, width_height)
-                    image = image.astype(type)
-                    raw_image = cast(np.ndarray, image).astype(type)
+                    raw_image = image.astype(type)
 
                 raw_file_name = (
                     f"{input_name}.raw"
@@ -246,22 +248,20 @@ class RVC4Analyzer(Analyzer):
                 )
                 with tempfile.NamedTemporaryFile() as f:
                     raw_image.tofile(f)
-                    self.handler.push(
+                    self._handler.push(
                         f.name,
                         f"{self._device_input_dir()}/{raw_file_name}",
                     )
                     f.close()
 
-                input_row += (
-                    f"{input_name}:={self._device_input_dir()}/{raw_file_name} "
-                )
+                input_row += f"{input_name}:={self._device_input_dir()}/{raw_file_name} "
             input_list += input_row
             input_list += "\n"
 
         with tempfile.NamedTemporaryFile() as f:
             f.write(input_list.encode())
             f.flush()
-            self.handler.push(
+            self._handler.push(
                 f.name,
                 f"{self._device_work_dir()}/input_list.txt",
             )
@@ -311,8 +311,7 @@ class RVC4Analyzer(Analyzer):
     def _execute_dlc_command(self, command: str) -> None:
         work_dir = self._device_work_dir()
         try:
-            self.handler.shell(f"cd {work_dir} && {command}")
-            return
+            self._handler.shell(f"cd {work_dir} && {command}")
         except subprocess.CalledProcessError as e:
             stderr = e.stderr.decode(errors="ignore") if e.stderr else ""
             missing_dirs = self._extract_missing_output_dirs(stderr)
@@ -328,9 +327,9 @@ class RVC4Analyzer(Analyzer):
                     shlex.quote(path)
                     for path in missing_dirs[i : i + chunk_size]
                 )
-                self.handler.shell(f"mkdir -p {mkdir_args}")
+                self._handler.shell(f"mkdir -p {mkdir_args}")
 
-        self.handler.shell(f"cd {work_dir} && {command}")
+            self._handler.shell(f"cd {work_dir} && {command}")
 
     def _add_outputs_to_all_layers(self, onnx_file_path: str) -> Path:
         onnx_path = Path(onnx_file_path)
@@ -361,7 +360,7 @@ class RVC4Analyzer(Analyzer):
 
         return all_output_path
 
-    def transpose_to_match(
+    def _transpose_to_match(
         self, src: np.ndarray, target_shape: tuple[int, ...]
     ) -> np.ndarray:
         if src.shape == target_shape:
@@ -407,7 +406,9 @@ class RVC4Analyzer(Analyzer):
         for i, input_dict in input_matcher.items():
             onnx_input_dict = {}
             for input_name, img_path in input_dict.items():
-                shape = onnx_input_shapes[input_name][2:][::-1]
+                shape = _static_spatial_shape(
+                    onnx_input_shapes[input_name], input_name
+                )
                 if img_path.lower().endswith(".npy"):
                     image = np.load(img_path)
                     if image.shape != tuple(shape):
@@ -432,9 +433,16 @@ class RVC4Analyzer(Analyzer):
             for layer_name, onnx_layer_output in zip(
                 layer_names, outputs, strict=True
             ):
-                dlc_layer_size = self.output_sizes.get(layer_name)
+                dlc_layer_size = self._output_sizes.get(layer_name)
                 if dlc_layer_size is None:
                     continue
+
+                # A sequence or map output has no statistics to compare.
+                if not isinstance(onnx_layer_output, np.ndarray):
+                    raise TypeError(
+                        f"Output `{layer_name}` is not a tensor: "
+                        f"{type(onnx_layer_output).__name__}"
+                    )
 
                 with open(dlc_output_path / f"{layer_name}.raw", "rb") as f:
                     raw_data = f.read()
@@ -442,7 +450,7 @@ class RVC4Analyzer(Analyzer):
                 dlc_layer_output = np.frombuffer(raw_data, dtype=np.float32)
                 dlc_layer_output = dlc_layer_output.reshape(dlc_layer_size)
 
-                dlc_layer_output = self.transpose_to_match(
+                dlc_layer_output = self._transpose_to_match(
                     dlc_layer_output, onnx_layer_output.shape
                 )
 
@@ -456,7 +464,7 @@ class RVC4Analyzer(Analyzer):
     def _write_layer_comparison_csv(
         self, statistics: list[list], layer_names: list[str]
     ) -> None:
-        output_dir = constants.OUTPUTS_DIR / "analysis" / self.model_name
+        output_dir = constants.OUTPUTS_DIR / "analysis" / self._model_name
         output_dir.mkdir(parents=True, exist_ok=True)
         stats_df = pl.DataFrame(
             statistics,
@@ -534,7 +542,7 @@ class RVC4Analyzer(Analyzer):
                 self._setup_device_workspace()
             self._execute_dlc_command(command)
 
-            target_dir = constants.OUTPUTS_DIR / "analysis" / self.model_name
+            target_dir = constants.OUTPUTS_DIR / "analysis" / self._model_name
             if (target_dir / "output").exists():
                 shutil.rmtree(target_dir / "output")
 
@@ -607,11 +615,11 @@ class RVC4Analyzer(Analyzer):
         input_matcher = self._prepare_input_matcher()
         self._setup_device_workspace()
         _ = self._prepare_raw_inputs(input_matcher, reset_workspace=False)
-        output_dir = f"/data/modelconverter/{self.model_name}/output"
+        output_dir = f"/data/modelconverter/{self._model_name}/output"
 
         logger.info("Running DLC model to analyze layer cycles.")
         output_dir = self._run_dlc(
-            f"snpe-net-run --container {self.model_name}.dlc --input_list input_list.txt --output_dir {output_dir} --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_auto",
+            f"snpe-net-run --container {self._model_name}.dlc --input_list input_list.txt --output_dir {output_dir} --use_dsp --use_native_input_files --use_native_output_files --perf_profile balanced --userbuffer_auto",
             reset_workspace=False,
         )
 
@@ -666,15 +674,32 @@ class RVC4Analyzer(Analyzer):
         layer_stats = layer_stats.sort("layer_id")
 
         layer_stats.write_csv(
-            f"{constants.OUTPUTS_DIR!s}/analysis/{self.model_name}/layer_cycles.csv",
+            f"{constants.OUTPUTS_DIR!s}/analysis/{self._model_name}/layer_cycles.csv",
         )
 
     # cleanup
     def _cleanup_dlc_outputs(self) -> None:
-        self.handler.shell(f"rm -rf /data/modelconverter/{self.model_name}")
+        self._handler.shell(f"rm -rf /data/modelconverter/{self._model_name}")
 
         output_dir = Path(
-            f"{constants.OUTPUTS_DIR!s}/analysis/{self.model_name}/output"
+            f"{constants.OUTPUTS_DIR!s}/analysis/{self._model_name}/output"
         )
         if output_dir.exists() and output_dir.is_dir():
             shutil.rmtree(output_dir)
+
+
+def _static_spatial_shape(
+    shape: list[int | str | None], input_name: str
+) -> list[int]:
+    """The spatial dimensions of an input, reversed to width-height
+    order.
+
+    A dynamic dimension carries a name or nothing at all, so it gives no
+    size to resize an image to.
+    """
+    spatial = [dim for dim in shape[2:][::-1] if isinstance(dim, int)]
+    if len(spatial) != len(shape) - 2:
+        raise ValueError(
+            f"Input `{input_name}` has a dynamic spatial shape: {shape}"
+        )
+    return spatial

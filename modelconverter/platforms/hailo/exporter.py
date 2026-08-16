@@ -1,88 +1,87 @@
 import shutil
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
 
 import hailo_sdk_client
 import numpy as np
 import tensorflow as tf
 from hailo_sdk_client import ClientRunner
 from loguru import logger
+from luxonis_ml.typing import Params
 
-from modelconverter.packages.base_exporter import Exporter
+from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import exit_with, read_image
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
 )
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 
 
 class HailoExporter(Exporter):
-    target: Target = Target.HAILO
+    platform: Platform = Platform.HAILO
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)
-        self.force_onnx_names = config.hailo.force_onnx_names
-        self.optimization_level = config.hailo.optimization_level
-        self.compression_level = config.hailo.compression_level
-        self.batch_size = config.hailo.batch_size
-        self.disable_compilation = config.hailo.disable_compilation
+        self._force_onnx_names_enabled = config.hailo.force_onnx_names
+        self._optimization_level = config.hailo.optimization_level
+        self._compression_level = config.hailo.compression_level
+        self._batch_size = config.hailo.batch_size
+        self._disable_compilation = config.hailo.disable_compilation
         self._alls: list[str] = []
-        self.hw_arch = config.hailo.hw_arch
+        self._hw_arch = config.hailo.hw_arch
         if not tf.config.list_physical_devices("GPU"):
             logger.error(
                 "No GPU found. Setting optimization and compression level to 0."
             )
-            self.optimization_level = 0
-            self.compression_level = 0
+            self._optimization_level = 0
+            self._compression_level = 0
 
     def _get_start_nodes(self) -> tuple[list[str], dict[str, list[int]]]:
         start_nodes = []
         net_input_shapes = {}
-        for name, inp in self.inputs.items():
+        for name, inp in self._inputs.items():
             start_nodes.append(name)
             if inp.shape is not None:
                 net_input_shapes[inp.name] = inp.shape
         return start_nodes, net_input_shapes
 
     def export(self) -> Path:
-        runner = ClientRunner(hw_arch=self.hw_arch)
+        runner = ClientRunner(hw_arch=self._hw_arch)
         start_nodes, net_input_shapes = self._get_start_nodes()
 
         logger.info("Translating model to Hailo IR.")
-        if self.is_tflite:
-            cast(Callable[..., None], runner.translate_tf_model)(
-                str(self.input_model),
-                net_name=self.model_name,
+        if self._is_tflite:
+            runner.translate_tf_model(
+                str(self._input_model),
+                net_name=self._model_name,
                 start_node_names=start_nodes,
                 tensor_shapes=net_input_shapes,
-                end_node_names=list(self.outputs.keys()),
+                end_node_names=list(self._outputs.keys()),
             )
         else:
-            cast(Callable[..., None], runner.translate_onnx_model)(
-                str(self.input_model),
-                net_name=self.model_name,
+            runner.translate_onnx_model(
+                str(self._input_model),
+                net_name=self._model_name,
                 start_node_names=start_nodes,
                 net_input_shapes=net_input_shapes,
-                end_node_names=list(self.outputs.keys()),
+                end_node_names=list(self._outputs.keys()),
             )
         logger.info("Model translated to Hailo IR.")
-        har_path = self.input_model.with_suffix(".har")
+        har_path = self._input_model.with_suffix(".har")
         runner.save_har(har_path)
 
-        if self.force_onnx_names:
+        if self._force_onnx_names_enabled:
             har_path = self._force_onnx_names(har_path)
 
         if self._disable_calibration:
             self._inference_model_path = self.output_dir / Path(
-                self.original_model_name
+                self._original_model_name
             ).with_suffix(".har")
             return har_path
 
         quantized_har_path = self._calibrate(har_path)
         self._inference_model_path = Path(quantized_har_path)
-        if self.disable_compilation:
+        if self._disable_compilation:
             logger.warning("Compilation disabled, skipping compilation.")
             copy_path = Path(quantized_har_path).parent / (
                 Path(quantized_har_path).stem + "_copy.har"
@@ -93,17 +92,17 @@ class HailoExporter(Exporter):
             )
             return copy_path
 
-        runner = ClientRunner(hw_arch=self.hw_arch, har=quantized_har_path)
+        runner = ClientRunner(hw_arch=self._hw_arch, har=quantized_har_path)
         hef = runner.compile()
 
-        hef_path = self.input_model.with_suffix(".hef")
+        hef_path = self._input_model.with_suffix(".hef")
         with open(hef_path, "wb") as hef_file:
             hef_file.write(hef)
         return hef_path
 
     def _force_onnx_names(self, har_path: Path) -> Path:
         """Force ONNX layer names into a .har model."""
-        runner = ClientRunner(hw_arch=self.hw_arch, har=str(har_path))
+        runner = ClientRunner(hw_arch=self._hw_arch, har=str(har_path))
         hn = runner.get_hn()
         npz = dict(runner.get_params())
 
@@ -155,14 +154,14 @@ class HailoExporter(Exporter):
         self, runner: ClientRunner
     ) -> dict[str, np.ndarray]:
         data = {}
-        for orig_name, inp in self.inputs.items():
+        for orig_name, inp in self._inputs.items():
             name, shape = self._get_hn_layer_info(runner, orig_name)
             shape = shape[1:]
 
             calib = inp.calibration
             assert isinstance(calib, ImageCalibrationConfig)
 
-            images = self.read_img_dir(calib.path, calib.max_images)
+            images = self._read_img_dir(calib.path, calib.max_images)
             calib_dataset = np.zeros((len(images), *shape), dtype=np.float32)
 
             if len(shape) == 3:
@@ -190,7 +189,7 @@ class HailoExporter(Exporter):
     def _calibrate(self, har_path: Path) -> str:
         logger.info("Calibrating model.")
 
-        runner = ClientRunner(hw_arch=self.hw_arch, har=str(har_path))
+        runner = ClientRunner(hw_arch=self._hw_arch, har=str(har_path))
         alls = self._get_alls(runner)
         logger.info(f"Using the following configuration: {alls}")
 
@@ -221,11 +220,11 @@ class HailoExporter(Exporter):
         alls = self.config.hailo.alls
         alls.append(
             f"model_optimization_flavor("
-            f"optimization_level={self.optimization_level}, "
-            f"compression_level={self.compression_level}, "
-            f"batch_size={self.batch_size})"
+            f"optimization_level={self._optimization_level}, "
+            f"compression_level={self._compression_level}, "
+            f"batch_size={self._batch_size})"
         )
-        for name, inp in self.inputs.items():
+        for name, inp in self._inputs.items():
             safe_name = name.replace(".", "")
 
             hn_name, _ = self._get_hn_layer_info(runner, name)
@@ -237,7 +236,7 @@ class HailoExporter(Exporter):
             if not all(x is not None for x in inp.shape):
                 exit_with(ValueError(f"Input `{name}` has dynamic shape."))
 
-            if self.is_tflite:
+            if self._is_tflite:
                 values_len = inp.shape[-1]
             else:
                 values_len = inp.shape[1]
@@ -259,10 +258,10 @@ class HailoExporter(Exporter):
         self._alls = alls
         return "\n".join(alls)
 
-    def exporter_buildinfo(self) -> dict[str, Any]:
+    def exporter_buildinfo(self) -> Params:
         return {
             "hailo_version": hailo_sdk_client.__version__,
-            "optimization_level": self.optimization_level,
-            "compression_level": self.compression_level,
+            "optimization_level": self._optimization_level,
+            "compression_level": self._compression_level,
             "alls": self._alls,
         }

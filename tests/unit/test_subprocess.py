@@ -59,7 +59,7 @@ def test_handle_requires_context_manager():
         _ = handle.proc
     with pytest.raises(RuntimeError, match="Process not started"):
         _ = handle.ps_proc
-    assert handle.current_memory() == 0
+    assert handle._current_memory() == 0
 
 
 def test_missing_command_is_reported():
@@ -113,8 +113,8 @@ def test_timeout_terminates_process_and_preserves_output():
             _command("import time; time.sleep(5)"), timeout=0.01
         ) as handle:
             handle._start_time = 0
-            handle.stdout_buf.append("stdout")
-            handle.stderr_buf.append("stderr")
+            handle._stdout_buf.append("stdout")
+            handle._stderr_buf.append("stderr")
             bool(handle)
 
     with pytest.raises(subprocess.TimeoutExpired) as exc_info:
@@ -168,25 +168,25 @@ def test_current_memory_includes_the_children():
     gone.memory_info.side_effect = psutil.NoSuchProcess(1)
     process.children.return_value = [child, gone]
 
-    assert _attached(process).current_memory() == 15
+    assert _attached(process)._current_memory() == 15
 
 
 def test_current_memory_of_a_dead_process_is_zero():
     process = Mock()
     process.memory_info.side_effect = psutil.NoSuchProcess(1)
 
-    assert _attached(process).current_memory() == 0
+    assert _attached(process)._current_memory() == 0
 
 
 def test_monitor_memory_keeps_the_peak(monkeypatch: pytest.MonkeyPatch):
     handle = SubprocessHandle(["command"])
 
-    monkeypatch.setattr(handle, "current_memory", lambda: 20)
-    handle.monitor_memory(interval=0)
-    monkeypatch.setattr(handle, "current_memory", lambda: 5)
-    handle.monitor_memory(interval=0)
+    monkeypatch.setattr(handle, "_current_memory", lambda: 20)
+    handle._monitor_memory(interval=0)
+    monkeypatch.setattr(handle, "_current_memory", lambda: 5)
+    handle._monitor_memory(interval=0)
 
-    assert handle.peak_mem == 20
+    assert handle._peak_mem == 20
 
 
 def test_monitor_memory_survives_a_dead_process(
@@ -194,12 +194,12 @@ def test_monitor_memory_survives_a_dead_process(
 ):
     handle = SubprocessHandle(["command"])
     monkeypatch.setattr(
-        handle, "current_memory", Mock(side_effect=psutil.NoSuchProcess(1))
+        handle, "_current_memory", Mock(side_effect=psutil.NoSuchProcess(1))
     )
 
-    handle.monitor_memory(interval=0)
+    handle._monitor_memory(interval=0)
 
-    assert handle.peak_mem == 0
+    assert handle._peak_mem == 0
 
 
 def test_wait_uses_handle_timeout():
@@ -210,7 +210,7 @@ def test_wait_uses_handle_timeout():
 
     assert handle.wait(timeout=2) == 0
     process.wait.assert_called_once_with(timeout=2)
-    handle.timeout = 3
+    handle._timeout = 3
     assert handle.wait(timeout=2) == 0
     process.wait.assert_called_with(timeout=3)
 

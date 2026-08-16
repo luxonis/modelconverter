@@ -3,11 +3,12 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import NamedTuple
 
 from loguru import logger
+from luxonis_ml.typing import Params
 
-from modelconverter.packages.base_exporter import Exporter
+from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
     exit_with,
@@ -24,68 +25,68 @@ from modelconverter.utils.types import (
     DataType,
     Encoding,
     InputFileType,
+    Platform,
     QuantizationMode,
     ResizeMethod,
-    Target,
 )
 
 
 class RVC4Exporter(Exporter):
-    target: Target = Target.RVC4
+    platform: Platform = Platform.RVC4
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)
 
         rvc4_cfg = config.rvc4
-        self.encodings = rvc4_cfg.encodings
-        self.snpe_onnx_to_dlc = rvc4_cfg.snpe_onnx_to_dlc_args
-        self.snpe_dlc_quant = rvc4_cfg.snpe_dlc_quant_args
-        self.snpe_dlc_graph_prepare = rvc4_cfg.snpe_dlc_graph_prepare_args
-        self.use_per_channel_quantization = (
+        self._encodings = rvc4_cfg.encodings
+        self._snpe_onnx_to_dlc = rvc4_cfg.snpe_onnx_to_dlc_args
+        self._snpe_dlc_quant = rvc4_cfg.snpe_dlc_quant_args
+        self._snpe_dlc_graph_prepare = rvc4_cfg.snpe_dlc_graph_prepare_args
+        self._use_per_channel_quantization = (
             rvc4_cfg.use_per_channel_quantization
         )
-        self.use_per_row_quantization = rvc4_cfg.use_per_row_quantization
-        self.optimization_level = rvc4_cfg.optimization_level
-        self.quantization_mode = rvc4_cfg.quantization_mode
-        if self.quantization_mode != QuantizationMode.CUSTOM:
-            self.snpe_onnx_to_dlc = []
-            self.snpe_dlc_quant = []
-            self.snpe_dlc_graph_prepare = []
+        self._use_per_row_quantization = rvc4_cfg.use_per_row_quantization
+        self._optimization_level = rvc4_cfg.optimization_level
+        self._quantization_mode = rvc4_cfg.quantization_mode
+        if self._quantization_mode != QuantizationMode.CUSTOM:
+            self._snpe_onnx_to_dlc = []
+            self._snpe_dlc_quant = []
+            self._snpe_dlc_graph_prepare = []
             logger.warning(
-                f"Using pre-defined arguments for quantization mode {self.quantization_mode.value}, which will override user-provided SNPE arguments. If you need full control of SNPE arguments, set `rvc4.quantization_mode: CUSTOM` in the config or CLI."
+                f"Using pre-defined arguments for quantization mode {self._quantization_mode.value}, which will override user-provided SNPE arguments. If you need full control of SNPE arguments, set `rvc4.quantization_mode: CUSTOM` in the config or CLI."
             )
-        self.keep_raw_images = rvc4_cfg.keep_raw_images
-        if "--htp_socs" in self.snpe_dlc_graph_prepare:
-            i = self.snpe_dlc_graph_prepare.index("--htp_socs")
-            self.htp_socs = self.snpe_dlc_graph_prepare[i + 1].split(",")
+        self._keep_raw_images = rvc4_cfg.keep_raw_images
+        if "--htp_socs" in self._snpe_dlc_graph_prepare:
+            i = self._snpe_dlc_graph_prepare.index("--htp_socs")
+            self._htp_socs = self._snpe_dlc_graph_prepare[i + 1].split(",")
         else:
-            self.htp_socs = rvc4_cfg.htp_socs
+            self._htp_socs = rvc4_cfg.htp_socs
 
         if self.config.input_file_type == InputFileType.ONNX:
-            self.input_model = onnx_attach_normalization_to_inputs(
-                self.input_model,
-                self._attach_suffix(self.input_model, "modified.onnx"),
-                self.inputs,
+            self._input_model = onnx_attach_normalization_to_inputs(
+                self._input_model,
+                self._attach_suffix(self._input_model, "modified.onnx"),
+                self._inputs,
             )
 
-            if not self.onnx_optimizations.all_disabled():
+            if not self._onnx_optimizations.all_disabled():
                 onnx_modifier = ONNXModifier(
-                    model_path=self.input_model,
+                    model_path=self._input_model,
                     output_path=self._attach_suffix(
-                        self.input_model, "modified_optimized.onnx"
+                        self._input_model, "modified_optimized.onnx"
                     ),
                 )
 
                 try:
                     if (
                         onnx_modifier.modify_onnx(
-                            **self.onnx_optimizations.model_dump()
+                            **self._onnx_optimizations.model_dump()
                         )
                         and onnx_modifier.compare_outputs()
                     ):
                         logger.info("ONNX model has been optimized for RVC4.")
                         shutil.move(
-                            onnx_modifier.output_path, self.input_model
+                            onnx_modifier.output_path, self._input_model
                         )
                 except Exception as e:  # pragma: no cover
                     logger.warning(
@@ -99,32 +100,32 @@ class RVC4Exporter(Exporter):
             logger.warning(
                 "Input file type is not ONNX. Skipping pre-processing."
             )
-        self.raw_img_dir = self.intermediate_outputs_dir / "raw_files"
-        self.input_list_path = self.intermediate_outputs_dir / "img_list.txt"
+        self._raw_img_dir = self.intermediate_outputs_dir / "raw_files"
+        self._input_list_path = self.intermediate_outputs_dir / "img_list.txt"
 
     def export(self) -> Path:
-        out_dlc_path = self.output_dir / f"{self.model_name}.dlc"
+        out_dlc_path = self.output_dir / f"{self._model_name}.dlc"
         self._inference_model_path = out_dlc_path
 
-        dlc_path = self.onnx_to_dlc()
+        dlc_path = self._onnx_to_dlc()
         if self._disable_calibration:
             quantized_dlc_path = dlc_path
         else:
-            quantized_dlc_path = self.calibrate(dlc_path)
+            quantized_dlc_path = self._calibrate(dlc_path)
 
         logger.info("Performing offline graph preparation.")
-        args = self.snpe_dlc_graph_prepare
+        args = self._snpe_dlc_graph_prepare
         self._add_args(args, ["--input_dlc", quantized_dlc_path])
         self._add_args(args, ["--output_dlc", out_dlc_path])
         self._add_args(
             args,
-            ["--set_output_tensors", ",".join(name for name in self.outputs)],
+            ["--set_output_tensors", ",".join(name for name in self._outputs)],
         )
         self._add_args(
-            args, ["--optimization_level", str(self.optimization_level)]
+            args, ["--optimization_level", str(self._optimization_level)]
         )
-        self._add_args(args, ["--htp_socs", ",".join(self.htp_socs)])
-        if self.quantization_mode == QuantizationMode.FP16_STD:
+        self._add_args(args, ["--htp_socs", ",".join(self._htp_socs)])
+        if self._quantization_mode == QuantizationMode.FP16_STD:
             self._add_args(args, ["--use_float_io"])
         self._subprocess_run(
             ["snpe-dlc-graph-prepare", *args], meta_name="graph_prepare"
@@ -143,39 +144,39 @@ class RVC4Exporter(Exporter):
         )
         return out_dlc_path
 
-    def calibrate(self, dlc_path: Path) -> Path:
-        args = self.snpe_dlc_quant
+    def _calibrate(self, dlc_path: Path) -> Path:
+        args = self._snpe_dlc_quant
         if "--input_list" not in args:
             logger.info("Preparing calibration data.")
-            calibration_list = self.prepare_calibration_data()
+            calibration_list = self._prepare_calibration_data()
             args.extend(["--input_list", str(calibration_list)])
         else:
             logger.info("Using provided `input_list`.")
 
         logger.info("Quantizing model.")
         quantized_dlc_path = self._attach_suffix(
-            self.input_model, "quantized.dlc"
+            self._input_model, "quantized.dlc"
         )
         self._add_args(args, ["--input_dlc", dlc_path])
         self._add_args(args, ["--output_dlc", quantized_dlc_path])
 
-        if self.use_per_channel_quantization:
+        if self._use_per_channel_quantization:
             args.append("--use_per_channel_quantization")
 
-        if self.use_per_row_quantization:
+        if self._use_per_row_quantization:
             args.append("--use_per_row_quantization")
 
-        if self.quantization_mode == QuantizationMode.INT8_ACC:
+        if self._quantization_mode == QuantizationMode.INT8_ACC:
             self._add_args(args, ["--param_quantizer", "enhanced"])
             self._add_args(args, ["--act_quantizer", "enhanced"])
-        elif self.quantization_mode == QuantizationMode.INT8_16_MIX_ACC:
+        elif self._quantization_mode == QuantizationMode.INT8_16_MIX_ACC:
             self._add_args(args, ["--param_quantizer", "enhanced"])
             self._add_args(args, ["--act_quantizer", "enhanced"])
             self._add_args(args, ["--act_bitwidth", "16"])
-        elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
+        elif self._quantization_mode == QuantizationMode.INT8_16_MIX:
             self._add_args(args, ["--act_bitwidth", "16"])
 
-        if self.encodings is not None:
+        if self._encodings is not None:
             args.append("--override_params")
 
         start_time = time.time()
@@ -188,14 +189,14 @@ class RVC4Exporter(Exporter):
         )
 
         if (
-            not self.keep_raw_images and self.raw_img_dir.exists()
+            not self._keep_raw_images and self._raw_img_dir.exists()
         ):  # pragma: no cover
-            shutil.rmtree(self.raw_img_dir)
-            self.input_list_path.unlink()
+            shutil.rmtree(self._raw_img_dir)
+            self._input_list_path.unlink()
 
         return quantized_dlc_path
 
-    def prepare_calibration_data(self) -> Path:
+    def _prepare_calibration_data(self) -> Path:
         class Entry(NamedTuple):
             name: str
             path: Path
@@ -206,7 +207,7 @@ class RVC4Exporter(Exporter):
 
         entries: list[list[Entry]] = []
 
-        for name, inp in self.inputs.items():
+        for name, inp in self._inputs.items():
             calib = inp.calibration
             assert isinstance(calib, ImageCalibrationConfig)
             if inp.shape is None:
@@ -215,8 +216,8 @@ class RVC4Exporter(Exporter):
                 )
             if not all(x is not None for x in inp.shape):
                 exit_with(ValueError(f"Input `{name}` has dynamic shape."))
-            shape = cast(list[int], inp.shape)
-            if self.is_tflite:
+            shape = inp.shape
+            if self._is_tflite:
                 shape = [shape[0], shape[3], shape[1], shape[2]]
             entries.append(
                 [
@@ -228,16 +229,18 @@ class RVC4Exporter(Exporter):
                         shape=shape,
                         data_type=inp.data_type,
                     )
-                    for path in self.read_img_dir(calib.path, calib.max_images)
+                    for path in self._read_img_dir(
+                        calib.path, calib.max_images
+                    )
                 ]
             )
 
-        if self.raw_img_dir.exists():  # pragma: no cover
+        if self._raw_img_dir.exists():  # pragma: no cover
             logger.warning("Removing existing raw_images directory.")
-            shutil.rmtree(self.raw_img_dir)
-        self.raw_img_dir.mkdir(exist_ok=True)
+            shutil.rmtree(self._raw_img_dir)
+        self._raw_img_dir.mkdir(exist_ok=True)
         i = 0
-        with open(self.input_list_path, "w") as f:
+        with open(self._input_list_path, "w") as f:
             log = True
             for entry in zip(*entries, strict=True):
                 entry_str = ""
@@ -254,7 +257,7 @@ class RVC4Exporter(Exporter):
                             data_type=e.data_type,
                             transpose=False,
                         )
-                        raw_path = self.raw_img_dir / f"{i}.raw"
+                        raw_path = self._raw_img_dir / f"{i}.raw"
                         img.tofile(raw_path)
                         entry_str += f"{e.name}:={raw_path} "
                 entry_str = entry_str.strip()
@@ -262,14 +265,14 @@ class RVC4Exporter(Exporter):
                     logger.debug(f"Image list entry: {entry_str}")
                     log = False
                 f.write(entry_str + "\n")
-        return self.input_list_path
+        return self._input_list_path
 
-    def generate_io_encodings(self, encodings: Encodings) -> Path:
+    def _generate_io_encodings(self, encodings: Encodings) -> Path:
         encodings_dict = encodings.model_dump(mode="json", exclude_none=True)
         # DAI does not support custom TF8 encodings on exposed tensors.
         # Keep AIMET's internal tensor encodings, but normalize exposed
         # inputs and outputs to default int8 IO.
-        for name in list(self.inputs.keys()) + list(self.outputs.keys()):
+        for name in list(self._inputs.keys()) + list(self._outputs.keys()):
             encodings_dict["activation_encodings"][name] = [
                 {"bitwidth": 8, "dtype": "int"}
             ]
@@ -278,12 +281,12 @@ class RVC4Exporter(Exporter):
             json.dump(encodings_dict, encodings_file, indent=4)
         return encodings_path
 
-    def onnx_to_dlc(self) -> Path:
+    def _onnx_to_dlc(self) -> Path:
         logger.info("Exporting for RVC4")
-        args = self.snpe_onnx_to_dlc
-        self._add_args(args, ["-i", self.input_model])
+        args = self._snpe_onnx_to_dlc
+        self._add_args(args, ["-i", self._input_model])
         if "--input_dim" not in args:
-            for name, inp in self.inputs.items():
+            for name, inp in self._inputs.items():
                 if inp.shape is not None:
                     args.extend(
                         [
@@ -293,17 +296,17 @@ class RVC4Exporter(Exporter):
                         ]
                     )
         if "--input_dtype" not in args:
-            for name, inp in self.inputs.items():
+            for name, inp in self._inputs.items():
                 if inp.data_type is not None:
                     args.extend(
                         ["--input_dtype", name, inp.data_type.as_snpe_dtype()]
                     )
         if "--out_name" not in args:
-            for name in self.outputs:
+            for name in self._outputs:
                 args.extend(["--out_name", name])
 
         if "--input_layout" not in args:
-            for name, inp in self.inputs.items():
+            for name, inp in self._inputs.items():
                 layout = inp.layout
                 # A converting input always has a shape (read from the model),
                 # and the config derives a layout from any shape, so `layout`
@@ -333,10 +336,10 @@ class RVC4Exporter(Exporter):
                         "Proceeding without specifying layout."
                     )
 
-        if self.quantization_mode == QuantizationMode.FP16_STD:
+        if self._quantization_mode == QuantizationMode.FP16_STD:
             self._add_args(args, ["--float_bitwidth", "16"])
-        elif self.encodings is not None:
-            io_encodings_file = self.generate_io_encodings(self.encodings)
+        elif self._encodings is not None:
+            io_encodings_file = self._generate_io_encodings(self._encodings)
             self._add_args(
                 args,
                 [
@@ -345,19 +348,19 @@ class RVC4Exporter(Exporter):
                 ],
             )
 
-        if self.is_tflite:
+        if self._is_tflite:
             command = "snpe-tflite-to-dlc"
         else:
             command = "snpe-onnx-to-dlc"
         self._subprocess_run([command, *args], meta_name="dlc_convert")
         logger.info("Exported for RVC4")
-        return self.input_model.with_suffix(".dlc")
+        return self._input_model.with_suffix(".dlc")
 
-    def exporter_buildinfo(self) -> dict[str, Any]:
+    def exporter_buildinfo(self) -> Params:
         snpe_version = subprocess.run(
             ["snpe-dlc-quant", "--version"], capture_output=True, check=False
         )
         return {
             "snpe_version": snpe_version.stdout.decode("utf-8").strip(),
-            "target_devices": self.htp_socs,
+            "target_devices": self._htp_socs,
         }

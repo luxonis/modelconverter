@@ -9,8 +9,8 @@ RUN <<EOF
 
     set -e
 
-    apt-get update
-    apt-get install -y  \
+    apt-get update -qq
+    apt-get install -y -qq \
         cmake           \
         unzip           \
         perl            \
@@ -136,7 +136,7 @@ COPY --link --from=base /opt/intel /opt/intel
 COPY --link --from=base /usr/local/lib /usr/local/lib
 
 COPY --link requirements.txt /app/requirements.txt
-COPY --link modelconverter/packages/rvc2/requirements.txt requirements-rvc2.txt
+COPY --link modelconverter/platforms/rvc2/requirements.txt requirements-rvc2.txt
 
 RUN <<EOF
 
@@ -159,8 +159,8 @@ ARG DEV=false
 COPY --link requirements-dev.txt /app/requirements-dev.txt
 COPY --link requirements-eval.txt /app/requirements-eval.txt
 RUN if [ "$DEV" = "true" ]; then \
-        apt-get update && \
-        apt-get install -y --no-install-recommends git && \
+        apt-get update -qq && \
+        apt-get install -y -qq --no-install-recommends git && \
         rm -rf /var/lib/apt/lists/* && \
         pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli && \
         pip install --no-cache-dir --no-deps -r /app/requirements-eval.txt; \

@@ -3,12 +3,12 @@ import shutil
 from abc import ABC, abstractmethod
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any
 
 import cv2
 import numpy as np
 import onnx
 from loguru import logger
+from luxonis_ml.typing import Params, PathType
 
 from modelconverter.utils import (
     exit_with,
@@ -18,6 +18,7 @@ from modelconverter.utils import (
 )
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
+    InputConfig,
     RandomCalibrationConfig,
     SingleStageConfig,
 )
@@ -27,11 +28,11 @@ from modelconverter.utils.onnx_compatibility import (
     save_onnx_model,
 )
 from modelconverter.utils.subprocess import SubprocessResult
-from modelconverter.utils.types import InputFileType, Target
+from modelconverter.utils.types import InputFileType, Platform
 
 
 class Exporter(ABC):
-    target: Target
+    platform: Platform
 
     def __init__(
         self,
@@ -42,17 +43,17 @@ class Exporter(ABC):
 
         self.config = config
         self.output_dir = output_dir
-        self.input_file_type = config.input_file_type
-        self.inputs = {inp.name: inp for inp in config.inputs}
+        self._input_file_type = config.input_file_type
+        self._inputs = {inp.name: inp for inp in config.inputs}
         self._inference_model_path: Path | None = None
 
-        self.outputs = {out.name: out for out in config.outputs}
-        self.keep_intermediate_outputs = config.keep_intermediate_outputs
-        self.onnx_simplification = config.onnx_simplification
-        self.onnx_optimizations = config.onnx_optimizations
+        self._outputs = {out.name: out for out in config.outputs}
+        self._keep_intermediate_outputs = config.keep_intermediate_outputs
+        self._onnx_simplification = config.onnx_simplification
+        self._onnx_optimizations = config.onnx_optimizations
 
-        self.model_name = sanitize_net_name(input_model.stem)
-        self.original_model_name = sanitize_net_name(
+        self._model_name = sanitize_net_name(input_model.stem)
+        self._original_model_name = sanitize_net_name(
             input_model.name, with_suffix=True
         )
 
@@ -62,7 +63,7 @@ class Exporter(ABC):
         self.intermediate_outputs_dir.mkdir(parents=True, exist_ok=True)
 
         self._cmd_info: dict[str, list[str]] = {}
-        self.is_tflite = self.input_file_type == InputFileType.TFLITE
+        self._is_tflite = self._input_file_type == InputFileType.TFLITE
 
         with open(self.output_dir / "config.yaml", "w") as f:
             f.write(config.model_dump_json(indent=4))
@@ -79,7 +80,7 @@ class Exporter(ABC):
         # (e.g. an OpenVINO IR .xml/.bin) as ONNX would fail.
         external_data_paths = (
             get_external_data_paths(input_model)
-            if self.input_file_type == InputFileType.ONNX
+            if self._input_file_type == InputFileType.ONNX
             else []
         )
         # A model saved with `all_tensors_to_one_file=False` has one companion
@@ -95,7 +96,7 @@ class Exporter(ABC):
                 dest = directory / relative
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(external_data_path, dest)
-        if self.input_file_type == InputFileType.IR:
+        if self._input_file_type == InputFileType.IR:
             assert self.config.input_bin is not None
             shutil.copy(
                 self.config.input_bin,
@@ -108,23 +109,25 @@ class Exporter(ABC):
                 self.config.input_bin.parent
                 / sanitize_net_name(self.config.input_bin.stem)
             ).with_suffix(".bin")
-        self.input_model = self.intermediate_outputs_dir / sanitized_model_name
+        self._input_model = (
+            self.intermediate_outputs_dir / sanitized_model_name
+        )
 
         if (
-            self.onnx_simplification
-            and self.input_file_type == InputFileType.ONNX
+            self._onnx_simplification
+            and self._input_file_type == InputFileType.ONNX
         ):
-            self.input_model = self.simplify_onnx()
+            self._input_model = self._simplify_onnx()
 
-        self._disable_calibration = getattr(
-            self.config, self.target.name.lower()
+        self._disable_calibration = self.config.get_platform_config(
+            self.platform
         ).disable_calibration
 
-        if self.target != Target.RVC2 and self._disable_calibration:
+        if self.platform != Platform.RVC2 and self._disable_calibration:
             logger.warning("Calibration has been disabled.")
             logger.warning("The quantization step will be skipped.")
 
-        if self.target != Target.RVC2 and not self._disable_calibration:
+        if self.platform != Platform.RVC2 and not self._disable_calibration:
             self._prepare_random_calibration_data()
 
     @property
@@ -135,58 +138,29 @@ class Exporter(ABC):
             )
         return self._inference_model_path
 
-    def simplify_onnx(self) -> Path:  # pragma: no cover
-        logger.info("Simplifying ONNX.")
-        try:
-            if self.onnx_simplification == "onnxsim":
-                from onnxsim import simplify
+    @property
+    def inputs(self) -> dict[str, InputConfig]:
+        """The configured inputs, keyed by input name.
 
-                logger.info("Using `onnxsim` for simplification.")
-            elif self.onnx_simplification == "onnxslim":
-                from onnxslim import slim
+        @rtype: dict[str, InputConfig]
+        @return: The inputs of this stage. C{MultiStageExporter} reads
+            them to resolve a linked calibration, so every exporter must
+            provide them.
+        """
+        return self._inputs
 
-                logger.info("Using `onnxslim` for simplification.")
+    @property
+    def model_name(self) -> str:
+        """The sanitized name of the input model, without a suffix.
 
-                def simplify(model: str) -> tuple[onnx.ModelProto, bool]:
-                    slimmed = slim(onnx.load(model))
-                    return slimmed, bool(slimmed)  # type: ignore
-
-        except ImportError:
-            backend = self.onnx_simplification
-            logger.warning(
-                f"`{backend}` not installed, proceeding without simplification."
-                f"Please install it using `pip install {backend}`."
-            )
-            return self.input_model
-
-        try:
-            onnx_sim, check = simplify(str(self.input_model))
-        except Exception as e:  # pragma: no cover
-            logger.warning(
-                f"Failed to simplify ONNX: {e}. Proceeding without simplification."
-            )
-            return self.input_model
-        if not check:  # pragma: no cover
-            logger.warning(
-                "Provided ONNX could not be simplified. "
-                "Proceeding without simplification."
-            )
-            return self.input_model
-        logger.info("ONNX successfully simplified.")
-        onnx_sim_path = self._attach_suffix(
-            self.input_model, "simplified.onnx"
-        )
-        logger.info(f"Saving simplified ONNX to {onnx_sim_path}")
-        save_onnx_model(
-            onnx_sim,
-            onnx_sim_path,
-            save_as_external_data=has_external_data(self.input_model),
-            location=f"{onnx_sim_path.name}_data",
-        )
-        return onnx_sim_path
+        @rtype: str
+        @return: The model name. C{MultiStageExporter} uses it to name
+            the calibration directory of a linked stage.
+        """
+        return self._model_name
 
     @abstractmethod
-    def exporter_buildinfo(self) -> dict[str, Any]:
+    def exporter_buildinfo(self) -> Params:
         pass
 
     @abstractmethod
@@ -196,7 +170,7 @@ class Exporter(ABC):
     def run(self) -> Path:
         output_path = self.export()
         new_output_path = self.output_dir / Path(
-            self.original_model_name
+            self._original_model_name
         ).with_suffix(output_path.suffix)
         shutil.move(
             str(output_path),
@@ -205,7 +179,7 @@ class Exporter(ABC):
         if self._inference_model_path == output_path:
             self._inference_model_path = new_output_path
 
-        if not self.keep_intermediate_outputs:  # pragma: no cover
+        if not self._keep_intermediate_outputs:  # pragma: no cover
             shutil.rmtree(self.intermediate_outputs_dir)
 
         buildinfo = {
@@ -219,7 +193,58 @@ class Exporter(ABC):
 
         return new_output_path
 
-    def read_img_dir(self, path: Path, max_images: int) -> list[Path]:
+    def _simplify_onnx(self) -> Path:  # pragma: no cover
+        logger.info("Simplifying ONNX.")
+        try:
+            if self._onnx_simplification == "onnxsim":
+                from onnxsim import simplify
+
+                logger.info("Using `onnxsim` for simplification.")
+            elif self._onnx_simplification == "onnxslim":
+                from onnxslim import slim
+
+                logger.info("Using `onnxslim` for simplification.")
+
+                def simplify(model: str) -> tuple[onnx.ModelProto, bool]:
+                    slimmed = slim(onnx.load(model))
+                    assert isinstance(slimmed, onnx.ModelProto)
+                    return slimmed, True
+
+        except ImportError:
+            backend = self._onnx_simplification
+            logger.warning(
+                f"`{backend}` not installed, proceeding without simplification."
+                f"Please install it using `pip install {backend}`."
+            )
+            return self._input_model
+
+        try:
+            onnx_sim, check = simplify(str(self._input_model))
+        except Exception as e:  # pragma: no cover
+            logger.warning(
+                f"Failed to simplify ONNX: {e}. Proceeding without simplification."
+            )
+            return self._input_model
+        if not check:  # pragma: no cover
+            logger.warning(
+                "Provided ONNX could not be simplified. "
+                "Proceeding without simplification."
+            )
+            return self._input_model
+        logger.info("ONNX successfully simplified.")
+        onnx_sim_path = self._attach_suffix(
+            self._input_model, "simplified.onnx"
+        )
+        logger.info(f"Saving simplified ONNX to {onnx_sim_path}")
+        save_onnx_model(
+            onnx_sim,
+            onnx_sim_path,
+            save_as_external_data=has_external_data(self._input_model),
+            location=f"{onnx_sim_path.name}_data",
+        )
+        return onnx_sim_path
+
+    def _read_img_dir(self, path: Path, max_images: int) -> list[Path]:
         imgs = read_calib_dir(path)
         if not imgs:
             exit_with(FileNotFoundError(f"No images found in {path}"))
@@ -232,7 +257,7 @@ class Exporter(ABC):
         return imgs
 
     def _prepare_random_calibration_data(self) -> None:
-        for name, inp in self.inputs.items():
+        for name, inp in self._inputs.items():
             calib = inp.calibration
             if not isinstance(calib, RandomCalibrationConfig):
                 continue
@@ -249,7 +274,9 @@ class Exporter(ABC):
                 )
 
             for i in range(calib.max_images):
-                arr = np.random.normal(calib.mean, calib.std, inp.shape)
+                arr: np.ndarray = np.random.normal(
+                    calib.mean, calib.std, inp.shape
+                )
                 arr = np.clip(arr, calib.min_value, calib.max_value)
 
                 arr = arr.astype(calib.data_type.as_numpy_dtype())
@@ -267,16 +294,16 @@ class Exporter(ABC):
                         channel_dim = layout.index("C")
                         if channel_dim == 0 and len(arr.shape) == 3:
                             arr = arr.transpose(1, 2, 0)
-                    elif arr.shape[0] in {1, 3}:  # type: ignore
+                    elif len(arr.shape) == 3 and arr.shape[0] in {1, 3}:
                         arr = arr.transpose(1, 2, 0)
                     cv2.imwrite(str(dest / f"{i}.png"), arr)
                 else:
                     np.save(dest / f"{i}.npy", arr)
 
-            self.inputs[name].calibration = ImageCalibrationConfig(path=dest)
+            self._inputs[name].calibration = ImageCalibrationConfig(path=dest)
 
     @staticmethod
-    def _attach_suffix(path: Path | str, suffix: str) -> Path:
+    def _attach_suffix(path: PathType, suffix: str) -> Path:
         return Path(str(Path(path).with_suffix("")) + f"-{suffix.lstrip('-')}")
 
     @staticmethod
