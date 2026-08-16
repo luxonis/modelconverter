@@ -185,7 +185,7 @@ class RVC4Analyzer(Analyzer):
                 "Input dirs must contain at least one supported image or .npy file."
             )
 
-    def _prepare_input_matcher(self) -> dict[str, dict[str, str]]:
+    def _prepare_input_matcher(self) -> dict[int, dict[str, str]]:
         image_names = self._get_selected_image_paths()
 
         input_matcher = {}
@@ -198,13 +198,13 @@ class RVC4Analyzer(Analyzer):
 
     def _prepare_raw_inputs(
         self,
-        input_matcher: dict[str, dict[str, str]],
+        input_matcher: dict[int, dict[str, str]],
         type: type = np.uint8,
         *,
         verbose: bool = True,
         reset_workspace: bool = True,
         stable_input_names: bool = False,
-    ) -> dict[str, str]:
+    ) -> dict[int, str]:
         if verbose:
             logger.info("Preparing raw inputs for RVC4 analysis.")
         if reset_workspace:
@@ -395,8 +395,8 @@ class RVC4Analyzer(Analyzer):
         output_names: list[str],
         layer_names: list[str],
         onnx_input_shapes: dict[str, list[int | str | None]],
-        input_matcher: dict[str, dict[str, str]],
-        dlc_matcher: dict[str, Path],
+        input_matcher: dict[int, dict[str, str]],
+        dlc_matcher: dict[int, Path],
         *,
         verbose: bool = True,
     ) -> list[list]:
@@ -570,7 +570,7 @@ class RVC4Analyzer(Analyzer):
         return str(pulled_output_dir)
 
     def _flatten_dlc_outputs(
-        self, dlc_matcher: dict[str, Path], *, verbose: bool = True
+        self, dlc_matcher: dict[int, Path], *, verbose: bool = True
     ) -> None:
         if verbose:
             logger.info("Flattening SNPE results.")
