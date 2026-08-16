@@ -86,7 +86,7 @@ class RVC2Benchmark(Benchmark):
         inputSizes = []
         inputNames = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            modelArchive = dai.NNArchive(str(modelPath))  # type: ignore[arg-type]
+            modelArchive = dai.NNArchive(modelPath)
             for input in modelArchive.getConfig().model.inputs:
                 inputSizes.append(input.shape[::-1])
                 inputNames.append(input.name)

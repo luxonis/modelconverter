@@ -193,7 +193,7 @@ It is recommended to use Ubuntu OS for the best compatibility.
 On Windows or MacOS, it is recommended to install `docker` using the [Docker Desktop](https://www.docker.com/products/docker-desktop).
 Otherwise, follow the installation instructions for your OS from the [official website](https://docs.docker.com/engine/install/).
 
-In order for the images to be build successfully, you need to download additional packages depending on the selected platform and the desired version of the underlying conversion tools.
+In order for the images to be built successfully, you need to download additional packages depending on the selected platform and the desired version of the underlying conversion tools.
 
 ##### RVC2
 

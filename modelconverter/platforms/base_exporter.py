@@ -119,8 +119,8 @@ class Exporter(ABC):
         ):
             self._input_model = self._simplify_onnx()
 
-        self._disable_calibration = getattr(
-            self.config, self.platform.name.lower()
+        self._disable_calibration = self.config.get_platform_config(
+            self.platform
         ).disable_calibration
 
         if self.platform != Platform.RVC2 and self._disable_calibration:
