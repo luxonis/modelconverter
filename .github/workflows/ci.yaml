@@ -75,8 +75,63 @@ env:
   LUXONIS_TELEMETRY_ENABLED: "false"
 
 jobs:
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    env:
+      GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
+      HAILO_WHEEL: hailo_dataflow_compiler-5.3.0-py3-none-linux_x86_64.whl
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install package
+        run: pip install -e .[dev]
+
+      - name: Install LuxonisML from main
+        if: ${{ inputs.ml_ref || !startsWith(github.head_ref, 'release/') }}
+        env:
+          ML_REF: ${{ inputs.ml_ref || 'main' }}
+        run: |
+          pip uninstall luxonis-ml -y
+          pip install \
+            "luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
+            --upgrade --force-reinstall
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          token_format: access_token
+
+      - name: Install platform dependencies
+        run: |
+          gcloud storage cp "${GS_BUILD_ARTIFACTS}/${HAILO_WHEEL}" .
+          pip install --no-deps \
+            -r requirements-typecheck.txt \
+            "./${HAILO_WHEEL}"
+
+      - name: Run pyright
+        uses: jakebailey/pyright-action@8ec14b5cfe41f26e5f41686a31eb6012758217ef
+        with:
+          # `version: PATH` runs the pyright that `.[dev]` pins, so CI and a
+          # local run agree.
+          version: PATH
+          warnings: true
+
   unit:
     name: Unit tests
+    needs: [typecheck]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -95,14 +150,14 @@ jobs:
       - name: Install package
         run: pip install -e .[dev]
 
-      - name: Install specified LuxonisML
-        if: ${{ inputs.ml_ref != '' }}
+      - name: Install LuxonisML from main
+        if: ${{ inputs.ml_ref || !startsWith(github.head_ref, 'release/') }}
         env:
-          ML_REF: ${{ inputs.ml_ref }}
+          ML_REF: ${{ inputs.ml_ref || 'main' }}
         run: |
           pip uninstall luxonis-ml -y
           pip install \
-            "luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
+            "luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
             --upgrade --force-reinstall
 
       - name: Run unit tests
@@ -119,7 +174,7 @@ jobs:
             --cov-report xml:coverage-unit.xml
 
       - name: Upload test results to Codecov
-        if: ${{ always() }}
+        if: ${{ always() && github.event_name == 'pull_request' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -131,9 +186,6 @@ jobs:
           disable_search: true
           handle_no_reports_found: true
 
-      # The coverage itself is uploaded by the `coverage` job, once every test
-      # job has finished. The artifact is what that job collects, and it keeps
-      # the report available for CI diagnostics.
       - name: Upload coverage artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -291,7 +343,7 @@ jobs:
                 --cov-report xml:output/coverage-${PACKAGE}-${VERSION}.xml"
 
       - name: Upload test results to Codecov
-        if: ${{ always() }}
+        if: ${{ always() && github.event_name == 'pull_request' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -303,9 +355,6 @@ jobs:
           disable_search: true
           handle_no_reports_found: true
 
-      # The coverage itself is uploaded by the `coverage` job, once every test
-      # job has finished. The artifact is what that job collects, and it keeps
-      # the report available for CI diagnostics.
       - name: Upload coverage artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -314,15 +363,10 @@ jobs:
           path: output/coverage-${{ matrix.package }}-${{ matrix.version }}.xml
           if-no-files-found: ignore
 
-  # Codecov evaluates the commit every time a report arrives, so uploading from
-  # the test jobs themselves makes it judge the run against whichever reports
-  # happen to have landed and report a coverage drop that is not real. The
-  # reports are collected from the artifacts and uploaded here instead, once
-  # every test job has finished.
   coverage:
     name: Upload coverage
     needs: [unit, integration]
-    if: ${{ always() && needs.unit.result == 'success' && (needs.integration.result == 'success' || needs.integration.result == 'skipped') }}
+    if: ${{ always() && github.event_name == 'pull_request' && needs.unit.result == 'success' && (needs.integration.result == 'success' || needs.integration.result == 'skipped') }}
     runs-on: ubuntu-latest
 
     permissions:
@@ -330,8 +374,6 @@ jobs:
       contents: read
 
     steps:
-      # Required by codecov-action, it builds the path-fixing file network
-      # from the checked out repository.
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
