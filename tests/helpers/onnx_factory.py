@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import onnx
+from luxonis_ml.typing import PathType
 from onnx import TensorProto, checker, helper, numpy_helper
 
 # Opset 13 keeps `axes` an attribute of ReduceMean rather than an input, and
@@ -19,7 +20,7 @@ _IR_VERSION = 9
 
 
 def _save(
-    graph: onnx.GraphProto, path: str | Path, *, external_data: bool = False
+    graph: onnx.GraphProto, path: PathType, *, external_data: bool = False
 ) -> Path:
     model = helper.make_model(
         graph,
@@ -45,7 +46,7 @@ def _save(
 
 
 def build_onnx(
-    path: str | Path,
+    path: PathType,
     inputs: list[tuple[str, list[int], int]],
     outputs: list[tuple[str, list[int], int]],
 ) -> Path:
@@ -75,7 +76,7 @@ def build_onnx(
 
 
 def build_toy_integration_onnx(
-    path: str | Path, *, size: int = 64, with_flag: bool = False
+    path: PathType, *, size: int = 64, with_flag: bool = False
 ) -> Path:
     """A tiny multi-input net covering the whole preprocessing surface.
 
@@ -157,7 +158,7 @@ def build_toy_integration_onnx(
     return _save(graph, path)
 
 
-def build_toy_aggregator_onnx(path: str | Path, *, size: int = 64) -> Path:
+def build_toy_aggregator_onnx(path: PathType, *, size: int = 64) -> Path:
     """The final stage of the toy multistage net.
 
     Two ``[1, 3, size, size]`` inputs -- fed from two upstream toy stages via
@@ -184,7 +185,7 @@ def build_toy_aggregator_onnx(path: str | Path, *, size: int = 64) -> Path:
 
 
 def build_toy_conv_onnx(
-    path: str | Path,
+    path: PathType,
     *,
     size: int = 32,
     out_channels: int = 4,
@@ -232,7 +233,7 @@ def build_toy_conv_onnx(
 
 
 def weights_only_external_onnx(
-    path: str | Path, *, single_file: bool = True
+    path: PathType, *, single_file: bool = True
 ) -> list[Path]:
     """A model that is nothing but externally stored weights.
 
@@ -280,7 +281,7 @@ def weights_only_external_onnx(
     return sorted(set(path.parent.iterdir()) - before - {path})
 
 
-def build_relu_onnx(path: str | Path, shape: list[int]) -> Path:
+def build_relu_onnx(path: PathType, shape: list[int]) -> Path:
     """A shape-preserving ``Relu`` over a single input of the given shape.
 
     Used for conversions of shapes the usual 4D ``NCHW`` models never produce:
@@ -294,7 +295,7 @@ def build_relu_onnx(path: str | Path, shape: list[int]) -> Path:
     return _save(helper.make_graph([node], "ReluModel", [inp], [out]), path)
 
 
-def standard_dummy_onnx(path: str | Path) -> Path:
+def standard_dummy_onnx(path: PathType) -> Path:
     """The canonical two-in/two-out model used across the config tests."""
     inputs = [
         helper.make_tensor_value_info(
@@ -326,7 +327,7 @@ def standard_dummy_onnx(path: str | Path) -> Path:
 
 
 def single_io_onnx(
-    path: str | Path,
+    path: PathType,
     *,
     name: str = "input0",
     shape: list[int] | None = None,
@@ -342,17 +343,17 @@ def single_io_onnx(
     )
 
 
-def grayscale_onnx(path: str | Path) -> Path:
+def grayscale_onnx(path: PathType) -> Path:
     """Single grayscale (1-channel) input model."""
     return single_io_onnx(path, shape=[1, 1, 64, 64])
 
 
-def dynamic_batch_onnx(path: str | Path) -> Path:
+def dynamic_batch_onnx(path: PathType) -> Path:
     """Model whose input batch dimension is 0 (dynamic)."""
     return single_io_onnx(path, shape=[0, 3, 64, 64])
 
 
-def intermediate_info_onnx(path: str | Path) -> Path:
+def intermediate_info_onnx(path: PathType) -> Path:
     """Model with one intermediate tensor described in ``value_info`` and one
     that is not, for the ONNX introspection helpers in config.py."""
     inp = helper.make_tensor_value_info(
@@ -382,7 +383,7 @@ def intermediate_info_onnx(path: str | Path) -> Path:
     return _save(graph, path)
 
 
-def multi_file_external_onnx(path: str | Path) -> list[Path]:
+def multi_file_external_onnx(path: PathType) -> list[Path]:
     """A conv model whose weight and bias each live in their own file.
 
     Returns the companion files, in sorted order. This is the layout

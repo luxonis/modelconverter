@@ -8,11 +8,11 @@ properties at the bottom assert the invariants that hold across combinations.
 """
 
 import json
-from typing import Any
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from luxonis_ml.typing import Params
 
 from modelconverter.utils.config import Encodings
 from modelconverter.utils.encodings import (
@@ -153,7 +153,7 @@ def test_list_form_accumulates_same_name():
 
 
 @pytest.mark.parametrize("bad_name", [{}, {"name": ""}, {"name": 5}])
-def test_list_form_missing_or_invalid_name_raises(bad_name: dict):
+def test_list_form_missing_or_invalid_name_raises(bad_name: Params):
     with pytest.raises(ValueError, match="tensor name"):
         _normalize_encoding_group([bad_name])
 
@@ -209,7 +209,7 @@ def test_raw_int_raises_type_error():
 
 
 @given(item=encoding_items())
-def test_normalization_keeps_only_known_keys(item: dict[str, Any]):
+def test_normalization_keeps_only_known_keys(item: Params):
     """Aliases and vendor extras never reach the pydantic model.
 
     ``QuantizationOverridesItem`` forbids extra fields, so anything the
@@ -221,13 +221,13 @@ def test_normalization_keeps_only_known_keys(item: dict[str, Any]):
 
 
 @given(item=encoding_items())
-def test_normalization_is_idempotent(item: dict[str, Any]):
+def test_normalization_is_idempotent(item: Params):
     once = _normalize_encoding_item(item)
     assert _normalize_encoding_item(once) == once
 
 
 @given(item=encoding_items())
-def test_aliases_resolve_to_their_long_spelling(item: dict[str, Any]):
+def test_aliases_resolve_to_their_long_spelling(item: Params):
     normalized = _normalize_encoding_item(item)
     for alias, key in [("bw", "bitwidth"), ("is_sym", "is_symmetric")]:
         if key in item:
@@ -270,9 +270,7 @@ def test_expansion_yields_one_scalar_entry_per_channel(
 
 
 @given(group=encoding_groups())
-def test_list_and_dict_group_forms_agree(
-    group: dict[str, list[dict[str, Any]]],
-):
+def test_list_and_dict_group_forms_agree(group: dict[str, list[Params]]):
     """The two wire formats are the same data, so they normalize alike.
 
     A group may arrive keyed by tensor name or as a flat list carrying
@@ -293,8 +291,8 @@ def test_list_and_dict_group_forms_agree(
 
 @given(activations=encoding_groups(), params=encoding_groups())
 def test_parse_encodings_round_trips_through_json(
-    activations: dict[str, list[dict[str, Any]]],
-    params: dict[str, list[dict[str, Any]]],
+    activations: dict[str, list[Params]],
+    params: dict[str, list[Params]],
 ):
     """A JSON payload and the dict it decodes to give the same model.
 
@@ -310,7 +308,7 @@ def test_parse_encodings_round_trips_through_json(
 
 @given(activations=encoding_groups())
 def test_parsed_encodings_are_idempotent(
-    activations: dict[str, list[dict[str, Any]]],
+    activations: dict[str, list[Params]],
 ):
     """An already-parsed ``Encodings`` passes straight through."""
     parsed = parse_encodings({"activation_encodings": activations})
