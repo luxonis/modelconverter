@@ -29,7 +29,7 @@ from .filesystem_utils import (
     upload_to_remote,
 )
 from .general import sanitize_net_name
-from .hubai_utils import is_hubai_available
+from .hubai_utils import is_hubai_model_variant_available
 from .image import read_calib_dir, read_image
 from .layout import guess_new_layout, make_default_layout
 from .metadata import Metadata, get_metadata
@@ -79,7 +79,7 @@ __all__ = [
     "get_protocol",
     "guess_new_layout",
     "in_docker",
-    "is_hubai_available",
+    "is_hubai_model_variant_available",
     "make_default_layout",
     "modelconverter_config_to_nn",
     "onnx_attach_normalization_to_inputs",
