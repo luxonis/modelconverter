@@ -119,7 +119,7 @@ jobs:
             --cov-report xml:coverage-unit.xml
 
       - name: Upload test results to Codecov
-        if: ${{ always() }}
+        if: ${{ always() && github.event_name == 'pull_request' && !inputs.modelconv_ref }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -131,9 +131,6 @@ jobs:
           disable_search: true
           handle_no_reports_found: true
 
-      # The coverage itself is uploaded by the `coverage` job, once every test
-      # job has finished. The artifact is what that job collects, and it keeps
-      # the report available for CI diagnostics.
       - name: Upload coverage artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -142,9 +139,6 @@ jobs:
           path: coverage-unit.xml
           if-no-files-found: ignore
 
-  # Selects which of the `.github/matrix.json` entries the integration tests run
-  # on: the platforms a pull request touches, or the dispatch inputs if given.
-  # Everything else runs the full matrix.
   resolve-matrix:
     name: Resolve matrix
     runs-on: ubuntu-latest
@@ -259,23 +253,31 @@ jobs:
               echo "Invalid luxonis-ml ref: ${ML_REF}" >&2
               exit 1
             fi
-            # Each image pins the NumPy that its vendor tools were built
+            # Each image pins the versions its vendor tools were built
             # against. RVC4 holds NumPy 1.x, because `snpe-onnx-to-dlc` is
-            # a C extension that reads garbage under the 2.x ABI. A plain
-            # `--force-reinstall` of luxonis-ml pulls NumPy 2.x in and
-            # corrupts the conversion.
+            # a C extension that reads garbage under the 2.x ABI. Hailo holds
+            # pyparsing 2.4.7, because the dataflow compiler parses its model
+            # scripts with a grammar that pyparsing 3.x rejects. A plain
+            # `--force-reinstall` of luxonis-ml pulls the newer versions in
+            # and corrupts the conversion.
             #
-            # luxonis-ml requires NumPy 2.x, so pip cannot satisfy the pin
-            # and that requirement at the same time. The image build has the
-            # same conflict. It installs the packages first, then it puts
-            # the pinned NumPy back. The commands below do the same. A wheel
-            # that is built against NumPy 2.x also runs with NumPy 1.x, so
-            # the downgrade keeps the environment usable.
+            # luxonis-ml requires the newer versions, so pip cannot satisfy
+            # the pins and that requirement at the same time. The image build
+            # has the same conflict. It installs the packages first, then it
+            # puts the pins back. The commands below do the same, from the
+            # same file the image builds from. A wheel that is built against
+            # the newer version also runs with the pinned one, so the
+            # downgrade keeps the environment usable.
+            #
+            # The NumPy pin is taken from the image itself, because only RVC4
+            # states it in a requirements file. The other images inherit it
+            # from a vendor package.
             ML_INSTALL_COMMAND="python -c \"import numpy; open('/tmp/numpy-pin.txt', 'w').write('numpy==' + numpy.__version__)\" && \
               pip uninstall luxonis-ml -y && \
               pip install \
               \"luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}\" \
               --upgrade --force-reinstall && \
+              pip install -r /app/modelconverter/packages/${PACKAGE}/requirements.txt && \
               pip install -r /tmp/numpy-pin.txt &&"
           else
             ML_INSTALL_COMMAND=""
@@ -290,8 +292,10 @@ jobs:
                 --cov --cov-report term-missing \
                 --cov-report xml:output/coverage-${PACKAGE}-${VERSION}.xml"
 
+      # Only a pull request of this repository reports to Codecov, see the
+      # unit job.
       - name: Upload test results to Codecov
-        if: ${{ always() }}
+        if: ${{ always() && github.event_name == 'pull_request' && !inputs.modelconv_ref }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -319,10 +323,12 @@ jobs:
   # happen to have landed and report a coverage drop that is not real. The
   # reports are collected from the artifacts and uploaded here instead, once
   # every test job has finished.
+  #
+  # Only a pull request of this repository reports to Codecov, see the unit job.
   coverage:
     name: Upload coverage
     needs: [unit, integration]
-    if: ${{ always() && needs.unit.result == 'success' && (needs.integration.result == 'success' || needs.integration.result == 'skipped') }}
+    if: ${{ always() && github.event_name == 'pull_request' && !inputs.modelconv_ref && needs.unit.result == 'success' && (needs.integration.result == 'success' || needs.integration.result == 'skipped') }}
     runs-on: ubuntu-latest
 
     permissions:
