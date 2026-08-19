@@ -2,31 +2,78 @@ import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, TypeAlias
+from typing import TypeAlias, TypeVar
 
 import polars as pl
 from loguru import logger
 
 from modelconverter.utils import is_hubai_available, resolve_path
 
-Configuration: TypeAlias = dict[str, Any]
+ConfigValue: TypeAlias = str | int | bool | None
+Configuration: TypeAlias = dict[str, ConfigValue]
+
+Result: TypeAlias = dict[str, float | str | None]
+
+OptionT = TypeVar("OptionT", bound=str | int | bool)
+
+
+def get_option(
+    configuration: Configuration, key: str, option_type: type[OptionT]
+) -> OptionT:
+    """Reads one benchmark option and checks its type.
+
+    @type configuration: Configuration
+    @param configuration: The options of a single benchmark run.
+    @type key: str
+    @param key: The name of the option.
+    @type option_type: type[OptionT]
+    @param option_type: The necessary type of the option.
+    @rtype: OptionT
+    @return: The value of the option.
+    @raise TypeError: If the option is missing or has a different type.
+    """
+    value = configuration.get(key)
+    if not isinstance(value, option_type):
+        raise TypeError(
+            f"The benchmark option '{key}' must be of type "
+            f"'{option_type.__name__}', got {value!r}."
+        )
+    return value
+
+
+def get_optional_option(
+    configuration: Configuration, key: str, option_type: type[OptionT]
+) -> OptionT | None:
+    """As L{get_option}, but the option can also be unset.
+
+    @type configuration: Configuration
+    @param configuration: The options of a single benchmark run.
+    @type key: str
+    @param key: The name of the option.
+    @type option_type: type[OptionT]
+    @param option_type: The necessary type of the option.
+    @rtype: OptionT | None
+    @return: The value of the option, or C{None} if it is not set.
+    @raise TypeError: If the option has a different type.
+    """
+    if configuration.get(key) is None:
+        return None
+    return get_option(configuration, key, option_type)
 
 
 class Benchmark(ABC):
-    VALID_EXTENSIONS = (".tar.xz", ".blob", ".dlc")
-    HUB_MODEL_PATTERN = re.compile(r"^(?:([^/]+)/)?([^:]+):([^:]+)(?::(.+))?$")
+    _VALID_EXTENSIONS = (".tar.xz", ".blob", ".dlc")
+    _HUB_MODEL_PATTERN = re.compile(
+        r"^(?:([^/]+)/)?([^:]+):([^:]+)(?::(.+))?$"
+    )
 
-    def __init__(
-        self,
-        model_path: str,
-        dataset_path: Path | None = None,
-    ):
-        if any(model_path.endswith(ext) for ext in self.VALID_EXTENSIONS):
+    def __init__(self, model_path: str):
+        if any(model_path.endswith(ext) for ext in self._VALID_EXTENSIONS):
             self.model_path = resolve_path(model_path, Path.cwd())
             self.model_name = self.model_path.stem
-            self.model_instance = None
+            self._model_instance = None
         else:
-            hub_match = self.HUB_MODEL_PATTERN.match(model_path)
+            hub_match = self._HUB_MODEL_PATTERN.match(model_path)
             if not hub_match:
                 raise ValueError(
                     "Invalid 'model-path' format. Expected either:\n"
@@ -42,22 +89,14 @@ class Benchmark(ABC):
             if is_hubai_available(model_name, model_variant):
                 self.model_path = model_path
                 self.model_name = model_name
-                self.model_instance = model_instance
+                self._model_instance = model_instance
             else:
                 raise ValueError(
                     f"Model {team_name + '/' if team_name else ''}{model_name}:{model_variant}{':' + model_instance if model_instance else ''} not found in HubAI."
                 )
 
-        self.dataset_path = dataset_path
-
-        self.header = [
-            *self.default_configuration.keys(),
-            "fps",
-            "latency (ms)",
-        ]
-
     @abstractmethod
-    def benchmark(self, configuration: Configuration) -> dict[str, Any]:
+    def benchmark(self, configuration: Configuration) -> Result:
         pass
 
     @property
@@ -71,7 +110,7 @@ class Benchmark(ABC):
         pass
 
     def print_results(
-        self, results: list[tuple[Configuration, dict[str, Any]]]
+        self, results: list[tuple[Configuration, Result]]
     ) -> None:
         assert results, "No results to print"
 
@@ -104,7 +143,7 @@ class Benchmark(ABC):
 
     def _base_header(
         self,
-        results: list[tuple[Configuration, dict[str, Any]]],
+        results: list[tuple[Configuration, Result]],
     ) -> list[str]:
         """Shared header cells."""
         return [*results[0][0].keys(), "fps", "latency (ms)"]
@@ -112,7 +151,7 @@ class Benchmark(ABC):
     def _base_row_cells(
         self,
         configuration: Configuration,
-        result: dict[str, Any],
+        result: Result,
     ) -> Iterable[str]:
         """Shared row cells for each result (configuration + fps +
         latency)."""
@@ -120,15 +159,14 @@ class Benchmark(ABC):
         for x in configuration.values():
             yield f"[magenta]{x}"
 
-        fps = result["fps"]
+        fps = result.get("fps")
+        if not isinstance(fps, int | float):
+            raise TypeError(f"The benchmark measured no FPS, got {fps!r}.")
         fps_color = "yellow" if 5 < fps < 15 else "red" if fps < 5 else "green"
         yield f"[{fps_color}]{fps:.2f}"
 
-        latency = result.get("latency", "N/A")
-        if isinstance(latency, str):
-            latency_color = "orange3"
-            yield f"[{latency_color}]{latency}"
-        else:
+        latency = result.get("latency")
+        if isinstance(latency, int | float):
             latency_color = (
                 "yellow"
                 if 50 < latency < 100
@@ -137,10 +175,12 @@ class Benchmark(ABC):
                 else "green"
             )
             yield f"[{latency_color}]{latency:.2f}"
+        else:
+            yield f"[orange3]{latency or 'N/A'}"
 
     def _extra_header(
         self,
-        results: list[tuple[Configuration, dict[str, Any]]],
+        results: list[tuple[Configuration, Result]],
     ) -> list[str]:
         """Columns to append after the base header (default: none)."""
         return []
@@ -148,7 +188,7 @@ class Benchmark(ABC):
     def _extra_row_cells(
         self,
         configuration: Configuration,
-        result: dict[str, Any],
+        result: Result,
     ) -> Iterable[str]:
         """Extra cells to append after the base row cells (default:
 
@@ -157,7 +197,7 @@ class Benchmark(ABC):
         return []
 
     def save_results(
-        self, results: list[tuple[Configuration, dict[str, Any]]]
+        self, results: list[tuple[Configuration, Result]]
     ) -> None:
         assert results, "No results to save"
         df = pl.DataFrame(
@@ -175,11 +215,14 @@ class Benchmark(ABC):
         df.write_csv(file)
         logger.info(f"Benchmark results saved to {file}.")
 
-    def run(self, full: bool = True, save: bool = False, **kwargs) -> None:
+    def run(
+        self, full: bool = True, save: bool = False, **kwargs: ConfigValue
+    ) -> None:
         logger.info(f"Running benchmarking for {self.model_name}")
-        for key, value in self.default_configuration.items():
-            if key in kwargs and value is not None:
-                kwargs[key] = type(value)(kwargs[key])
+        for key, default in self.default_configuration.items():
+            value = kwargs.get(key)
+            if default is not None and value is not None:
+                kwargs[key] = type(default)(value)
 
         if not full:
             configurations = [{**self.default_configuration, **kwargs}]
@@ -192,7 +235,7 @@ class Benchmark(ABC):
                 for config in self.all_configurations  # add only kwarg keys that are not already there to not overwrite
             ]
 
-        results = []
+        results: list[tuple[Configuration, Result]] = []
         for configuration in configurations:
             logger.info(f"Running with configuration: {configuration}")
             results.append((configuration, self.benchmark(configuration)))
@@ -200,7 +243,7 @@ class Benchmark(ABC):
         # Clean up configuration keys: keep either benchmark_time or repetitions
         for configuration, _ in results:
             benchmark_time = configuration.get("benchmark_time")
-            if benchmark_time and benchmark_time > 0:
+            if isinstance(benchmark_time, int) and benchmark_time > 0:
                 items = list(configuration.items())
                 configuration.clear()
                 for k, v in items:

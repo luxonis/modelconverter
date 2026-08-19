@@ -8,16 +8,24 @@ from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
 from subprocess import CalledProcessError, SubprocessError
-from typing import Any, Final
+from typing import Final
 
 import depthai as dai
 import numpy as np
 import polars as pl
 from depthai import XLinkPlatform
 from loguru import logger
+from luxonis_ml.typing import BaseModelExtraForbid, PathType
 from rich.progress import track
 
-from modelconverter.packages.base_benchmark import Benchmark, Configuration
+from modelconverter.platforms.base_benchmark import (
+    Benchmark,
+    Configuration,
+    Result,
+    get_option,
+    get_optional_option,
+)
+from modelconverter.platforms.rvc4.utils import get_device_info
 from modelconverter.utils import (
     DataType,
     DeviceMonitor,
@@ -26,15 +34,16 @@ from modelconverter.utils import (
     environ,
     subprocess_run,
 )
-from modelconverter.utils.config import OutputConfig
 from modelconverter.utils.log_latency import (
     RVC4_INFERENCE_LATENCY_RE,
     parse_inference_latency,
 )
 
 
-class InputSpec(OutputConfig):
-    shape: list[int]  # type: ignore
+class InputSpec(BaseModelExtraForbid):
+    name: str
+    shape: list[int]
+    data_type: DataType
 
 
 PROFILES: Final[list[str]] = [
@@ -57,7 +66,7 @@ RUNTIMES: dict[str, str] = {
 
 
 class RVC4Benchmark(Benchmark):
-    MAX_REAL_SNPE_INPUTS = 100
+    _MAX_REAL_SNPE_INPUTS = 100
 
     @property
     def default_configuration(self) -> Configuration:
@@ -96,7 +105,7 @@ class RVC4Benchmark(Benchmark):
         ]
 
     def _get_dlc_input_specs(
-        self, model_path: str | Path | None = None
+        self, model_path: PathType | None = None
     ) -> list[InputSpec]:
         """Retrieve normalized input specs from a DLC or NNArchive."""
         model_path = self.model_path if model_path is None else model_path
@@ -127,16 +136,16 @@ class RVC4Benchmark(Benchmark):
             content = csv_path.read_text()
             csv_path.unlink()
         elif (
-            self.handler is not None
-            and self.handler.shell("snpe-dlc-info -h", check=False)[0] == 0
+            self._handler is not None
+            and self._handler.shell("snpe-dlc-info -h", check=False)[0] == 0
         ):
-            self.handler.shell(f"mkdir -p {self.device_pwd}")
-            self.handler.push(model_path, self.device_pwd / "model.dlc")
-            device_csv_path = self.device_pwd / "info.csv"
-            self.handler.shell(
-                f"snpe-dlc-info -i {self.device_pwd / 'model.dlc'} -s {device_csv_path}",
+            self._handler.shell(f"mkdir -p {self._device_pwd}")
+            self._handler.push(model_path, self._device_pwd / "model.dlc")
+            device_csv_path = self._device_pwd / "info.csv"
+            self._handler.shell(
+                f"snpe-dlc-info -i {self._device_pwd / 'model.dlc'} -s {device_csv_path}",
             )
-            _, content, _ = self.handler.shell(f"cat {device_csv_path}")
+            _, content, _ = self._handler.shell(f"cat {device_csv_path}")
         else:
             raise RuntimeError(
                 "Neither local nor remote `snpe-dlc-info` "
@@ -169,7 +178,7 @@ class RVC4Benchmark(Benchmark):
     def _prepare_raw_inputs(
         self, input_specs: list[InputSpec], num_images: int
     ) -> None:
-        if self.handler is None:
+        if self._handler is None:
             raise RuntimeError(
                 "Device handler is not initialized. "
                 "Cannot prepare `.raw` inputs on the device."
@@ -178,10 +187,10 @@ class RVC4Benchmark(Benchmark):
         if num_images < 1:
             raise ValueError("num_images must be at least 1.")
 
-        inputs_dir = self.device_pwd / "inputs"
-        real_input_count = min(num_images, self.MAX_REAL_SNPE_INPUTS)
+        inputs_dir = self._device_pwd / "inputs"
+        real_input_count = min(num_images, self._MAX_REAL_SNPE_INPUTS)
 
-        self.handler.shell(f"mkdir -p {self.device_pwd}")
+        self._handler.shell(f"mkdir -p {self._device_pwd}")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             local_model_dir = Path(tmp_dir) / self.model_name
@@ -193,7 +202,7 @@ class RVC4Benchmark(Benchmark):
                 for i in track(
                     range(num_images),
                     description="Preparing inputs",
-                    total=min(num_images, self.MAX_REAL_SNPE_INPUTS),
+                    total=min(num_images, self._MAX_REAL_SNPE_INPUTS),
                 ):
                     input_paths: list[str] = []
                     for spec in input_specs:
@@ -210,7 +219,7 @@ class RVC4Benchmark(Benchmark):
                     f.write(" ".join(input_paths))
                     f.write(" \n")
 
-            self.handler.push(local_model_dir, self.device_pwd.parent)
+            self._handler.push(local_model_dir, self._device_pwd.parent)
 
         if num_images > real_input_count and input_specs:
             logger.info(
@@ -218,7 +227,7 @@ class RVC4Benchmark(Benchmark):
                 f"to the first {real_input_count} inputs to avoid filling "
                 "up the device storage."
             )
-            self.handler.shell(
+            self._handler.shell(
                 self._create_raw_input_link_script(
                     input_specs,
                     str(inputs_dir),
@@ -290,26 +299,27 @@ class RVC4Benchmark(Benchmark):
                 "models."
             )
 
-    def benchmark(self, configuration: Configuration) -> dict[str, Any]:
-        dai_benchmark = configuration.get("dai_benchmark")
-        device_monitor = configuration.get("device_monitor")
+    def benchmark(self, configuration: Configuration) -> Result:
+        dai_benchmark = get_option(configuration, "dai_benchmark", bool)
+        device_monitor = get_option(configuration, "device_monitor", bool)
 
         device_ip, device_adb_id = get_device_info(
-            configuration.get("device_ip"), configuration.get("device_id")
+            get_optional_option(configuration, "device_ip", str),
+            get_optional_option(configuration, "device_id", str),
         )
         if device_monitor or not dai_benchmark:
-            self.handler = create_handler(device_ip, device_adb_id)
+            self._handler = create_handler(device_ip, device_adb_id)
         else:
-            self.handler = None
+            self._handler = None
 
         configuration["device_ip"] = device_ip
-        self.device_pwd = Path("/", "data", "modelconverter", self.model_name)
+        self._device_pwd = Path("/", "data", "modelconverter", self.model_name)
 
-        self.monitor = None
-        idle_measurements = {}
-        if device_monitor and self.handler is not None:
-            self.monitor = DeviceMonitor(self.handler)
-            idle_measurements = self.monitor.get_idle_measurements()
+        self._monitor = None
+        idle_measurements: dict[str, float | None] = {}
+        if device_monitor and self._handler is not None:
+            self._monitor = DeviceMonitor(self._handler)
+            idle_measurements = self._monitor.get_idle_measurements()
 
         try:
             if dai_benchmark:
@@ -320,7 +330,20 @@ class RVC4Benchmark(Benchmark):
                     "device_monitor",
                 ]:
                     configuration.pop(key)
-                result = self._benchmark_dai(self.model_path, **configuration)
+                result = self._benchmark_dai(
+                    self.model_path,
+                    profile=get_option(configuration, "profile", str),
+                    runtime=get_option(configuration, "runtime", str),
+                    repetitions=get_option(configuration, "repetitions", int),
+                    num_threads=get_option(configuration, "num_threads", int),
+                    num_messages=get_option(
+                        configuration, "num_messages", int
+                    ),
+                    benchmark_time=get_option(
+                        configuration, "benchmark_time", int
+                    ),
+                    device_ip=device_ip,
+                )
             else:
                 for key in [
                     "dai_benchmark",
@@ -334,16 +357,21 @@ class RVC4Benchmark(Benchmark):
                 ]:
                     configuration.pop(key, None)
                 logger.info("Running SNPE benchmark directly on the device...")
-                result = self._benchmark_snpe(self.model_path, **configuration)
+                result = self._benchmark_snpe(
+                    self.model_path,
+                    num_images=get_option(configuration, "num_images", int),
+                    profile=get_option(configuration, "profile", str),
+                    runtime=get_option(configuration, "runtime", str),
+                )
 
-            if self.monitor is not None:
-                result |= self.monitor.get_stats()
+            if self._monitor is not None:
+                result |= self._monitor.get_stats()
                 result |= idle_measurements
             return result
         finally:
-            if self.monitor is not None:
-                self.monitor.stop()
-            if not dai_benchmark and self.handler is not None:
+            if self._monitor is not None:
+                self._monitor.stop()
+            if not dai_benchmark and self._handler is not None:
                 # so we don't delete the wrong directory
                 # if `model_name` gets unset for any reason
                 if not self.model_name:
@@ -352,15 +380,15 @@ class RVC4Benchmark(Benchmark):
                         "cannot clean up model files on the device."
                     )
 
-                self.handler.shell(f"rm -rf {self.device_pwd}")
+                self._handler.shell(f"rm -rf {self._device_pwd}")
 
     def _benchmark_snpe(
         self,
-        model_path: Path | str,
+        model_path: PathType,
         num_images: int,
         profile: str,
         runtime: str,
-    ) -> dict[str, Any]:
+    ) -> Result:
         runtime = RUNTIMES.get(runtime, "use_dsp")
 
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
@@ -408,25 +436,25 @@ class RVC4Benchmark(Benchmark):
         )
         logger.info(f"Moving model '{dlc_path.name}' to the device.")
 
-        if self.handler is None:
+        if self._handler is None:
             raise RuntimeError(
                 "Handler is not initialized. Cannot benchmark directly on the device."
             )
-        self.handler.shell(f"mkdir -p {self.device_pwd}")
-        self.handler.push(str(dlc_path), f"{self.device_pwd}/model.dlc")
+        self._handler.shell(f"mkdir -p {self._device_pwd}")
+        self._handler.push(str(dlc_path), f"{self._device_pwd}/model.dlc")
         self._prepare_raw_inputs(input_specs, num_images)
 
         logger.info("Starting SNPE benchmark...")
 
-        if self.monitor is not None:
-            self.monitor.start()
+        if self._monitor is not None:
+            self._monitor.start()
 
         try:
-            _, stdout, _ = self.handler.shell(
+            _, stdout, _ = self._handler.shell(
                 "snpe-parallel-run "
-                f"--container {self.device_pwd}/model.dlc "
-                f"--input_list {self.device_pwd}/input_list.txt "
-                f"--output_dir {self.device_pwd}/outputs "
+                f"--container {self._device_pwd}/model.dlc "
+                f"--input_list {self._device_pwd}/input_list.txt "
+                f"--output_dir {self._device_pwd}/outputs "
                 f"--perf_profile {profile} "
                 "--cpu_fallback true "
                 f"--{runtime}",
@@ -456,7 +484,7 @@ class RVC4Benchmark(Benchmark):
 
     def _benchmark_dai(
         self,
-        model_path: Path | str,
+        model_path: PathType,
         profile: str,
         runtime: str,
         repetitions: int,
@@ -464,7 +492,7 @@ class RVC4Benchmark(Benchmark):
         num_messages: int,
         benchmark_time: int,
         device_ip: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> Result:
         if isinstance(model_path, str):
             resolved_model_path = Path(
                 dai.getModelFromZoo(
@@ -525,8 +553,8 @@ class RVC4Benchmark(Benchmark):
             f"Using {device.getPlatformAsString()} device on IP {device.getDeviceInfo().name}."
         )
 
-        if self.monitor is not None:
-            self.monitor.start()
+        if self._monitor is not None:
+            self._monitor.start()
 
         latencies: list[float] = []
 
@@ -602,10 +630,10 @@ class RVC4Benchmark(Benchmark):
 
     def _extra_header(
         self,
-        results: list[tuple[Configuration, dict[str, Any]]],
+        results: list[tuple[Configuration, Result]],
     ) -> list[str]:
         heads = []
-        if self.monitor is not None:
+        if self._monitor is not None:
             heads.append("power_sys (W)")
             heads.append("power_core (W)")
             heads.append("dsp (%)")
@@ -616,20 +644,16 @@ class RVC4Benchmark(Benchmark):
     def _extra_row_cells(
         self,
         configuration: Configuration,
-        result: dict[str, Any],
+        result: Result,
     ) -> Iterable[str]:
-        power_sys = result.get("power_system")
-        power_core = result.get("power_processor")
-        dsp = result.get("dsp_utilization")
-        memory = result.get("ram_used")
-        cpu = result.get("cpu_utilization")
+        if self._monitor is None:
+            return
 
-        if self.monitor is not None:
-            yield f"{power_sys:.2f}" if power_sys else "[orange3]N/A"
-            yield f"{power_core:.2f}" if power_core else "[orange3]N/A"
-            yield f"{dsp:.2f}" if dsp else "[orange3]N/A"
-            yield f"{memory:.2f}" if memory else "[orange3]N/A"
-            yield f"{cpu:.2f}" if cpu else "[orange3]N/A"
+        yield self._format_measurement(result.get("power_system"))
+        yield self._format_measurement(result.get("power_processor"))
+        yield self._format_measurement(result.get("dsp_utilization"))
+        yield self._format_measurement(result.get("ram_used"))
+        yield self._format_measurement(result.get("cpu_utilization"))
 
     def _get_archive_input_specs(
         self, archive: dai.NNArchive
@@ -706,7 +730,7 @@ class RVC4Benchmark(Benchmark):
 
         if not isinstance(
             self.model_path, str
-        ) or not self.HUB_MODEL_PATTERN.match(self.model_path):
+        ) or not self._HUB_MODEL_PATTERN.match(self.model_path):
             return None
 
         model_id = slug_to_id(self.model_name, "models")
@@ -715,7 +739,7 @@ class RVC4Benchmark(Benchmark):
         model_variants = []
         for is_public in [True, False, None]:
             with suppress(Exception):
-                model_variants += Request.get(
+                model_variants += Request.get_records(
                     "modelVersions/",
                     params={"model_id": model_id, "is_public": is_public},
                 )
@@ -732,7 +756,7 @@ class RVC4Benchmark(Benchmark):
         model_instances = []
         for is_public in [True, False]:
             with suppress(Exception):
-                model_instances += Request.get(
+                model_instances += Request.get_records(
                     "modelInstances/",
                     params={
                         "model_id": model_id,
@@ -744,8 +768,8 @@ class RVC4Benchmark(Benchmark):
         model_precision_type = None
         for instance in model_instances:
             if instance["platforms"] == ["RVC4"] and (
-                self.model_instance is None
-                or instance["hash_short"] == self.model_instance
+                self._model_instance is None
+                or instance["hash_short"] == self._model_instance
             ):
                 model_precision_type = instance.get("model_precision_type")
                 break
@@ -754,43 +778,8 @@ class RVC4Benchmark(Benchmark):
             return DataType.from_hubai_dtype(model_precision_type)
         return None
 
-
-def device_id_to_adb_id(device_id: str) -> str:
-    if device_id.isdigit():
-        return format(int(device_id), "x")
-    return device_id.encode("ascii").hex()
-
-
-def adb_id_to_device_id(adb_id: str) -> str:
-    try:
-        int_id = int(adb_id, 16)
-        return str(int_id)
-    except ValueError:
-        bytes_id = bytes.fromhex(adb_id)
-        return bytes_id.decode("ascii")
-
-
-def get_device_info(
-    device_ip: str | None, device_id: str | None
-) -> tuple[str | None, str | None]:
-    if not device_ip and not device_id:
-        return None, None
-
-    if device_id:
-        if device_id.isdecimal():
-            adb_id = device_id_to_adb_id(device_id)
-        else:
-            adb_id = device_id
-            device_id = adb_id_to_device_id(adb_id)
-        for info in dai.Device.getAllAvailableDevices():
-            if device_id == info.getDeviceId():
-                if device_ip and device_ip != info.name:
-                    logger.warning(
-                        f"Both device_id and device_ip provided, but they refer to different devices. Using device with device_id: {device_id} and device_ip: {info.name}."
-                    )
-                return info.name, adb_id
-    if device_ip:
-        with dai.Device(device_ip) as device:
-            inferred_device_id = device.getDeviceId()
-            return device_ip, device_id_to_adb_id(inferred_device_id)
-    return None, None
+    @staticmethod
+    def _format_measurement(value: float | str | None) -> str:
+        if not isinstance(value, int | float) or not value:
+            return "[orange3]N/A[reset]"
+        return f"{value:.2f}"

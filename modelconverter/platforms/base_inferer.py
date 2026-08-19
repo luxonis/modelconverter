@@ -56,23 +56,26 @@ class Inferer(ABC):
     def from_config(
         cls, model_path: str, src: Path, dest: Path, config: SingleStageConfig
     ) -> Self:
-        for container, typ_name in [
-            (config.inputs, "input"),
-            (config.outputs, "output"),
+        in_shapes: dict[str, list[int]] = {}
+        out_shapes: dict[str, list[int]] = {}
+        for container, shapes, typ_name in [
+            (config.inputs, in_shapes, "input"),
+            (config.outputs, out_shapes, "output"),
         ]:
             for node in container:
                 if node.shape is None:  # pragma: no cover
                     raise ValueError(
                         f"Shape for {typ_name} '{node.name}' must be provided."
                     )
+                shapes[node.name] = node.shape
 
         return cls(
             model_path=resolve_path(model_path, Path.cwd()),
             src=src,
             dest=dest,
-            in_shapes={inp.name: inp.shape for inp in config.inputs},  # type: ignore
+            in_shapes=in_shapes,
             in_dtypes={inp.name: inp.data_type for inp in config.inputs},
-            out_shapes={out.name: out.shape for out in config.outputs},  # type: ignore
+            out_shapes=out_shapes,
             out_dtypes={out.name: out.data_type for out in config.outputs},
             resize_method={
                 inp.name: inp.calibration.resize_method

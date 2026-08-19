@@ -1,8 +1,8 @@
-# Shared part of every target entrypoint: run the requested command as a
+# Shared part of every platform entrypoint: run the requested command as a
 # signal-forwarding child, then hand the mounts back to the invoking host user.
 #
-# Sourced -- not executed -- by docker/<target>/entrypoint.sh after that
-# target's own environment setup, with the container's arguments intact. The
+# Sourced -- not executed -- by docker/<platform>/entrypoint.sh after that
+# platform's own environment setup, with the container's arguments intact. The
 # Dockerfiles copy it next to the entrypoint, at /app/entrypoint_common.sh.
 
 # Where the image puts the mounts. Only ever overridden by the tests, which

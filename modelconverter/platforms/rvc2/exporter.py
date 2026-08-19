@@ -8,12 +8,13 @@ from multiprocessing import cpu_count
 from os import environ as env
 from pathlib import Path
 from threading import Lock
-from typing import Any, Final, NamedTuple
+from typing import Final, NamedTuple
 
 import tflite2onnx
 from loguru import logger
+from luxonis_ml.typing import Params
 
-from modelconverter.packages.base_exporter import Exporter
+from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
     SubprocessHandle,
@@ -26,7 +27,7 @@ from modelconverter.utils.types import (
     DataType,
     Encoding,
     InputFileType,
-    Target,
+    Platform,
 )
 
 OV_2021: Final[bool] = env.get("VERSION") == "2021.4.0"
@@ -40,34 +41,34 @@ class CompileResult(NamedTuple):
 
 
 class RVC2Exporter(Exporter):
-    target: Target = Target.RVC2
+    platform: Platform = Platform.RVC2
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)
-        self.n_workers = config.rvc2.n_workers
-        self.compress_to_fp16 = config.rvc2.compress_to_fp16
-        self.number_of_shaves = config.rvc2.number_of_shaves
+        self._n_workers = config.rvc2.n_workers
+        self._compress_to_fp16 = config.rvc2.compress_to_fp16
+        self._number_of_shaves = config.rvc2.number_of_shaves
         # Setting the number_of_cmx_slices equal to the number_of_shaves is intentional from the DAI's perspective to maximize RVC2 pipeline performance.
-        self.number_of_cmx_slices = config.rvc2.number_of_shaves
-        self.superblob = config.rvc2.superblob
-        self.mo_args = config.rvc2.mo_args
-        self.compile_tool_args = config.rvc2.compile_tool_args
-        self.device = "MYRIAD"
-        self.reverse_input_channels = False
+        self._number_of_cmx_slices = config.rvc2.number_of_shaves
+        self._superblob = config.rvc2.superblob
+        self._mo_args = config.rvc2.mo_args
+        self._compile_tool_args = config.rvc2.compile_tool_args
+        self._device = "MYRIAD"
+        self._reverse_input_channels = False
 
         self._device_specific_buildinfo = {
-            "is_superblob": self.superblob,
-            "number_of_shaves": self.number_of_shaves
-            if not self.superblob
+            "is_superblob": self._superblob,
+            "number_of_shaves": self._number_of_shaves
+            if not self._superblob
             else list(range(1, 17)),
-            "number_of_cmx_slices": self.number_of_cmx_slices,
+            "number_of_cmx_slices": self._number_of_cmx_slices,
         }
 
     def _export_openvino_ir(self) -> Path:
-        args = self.mo_args
+        args = self._mo_args
         self._add_args(args, ["--output_dir", self.intermediate_outputs_dir])
-        self._add_args(args, ["--output", ",".join(self.outputs)])
-        if self.compress_to_fp16:
+        self._add_args(args, ["--output", ",".join(self._outputs)])
+        if self._compress_to_fp16:
             if OV_2021:
                 self._add_args(args, ["--data_type", "FP16"])
             else:
@@ -75,14 +76,14 @@ class RVC2Exporter(Exporter):
 
         if "--input" not in args:
             inp_str = ""
-            for name, inp in self.inputs.items():
+            for name, inp in self._inputs.items():
                 if inp_str:
                     inp_str += ","
                 inp_str += name
                 if inp.shape is not None:
                     inp_str += f"{_lst_join(inp.shape, sep=' ')}"
                 if inp.data_type is not None:
-                    if OV_2021 and self.compress_to_fp16:
+                    if OV_2021 and self._compress_to_fp16:
                         data_type = DataType("float16")
                     else:
                         data_type = inp.data_type
@@ -102,13 +103,13 @@ class RVC2Exporter(Exporter):
                 "input channels for only some inputs. "
                 "Attempting to modify the ONNX model."
             )
-            self.input_model = onnx_attach_normalization_to_inputs(
-                self.input_model,
-                self._attach_suffix(self.input_model, "modified.onnx"),
-                self.inputs,
+            self._input_model = onnx_attach_normalization_to_inputs(
+                self._input_model,
+                self._attach_suffix(self._input_model, "modified.onnx"),
+                self._inputs,
                 reverse_only=True,
             )
-            for inp in self.inputs.values():
+            for inp in self._inputs.values():
                 if inp.mean_values is not None and inp.encoding_mismatch:
                     inp.mean_values = inp.mean_values[::-1]
                 if inp.scale_values is not None and inp.encoding_mismatch:
@@ -120,11 +121,11 @@ class RVC2Exporter(Exporter):
                     inp.encoding.from_ = Encoding.BGR
                     inp.encoding.to = Encoding.BGR
 
-        if not self.onnx_optimizations.all_disabled():
+        if not self._onnx_optimizations.all_disabled():
             onnx_modifier = ONNXModifier(
-                model_path=self.input_model,
+                model_path=self._input_model,
                 output_path=self._attach_suffix(
-                    self.input_model, "modified_optimized.onnx"
+                    self._input_model, "modified_optimized.onnx"
                 ),
                 skip_optimization=True,
             )
@@ -132,12 +133,12 @@ class RVC2Exporter(Exporter):
             try:
                 if (
                     onnx_modifier.modify_onnx(
-                        **self.onnx_optimizations.model_dump()
+                        **self._onnx_optimizations.model_dump()
                     )
                     and onnx_modifier.compare_outputs()
                 ):
                     logger.info("ONNX model has been optimized for RVC2.")
-                    shutil.move(onnx_modifier.output_path, self.input_model)
+                    shutil.move(onnx_modifier.output_path, self._input_model)
             except Exception as e:  # pragma: no cover
                 logger.warning(
                     f"Failed to optimize ONNX model: {e}. "
@@ -149,7 +150,7 @@ class RVC2Exporter(Exporter):
 
         mean_values_str = ""
         scale_values_str = ""
-        for name, inp in self.inputs.items():
+        for name, inp in self._inputs.items():
             # Append mean values in a similar style
             if inp.is_color_input and inp.mean_values is not None:
                 if mean_values_str:
@@ -173,21 +174,21 @@ class RVC2Exporter(Exporter):
 
         # Append reverse_input_channels flag only once if needed
         reverse_input_flag = any(
-            inp.encoding_mismatch for inp in self.inputs.values()
+            inp.encoding_mismatch for inp in self._inputs.values()
         )
         if reverse_input_flag:
-            self.reverse_input_channels = True
+            self._reverse_input_channels = True
             args.append("--reverse_input_channels")
 
-        self._add_args(args, ["--input_model", self.input_model])
+        self._add_args(args, ["--input_model", self._input_model])
 
         self._subprocess_run(["mo", *args], meta_name="model_optimizer")
 
         logger.info(f"OpenVINO IR exported to {self.output_dir}")
-        return self.input_model.with_suffix(".xml")
+        return self._input_model.with_suffix(".xml")
 
     def _check_reverse_channels(self) -> bool:
-        reverses = [inp.encoding_mismatch for inp in self.inputs.values()]
+        reverses = [inp.encoding_mismatch for inp in self._inputs.values()]
         return all(reverses) or not any(reverses)
 
     @staticmethod
@@ -204,13 +205,13 @@ class RVC2Exporter(Exporter):
         logger.info("Converting TFLite model to ONNX.")
         logger.warning("The TFLite to ONNX conversion is experimental.")
 
-        onnx_path = self.input_model.with_suffix(".onnx")
-        tflite2onnx.convert(str(self.input_model), str(onnx_path))
+        onnx_path = self._input_model.with_suffix(".onnx")
+        tflite2onnx.convert(str(self._input_model), str(onnx_path))
 
-        self.input_model = onnx_path
-        self.input_file_type = InputFileType.ONNX
+        self._input_model = onnx_path
+        self._input_file_type = InputFileType.ONNX
 
-        for name, inp in self.inputs.items():
+        for name, inp in self._inputs.items():
             if (
                 inp.encoding.from_ == Encoding.NONE
                 or not inp.layout
@@ -225,7 +226,7 @@ class RVC2Exporter(Exporter):
                 if len(lt) == 4 and lt[0] == "N":
                     if not OV_2021:
                         self._add_args(
-                            self.mo_args, ["--layout", f"{name}(nchw->nhwc)"]
+                            self._mo_args, ["--layout", f"{name}(nchw->nhwc)"]
                         )
                     inp.shape = [sh[0], sh[3], sh[1], sh[2]]
                     inp.layout = f"{lt[0]}{lt[3]}{lt[1]}{lt[2]}"
@@ -233,38 +234,39 @@ class RVC2Exporter(Exporter):
                 elif len(inp.layout) == 3:
                     if not OV_2021:
                         self._add_args(
-                            self.mo_args, ["--layout", f"{name}(chw->hwc)"]
+                            self._mo_args, ["--layout", f"{name}(chw->hwc)"]
                         )
                     inp.shape = [sh[2], sh[0], sh[1]]
                     inp.layout = f"{lt[2]}{lt[0]}{lt[1]}"
 
     def export(self) -> Path:
-        if self.input_file_type == InputFileType.TFLITE:
+        if self._input_file_type == InputFileType.TFLITE:
             self._transform_tflite_to_onnx()
 
-        if self.input_file_type == InputFileType.ONNX:
+        if self._input_file_type == InputFileType.ONNX:
             xml_path = self._export_openvino_ir()
-        elif self.input_file_type == InputFileType.IR:
-            xml_path = self.input_model
+        elif self._input_file_type == InputFileType.IR:
+            xml_path = self._input_model
         else:
             raise NotImplementedError
 
         self._inference_model_path = xml_path
-        args = self.compile_tool_args
-        self._add_args(args, ["-d", self.device])
+        args = self._compile_tool_args
+        self._add_args(args, ["-d", self._device])
         if "-iop" not in args:
             self._add_args(args, ["-ip", "U8"])
 
         args += ["-m", xml_path]
 
-        if self.superblob:
-            return self.compile_superblob(args)
+        if self._superblob:
+            return self._compile_superblob(args)
 
-        return self.compile_blob(args).blob_path
+        return self._compile_blob(args).blob_path
 
-    def compile_blob(self, args: list) -> CompileResult:
+    def _compile_blob(self, args: list) -> CompileResult:
         output_path = (
-            self.output_dir / f"{self.model_name}-{self.target.name.lower()}"
+            self.output_dir
+            / f"{self._model_name}-{self.platform.name.lower()}"
         )
 
         if "-o" not in args:
@@ -277,7 +279,7 @@ class RVC2Exporter(Exporter):
             args += [
                 "-c",
                 self._write_config(
-                    self.number_of_shaves, self.number_of_cmx_slices
+                    self._number_of_shaves, self._number_of_cmx_slices
                 ),
             ]
 
@@ -287,7 +289,7 @@ class RVC2Exporter(Exporter):
         logger.info(f"Blob compiled to {blob_output_path}")
         return CompileResult(blob_output_path, result)
 
-    def compile_superblob(self, args: list[str]) -> Path:
+    def _compile_superblob(self, args: list[str]) -> Path:
         from pebble import ThreadPool
 
         blobs_directory = self.intermediate_outputs_dir / "blobs"
@@ -296,12 +298,12 @@ class RVC2Exporter(Exporter):
         orig_args = args.copy()
 
         # Base blob compile to get peak RAM usage
-        default_blob_path, result = self.compile_blob(
+        default_blob_path, result = self._compile_blob(
             [
                 *orig_args,
                 "-o",
                 blobs_directory
-                / f"{self.model_name}_{DEFAULT_SUPER_SHAVES}shave.blob",
+                / f"{self._model_name}_{DEFAULT_SUPER_SHAVES}shave.blob",
                 "-c",
                 self._write_config(DEFAULT_SUPER_SHAVES, DEFAULT_SUPER_SHAVES),
             ]
@@ -316,14 +318,14 @@ class RVC2Exporter(Exporter):
         n_workers = int(
             max(1, min(cpu_count(), 15, avail_ram // base_peak_mem - 1))
         )
-        if self.n_workers is not None:  # pragma: no cover
-            if self.n_workers > n_workers:
+        if self._n_workers is not None:  # pragma: no cover
+            if self._n_workers > n_workers:
                 logger.warning(
-                    f"Requested {self.n_workers} workers, which is "
+                    f"Requested {self._n_workers} workers, which is "
                     f"more than the recommended {n_workers} based on "
                     "available RAM. This may lead to out-of-memory errors."
                 )
-            n_workers = self.n_workers
+            n_workers = self._n_workers
 
         logger.info(f"Available RAM: {avail_ram // 1e9} GB")
         logger.info(f"Base compile peak: {base_peak_mem // 1e6} MB")
@@ -340,11 +342,11 @@ class RVC2Exporter(Exporter):
             args = orig_args.copy()
             args += ["-c", RVC2Exporter._write_config(shaves, shaves)]
             blob_path = (
-                blobs_directory / f"{self.model_name}_{shaves}shave.blob"
+                blobs_directory / f"{self._model_name}_{shaves}shave.blob"
             )
             default_blob_path = (
                 blobs_directory
-                / f"{self.model_name}_{DEFAULT_SUPER_SHAVES}shave.blob"
+                / f"{self._model_name}_{DEFAULT_SUPER_SHAVES}shave.blob"
             )
             args += ["-o", blob_path]
 
@@ -402,7 +404,7 @@ class RVC2Exporter(Exporter):
 
         logger.info(f"Superblob compiled in {time.time() - t:.2f} seconds.")
 
-        superblob_path = self.output_dir / f"{self.model_name}.superblob"
+        superblob_path = self.output_dir / f"{self._model_name}.superblob"
 
         idx2patch = {
             int(patch_name.stem.split("_")[-1][:-5]): patch_name
@@ -436,7 +438,7 @@ class RVC2Exporter(Exporter):
         logger.info(f"Superblob compiled to {superblob_path}")
         return superblob_path
 
-    def exporter_buildinfo(self) -> dict[str, Any]:
+    def exporter_buildinfo(self) -> Params:
         mo_version = (
             subprocess.run(
                 ["mo", "--version"], capture_output=True, check=False
@@ -457,12 +459,12 @@ class RVC2Exporter(Exporter):
             "model_optimizer_version": mo_version,
             "compile_tool_version": compile_tool_version,
             "compile_tool_build": compile_tool_build,
-            "target_devices": [self.device],
+            "target_devices": [self._device],
             **self._device_specific_buildinfo,
         }
 
 
-def _lst_join(args: Iterable[Any], sep: str = ",") -> str:
+def _lst_join(args: Iterable[int | float], sep: str = ",") -> str:
     return f"[{sep.join(map(str, args))}]"
 
 

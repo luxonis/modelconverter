@@ -13,7 +13,7 @@ from modelconverter.utils import DeviceHandler
 
 
 class DeviceMonitor:
-    DSP_SYS_MON_APP: Final[str] = "/usr/bin/sysMonApp"
+    _DSP_SYS_MON_APP: Final[str] = "/usr/bin/sysMonApp"
 
     def __init__(
         self,
@@ -21,14 +21,14 @@ class DeviceMonitor:
         interval: float = 0.5,
         model: Literal["4d", "4s", "4lite"] = "4lite",
     ) -> None:
-        self.device_handler = device_handler
-        self.interval = interval
-        self.hwmon0_exists = self.check_hwmon("hwmon0")
-        self.hwmon1_exists = self.check_hwmon("hwmon1")
-        self.dsp_exists = self.check_dsp()
-        self.model = model
+        self._device_handler = device_handler
+        self._interval = interval
+        self._hwmon0_exists = self._check_hwmon("hwmon0")
+        self._hwmon1_exists = self._check_hwmon("hwmon1")
+        self._dsp_exists = self._check_dsp()
+        self._model = model
 
-        self.measurements: dict[str, list[float]] = {}
+        self._measurements: dict[str, list[float]] = {}
         self._running = False
         self._thread = None
 
@@ -47,19 +47,19 @@ class DeviceMonitor:
     ) -> None:
         self.stop()
 
-    def read(self) -> dict[str, float | None]:
+    def _read(self) -> dict[str, float | None]:
         return (
-            self.read_power()
-            | self.read_ram()
-            | self.read_cpu()
-            | self.read_dsp()
-            | self.read_temp()
+            self._read_power()
+            | self._read_ram()
+            | self._read_cpu()
+            | self._read_dsp()
+            | self._read_temps()
         )
 
     def get_stats(self) -> dict[str, float | None]:
         stats = {}
 
-        for key, values in self.measurements.items():
+        for key, values in self._measurements.items():
             if "dsp_freq_" in key or "power_collapse" in key:
                 stats[key] = sum(values)
             else:
@@ -75,13 +75,13 @@ class DeviceMonitor:
         if self._running:
             return
         time.sleep(1)  # Small delay to avoid overlapping ADB commands
-        self.reset()
+        self._reset()
         self._running = True
-        self._thread = threading.Thread(target=self.loop, daemon=True)
+        self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
-    def reset(self) -> None:
-        self.measurements = {}
+    def _reset(self) -> None:
+        self._measurements = {}
         self._prev_cpu_times = None
 
     def stop(self) -> None:
@@ -91,20 +91,20 @@ class DeviceMonitor:
         if self._thread is not None:
             self._thread.join()
 
-    def loop(self) -> None:
+    def _loop(self) -> None:
         """Internal sampling loop executed in the background thread."""
         while self._running:
             try:
-                val = self.read()
+                val = self._read()
                 for key, value in val.items():
                     if value is not None:
-                        self.measurements.setdefault(key, []).append(value)
+                        self._measurements.setdefault(key, []).append(value)
             except Exception as e:
                 logger.exception("Monitor read failed")
                 logger.debug(f"Monitor read error details: {e}")
-            time.sleep(self.interval)
+            time.sleep(self._interval)
 
-    def read_temp(self) -> dict[str, float | None]:
+    def _read_temps(self) -> dict[str, float | None]:
         temps = {
             f"temp_zone{zone}": self._read_temp(zone) for zone in range(92, 97)
         }
@@ -118,7 +118,7 @@ class DeviceMonitor:
 
     def _read_temp(self, zone: int) -> float | None:
         try:
-            _, out, _ = self.device_handler.shell(
+            _, out, _ = self._device_handler.shell(
                 f"cat /sys/class/thermal/thermal_zone{zone}/temp"
             )
             temp = int(out) / 1000  # m°C -> °C
@@ -131,12 +131,12 @@ class DeviceMonitor:
             return temp
 
     def _read_hwmon(self, hwmon: str) -> float | None:
-        if hwmon == "hwmon0" and not self.hwmon0_exists:
+        if hwmon == "hwmon0" and not self._hwmon0_exists:
             return None
-        if hwmon == "hwmon1" and not self.hwmon1_exists:
+        if hwmon == "hwmon1" and not self._hwmon1_exists:
             return None
         try:
-            _, out, _ = self.device_handler.shell(
+            _, out, _ = self._device_handler.shell(
                 f"cat /sys/class/hwmon/{hwmon}/power1_input"
             )
             return int(out) / 1_000_000  # µW -> W
@@ -144,9 +144,9 @@ class DeviceMonitor:
             logger.warning(f"Failed to read {hwmon} power value.")
             return None
 
-    def read_cpu_frequency(self) -> float | None:
+    def _read_cpu_frequency(self) -> float | None:
         try:
-            _, out, _ = self.device_handler.shell(
+            _, out, _ = self._device_handler.shell(
                 "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
             )
             return int(out) / 1000  # kHz -> MHz
@@ -155,10 +155,10 @@ class DeviceMonitor:
             logger.debug(f"Processor frequency read error details: {e}")
             return None
 
-    def read_ram(self) -> dict[str, float | None]:
+    def _read_ram(self) -> dict[str, float | None]:
         """Return used RAM in MiB."""
         try:
-            _, out, _ = self.device_handler.shell("cat /proc/meminfo")
+            _, out, _ = self._device_handler.shell("cat /proc/meminfo")
             meminfo = {}
 
             for line in out.splitlines():
@@ -183,14 +183,14 @@ class DeviceMonitor:
             logger.debug(f"RAM read error details: {e}")
             return {"ram_used": None}
 
-    def read_cpu_utilization(self) -> float | None:
+    def _read_cpu_utilization(self) -> float | None:
         """Return total CPU utilization in percent based on /proc/stat
         deltas.
 
         The first call returns None because a previous sample is needed.
         """
         try:
-            _, out, _ = self.device_handler.shell("cat /proc/stat")
+            _, out, _ = self._device_handler.shell("cat /proc/stat")
             first_line = out.splitlines()[0].strip()
             parts = first_line.split()
 
@@ -228,13 +228,13 @@ class DeviceMonitor:
             logger.debug(f"CPU read error details: {e}")
             return None
 
-    def read_cpu(self) -> dict[str, float | None]:
+    def _read_cpu(self) -> dict[str, float | None]:
         return {
-            "cpu_frequency": self.read_cpu_frequency(),
-            "cpu_utilization": self.read_cpu_utilization(),
+            "cpu_frequency": self._read_cpu_frequency(),
+            "cpu_utilization": self._read_cpu_utilization(),
         }
 
-    def read_dsp(self) -> dict[str, float]:
+    def _read_dsp(self) -> dict[str, float]:
 
         def parse_freq_file(
             text: str,
@@ -266,11 +266,11 @@ class DeviceMonitor:
             return data, power_collapse, total_time
 
         try:
-            _, out, _ = self.device_handler.shell(
-                f"{self.DSP_SYS_MON_APP} getPowerStats --q6 cdsp"
+            _, out, _ = self._device_handler.shell(
+                f"{self._DSP_SYS_MON_APP} getPowerStats --q6 cdsp"
             )
-            self.device_handler.shell(
-                f"{self.DSP_SYS_MON_APP} getPowerStats --clear 1 --q6 cdsp"
+            self._device_handler.shell(
+                f"{self._DSP_SYS_MON_APP} getPowerStats --clear 1 --q6 cdsp"
             )
             hist, power_collapse, total_time = parse_freq_file(out)
             total_time = total_time or sum(hist.values())
@@ -295,9 +295,9 @@ class DeviceMonitor:
                 for freq, value in hist.items()
             }
 
-    def check_hwmon(self, hwmon: str) -> bool:
+    def _check_hwmon(self, hwmon: str) -> bool:
         try:
-            self.device_handler.shell(
+            self._device_handler.shell(
                 f"ls /sys/class/hwmon/{hwmon}/power1_input"
             )
         except Exception as e:
@@ -309,7 +309,7 @@ class DeviceMonitor:
             return False
         return True
 
-    def read_power(self) -> dict[str, float | None]:
+    def _read_power(self) -> dict[str, float | None]:
         system = self._read_hwmon("hwmon0")
         proc = self._read_hwmon("hwmon1")
         return {
@@ -317,10 +317,10 @@ class DeviceMonitor:
             "power_processor": proc,
         }
 
-    def check_dsp(self) -> bool:
+    def _check_dsp(self) -> bool:
         try:
-            self.device_handler.shell(
-                f"{self.DSP_SYS_MON_APP} getPowerStats --q6 cdsp --clear 1"
+            self._device_handler.shell(
+                f"{self._DSP_SYS_MON_APP} getPowerStats --q6 cdsp --clear 1"
             )
         except Exception:
             logger.exception(

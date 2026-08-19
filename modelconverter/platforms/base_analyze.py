@@ -9,15 +9,15 @@ from modelconverter.utils import resolve_path, subprocess_run
 
 class Analyzer(ABC):
     def __init__(self, dlc_model_path: str, image_dirs: dict[str, str]):
-        self.image_dirs: dict[str, Path] = {}
+        self._image_dirs: dict[str, Path] = {}
         for key, value in image_dirs.items():
-            self.image_dirs[key] = resolve_path(value, Path.cwd())
+            self._image_dirs[key] = resolve_path(value, Path.cwd())
 
         self._check_dir_sizes()
-        self.dlc_model_path: Path = resolve_path(dlc_model_path, Path.cwd())
-        self.model_name: str = self.dlc_model_path.stem
-        self.input_sizes, self.data_types = self._get_input_sizes()
-        self.output_sizes: dict[str, list[int]] = self._get_output_sizes()
+        self._dlc_model_path: Path = resolve_path(dlc_model_path, Path.cwd())
+        self._model_name: str = self._dlc_model_path.stem
+        self._input_sizes, self._data_types = self._get_input_sizes()
+        self._output_sizes: dict[str, list[int]] = self._get_output_sizes()
 
     @abstractmethod
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None: ...
@@ -31,7 +31,7 @@ class Analyzer(ABC):
             [
                 "snpe-dlc-info",
                 "-i",
-                self.dlc_model_path,
+                self._dlc_model_path,
                 "-s",
                 csv_path,
             ],
@@ -62,12 +62,12 @@ class Analyzer(ABC):
         return sizes, data_types
 
     def _validate_inputs(self, input_sizes: dict[str, list[int]]) -> None:
-        if len(self.image_dirs.keys()) == 1 and len(input_sizes.keys()) == 1:
+        if len(self._image_dirs.keys()) == 1 and len(input_sizes.keys()) == 1:
             new_input_name = next(iter(input_sizes.keys()))
-            self.image_dirs = {new_input_name: self.image_dirs.popitem()[1]}
+            self._image_dirs = {new_input_name: self._image_dirs.popitem()[1]}
             return
 
-        for name in self.image_dirs:
+        for name in self._image_dirs:
             if name not in input_sizes:
                 raise ValueError(
                     f"The provided input name '{name}' does not match any of the DLC model's input names: {input_sizes.keys()}"
@@ -94,7 +94,14 @@ class Analyzer(ABC):
     def _get_output_sizes(self) -> dict[str, list[int]]:
         csv_path = Path("info.csv")
         subprocess_run(
-            ["snpe-dlc-info", "-i", self.dlc_model_path, "-m", "-s", csv_path],
+            [
+                "snpe-dlc-info",
+                "-i",
+                self._dlc_model_path,
+                "-m",
+                "-s",
+                csv_path,
+            ],
             silent=True,
         )
         lines = csv_path.read_text().splitlines()
@@ -131,7 +138,7 @@ class Analyzer(ABC):
 
     def _check_dir_sizes(self) -> None:
         dir_lengths = [
-            len(list(v.iterdir())) for v in self.image_dirs.values()
+            len(list(v.iterdir())) for v in self._image_dirs.values()
         ]
 
         if len(set(dir_lengths)) > 1:
