@@ -720,12 +720,14 @@ class RVC4Benchmark(Benchmark):
                     model_id=model_variant.model_id,
                     variant_id=model_variant.id,
                     is_public=is_public,
+                    limit=500,
                 )
             )
         for instance in model_instances:
-            if [platform.value for platform in instance.platforms or []] == [
-                "RVC4"
-            ] and (
+            if any(
+                platform.value == "RVC4"
+                for platform in instance.platforms or []
+            ) and (
                 self.model_instance is None
                 or instance.hash_short == self.model_instance
             ):
