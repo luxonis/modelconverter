@@ -159,6 +159,7 @@ class RVC4Exporter(Exporter):
         self._add_args(args, ["--input_dlc", dlc_path])
         self._add_args(args, ["--output_dlc", quantized_dlc_path])
 
+        # INT16_STD uses the native W16A16 path; per-channel quantization caused severe target-side degradation.
         if (
             self.use_per_channel_quantization
             and self.quantization_mode != QuantizationMode.INT16_STD
