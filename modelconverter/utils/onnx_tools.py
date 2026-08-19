@@ -1,3 +1,12 @@
+"""ONNX graph utilities shared by the conversion backends.
+
+Holds the passes modelconverter applies to an ONNX model before handing
+it over to a target's vendor toolchain: baking the configured input
+normalization (channel reversal, mean subtraction and scaling) into the
+graph, and simplifying, optimizing and fusing the graph with
+``onnxsim``, ``onnxruntime`` and ``onnx_graphsurgeon``.
+"""
+
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -26,6 +35,18 @@ import onnx_graphsurgeon as gs  # noqa: E402
 
 
 def get_opset_version(model: onnx.ModelProto) -> int:
+    """Return the default domain opset version of an ONNX model.
+
+    Args:
+        model: Model whose ``opset_import`` is searched.
+
+    Returns:
+        Opset version declared for the default (empty) domain.
+
+    Raises:
+        ONNXException: If the model declares no default domain opset.
+
+    """
     for imp in model.opset_import:
         if imp.domain == "":
             return imp.version
@@ -39,6 +60,43 @@ def onnx_attach_normalization_to_inputs(
     *,
     reverse_only: bool = False,
 ) -> Path:
+    r"""Bake the input normalization into an ONNX model's graph.
+
+    For every input that requires it, channel reversal (``Split`` and
+    ``Concat``), mean subtraction (``Sub``) and scaling (``Mul`` by the
+    reciprocal of the scale) nodes are inserted in front of the input,
+    so that the graph itself computes
+
+    .. math::
+
+        y_c = (x_c - \mathrm{mean}_c) \cdot \frac{1}{\mathrm{scale}_c}
+
+    for every channel :math:`c`. The resulting model is saved and
+    validated with the ONNX checker. Inputs whose layout is neither
+    ``"NCHW"`` nor ``"NHWC"``, and inputs with a known channel count
+    other than 3, are skipped with a warning.
+
+    .. warning::
+        The mean and scale values of an input whose channels are
+        reversed are reversed in place, so the `InputConfig` objects
+        the caller passed in are modified.
+
+    Args:
+        model_path: Path to the source ONNX model.
+        save_path: Path the modified model is saved to.
+        input_configs: Input configurations keyed by input name.
+        reverse_only: If ``True``, only the channel reversal is applied
+            and the mean and scale values are ignored.
+
+    Returns:
+        ``save_path`` if any input required modification, otherwise the
+        unmodified ``model_path``.
+
+    Raises:
+        ONNXException: If ``input_configs`` names a tensor that is not
+            an input of the graph.
+
+    """
     if not any(
         cfg.requires_onnx_input_modification(reverse_only=reverse_only)
         for cfg in input_configs.values()
@@ -239,13 +297,10 @@ class ONNXModifier:
     """ONNX model modifier class to optimize and modify the ONNX model.
 
     Attributes:
-    ----------
-    model_path : Path
-        Path to the base ONNX model
-    output_path : Path
-        Path to save the modified ONNX model
-    skip_optimization : bool
-        Flag to skip optimization of the ONNX model
+        model_path: Path to the base ONNX model.
+        output_path: Path to save the modified ONNX model.
+        skip_optimization: Flag to skip optimization of the ONNX model.
+
     """
 
     def __init__(
@@ -255,6 +310,17 @@ class ONNXModifier:
         skip_optimization: bool = False,
         skip_constant_folding: bool = False,
     ) -> None:
+        """Load the ONNX model and prepare it for modification.
+
+        Args:
+            model_path: Path to the base ONNX model.
+            output_path: Path to save the modified ONNX model to.
+            skip_optimization: Whether to skip the graph optimization
+                performed while loading and exporting the model.
+            skip_constant_folding: Whether to skip constant folding
+                during simplification.
+
+        """
         self.model_path = model_path
         self.has_external_data = has_external_data(model_path)
         self.output_path = output_path
@@ -265,8 +331,9 @@ class ONNXModifier:
         self.prev_onnx_gs = self.onnx_gs
 
     def load_onnx(self) -> None:
-        """Load the ONNX model and store it as onnx.ModelProto and
-        onnx_graphsurgeon.GraphSurgeon graph."""
+        """Load the ONNX model and store it as ``onnx.ModelProto`` and
+        ``onnx_graphsurgeon`` graph.
+        """
         logger.info(f"Loading model: {self.model_path.stem}")
 
         try:
@@ -298,12 +365,7 @@ class ONNXModifier:
         self.onnx_gs = gs.import_onnx(self.onnx_model)
 
     def optimize_onnx(self) -> None:
-        """Optimize and simplify the ONNX model's graph.
-
-        @param passes: List of optimization passes to apply to the ONNX
-            model
-        @type passes: Optional[List[str]]
-        """
+        """Optimize and simplify the ONNX model's graph."""
         self.onnx_model.ir_version = min(self.onnx_model.ir_version, 10)
 
         if self.skip_optimization:
@@ -361,12 +423,7 @@ class ONNXModifier:
         )
 
     def export_onnx(self) -> None:
-        """Export the modified ONNX model to the output path.
-
-        @param passes: List of optimization passes to apply to the ONNX
-            model
-        @type passes: Optional[List[str]]
-        """
+        """Export the modified ONNX model to the output path."""
         self.optimize_onnx()
 
         self.onnx_model.ir_version = min(self.onnx_model.ir_version, 10)
@@ -382,9 +439,10 @@ class ONNXModifier:
     def add_outputs(self, output_names: list[str]) -> None:
         """Add output nodes to the ONNX model.
 
-        @param output_names: List of output node names to add to the
-            ONNX model
-        @type output_names: List[str]
+        Args:
+            output_names: List of output node names to add to the ONNX
+                model.
+
         """
         graph_outputs = [output.name for output in self.onnx_gs.outputs]
         for name, tensor in self.onnx_gs.tensors().items():
@@ -395,11 +453,13 @@ class ONNXModifier:
     def get_constant_map(self, graph: gs.Graph) -> dict[str, np.ndarray]:
         """Extract constant tensors from the GraphSurgeon graph.
 
-        @param graph: GraphSurgeon graph
-        @type graph: gs.Graph
-        @return: Constant tensor map with tensor name as key and tensor
-            value as value
-        @rtype: Dict[str, np.ndarray]
+        Args:
+            graph: Graph whose ``gs.Constant`` tensors are collected.
+
+        Returns:
+            Constant tensor map with tensor name as key and tensor value
+            as value.
+
         """
         return {
             tensor.name: tensor.values
@@ -411,16 +471,17 @@ class ONNXModifier:
     def get_constant_value(
         node: gs.Node, constant_map: dict[str, np.ndarray]
     ) -> tuple[np.ndarray, int] | None:
-        """Returns the constant value of a node if it is a constant
-        node.
+        """Return the constant value of a node if it is a constant node.
 
-        @param node: Node to check
-        @type node: gs.Node
-        @param constant_map: Constant tensor map with tensor name as key
-            and tensor value as value
-        @type constant_map: Dict[str, np.ndarray]
-        @return: Constant tensor value and index
-        @rtype: Optional[Tuple[np.ndarray, int]]
+        Args:
+            node: Node whose inputs are searched for a constant.
+            constant_map: Constant tensor map with tensor name as key
+                and tensor value as value.
+
+        Returns:
+            Constant tensor value and index, or ``None`` if the node has
+            no constant input.
+
         """
         for idx, input in enumerate(node.inputs):
             if input.name in constant_map:
@@ -430,12 +491,15 @@ class ONNXModifier:
 
     @staticmethod
     def get_variable_input(node: gs.Node) -> tuple[gs.Variable, int] | None:
-        """Returns the variable input of a node.
+        """Return the variable input of a node.
 
-        @param node: Node to check
-        @type node: gs.Node
-        @return: Variable input and index
-        @rtype: Optional[Tuple[gs.Variable, int]]
+        Args:
+            node: Node whose inputs are searched for a variable.
+
+        Returns:
+            Variable input and index, or ``None`` if the node has no
+            variable input.
+
         """
         for idx, input in enumerate(node.inputs):
             if isinstance(input, gs.Variable):
@@ -449,16 +513,14 @@ class ONNXModifier:
         nodes_to_remove: list[gs.Node],
         connections_to_fix: list[tuple[gs.Variable, gs.Variable]],
     ) -> None:
-        """Cleanup the graph by adding new nodes, removing old nodes,
+        """Clean up the graph by adding new nodes, removing old nodes,
         and fixing connections.
 
-        @param nodes_to_add: List of nodes to add to the graph
-        @type nodes_to_add: List[gs.Node]
-        @param nodes_to_remove: List of nodes to remove from the graph
-        @type nodes_to_remove: List[gs.Node]
-        @param connections_to_fix: List of connections to fix in the
-            graph
-        @type connections_to_fix: List[Tuple[gs.Variable, gs.Variable]]
+        Args:
+            nodes_to_add: List of nodes to add to the graph.
+            nodes_to_remove: List of nodes to remove from the graph.
+            connections_to_fix: List of connections to fix in the graph.
+
         """
         for node in nodes_to_add:
             self.onnx_gs.nodes.append(node)
@@ -480,13 +542,19 @@ class ONNXModifier:
         self, source_node: str, target_node: str
     ) -> None:
         """Substitute a source node of a particular type with a target
-        node of a different type. Currently, only Sub -> Add and Div ->
-        Mul substitutions are allowed.
+        node of a different type.
 
-        @param source_node: Source node type to substitute
-        @type source_node: str
-        @param target_node: Target node type to substitute with
-        @type target_node: str
+        Currently, only ``Sub -> Add`` and ``Div -> Mul`` substitutions
+        are allowed.
+
+        Args:
+            source_node: Source node type to substitute.
+            target_node: Target node type to substitute with.
+
+        Raises:
+            ValueError: If the source and target node types do not form
+                an allowed substitution pair.
+
         """
         if source_node not in ["Sub", "Div"] or target_node not in [
             "Add",
@@ -775,7 +843,8 @@ class ONNXModifier:
 
     def fuse_single_add_mul_to_conv(self) -> None:
         """Fuse Add and Mul nodes that precede a Conv node directly into
-        the Conv node."""
+        the Conv node.
+        """
         nodes_to_remove = []
         connections_to_fix = []
 
@@ -1215,19 +1284,22 @@ class ONNXModifier:
         self.optimize_onnx()
 
     def revert_changes(self) -> None:
-        """Reverts ONNX model to previous state."""
+        """Revert the ONNX model to its previous state."""
         self.onnx_model = self.prev_onnx_model
         self.onnx_gs = self.prev_onnx_gs
 
     def apply_optimization_step(
         self, step_name: str, optimization_func: Callable
     ) -> None:
-        """Applies a single optimization step to the ONNX model.
+        """Apply a single optimization step to the ONNX model.
 
-        @param step_name: Name of the optimization step
-        @type step_name: str
-        @param optimization_func: Optimization function to apply
-        @type optimization_func: Callable
+        If the step fails or changes the model outputs, the model is
+        reverted to its previous state.
+
+        Args:
+            step_name: Name of the step, used in the debug log.
+            optimization_func: Optimization function to apply.
+
         """
         logger.debug(f"Attempting: {step_name}...")
         try:
@@ -1254,9 +1326,24 @@ class ONNXModifier:
     ) -> bool:
         """Modify the ONNX model by applying a series of optimizations.
 
-        @param passes: List of optimization passes to apply to the ONNX
-            model
-        @type passes: Optional[List[str]]
+        Args:
+            substitute_sub_with_add: Whether to substitute ``Sub`` nodes
+                with ``Add`` nodes.
+            substitute_div_with_mul: Whether to substitute ``Div`` nodes
+                with ``Mul`` nodes.
+            fuse_add_mul_to_bn: Whether to fuse ``Add`` and ``Mul`` nodes
+                into ``BatchNormalization`` nodes.
+            fuse_comb_add_mul_to_conv: Whether to fuse combinations of
+                ``Add`` and ``Mul`` nodes into ``Conv`` nodes.
+            fuse_single_add_mul_to_conv: Whether to fuse single ``Add``
+                and ``Mul`` nodes into ``Conv`` nodes.
+            fuse_split_concat_to_conv: Whether to fuse ``Split`` and
+                ``Concat`` nodes into ``Conv`` nodes.
+
+        Returns:
+            ``True`` if the model was modified and exported,
+            ``False`` otherwise.
+
         """
         if self.has_dynamic_shape:
             logger.warning(
@@ -1310,8 +1397,15 @@ class ONNXModifier:
     def compare_outputs(self, from_modelproto: bool = False) -> bool:
         """Compare the outputs of two ONNX models.
 
-        @param half: Flag to use half precision for the input tensors
-        @type half: bool
+        Args:
+            from_modelproto: If ``True``, compare the in-memory model
+                against its previous state instead of comparing the
+                model files on disk.
+
+        Returns:
+            ``True`` if the outputs of both models match,
+            ``False`` otherwise.
+
         """
         import onnxruntime as ort
 

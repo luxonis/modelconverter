@@ -1,3 +1,11 @@
+"""Export of models to the RVC3 platform.
+
+The pipeline is the RVC2 one -- ``mo`` produces an OpenVINO IR that
+``compile_tool`` compiles into a blob -- with INT8 post-training
+quantization by OpenVINO's POT inserted before the compilation. It runs
+inside the RVC3 Docker image.
+"""
+
 import json
 from pathlib import Path
 
@@ -21,9 +29,25 @@ from modelconverter.utils.types import (
 
 
 class RVC3Exporter(RVC2Exporter):
+    """Exporter producing an RVC3 blob, quantized to INT8 by default.
+
+    Reuses the OpenVINO conversion of `RVC2Exporter` but compiles for
+    the ``VPUX.3400`` device and, unless calibration is disabled,
+    quantizes the IR with POT before compiling it.
+    """
+
     target: Target = Target.RVC3
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
+        """Initialize the exporter from the RVC3 configuration.
+
+        Args:
+            config: Configuration of the stage to export. Its ``rvc3``
+                section supplies the RVC3-specific options.
+            output_dir: Directory the compiled model and the build
+                information are written to.
+
+        """
         Exporter.__init__(self, config=config, output_dir=output_dir)
 
         self.compress_to_fp16 = config.rvc3.compress_to_fp16
@@ -35,6 +59,23 @@ class RVC3Exporter(RVC2Exporter):
         self._device_specific_buildinfo = {}
 
     def export(self) -> Path:
+        """Convert the model and compile it for RVC3.
+
+        A TFLite input is first converted to ONNX, an ONNX input is
+        converted to an OpenVINO IR and an IR input is used as it is.
+        Unless calibration is disabled, the IR is then quantized to
+        INT8 and the quantized model is the one compiled; in that case
+        the process exits with an error for models with more than one
+        input, which quantization does not support yet.
+
+        Returns:
+            Path to the compiled ``.blob``.
+
+        Raises:
+            NotImplementedError: If the input file type is neither
+                TFLite, ONNX nor OpenVINO IR.
+
+        """
         if self.input_file_type == InputFileType.TFLITE:
             self._transform_tflite_to_onnx()
 
@@ -84,6 +125,24 @@ class RVC3Exporter(RVC2Exporter):
         return blob_output_path
 
     def calibrate(self, xml_path: Path) -> Path:
+        """Quantize an OpenVINO IR to INT8 with the POT tool.
+
+        The calibration images configured for the model's single input
+        are read, resized to the input shape and written into the
+        intermediate outputs directory, a POT config pointing at them
+        is generated, and ``pot`` is run on it. Requires the input to
+        use image calibration data.
+
+        Args:
+            xml_path: Path to the ``.xml`` of the IR to quantize.
+
+        Returns:
+            Path to the ``.xml`` of the quantized IR.
+
+        Raises:
+            ValueError: If the input has no shape.
+
+        """
         inp = next(iter(self.inputs.values()))
         calib = inp.calibration
         assert isinstance(calib, ImageCalibrationConfig)

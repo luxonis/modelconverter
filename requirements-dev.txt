@@ -1,4 +1,4 @@
-pre-commit~=4.6
+prek~=0.4.13
 pytest-cov~=7.1
 pytest-xdist~=3.5
 pytest-sugar~=1.1

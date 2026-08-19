@@ -1,3 +1,12 @@
+"""Conversion of multi-stage models.
+
+A multi-stage config describes several models that are converted
+together, and a stage may take its calibration data from the outputs of
+an earlier stage. This module converts the stages one by one with the
+exporter of the selected target, running the earlier stage's model with
+that target's inferer whenever such a link has to be resolved.
+"""
+
 import json
 import shutil
 from pathlib import Path
@@ -17,9 +26,32 @@ from .getters import get_exporter, get_inferer
 
 
 class MultiStageExporter:
+    """Exporter converting every stage of a multi-stage model.
+
+    The stages are converted in the order they appear in the config,
+    each by the exporter of the given target. Before a stage runs, any
+    of its inputs that is calibrated from another stage is resolved by
+    running that stage's model on its own calibration data and either
+    taking one of the produced outputs or passing all of them through a
+    user-supplied script.
+    """
+
     def __init__(
         self, target: Target, config: Config, output_dir: Path
     ) -> None:
+        """Create an exporter for every stage of the config.
+
+        Creates the output directory together with its
+        ``intermediate_outputs`` subdirectory and writes the resolved
+        config to ``config.yaml`` in the output directory.
+
+        Args:
+            target: Platform the stages are converted for.
+            config: Config describing all stages of the model.
+            output_dir: Directory the conversion results are written
+                to. Each stage gets a subdirectory named after it.
+
+        """
         self.config = config
         self.name = config.name
         self.target = target
@@ -134,6 +166,18 @@ class MultiStageExporter:
                 inp_config.calibration = ImageCalibrationConfig(path=dest)
 
     def run(self) -> list[Path]:
+        """Convert all stages of the model in order.
+
+        The calibration data linked to earlier stages is produced right
+        before the stage that needs it is converted. The
+        ``buildinfo.json`` files of the individual stages are merged
+        into a single one in the output directory, keyed by stage name.
+
+        Returns:
+            Paths of the converted models, in the order the stages were
+            converted.
+
+        """
         output_paths = []
         buildinfo = {}
         for stage_name in self.config.stages:

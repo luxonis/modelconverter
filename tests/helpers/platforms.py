@@ -12,7 +12,7 @@ ALL_PLATFORMS = ("rvc2", "rvc3", "rvc4", "hailo")
 def platform_marks(
     platform: str, xfail: str | None = None, skip: str | None = None
 ) -> list:
-    """The platform marker, plus an xfail or a skip when given a reason.
+    """Build the platform marker, plus an xfail or a skip when given a reason.
 
     A failing conversion exits rather than raising, hence ``raises=SystemExit``
     on the xfail. ``skip`` is for cases the current tool version will not run --

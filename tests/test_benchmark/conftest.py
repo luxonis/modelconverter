@@ -1,3 +1,10 @@
+"""Fixtures and options for the hardware-in-the-loop benchmarks.
+
+Adds the ``--benchmark-*`` command line options and exposes the HIL
+testbed, the device under test and the InfluxDB bucket the results are
+reported to.
+"""
+
 import os
 
 import pytest

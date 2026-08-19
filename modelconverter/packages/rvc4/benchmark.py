@@ -1,3 +1,13 @@
+"""Throughput and latency measurements on RVC4 devices.
+
+An RVC4 model can be measured in two ways, and `RVC4Benchmark` covers
+both: a DepthAI pipeline that feeds a neural network node as fast as it
+will accept data, and SNPE's own ``snpe-parallel-run``, which is
+executed on the device over ADB or SSH against inputs staged there
+beforehand. Power, DSP, memory and CPU usage can be sampled alongside
+either of them.
+"""
+
 import io
 import json
 import re
@@ -34,6 +44,16 @@ from modelconverter.utils.log_latency import (
 
 
 class InputSpec(OutputConfig):
+    """Description of one model input to generate benchmark data for.
+
+    Same as `OutputConfig`, except that the shape is required: a random
+    tensor cannot be made for an input whose shape is unknown.
+
+    Attributes:
+        shape: Shape of the input tensor.
+
+    """
+
     shape: list[int]  # type: ignore
 
 
@@ -57,6 +77,25 @@ RUNTIMES: dict[str, str] = {
 
 
 class RVC4Benchmark(Benchmark):
+    """Benchmark of an NN archive, a ``.dlc`` or a HubAI slug on RVC4.
+
+    Which of the two backends is used is decided by the
+    ``dai_benchmark`` option: a DepthAI pipeline, which also reports
+    per-inference latency but only accepts a ``.tar.xz`` archive or a
+    slug, or ``snpe-parallel-run`` run over the device handler, which
+    only reports throughput and takes a bare ``.dlc`` as well. Both
+    need the input tensor specifications, read from the DLC with
+    ``snpe-dlc-info`` and falling back to the NN archive when that is
+    unavailable.
+
+    Attributes:
+        MAX_REAL_SNPE_INPUTS: How many distinct random inputs are
+            written to the device for the SNPE backend. Anything beyond
+            that is hard-linked to them so that the device does not run
+            out of storage.
+
+    """
+
     MAX_REAL_SNPE_INPUTS = 100
 
     @property
@@ -72,6 +111,10 @@ class RVC4Benchmark(Benchmark):
             benchmark_time: Duration in seconds for time-based benchmarking (overrides repetitions).
             num_threads: The number of threads to use for inference (dai-benchmark only).
             num_messages: The number of messages to use for inference (dai-benchmark only).
+            device_ip: Address of the device to benchmark on, or None to use the first one found.
+            device_id: Device ID or ADB serial of the device to benchmark on, or None to use the first one found.
+            device_monitor: Whether to sample power, DSP, memory and CPU usage alongside the benchmark.
+
         """
         return {
             "profile": "balanced",
@@ -89,6 +132,7 @@ class RVC4Benchmark(Benchmark):
 
     @property
     def all_configurations(self) -> list[Configuration]:
+        """Return every SNPE profile at one and at two threads."""
         return [
             {"profile": profile, "num_threads": threads}
             for profile in PROFILES
@@ -291,6 +335,27 @@ class RVC4Benchmark(Benchmark):
             )
 
     def benchmark(self, configuration: Configuration) -> dict[str, Any]:
+        """Run one benchmark of the model on an RVC4 device.
+
+        Connects to the device, starts the device monitor if it was
+        asked for, and hands the run to the DepthAI or the SNPE backend.
+        Whatever the SNPE backend put on the device is removed again
+        afterwards.
+
+        .. warning::
+            ``configuration`` is modified in place: the keys the chosen
+            backend does not take are removed from it, and
+            ``device_ip`` is filled in with the address the device was
+            found at.
+
+        Args:
+            configuration: Options for this run.
+
+        Returns:
+            The measured ``fps`` and ``latency``, together with the
+            device monitor's readings when it was running.
+
+        """
         dai_benchmark = configuration.get("dai_benchmark")
         device_monitor = configuration.get("device_monitor")
 
@@ -756,12 +821,40 @@ class RVC4Benchmark(Benchmark):
 
 
 def device_id_to_adb_id(device_id: str) -> str:
+    """Convert a DepthAI device ID into an ADB serial.
+
+    Args:
+        device_id: The device ID as DepthAI reports it.
+
+    Returns:
+        The hexadecimal form of the ID if it is a number, otherwise the
+        hex encoding of its ASCII bytes.
+
+    Example:
+        >>> device_id_to_adb_id("1844301")
+        '1c244d'
+
+    """
     if device_id.isdigit():
         return format(int(device_id), "x")
     return device_id.encode("ascii").hex()
 
 
 def adb_id_to_device_id(adb_id: str) -> str:
+    """Convert an ADB serial back into a DepthAI device ID.
+
+    Args:
+        adb_id: The serial ADB knows the device by.
+
+    Returns:
+        The decimal form of the serial if it reads as a hexadecimal
+        number, otherwise the ASCII text its bytes spell out.
+
+    Example:
+        >>> adb_id_to_device_id("1c244d")
+        '1844301'
+
+    """
     try:
         int_id = int(adb_id, 16)
         return str(int_id)
@@ -773,6 +866,24 @@ def adb_id_to_device_id(adb_id: str) -> str:
 def get_device_info(
     device_ip: str | None, device_id: str | None
 ) -> tuple[str | None, str | None]:
+    """Work out how to reach the device the user asked for.
+
+    A device ID is looked up among the connected devices, and a mismatch
+    between the address found there and the one that was passed is only
+    warned about. An address that does not come out of that lookup is
+    connected to directly, to read the ID off the device.
+
+    Args:
+        device_ip: Address of the device, if one was given.
+        device_id: Device ID or ADB serial of the device, if one was
+            given.
+
+    Returns:
+        The address and the ADB serial of the device. Both are ``None``
+        when neither argument was given, and when only a device ID was
+        given and no connected device matched it.
+
+    """
     if not device_ip and not device_id:
         return None, None
 

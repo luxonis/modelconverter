@@ -1,3 +1,11 @@
+"""Benchmarking of converted models on an RVC2 device.
+
+Runs a ``.blob`` or an NN Archive on a connected RVC2 device through a
+DepthAI benchmark pipeline, feeding it random data of the shape the
+model declares, and reports the throughput and the inference latency the
+device logs.
+"""
+
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +21,8 @@ from modelconverter.utils.log_latency import (
 
 
 class RVC2Benchmark(Benchmark):
+    """Benchmark of a model running on a connected RVC2 device."""
+
     @property
     def default_configuration(self) -> Configuration:
         """Default configuration for RVC2 benchmarking.
@@ -21,8 +31,9 @@ class RVC2Benchmark(Benchmark):
             repetitions: The number of repetitions to perform (ignored if
             benchmark_time is set).
 
-            benchmark_time: Duration in seconds for time-based benchmarking (overrides repetitions).
-            num_messages: The number of messages to send for benchmarking.
+            benchmark_time: Duration in seconds for time-based
+            benchmarking (overrides repetitions).
+            num_messages: The number of messages measured for each report.
             num_threads: The number of threads to use for inference.
         """
         return {
@@ -34,9 +45,26 @@ class RVC2Benchmark(Benchmark):
 
     @property
     def all_configurations(self) -> list[Configuration]:
+        """Return the configurations used by the full benchmark.
+
+        Covers one, two and three inference threads, leaving the
+        remaining options to the caller.
+        """
         return [{"num_threads": i} for i in [1, 2, 3]]
 
     def benchmark(self, configuration: Configuration) -> dict[str, Any]:
+        """Run a single benchmark of the model on the device.
+
+        Args:
+            configuration: Configuration to benchmark with. All the
+                options of `default_configuration` must be present.
+
+        Returns:
+            The mean throughput under ``fps`` and the mean inference
+            latency in milliseconds under ``latency``, the latter being
+            ``"N/A"`` when the device logged no latency at all.
+
+        """
         return self._benchmark(self.model_path, **configuration)
 
     @staticmethod

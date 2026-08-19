@@ -1,3 +1,11 @@
+"""Execution of external commands used by the conversions.
+
+The conversions drive vendor toolchains through their command line
+tools. The helpers here run such a command, stream its output to the
+log with ANSI escape sequences removed, and record the peak memory
+usage and the wall-clock run time of the whole process tree.
+"""
+
 import io
 import re
 import shutil
@@ -15,10 +23,29 @@ from typing_extensions import Self
 
 
 class SubprocessResult(subprocess.CompletedProcess):
-    """Extension of subprocess.CompletedProcess that also carries peak
-    memory usage."""
+    """Extension of ``subprocess.CompletedProcess`` that also carries peak
+    memory usage.
+
+    Attributes:
+        peak_memory: Peak memory usage of the process and its children,
+            in bytes.
+        total_time: Wall-clock run time of the process, in seconds.
+
+    """
 
     def __init__(self, *args, peak_memory: int, total_time: float, **kwargs):
+        """Initialize the result.
+
+        Args:
+            *args: Positional arguments passed to
+                ``subprocess.CompletedProcess``.
+            peak_memory: Peak memory usage of the process and its
+                children, in bytes.
+            total_time: Wall-clock run time of the process, in seconds.
+            **kwargs: Keyword arguments passed to
+                ``subprocess.CompletedProcess``.
+
+        """
         super().__init__(*args, **kwargs)
         self.peak_memory = peak_memory
         self.total_time = total_time
@@ -34,6 +61,7 @@ class SubprocessResult(subprocess.CompletedProcess):
         return f"{mem:.2f} GB"
 
     def __repr__(self) -> str:
+        """Return the base representation with memory and run time."""
         base = super().__repr__()
         return (
             f"{base.rstrip(')')}, "
@@ -42,9 +70,16 @@ class SubprocessResult(subprocess.CompletedProcess):
         )
 
     def __str__(self) -> str:
+        """Return the representation of the result."""
         return repr(self)
 
     def __rich_repr__(self) -> Iterator[tuple[str, Any]]:
+        """Yield the fields used by ``rich`` to render the result.
+
+        Yields:
+            Tuples of field name and field value.
+
+        """
         yield "args", self.args
         yield "returncode", self.returncode
         yield "stdout", self.stdout
@@ -55,7 +90,8 @@ class SubprocessResult(subprocess.CompletedProcess):
 
 class SubprocessHandle:
     """Context manager wrapping a subprocess with live psutil access and
-    deferred result collection."""
+    deferred result collection.
+    """
 
     def __init__(
         self,
@@ -66,16 +102,15 @@ class SubprocessHandle:
     ):
         """Initialize the subprocess handle.
 
-        @type args: str | list[Any]
-        @param args: Command to execute. If a string is given, it will
-            be split on whitespace. If a list is given, each element
-            will be converted to a string.
-        @type silent: bool
-        @param silent: If True, suppress all output from the command.
-        @type timeout: float | None
-        @param timeout: If given, the maximum time in seconds to allow
-            the process to run. If the timeout is exceeded, the process
-            will be
+        Args:
+            cmd: Command to execute. If a string is given, it will be
+                split on whitespace. If a list is given, each element
+                will be converted to a string.
+            silent: If ``True``, suppress all output from the command.
+            timeout: If given, the maximum time in seconds to allow the
+                process to run. If the timeout is exceeded, the process
+                is terminated and ``subprocess.TimeoutExpired`` is raised.
+
         """
         if isinstance(cmd, str):
             self.cmd = cmd.split()
@@ -96,6 +131,12 @@ class SubprocessHandle:
 
     @property
     def proc(self) -> subprocess.Popen:
+        """Return the underlying ``subprocess.Popen`` object.
+
+        Raises:
+            RuntimeError: If the process has not been started yet.
+
+        """
         if self._proc is None:
             raise RuntimeError(
                 "Process not started yet. "
@@ -105,6 +146,12 @@ class SubprocessHandle:
 
     @property
     def ps_proc(self) -> psutil.Process:
+        """Return the ``psutil.Process`` wrapping the process.
+
+        Raises:
+            RuntimeError: If the process has not been started yet.
+
+        """
         if self._ps_proc is None:
             raise RuntimeError(
                 "Process not started yet. "
@@ -115,7 +162,14 @@ class SubprocessHandle:
     def __bool__(self) -> bool:
         """Return whether the process is still running.
 
-        Also checks for timeout and raises TimeoutExpired if exceeded.
+        .. warning::
+            Truth-testing the handle is not side-effect free: a
+            ``while handle:`` loop is what enforces the timeout.
+
+        Raises:
+            subprocess.TimeoutExpired: If the configured timeout has
+                been exceeded. The process is terminated first.
+
         """
         if time.time() - self._start_time > (self.timeout or float("inf")):
             with suppress(psutil.NoSuchProcess):
@@ -146,20 +200,42 @@ class SubprocessHandle:
             self.ps_proc.resume()
 
     def poll(self) -> int | None:
-        """Check if the process has terminated.
+        """Check whether the process has terminated.
 
-        Returns returncode or None.
+        Returns:
+            The return code, or ``None`` if the process is still
+            running.
+
         """
         return self.proc.poll()
 
     def wait(self, timeout: float | None = None) -> int:
-        """Wait for process to terminate.
+        """Wait for the process to terminate.
 
-        Returns returncode.
+        Args:
+            timeout: Maximum time in seconds to wait. Ignored if a
+                timeout was given when the handle was created.
+
+        Returns:
+            The return code of the process.
+
         """
         return self.proc.wait(timeout=self.timeout or timeout)
 
     def __enter__(self) -> Self:
+        """Start the process and begin collecting its output.
+
+        Spawns one reader thread per output stream and a thread that
+        keeps track of the peak memory usage of the process tree.
+
+        Returns:
+            The handle itself.
+
+        Raises:
+            subprocess.SubprocessError: If the command is not found on
+                the ``PATH``.
+
+        """
         if shutil.which(self.cmd_name) is None:
             raise subprocess.SubprocessError(
                 f"Command `{self.cmd_name}` not found. Ensure it is in PATH."
@@ -216,14 +292,22 @@ class SubprocessHandle:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """Wait for the process and its reader threads to finish.
+
+        Args:
+            exc_type: Type of the exception raised in the block, if any.
+            exc_value: Exception raised in the block, if any.
+            traceback: Traceback of the exception raised in the block,
+                if any.
+
+        """
         if self.poll() is None:
             self.wait(self.timeout)
         for t in self._threads:
             t.join(timeout=1.0)
 
     def current_memory(self) -> int:
-        """Return current memory usage of the process and its
-        children."""
+        """Return current memory usage of the process and its children."""
         if self._ps_proc is None:
             return 0
         try:
@@ -245,6 +329,20 @@ class SubprocessHandle:
             pass
 
     def result(self) -> SubprocessResult:
+        """Collect the result of the finished process.
+
+        Waits for the reader threads to finish and logs a summary of
+        the run unless the handle is silent.
+
+        Returns:
+            Result of the command, carrying its captured output, the
+            peak memory usage and the total run time.
+
+        Raises:
+            subprocess.SubprocessError: If the command finished with a
+                non-zero return code.
+
+        """
         for t in self._threads:
             t.join(timeout=1.0)
         total_time = time.time() - self._start_time
@@ -271,21 +369,22 @@ class SubprocessHandle:
 def subprocess_run(
     cmd: str | list[Any], *, silent: bool = False, timeout: float | None = None
 ) -> SubprocessResult:
-    """Backwards-compatible wrapper.
+    """Run a command and block until it finishes.
 
-    Blocks until done and returns result.
-    @type cmd: str | list[Any]
-    @param cmd: Command to execute. If a string is given, it will be
-        split on whitespace. If a list is given, each element will be
-        converted to a string.
-    @type silent: bool
-    @param silent: If True, suppress all output from the command.
-    @type timeout: float | None
-    @param timeout: If given, the maximum time in seconds to allow the
-        process to run. If the timeout is exceeded, the process will be
-        terminated and a TimeoutExpired exception will be raised.
-    @rtype: SubprocessResult
-    @return: Result of the command.
+    Backwards-compatible wrapper around `SubprocessHandle`.
+
+    Args:
+        cmd: Command to execute. If a string is given, it will be split
+            on whitespace. If a list is given, each element will be
+            converted to a string.
+        silent: If ``True``, suppress all output from the command.
+        timeout: If given, the maximum time in seconds to allow the
+            process to run. If the timeout is exceeded, the process is
+            terminated and ``subprocess.TimeoutExpired`` is raised.
+
+    Returns:
+        Result of the command.
+
     """
     if isinstance(cmd, str):
         args = cmd.split()
@@ -299,4 +398,17 @@ def subprocess_run(
 
 
 def strip_ansi(s: str) -> str:
+    r"""Remove ANSI escape sequences from a string.
+
+    Args:
+        s: String to strip.
+
+    Returns:
+        The string without ANSI escape sequences.
+
+    Example:
+        >>> strip_ansi("\x1b[31mred\x1b[0m")
+        'red'
+
+    """
     return re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])").sub("", s)

@@ -1,3 +1,12 @@
+"""Export of models to the RVC2 platform.
+
+The conversion runs inside the RVC2 Docker image and has two stages:
+OpenVINO's model optimizer (``mo``) turns the ONNX model into an
+OpenVINO IR, and ``compile_tool`` compiles that IR into a ``.blob`` for
+a fixed number of SHAVE cores. Optionally, a blob is compiled for every
+SHAVE count and the results are packed into a single ``.superblob``.
+"""
+
 import shutil
 import subprocess
 import tempfile
@@ -35,14 +44,41 @@ DEFAULT_SUPER_SHAVES: Final[int] = 8
 
 
 class CompileResult(NamedTuple):
+    """Outcome of a single ``compile_tool`` invocation.
+
+    Attributes:
+        blob_path: Path the compiled blob was written to.
+        result: The finished ``compile_tool`` subprocess, carrying its
+            peak memory usage.
+
+    """
+
     blob_path: Path
     result: SubprocessResult
 
 
 class RVC2Exporter(Exporter):
+    """Exporter producing an RVC2 blob from an ONNX, TFLite or IR model.
+
+    The model is first converted to an OpenVINO IR with ``mo`` (unless
+    an IR is given as the input) and then compiled with
+    ``compile_tool`` for the configured number of SHAVE cores. With the
+    superblob option enabled, a blob is compiled for every SHAVE count
+    from 1 to 16 and the results are packed into one ``.superblob``.
+    """
+
     target: Target = Target.RVC2
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
+        """Initialize the exporter from the RVC2 configuration.
+
+        Args:
+            config: Configuration of the stage to export. Its ``rvc2``
+                section supplies the RVC2-specific options.
+            output_dir: Directory the compiled model and the build
+                information are written to.
+
+        """
         super().__init__(config=config, output_dir=output_dir)
         self.n_workers = config.rvc2.n_workers
         self.compress_to_fp16 = config.rvc2.compress_to_fp16
@@ -239,6 +275,20 @@ class RVC2Exporter(Exporter):
                     inp.layout = f"{lt[2]}{lt[0]}{lt[1]}"
 
     def export(self) -> Path:
+        """Convert the model and compile it for RVC2.
+
+        A TFLite input is first converted to ONNX, an ONNX input is
+        converted to an OpenVINO IR and an IR input is used as it is.
+
+        Returns:
+            Path to the compiled ``.blob``, or to the ``.superblob`` if
+            superblob compilation is enabled.
+
+        Raises:
+            NotImplementedError: If the input file type is neither
+                TFLite, ONNX nor OpenVINO IR.
+
+        """
         if self.input_file_type == InputFileType.TFLITE:
             self._transform_tflite_to_onnx()
 
@@ -263,6 +313,19 @@ class RVC2Exporter(Exporter):
         return self.compile_blob(args).blob_path
 
     def compile_blob(self, args: list) -> CompileResult:
+        """Compile the OpenVINO IR into a blob with ``compile_tool``.
+
+        Args:
+            args: Arguments to pass to ``compile_tool``. An output path
+                (``-o``) and a config file (``-c``) holding the SHAVE
+                and CMX slice counts are appended unless already
+                present.
+
+        Returns:
+            The path of the compiled blob together with the
+            ``compile_tool`` subprocess result.
+
+        """
         output_path = (
             self.output_dir / f"{self.model_name}-{self.target.name.lower()}"
         )
@@ -288,6 +351,28 @@ class RVC2Exporter(Exporter):
         return CompileResult(blob_output_path, result)
 
     def compile_superblob(self, args: list[str]) -> Path:
+        """Compile a blob per SHAVE count and pack them into one file.
+
+        A reference blob is compiled first, and the remaining fifteen
+        SHAVE variants are compiled in parallel and stored as binary
+        diffs against it. The workers are suspended and resumed based
+        on the memory available to the container so that the parallel
+        compiles do not run it out of RAM. The resulting file starts
+        with a header holding the size of the reference blob and one
+        size per SHAVE count from 1 to 16 (zero where no patch was
+        produced), followed by the reference blob and the patches.
+
+        Args:
+            args: Arguments to pass to ``compile_tool`` for each
+                variant.
+
+        Returns:
+            Path to the written ``.superblob``.
+
+        Raises:
+            RuntimeError: If no patches were produced.
+
+        """
         from pebble import ThreadPool
 
         blobs_directory = self.intermediate_outputs_dir / "blobs"
@@ -437,6 +522,14 @@ class RVC2Exporter(Exporter):
         return superblob_path
 
     def exporter_buildinfo(self) -> dict[str, Any]:
+        """Return the RVC2-specific build information.
+
+        Returns:
+            The ``mo`` and ``compile_tool`` versions, the target device
+            and the SHAVE and CMX slice counts the model was compiled
+            with.
+
+        """
         mo_version = (
             subprocess.run(
                 ["mo", "--version"], capture_output=True, check=False

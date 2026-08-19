@@ -1,3 +1,13 @@
+"""Export of models to the RVC4 platform.
+
+Drives the Qualcomm SNPE toolchain shipped in the RVC4 Docker image:
+``snpe-onnx-to-dlc`` (or ``snpe-tflite-to-dlc``) produces a DLC model,
+``snpe-dlc-quant`` quantizes it against the calibration data, and
+``snpe-dlc-graph-prepare`` builds the offline graph for the targeted HTP
+SoCs. Which SNPE arguments are used follows from the configured
+quantization mode unless that mode is ``CUSTOM``.
+"""
+
 import json
 import shutil
 import subprocess
@@ -31,9 +41,27 @@ from modelconverter.utils.types import (
 
 
 class RVC4Exporter(Exporter):
+    """Exporter producing a DLC model for the RVC4 platform."""
+
     target: Target = Target.RVC4
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
+        """Initialize the exporter and pre-process the input model.
+
+        The SNPE arguments and the quantization options are taken from
+        the ``rvc4`` section of the config. Unless the quantization mode
+        is ``CUSTOM``, the user-provided SNPE arguments are dropped in
+        favor of the ones the mode implies. An ONNX input model gets the
+        configured normalization attached to its inputs and, unless all
+        ONNX optimizations are disabled, is rewritten by `ONNXModifier`
+        -- the rewritten model is only kept when its outputs still match
+        those of the original.
+
+        Args:
+            config: Configuration of the stage to export.
+            output_dir: Directory the exported model is written to.
+
+        """
         super().__init__(config=config, output_dir=output_dir)
 
         rvc4_cfg = config.rvc4
@@ -103,6 +131,17 @@ class RVC4Exporter(Exporter):
         self.input_list_path = self.intermediate_outputs_dir / "img_list.txt"
 
     def export(self) -> Path:
+        """Convert, quantize and graph-prepare the model.
+
+        The input model is converted to DLC, quantized unless
+        calibration is disabled, and prepared for the configured HTP
+        SoCs at the configured optimization level. An ``info.csv``
+        dump of the resulting model is written next to it.
+
+        Returns:
+            Path to the exported DLC model.
+
+        """
         out_dlc_path = self.output_dir / f"{self.model_name}.dlc"
         self._inference_model_path = out_dlc_path
 
@@ -144,6 +183,21 @@ class RVC4Exporter(Exporter):
         return out_dlc_path
 
     def calibrate(self, dlc_path: Path) -> Path:
+        """Quantize a DLC model with ``snpe-dlc-quant``.
+
+        The calibration data is prepared from the config unless the SNPE
+        arguments already name an ``--input_list``. Which quantizers and
+        bit widths are used follows from the quantization mode. The raw
+        images produced for the calibration are removed afterwards
+        unless ``keep_raw_images`` is set.
+
+        Args:
+            dlc_path: Path to the DLC model to quantize.
+
+        Returns:
+            Path to the quantized DLC model.
+
+        """
         args = self.snpe_dlc_quant
         if "--input_list" not in args:
             logger.info("Preparing calibration data.")
@@ -196,6 +250,20 @@ class RVC4Exporter(Exporter):
         return quantized_dlc_path
 
     def prepare_calibration_data(self) -> Path:
+        """Write the calibration data as raw files and list them.
+
+        Every calibration file of every input is read with the input's
+        encoding, resize method and data type and written out as a raw
+        file, a ``.raw`` file being taken as it is. The SNPE input list
+        holds one line per calibration sample, pairing each input name
+        with its raw file. Terminates the process if an input has no
+        shape or a dynamic one.
+
+        Returns:
+            Path to the written input list.
+
+        """
+
         class Entry(NamedTuple):
             name: str
             path: Path
@@ -265,6 +333,21 @@ class RVC4Exporter(Exporter):
         return self.input_list_path
 
     def generate_io_encodings(self, encodings: Encodings) -> Path:
+        """Write the quantization overrides to a JSON file.
+
+        The encodings of the model's own inputs and outputs are replaced
+        by the default 8-bit integer encoding, as DAI does not support
+        custom TF8 encodings on exposed tensors. The encodings of the
+        internal tensors are written out unchanged.
+
+        Args:
+            encodings: Encodings as resolved from the configuration,
+                before the exposed tensors are normalized.
+
+        Returns:
+            Path to the written ``encodings.json``.
+
+        """
         encodings_dict = encodings.model_dump(mode="json", exclude_none=True)
         # DAI does not support custom TF8 encodings on exposed tensors.
         # Keep AIMET's internal tensor encodings, but normalize exposed
@@ -279,6 +362,19 @@ class RVC4Exporter(Exporter):
         return encodings_path
 
     def onnx_to_dlc(self) -> Path:
+        """Convert the input model to the DLC format.
+
+        Runs ``snpe-onnx-to-dlc``, or ``snpe-tflite-to-dlc`` for a
+        TFLite input. Input shapes, input data types, input layouts and
+        output names are added to the SNPE arguments, each group only
+        when the configured arguments do not already carry the
+        corresponding flag. A layout SNPE does not know is skipped with
+        a warning.
+
+        Returns:
+            Path to the converted DLC model.
+
+        """
         logger.info("Exporting for RVC4")
         args = self.snpe_onnx_to_dlc
         self._add_args(args, ["-i", self.input_model])
@@ -354,6 +450,13 @@ class RVC4Exporter(Exporter):
         return self.input_model.with_suffix(".dlc")
 
     def exporter_buildinfo(self) -> dict[str, Any]:
+        """Collect the RVC4-specific build information.
+
+        Returns:
+            Dictionary with the version of the SNPE tooling the model
+            was exported with and the HTP SoCs it was prepared for.
+
+        """
         snpe_version = subprocess.run(
             ["snpe-dlc-quant", "--version"], capture_output=True, check=False
         )

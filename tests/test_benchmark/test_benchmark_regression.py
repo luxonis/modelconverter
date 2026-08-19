@@ -1,3 +1,9 @@
+"""Check measured device throughput against the recorded targets.
+
+Benchmarks each model in ``benchmark_targets.json`` on a real device and
+fails when the measured FPS regresses against the recorded value.
+"""
+
 import json
 import platform
 from pathlib import Path
@@ -20,7 +26,8 @@ def _model_slugs(target: str) -> list[str]:
 
 def _model_id(slug: str) -> str:
     """Take out the `luxonis` and use the remainder of the slug to name
-    the test."""
+    the test.
+    """
     return slug.rsplit("/", 1)[-1]
 
 

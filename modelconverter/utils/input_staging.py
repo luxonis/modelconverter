@@ -105,7 +105,7 @@ _IGNORED_DIR_NAMES = {".git"}
 
 
 def path_flags_for(command: Callable[..., Any] | None) -> set[str]:
-    """Returns the CLI flags of ``command`` whose value is a local path.
+    """Return the CLI flags of ``command`` whose value is a local path.
 
     Derived from the command signature the launcher has already parsed, so
     staging follows the CLI rather than duplicating its knowledge: a path
@@ -141,12 +141,12 @@ def _is_path_parameter(name: str, annotation: Any) -> bool:
 
 
 def stage_inputs(tokens: list[str], path_flags: Collection[str]) -> list[str]:
-    """Copies path arguments among ``tokens`` into the cache and returns
+    """Copy path arguments among ``tokens`` into the cache and return
     a new token list with those paths rewritten to their container-side
     locations.
 
     ``path_flags`` are the flags whose value is a path, as returned by
-    L{path_flags_for}. Non-path tokens, remote URLs and non-existent
+    `path_flags_for`. Non-path tokens, remote URLs and non-existent
     paths are left untouched.
     """
     inputs_dir = get_cache_dir() / "inputs"
@@ -172,8 +172,9 @@ def _maybe_stage_token(
     inputs_dir: Path,
     path_flags: Collection[str],
 ) -> str | None:
-    """Returns the rewritten token if it should be staged, else
-    ``None``."""
+    """Return the rewritten token if it should be staged, else
+    ``None``.
+    """
     if token.startswith("--") and "=" in token:
         flag, _, value = token.partition("=")
         if flag in path_flags:
@@ -250,7 +251,7 @@ def _stage_arg_list_token(
 
     The whole list arrives as a single CLI token, so the path it holds is
     invisible to token staging -- while the same list written in a config
-    file is rewritten by L{_rewrite_arg_list}. ``LuxonisConfig`` reads
+    file is rewritten by `_rewrite_arg_list`. ``LuxonisConfig`` reads
     these values with ``ast.literal_eval`` and falls back to the raw
     string, so reading them the same way here (and writing the result
     back with ``repr``) keeps the two forms behaving alike.
@@ -307,7 +308,7 @@ def _as_path(value: str) -> Path | None:
 
     A CLI override or a config field may legitimately hold something that
     is not a path at all -- an inline encodings JSON, a calibration
-    script -- and C{Path} rejects some of those outright.
+    script -- and ``Path`` rejects some of those outright.
     """
     try:
         return Path(value).expanduser()
@@ -318,7 +319,7 @@ def _as_path(value: str) -> Path | None:
 def _absolute(path: Path) -> Path:
     """Absolutizes ``path`` without resolving symlinks.
 
-    Deliberately not C{Path.resolve}: the staged copy keeps the name the
+    Deliberately not ``Path.resolve``: the staged copy keeps the name the
     user asked for. Resolving would name it after the symlink's target,
     and a content-addressed blob (DVC, git-annex, Nix) carries neither
     the model's name nor the suffix the container dispatches on.
@@ -327,11 +328,11 @@ def _absolute(path: Path) -> Path:
 
 
 def _exists(path: Path) -> bool:
-    """C{Path.exists} for values that may not name a path.
+    """``Path.exists`` for values that may not name a path.
 
-    An inline JSON blob has no C{/} but is far longer than a filename may
-    be, so C{exists} raises C{OSError} (C{ENAMETOOLONG}) instead of
-    answering C{False}.
+    An inline JSON blob has no ``/`` but is far longer than a filename may
+    be, so ``exists`` raises ``OSError`` (``ENAMETOOLONG``) instead of
+    answering ``False``.
     """
     try:
         return path.exists()
@@ -340,9 +341,10 @@ def _exists(path: Path) -> bool:
 
 
 def _stage_value(value: str, inputs_dir: Path) -> str | None:
-    """Copies the file/dir at ``value`` into the cache and returns the
+    """Copy the file/dir at ``value`` into the cache and return the
     container-side path, or ``None`` if it cannot/should not be
-    staged."""
+    staged.
+    """
     if get_protocol(value) != "file":
         return None
     src = _as_path(value)
@@ -511,7 +513,7 @@ def _stage_config(src: Path, inputs_dir: Path) -> Path:
 
 
 def _stage_config_text(content: str, src: Path, inputs_dir: Path) -> Path:
-    """Publishes a rewritten config, keyed by a digest of its own text.
+    """Publish a rewritten config, keyed by a digest of its own text.
 
     The rewritten paths carry the digests of everything the config
     references, so a change to any input yields a new entry instead of
@@ -537,7 +539,8 @@ def _rewrite_config_paths(
     parent: str | None = None,
 ) -> tuple[Any, bool]:
     """Stages the local paths ``value`` names and returns it with those
-    references replaced by their container-side paths."""
+    references replaced by their container-side paths.
+    """
     if isinstance(value, dict):
         changed = False
         rewritten = {}
@@ -634,7 +637,7 @@ def _stage_config_reference(
     Relative references are resolved the way the container resolves
     them: against the config file's directory first, then against the
     default root (see
-    L{modelconverter.utils.filesystem_utils.get_input_bases}). A
+    `modelconverter.utils.filesystem_utils.get_input_bases`). A
     reference that exists under neither is left untouched so the config
     validation can report it.
     """
@@ -732,7 +735,7 @@ def _excluded_dirs() -> set[Path]:
 
 
 def _iter_input_files(src: Path) -> Iterator[_InputFile]:
-    """Yields every file that staging ``src`` copies, with its stat.
+    """Yield every file that staging ``src`` copies, with its stat.
 
     Symlinked sub-directories are followed so that what the container
     ends up seeing is also what gets fingerprinted. A link that points
@@ -795,8 +798,10 @@ def _iter_input_files(src: Path) -> Iterator[_InputFile]:
 
 
 def _dir_key(directory: Path) -> tuple[int, int] | None:
-    """The identity a symlink cycle would repeat, or ``None`` if the
-    directory cannot be stat'ed."""
+    """Return the identity a symlink cycle would repeat.
+
+    Returns ``None`` if the directory cannot be stat'ed.
+    """
     try:
         st = directory.stat()
     except OSError:
@@ -836,9 +841,9 @@ def _stage_dir(src: Path, inputs_dir: Path) -> Path:
 
 
 def _copy_input_files(files: list[_InputFile], dest: Path) -> None:
-    """Copies the enumerated files under ``dest``.
+    """Copy the enumerated files under ``dest``.
 
-    Unreadable files were already left out by L{_iter_input_files}, so a
+    Unreadable files were already left out by `_iter_input_files`, so a
     failure here means the source changed since it was enumerated. It is
     raised rather than logged: the digest promises the whole enumeration,
     and publishing less than that under it would hide the missing file
@@ -852,7 +857,7 @@ def _copy_input_files(files: list[_InputFile], dest: Path) -> None:
 
 
 def _record_once(marker: Path, text: str) -> None:
-    """Writes a marker describing an entry, unless it is already there.
+    """Write a marker describing an entry, unless it is already there.
 
     Both markers are written once, by whoever published the entry, and
     both are best-effort: the entry may have been evicted between
@@ -871,8 +876,9 @@ def _record_size(digest_dir: Path, size: int) -> None:
 
 
 def _record_staging(src: Path, digest_dir: Path, inputs_dir: Path) -> None:
-    """Makes ``digest_dir`` the current staged copy of ``src``, dropping
-    the copies made for its older content."""
+    """Make ``digest_dir`` the current staged copy of ``src``, dropping
+    the copies made for its older content.
+    """
     _record_once(digest_dir / _SOURCE_MARKER, str(src))
     _prune_superseded_stagings(src, digest_dir, inputs_dir)
 
@@ -959,7 +965,7 @@ def _is_in_use(entry: Path, ignore_pid: int | None = None) -> bool:
 
 
 def in_use_staged_inputs() -> list[Path]:
-    """Returns the staged input entries a live process has claimed.
+    """Return the staged input entries a live process has claimed.
 
     The container reads its staged inputs throughout the conversion, so
     anything that empties the cache wholesale (``cache clean``) has to be
@@ -996,7 +1002,7 @@ def cache_is_in_use() -> bool:
 def _prune_superseded_stagings(
     src: Path, keep: Path, inputs_dir: Path
 ) -> None:
-    """Removes staged copies of ``src`` made for older content.
+    """Remove staged copies of ``src`` made for older content.
 
     A directory digest covers file modification times, so editing
     anything under ``src`` yields a new entry; without this the cache
@@ -1028,8 +1034,10 @@ class _CacheEntry(NamedTuple):
 
 
 def cache_budget() -> int:
-    """The configured cache size limit in bytes, or ``0`` when
-    unlimited."""
+    """Return the configured cache size limit in bytes.
+
+    Returns ``0`` when the cache size is unlimited.
+    """
     configured = environ.MODELCONVERTER_CACHE_MAX_SIZE
     try:
         return max(0, parse_size(configured))
@@ -1097,7 +1105,7 @@ def enforce_cache_budget() -> None:
 
 
 def _iter_cache_entries(cache: Path) -> Iterator[_CacheEntry]:
-    """Yields what the budget is measured and enforced on.
+    """Yield what the budget is measured and enforced on.
 
     A staged input is one digest-keyed entry. A download is one file or
     directory under the sub-directories the container writes into: those
@@ -1118,7 +1126,7 @@ def _iter_cache_entries(cache: Path) -> Iterator[_CacheEntry]:
 
 
 def _cache_children(directory: Path) -> Iterator[Path]:
-    """Yields the eviction candidates in ``directory``.
+    """Yield the eviction candidates in ``directory``.
 
     Bookkeeping written beside the entries is skipped, and so is the
     leftover of a sweep that was killed between renaming an entry aside
@@ -1194,7 +1202,7 @@ def _claimed_by_another_process(cache: Path) -> bool:
 
 
 def _evict(entry: Path) -> bool:
-    """Removes a cache entry, backing out of a claim placed in between.
+    """Remove a cache entry, backing out of a claim placed in between.
 
     The entry is renamed aside before it is deleted, so a staging that
     was about to reuse it finds it missing -- and stages it again --
@@ -1225,7 +1233,7 @@ def _remove(path: Path) -> None:
 
 
 def _to_container(dest: Path) -> str:
-    """Maps a host cache path to its container-side location.
+    """Map a host cache path to its container-side location.
 
     The container runs Linux whatever the host is, so the rewritten
     token must keep forward slashes even when the host's native paths
@@ -1254,7 +1262,7 @@ def _hash_file_memoized(path: Path) -> str:
     Staging would otherwise re-read every staged file in full on each
     run just to learn that the cache already holds it -- minutes of
     start-up I/O for a multi-gigabyte ONNX model. The memo key carries
-    the same metadata as L{_hash_dir} (and shares its caveat about
+    the same metadata as `_hash_dir` (and shares its caveat about
     filesystems without a change time), while the digest the cache is
     keyed on stays a description of the bytes.
     """

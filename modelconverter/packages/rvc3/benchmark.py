@@ -1,3 +1,10 @@
+"""Benchmarking of converted models on RVC3 devices.
+
+Loads the model through the OpenVINO inference engine onto the ``VPUX``
+plugin of a connected RVC3 device and measures its throughput and
+latency under a varying number of concurrent inference requests.
+"""
+
 import sys
 from datetime import datetime, timezone
 from statistics import median
@@ -11,6 +18,8 @@ from modelconverter.packages.base_benchmark import Benchmark, Configuration
 
 
 class RVC3Benchmark(Benchmark):
+    """Benchmark of a converted model running on an RVC3 device."""
+
     @property
     def default_configuration(self) -> Configuration:
         """Default configuration for RVC3 benchmarking.
@@ -22,9 +31,25 @@ class RVC3Benchmark(Benchmark):
 
     @property
     def all_configurations(self) -> list[Configuration]:
+        """Return the configurations used by the full benchmark.
+
+        Covers one to five concurrent inference requests.
+        """
         return [{"requests": i} for i in range(1, 6)]
 
     def benchmark(self, configuration: Configuration) -> dict[str, Any]:
+        """Run a single benchmark of the model on the device.
+
+        Args:
+            configuration: Configuration to benchmark with. The only
+                supported option is ``requests``, the number of
+                concurrent inference requests.
+
+        Returns:
+            The measured throughput under ``fps`` and the median
+            request latency under ``latency``.
+
+        """
         return self._benchmark(str(self.model_path), **configuration)
 
     @staticmethod

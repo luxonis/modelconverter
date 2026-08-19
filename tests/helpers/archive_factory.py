@@ -1,5 +1,6 @@
 """Helpers for building NN-archive config JSON and packing ``.tar``
-archives for the host-side conversion tests."""
+archives for the host-side conversion tests.
+"""
 
 import json
 import tarfile
@@ -8,8 +9,10 @@ from typing import Any, Literal
 
 
 def default_archive_config() -> dict[str, Any]:
-    """A minimal, valid NN-archive ``config.json`` dict matching the
-    standard two-input dummy ONNX model."""
+    """Build a minimal, valid NN-archive ``config.json`` dict.
+
+    Matches the standard two-input dummy ONNX model.
+    """
     return {
         "config_version": "1.0",
         "model": {
@@ -59,13 +62,22 @@ def pack_archive(
     extra_files: dict[str, str | Path] | None = None,
     mode: Literal["w", "w:xz", "w:gz", "w:bz2"] = "w",
 ) -> Path:
-    """Packs ``model_path`` + ``config.json`` (+ optional extras) into a
+    """Pack ``model_path`` + ``config.json`` (+ optional extras) into a
     tar archive.
 
-    @param config: config dict, serialized to ``config.json`` next to the
-        archive.
-    @param extra_files: mapping of ``arcname -> file path`` for extra
-        members (e.g. ``encodings.json``, a postprocessor ONNX).
+    Args:
+        tar_path: Path of the archive to create.
+        model_path: Path of the model file to add to the archive.
+        config: Config dict, serialized to ``config.json`` next to the
+            archive.
+        extra_files: Mapping of ``arcname -> file path`` for extra
+            members (e.g. ``encodings.json``, a postprocessor ONNX).
+        mode: Mode the tar archive is opened with, selecting the
+            compression.
+
+    Returns:
+        Path to the created archive.
+
     """
     tar_path = Path(tar_path)
     model_path = Path(model_path)

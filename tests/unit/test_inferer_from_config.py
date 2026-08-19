@@ -21,7 +21,8 @@ from tests.helpers.onnx_factory import single_io_onnx
 
 class _StubInferer(Inferer):
     """The smallest concrete ``Inferer``; ``from_config`` needs no
-    more."""
+    more.
+    """
 
     def setup(self) -> None: ...
 

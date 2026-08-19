@@ -1,3 +1,11 @@
+"""Inference with an RVC4 model through SNPE.
+
+Holds the `Inferer` implementation the ``infer`` command uses for the
+RVC4 target: the inputs are written out as raw files and pushed
+through the converted DLC model with ``snpe-net-run``. It only works
+inside the RVC4 Docker image, where the SNPE SDK is installed.
+"""
+
 import shutil
 from pathlib import Path
 
@@ -9,11 +17,35 @@ from modelconverter.utils.types import DataType
 
 
 class RVC4Inferer(Inferer):
+    """Inferer for RVC4 DLC models based on ``snpe-net-run``."""
+
     def setup(self) -> None:
+        """Set the raw image directory and the input list header.
+
+        The header names the outputs SNPE is asked to write out.
+
+        """
         self.raw_images_path = Path("raw_images")
         self.header = f"%{' '.join(name for name in self.out_shapes)}"
 
     def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+        """Run the model on a single set of input images.
+
+        Every image is read as ``float32`` and dumped to a raw file
+        referenced from the SNPE input list, ``snpe-net-run`` is then
+        invoked on the DLC model, and the raw files it produces are
+        read back and reshaped to the configured output shapes.
+        Four-dimensional outputs are assumed to be channels-last and
+        are transposed to ``NCHW``.
+
+        Args:
+            inputs: Path to the image for every model input, keyed by
+                input name.
+
+        Returns:
+            The model outputs, keyed by output name.
+
+        """
         # Scratch directory for SNPE's raw outputs. Must NOT be literally
         # "output": inside the container that resolves to `/app/output`, which
         # is the bind-mounted results directory the inferer writes into. Using

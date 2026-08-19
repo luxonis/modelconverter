@@ -1,3 +1,13 @@
+"""Reading of input and output metadata from model files.
+
+Every conversion target speaks a different model format, so the rest of
+modelconverter asks for shapes and data types through the single
+`get_metadata` entry point, which dispatches on the file suffix: ONNX,
+OpenVINO IR (RVC2/RVC3), SNPE DLC (RVC4), Hailo HAR and TFLite. The
+readers for the target-specific formats rely on tooling that is only
+present inside that target's container, so they are imported lazily.
+"""
+
 import io
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,6 +22,16 @@ from modelconverter.utils.types import DataType
 
 @dataclass
 class Metadata:
+    """Shapes and data types of a model's inputs and outputs.
+
+    Attributes:
+        input_shapes: Shape of each input, keyed by input name.
+        input_dtypes: Data type of each input, keyed by input name.
+        output_shapes: Shape of each output, keyed by output name.
+        output_dtypes: Data type of each output, keyed by output name.
+
+    """
+
     input_shapes: dict[str, list[int]]
     input_dtypes: dict[str, DataType]
     output_shapes: dict[str, list[int]]
@@ -19,6 +39,25 @@ class Metadata:
 
 
 def get_metadata(model_path: Path) -> Metadata:
+    """Read the metadata of a model, whatever format it is in.
+
+    The format is taken from the file suffix: ``.onnx``, ``.xml`` or
+    ``.bin`` (OpenVINO IR), ``.dlc`` or ``.csv`` (SNPE), ``.hef`` or
+    ``.har`` (Hailo), and ``.tflite``.
+
+    Args:
+        model_path: Path to the model file. For an IR model either the
+            ``.xml`` or the ``.bin`` file may be given, the other one
+            being derived from it.
+
+    Returns:
+        Metadata of the model's inputs and outputs.
+
+    Raises:
+        ValueError: If the suffix is not one of the supported formats,
+            or if the model cannot be read.
+
+    """
     suffix = model_path.suffix
     if suffix in {".dlc", ".csv"}:
         return _get_metadata_dlc(model_path)

@@ -140,7 +140,8 @@ def test_parse_size_reads_the_units_human_size_writes(
     value: str, expected: int
 ):
     """The two are read and written by the same people, so a size shown
-    by `cache info` has to be one the budget accepts back."""
+    by `cache info` has to be one the budget accepts back.
+    """
     assert parse_size(value) == expected
 
 

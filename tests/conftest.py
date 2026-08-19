@@ -1,3 +1,10 @@
+"""Suite-wide pytest configuration.
+
+Disables telemetry, sets up logging, pins the Hypothesis profile so that
+property tests are reproducible, and applies the ``unit`` and
+per-platform markers during collection.
+"""
+
 import os
 
 import pytest
