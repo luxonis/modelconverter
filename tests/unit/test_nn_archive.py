@@ -456,6 +456,11 @@ def _config_to_nn(
         ),
         (
             Target.RVC4,
+            {"rvc4.quantization_mode": "INT16_STANDARD"},
+            DataType.INT16,
+        ),
+        (
+            Target.RVC4,
             {"rvc4.disable_calibration": True},
             DataType.FLOAT32,
         ),

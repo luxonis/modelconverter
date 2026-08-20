@@ -159,7 +159,11 @@ class RVC4Exporter(Exporter):
         self._add_args(args, ["--input_dlc", dlc_path])
         self._add_args(args, ["--output_dlc", quantized_dlc_path])
 
-        if self.use_per_channel_quantization:
+        # INT16_STD uses the native W16A16 path; per-channel quantization caused severe target-side degradation.
+        if (
+            self.use_per_channel_quantization
+            and self.quantization_mode != QuantizationMode.INT16_STD
+        ):
             args.append("--use_per_channel_quantization")
 
         if self.use_per_row_quantization:
@@ -173,6 +177,9 @@ class RVC4Exporter(Exporter):
             self._add_args(args, ["--act_quantizer", "enhanced"])
             self._add_args(args, ["--act_bitwidth", "16"])
         elif self.quantization_mode == QuantizationMode.INT8_16_MIX:
+            self._add_args(args, ["--act_bitwidth", "16"])
+        elif self.quantization_mode == QuantizationMode.INT16_STD:
+            self._add_args(args, ["--weights_bitwidth", "16"])
             self._add_args(args, ["--act_bitwidth", "16"])
 
         if self.encodings is not None:
