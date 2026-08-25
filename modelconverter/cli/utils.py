@@ -1,16 +1,14 @@
 import shutil
-from contextlib import suppress
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
 from luxonis_ml.typing import Params
-from requests.exceptions import HTTPError
 
 from modelconverter.utils import (
     ModelconverterException,
@@ -29,7 +27,6 @@ from modelconverter.utils.constants import (
     in_docker,
 )
 from modelconverter.utils.filesystem_utils import set_input_base
-from modelconverter.utils.hub_requests import Request
 from modelconverter.utils.types import DataType, Encoding, Target
 
 
@@ -210,18 +207,3 @@ def extract_preprocessing(
         inp.encoding.to = Encoding.NONE
 
     return cfg, preprocessing
-
-
-def slug_to_id(
-    slug: str, endpoint: Literal["models", "modelVersions", "modelInstances"]
-) -> str:
-    for is_public in [True, False]:
-        with suppress(HTTPError):
-            params = {
-                "is_public": is_public,
-                "slug": slug,
-            }
-            data = Request.get(f"{endpoint}/", params=params)
-            if data:
-                return data[0]["id"]
-    raise ValueError(f"Model with slug '{slug}' not found.")
