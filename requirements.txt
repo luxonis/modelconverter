@@ -8,7 +8,7 @@ onnxslim~=0.1
 onnxsim
 docker
 keyring
-hubai-sdk>=0.3
+hubai-sdk>=0.3.3
 onnx_graphsurgeon
 wget
 aiobotocore<2.18
