@@ -499,6 +499,7 @@ The `rvc4.quantization_mode` CLI option allows you to choose between different p
 - `INT8_ACCURACY_FOCUSED`: INT8 quantization **with calibration**. This mode utilizes more advanced quantization techniques that may improve accuracy without reducing performance or increasing the model size, depending on the model.
 - `INT8_INT16_MIXED`: Mixed INT8 and INT16 quantization **with calibration**. This mode uses 8-bit weights and 16-bit activations across all layers for improved numeric stability and accuracy at the cost of reduced performance (FPS) and increased model size.
 - `INT8_INT16_MIXED_ACCURACY_FOCUSED`: Mixed INT8 and INT16 quantization **with calibration**. This mode uses more advanced quantization techniques that may improve accuracy while using 8-bit weights and 16-bit activations across all layers, at the cost of reduced performance (FPS) and increased model size.
+- `INT16_STANDARD`: Standard INT16 quantization **with calibration**. This mode uses 16-bit weights and 16-bit activations across all layers.
 - `FP16_STANDARD`: FP16 quantization **without calibration**, for models that require higher accuracy and numeric stability, at the cost of performance (FPS) and increased model size.
 - `CUSTOM`: Custom quantization mode, where the user can specify more advanced options in the configuration file or via command-line arguments.
 
@@ -741,7 +742,9 @@ optionally saves the results to a `.csv` file.
 > - **RVC4** with `--no-dai-benchmark`: `--model-path` can be an NN Archive (`.tar.xz`), a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai) or a `.dlc` file.
 >   In the case of a `.dlc` file, the tool `snpe-dlc-info` must be available in `PATH` either on the host machine or on the device.
 >
-> To access models from different teams in Luxonis HubAI, remember to update the `HUBAI_API_KEY` environment variable accordingly when using a model slug as an input.
+> HubAI model slugs use `[team_name/]model_name:variant[:instance]`, for
+> example `luxonis/yolov6-nano:r2-coco-512x384`. `HUBAI_API_KEY` must have
+> access to the selected team for private models.
 
 > [!NOTE]
 > If you experience Segmentation Faults (core dumps) during benchmarking on RVC4 using the SNPE backend (`--no-dai-benchmark`), it may be due to the device running out of memory. Try decreasing the value of `--num-images` (the default is 500) to reduce RAM usage.
