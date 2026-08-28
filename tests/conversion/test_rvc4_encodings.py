@@ -9,8 +9,6 @@ so this e2e converts the toy conv net with:
   * a custom ``encodings.json`` referenced by path, driving
     ``generate_io_encodings`` -> ``snpe-onnx-to-dlc --quantization_overrides``
     and ``snpe-dlc-quant --override_params``;
-  * ``strict_quantization_overrides`` -> ModelConverter validates the custom
-    names against the effective ONNX before invoking SNPE;
   * ``use_per_row_quantization`` -> ``snpe-dlc-quant --use_per_row_quantization``
     (off by default, so otherwise never exercised);
   * a non-default ``htp_socs`` -> ``snpe-dlc-graph-prepare --htp_socs``.
@@ -73,6 +71,14 @@ _ENCODINGS = {
     },
 }
 
+_STRICT_ENCODINGS = {
+    "activation_encodings": {
+        "img": [_INT8_ACTIVATION],
+        "out": [_INT8_ACTIVATION],
+    },
+    "param_encodings": {},
+}
+
 
 @pytest.fixture(scope="module")
 def encodings_config(
@@ -95,14 +101,38 @@ def test_rvc4_encodings(encodings_config: tuple[Path, Path]):
         Target.RVC4,
         "rvc4.encodings",
         str(encodings_path),
-        "rvc4.strict_quantization_overrides",
-        "True",
         "rvc4.use_per_row_quantization",
         "True",
         "rvc4.use_per_channel_quantization",
         "False",
         "rvc4.snpe_dlc_graph_prepare_args",
         "['--htp_socs', 'sm8650']",
+        "rvc4.quantization_mode",
+        "CUSTOM",
+        path=str(config_path),
+        output_dir=output_name,
+        to="native",
+    )
+    assert_produced_suffix(output_name, ".dlc")
+
+
+@pytest.mark.rvc4
+def test_rvc4_strict_encodings_accept_effective_onnx_names(
+    tmp_path: Path,
+):
+    config_path = write_toy_conv_config(tmp_path, out_channels=_OUT_CHANNELS)
+    encodings_path = tmp_path / "encodings_strict.json"
+    encodings_path.write_text(json.dumps(_STRICT_ENCODINGS, indent=2))
+
+    output_name = "_rvc4-strict-encodings"
+    convert(
+        Target.RVC4,
+        "rvc4.encodings",
+        str(encodings_path),
+        "rvc4.strict_quantization_overrides",
+        "True",
+        "rvc4.use_per_channel_quantization",
+        "False",
         "rvc4.quantization_mode",
         "CUSTOM",
         path=str(config_path),
@@ -120,7 +150,7 @@ def test_rvc4_strict_encodings_reject_unknown_before_qualcomm(
     override_source: str,
 ):
     config_path = write_toy_conv_config(tmp_path, out_channels=_OUT_CHANNELS)
-    encodings = json.loads(json.dumps(_ENCODINGS))
+    encodings = json.loads(json.dumps(_STRICT_ENCODINGS))
     encodings["activation_encodings"]["nonexistent_activation"] = [
         {"bitwidth": 8, "dtype": "int"}
     ]
