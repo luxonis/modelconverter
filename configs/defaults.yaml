@@ -247,6 +247,11 @@ stages:
       # Enables row wise quantization of Matmul and FullyConnected ops.
       use_per_row_quantization: False
 
+      # When enabled, rejects custom quantization override names that do not
+      # exist in the effective ONNX model before invoking Qualcomm tooling.
+      # Currently supported only for ONNX input models.
+      strict_quantization_overrides: False
+
       # List of platforms to pre-compute the DLC graph for.
       htp_socs: ["sm8550"]
 

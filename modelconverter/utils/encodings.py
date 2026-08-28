@@ -1,5 +1,8 @@
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import onnx
 
 if TYPE_CHECKING:
     from modelconverter.utils.config import Encodings
@@ -128,3 +131,52 @@ def parse_encodings(value: Any) -> "Encodings":
             value.get("param_encodings", {})
         ),
     )
+
+
+def _non_empty_names(values: Any) -> set[str]:
+    return {value.name for value in values if value.name}
+
+
+def collect_onnx_encoding_names(
+    model_path: str | Path,
+) -> tuple[set[str], set[str]]:
+    """Return valid activation and parameter encoding names for a top-level ONNX graph."""
+    graph = onnx.load(str(model_path), load_external_data=False).graph
+
+    parameter_names = _non_empty_names(graph.initializer)
+    parameter_names.update(
+        sparse.values.name
+        for sparse in graph.sparse_initializer
+        if sparse.values.name
+    )
+
+    activation_names = set()
+    activation_names.update(_non_empty_names(graph.input))
+    activation_names.update(_non_empty_names(graph.output))
+    for node in graph.node:
+        activation_names.update(name for name in node.input if name)
+        activation_names.update(name for name in node.output if name)
+
+    activation_names.difference_update(parameter_names)
+    return activation_names, parameter_names
+
+
+def validate_quantization_override_names(
+    encodings: "Encodings", model_path: str | Path
+) -> None:
+    """Reject custom encoding names that are absent from the effective ONNX model."""
+    activation_names, parameter_names = collect_onnx_encoding_names(model_path)
+    unknown_activation_names = sorted(
+        set(encodings.activation_encodings) - activation_names
+    )
+    unknown_parameter_names = sorted(
+        set(encodings.param_encodings) - parameter_names
+    )
+
+    if unknown_activation_names or unknown_parameter_names:
+        raise ValueError(
+            "Unknown RVC4 quantization override names for model "
+            f"'{model_path}': "
+            f"activation_encodings={unknown_activation_names}; "
+            f"param_encodings={unknown_parameter_names}"
+        )

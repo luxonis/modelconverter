@@ -317,6 +317,7 @@ class RVC4Config(TargetConfig):
     keep_raw_images: bool = False
     use_per_channel_quantization: bool = True
     use_per_row_quantization: bool = False
+    strict_quantization_overrides: bool = False
     optimization_level: Literal[1, 2, 3] = 2
     quantization_mode: QuantizationMode = QuantizationMode.INT8_STD
     htp_socs: list[
