@@ -22,14 +22,14 @@ import pytest
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
-from modelconverter.packages.getters import get_inferer
+from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.general import sanitize_net_name
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.data import TEST_IMAGE
 from tests.helpers.onnx_reference import ONNXReferenceInferer
+from tests.helpers.platform_options import platform_options
 from tests.helpers.precision import cosine_similarity, locate_converted_model
-from tests.helpers.target_options import target_options
 
 GS = "gs://luxonis-test-bucket/modelconverter"
 
@@ -69,27 +69,29 @@ _PARAMS = [
 ]
 
 
-@pytest.mark.parametrize(("platform", "case"), _PARAMS)
-def test_precision(platform: str, case: PrecisionCase):
-    target = Target(platform)
-    options = target_options(target)
-    output_name = sanitize_net_name(f"prec_{platform}_{case.id}")
+@pytest.mark.parametrize(("platform_name", "case"), _PARAMS)
+def test_precision(platform_name: str, case: PrecisionCase):
+    platform = Platform(platform_name)
+    options = platform_options(platform)
+    output_name = sanitize_net_name(f"prec_{platform_name}_{case.id}")
 
     convert(
-        target,
+        platform,
         *options,
         path=case.config,
         output_dir=output_name,
         to="native",
     )
 
-    cfg, _, _ = get_configs(target, case.config, list(options))
+    cfg, _, _ = get_configs(platform, case.config, list(options))
     stage = next(iter(cfg.stages.values()))
-    model_path = locate_converted_model(OUTPUTS_DIR / output_name, platform)
+    model_path = locate_converted_model(
+        OUTPUTS_DIR / output_name, platform_name
+    )
 
     reference = ONNXReferenceInferer.from_stage(stage).infer(case.image)
     inferer = get_inferer(
-        target,
+        platform,
         str(model_path),
         case.image.parent,
         OUTPUTS_DIR / f"{output_name}_infer",
@@ -100,10 +102,10 @@ def test_precision(platform: str, case: PrecisionCase):
     assert set(reference) == set(converted), (
         f"output names mismatch: {list(reference)} vs {list(converted)}"
     )
-    threshold = case.thresholds.get(platform, DEFAULT_THRESHOLD)
+    threshold = case.thresholds.get(platform_name, DEFAULT_THRESHOLD)
     for name, ref in reference.items():
         cos = cosine_similarity(ref, converted[name])
         assert cos >= threshold, (
-            f"{platform} {case.id} output {name!r}: "
+            f"{platform_name} {case.id} output {name!r}: "
             f"cosine {cos:.4f} < {threshold}"
         )

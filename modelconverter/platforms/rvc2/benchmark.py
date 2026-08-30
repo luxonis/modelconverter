@@ -1,10 +1,15 @@
 from pathlib import Path
-from typing import Any
 
 import depthai as dai
 import numpy as np
+from luxonis_ml.typing import PathType
 
-from modelconverter.packages.base_benchmark import Benchmark, Configuration
+from modelconverter.platforms.base_benchmark import (
+    Benchmark,
+    Configuration,
+    Result,
+    get_option,
+)
 from modelconverter.utils import create_progress_handler, environ
 from modelconverter.utils.log_latency import (
     RVC2_INFERENCE_LATENCY_RE,
@@ -36,17 +41,23 @@ class RVC2Benchmark(Benchmark):
     def all_configurations(self) -> list[Configuration]:
         return [{"num_threads": i} for i in [1, 2, 3]]
 
-    def benchmark(self, configuration: Configuration) -> dict[str, Any]:
-        return self._benchmark(self.model_path, **configuration)
+    def benchmark(self, configuration: Configuration) -> Result:
+        return self._benchmark(
+            self.model_path,
+            repetitions=get_option(configuration, "repetitions", int),
+            num_messages=get_option(configuration, "num_messages", int),
+            num_threads=get_option(configuration, "num_threads", int),
+            benchmark_time=get_option(configuration, "benchmark_time", int),
+        )
 
     @staticmethod
     def _benchmark(
-        model_path: str | Path,
+        model_path: PathType,
         repetitions: int,
         num_messages: int,
         num_threads: int,
         benchmark_time: int,
-    ) -> dict[str, Any]:
+    ) -> Result:
         device = dai.Device()
         if device.getPlatform() != dai.Platform.RVC2:
             raise ValueError(
@@ -75,15 +86,15 @@ class RVC2Benchmark(Benchmark):
         inputSizes = []
         inputNames = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            modelArhive = dai.NNArchive(str(modelPath))  # type: ignore[arg-type]
-            for input in modelArhive.getConfig().model.inputs:
-                inputSizes.append(input.shape[::-1])
-                inputNames.append(input.name)
+            modelArchive = dai.NNArchive(modelPath)
+            for archive_input in modelArchive.getConfig().model.inputs:
+                inputSizes.append(archive_input.shape[::-1])
+                inputNames.append(archive_input.name)
         elif str(model_path).endswith(".blob"):
             blob_model = dai.OpenVINO.Blob(modelPath)
-            for input in blob_model.networkInputs:
-                inputSizes.append(blob_model.networkInputs[input].dims)
-                inputNames.append(input)
+            for input_name in blob_model.networkInputs:
+                inputSizes.append(blob_model.networkInputs[input_name].dims)
+                inputNames.append(input_name)
 
         inputData = dai.NNData()
         for name, inputSize in zip(inputNames, inputSizes, strict=True):
@@ -118,7 +129,7 @@ class RVC2Benchmark(Benchmark):
                 if isinstance(model_path, str) or str(model_path).endswith(
                     ".tar.xz"
                 ):
-                    neuralNetwork.setNNArchive(modelArhive)
+                    neuralNetwork.setNNArchive(modelArchive)
                 elif str(model_path).endswith(".blob"):
                     neuralNetwork.setBlobPath(modelPath)
                 neuralNetwork.setNumInferenceThreads(num_threads)

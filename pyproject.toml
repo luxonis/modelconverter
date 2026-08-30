@@ -40,10 +40,10 @@ version = { attr = "modelconverter.__version__" }
 bench = { file = ["requirements-bench.txt"] }
 analysis = { file = ["requirements-analysis.txt"] }
 dev = { file = ["requirements-dev.txt", "requirements-bench.txt"] }
-rvc2 = { file = ["modelconverter/packages/rvc2/requirements.txt"] }
-rvc3 = { file = ["modelconverter/packages/rvc3/requirements.txt"] }
-rvc4 = { file = ["modelconverter/packages/rvc4/requirements.txt"] }
-hailo = { file = ["modelconverter/packages/hailo/requirements.txt"] }
+rvc2 = { file = ["modelconverter/platforms/rvc2/requirements.txt"] }
+rvc3 = { file = ["modelconverter/platforms/rvc3/requirements.txt"] }
+rvc4 = { file = ["modelconverter/platforms/rvc4/requirements.txt"] }
+hailo = { file = ["modelconverter/platforms/hailo/requirements.txt"] }
 
 
 [tool.ruff]
@@ -51,27 +51,31 @@ target-version = "py310"
 line-length = 79
 indent-width = 4
 
+[tool.ruff.format]
+docstring-code-format = true
+
 [tool.ruff.lint]
 select = [
   "ANN",
+  "ASYNC",
   "B",
   "C4",
   "DTZ",
   "E",
   "ERA",
+  "EXE",
   "F",
   "FLY",
   "FURB",
+  "G",
   "I",
-  "ICN",
   "ICN",
   "INP",
   "INT",
   "ISC",
   "NPY",
-  "PERF101",
-  "PERF102",
-  "PERF402",
+  "PERF",
+  "PGH",
   "PIE",
   "PL",
   "PT",
@@ -83,12 +87,14 @@ select = [
   "RUF",
   "S",
   "SIM",
+  "SLOT",
   "T10",
   "T20",
   "TID",
   "TRY",
   "UP",
   "W",
+  "YTT",
 ]
 ignore = [
   "ANN002",
@@ -96,16 +102,17 @@ ignore = [
   "ANN204",
   "ANN401",
   "D1",
-  "DTZ007",
   "E501",
-  "F403",
   "ICN002",
   "NPY002",
+  "PERF203",
   "PLC0415",
   "PLR0911",
   "PLR0912",
   "PLR0913",
   "PLR0915",
+  "PLR0917",
+  "G004",
   "PLR2004",
   "PLW2901",
   "PTH123",
@@ -114,20 +121,20 @@ ignore = [
   "S101",
   "S311",
   "S603",
-  "S606",
   "S607",
   "SIM108",
-  "PT011",
   "TRY003",
   "TRY301",
   "W191",
-  "PLR0917",
 ]
 unfixable = ["B905", "PLC0208"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN201"]
 "__main__.py" = ["ANN201"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"__future__".msg = "Do not use imports from __future__."
 
 [tool.docformatter]
 black = true
@@ -137,6 +144,11 @@ wrap-descriptions = 72
 
 [tool.pyright]
 typeCheckingMode = "basic"
+# The benchmark suite runs on the internal Luxonis HIL testbed and imports
+# `hil_framework`, which is not published. No environment outside the testbed
+# can resolve it, so these files are not type checked. The first three entries
+# are pyright's own defaults, which a custom `exclude` would otherwise drop.
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests/test_benchmark"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/conversion"]
@@ -156,12 +168,13 @@ omit = [
   "**/__main__.py",
   "modelconverter/utils/onnx_tools.py",
   "modelconverter/utils/onnx_compatibility.py",
-  "modelconverter/packages/base_benchmark.py",
-  "modelconverter/packages/*/benchmark.py",
-  "modelconverter/packages/base_analyze.py",
-  "modelconverter/packages/*/analyze.py",
-  "modelconverter/packages/base_visualize.py",
-  "modelconverter/packages/*/visualize.py",
+  "modelconverter/platforms/base_benchmark.py",
+  "modelconverter/platforms/*/benchmark.py",
+  "modelconverter/platforms/base_analyze.py",
+  "modelconverter/platforms/*/analyze.py",
+  "modelconverter/platforms/base_visualize.py",
+  "modelconverter/platforms/*/visualize.py",
+  "modelconverter/platforms/rvc4/utils.py",
   "modelconverter/utils/device_handlers.py",
   "modelconverter/utils/device_monitors.py",
   "modelconverter/utils/telemetry.py",
@@ -192,3 +205,9 @@ exclude_also = [
   "pytest\\.skip",
   "exit_with\\(",
 ]
+
+[tool.typos.default.extend-words]
+# The Hailo model script format and its config field are called "alls".
+alls = "alls"
+# The Python CA-bundle package.
+certifi = "certifi"

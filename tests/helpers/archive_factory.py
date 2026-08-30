@@ -3,13 +3,20 @@ archives for the host-side conversion tests."""
 
 import json
 import tarfile
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
+
+from luxonis_ml.typing import Params, ParamValue, PathType
 
 
-def default_archive_config() -> dict[str, Any]:
+def default_archive_config(*, heads: Sequence[ParamValue] = ()) -> Params:
     """A minimal, valid NN-archive ``config.json`` dict matching the
-    standard two-input dummy ONNX model."""
+    standard two-input dummy ONNX model.
+
+    @param heads: Parser heads to declare on the model. Empty by
+        default.
+    """
     return {
         "config_version": "1.0",
         "model": {
@@ -40,23 +47,23 @@ def default_archive_config() -> dict[str, Any]:
                 {"name": "output0", "dtype": "float32", "shape": [1, 10]},
                 {"name": "output1", "dtype": "float32", "shape": [1, 5, 5, 5]},
             ],
-            "heads": [],
+            "heads": list(heads),
         },
     }
 
 
-def write_json(data: dict[str, Any], path: str | Path) -> Path:
+def write_json(data: Mapping[str, ParamValue], path: PathType) -> Path:
     path = Path(path)
     path.write_text(json.dumps(data))
     return path
 
 
 def pack_archive(
-    tar_path: str | Path,
-    model_path: str | Path,
-    config: dict[str, Any],
+    tar_path: PathType,
+    model_path: PathType,
+    config: Mapping[str, ParamValue],
     *,
-    extra_files: dict[str, str | Path] | None = None,
+    extra_files: dict[str, PathType] | None = None,
     mode: Literal["w", "w:xz", "w:gz", "w:bz2"] = "w",
 ) -> Path:
     """Packs ``model_path`` + ``config.json`` (+ optional extras) into a

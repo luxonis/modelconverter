@@ -10,7 +10,7 @@ from modelconverter.utils.config import (
     ImageCalibrationConfig,
     LinkCalibrationConfig,
 )
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 
 from .base_exporter import Exporter
 from .getters import get_exporter, get_inferer
@@ -18,17 +18,16 @@ from .getters import get_exporter, get_inferer
 
 class MultiStageExporter:
     def __init__(
-        self, target: Target, config: Config, output_dir: Path
+        self, platform: Platform, config: Config, output_dir: Path
     ) -> None:
         self.config = config
-        self.name = config.name
-        self.target = target
+        self.platform = platform
 
         self.output_dir = output_dir
-        self.intermediate_outputs_dir = (
+        self._intermediate_outputs_dir = (
             self.output_dir / "intermediate_outputs"
         )
-        self.intermediate_outputs_dir.mkdir(parents=True, exist_ok=True)
+        self._intermediate_outputs_dir.mkdir(parents=True, exist_ok=True)
 
         with open(self.output_dir / "config.yaml", "w") as f:
             f.write(config.model_dump_json(indent=4))
@@ -37,13 +36,29 @@ class MultiStageExporter:
 
         self.exporters = {
             stage_name: get_exporter(
-                target, stage_config, self.output_dir / stage_name
+                platform, stage_config, self.output_dir / stage_name
             )
             for stage_name, stage_config in config.stages.items()
         }
 
+    def run(self) -> list[Path]:
+        output_paths = []
+        buildinfo = {}
+        for stage_name in self.config.stages:
+            exporter = self.exporters[stage_name]
+            self._produce_calibration_data(exporter=exporter)
+            logger.info(f"Running stage {stage_name}.")
+            output_paths.append(exporter.run())
+            with open(exporter.output_dir / "buildinfo.json") as f:
+                buildinfo[stage_name] = json.load(f)
+            logger.info(f"Stage {stage_name} completed.")
+
+        with open(self.output_dir / "buildinfo.json", "w") as f:
+            json.dump(buildinfo, f, indent=4)
+        return output_paths
+
     def _create_source_dir(self, exporter: Exporter, stage_name: str) -> Path:
-        dest = self.intermediate_outputs_dir / "inference_data" / stage_name
+        dest = self._intermediate_outputs_dir / "inference_data" / stage_name
         dest.mkdir(parents=True, exist_ok=True)
         for inp_name, inp_config in exporter.inputs.items():
             calib = inp_config.calibration
@@ -71,14 +86,14 @@ class MultiStageExporter:
 
             source_dir = self._create_source_dir(linked_exporter, stage)
             dest_dir = (
-                self.intermediate_outputs_dir
+                self._intermediate_outputs_dir
                 / f"{linked_exporter.model_name}_calibration"
             )
             model_path = linked_exporter.inference_model_path
             # ``get_inferer`` returns a ready ``from_config`` instance (same
             # contract as the ``infer`` command), so pass the arguments here.
             inferer = get_inferer(
-                self.target,
+                self.platform,
                 str(model_path),
                 source_dir,
                 dest_dir,
@@ -99,7 +114,7 @@ class MultiStageExporter:
                 # several inputs of this stage may link to the same previous
                 # stage, each with a script of its own.
                 dest = (
-                    self.intermediate_outputs_dir
+                    self._intermediate_outputs_dir
                     / "inference_output"
                     / stage
                     / inp_name
@@ -132,19 +147,3 @@ class MultiStageExporter:
                     np.save(dest / f"{i}.npy", arr)
 
                 inp_config.calibration = ImageCalibrationConfig(path=dest)
-
-    def run(self) -> list[Path]:
-        output_paths = []
-        buildinfo = {}
-        for stage_name in self.config.stages:
-            exporter = self.exporters[stage_name]
-            self._produce_calibration_data(exporter=exporter)
-            logger.info(f"Running stage {stage_name}.")
-            output_paths.append(exporter.run())
-            with open(exporter.output_dir / "buildinfo.json") as f:
-                buildinfo[stage_name] = json.load(f)
-            logger.info(f"Stage {stage_name} completed.")
-
-        with open(self.output_dir / "buildinfo.json", "w") as f:
-            json.dump(buildinfo, f, indent=4)
-        return output_paths

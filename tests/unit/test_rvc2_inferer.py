@@ -16,7 +16,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from modelconverter.packages.rvc2.inferer import RVC2Inferer
+from modelconverter.platforms.rvc2.inferer import RVC2Inferer
 
 
 def _install_fake_openvino(

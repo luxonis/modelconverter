@@ -23,17 +23,17 @@ import pytest
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
-from modelconverter.packages.getters import get_inferer
+from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.conversion import write_toy_conv_config
+from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import platform_params
 from tests.helpers.precision import (
     cosine_similarity,
     golden_reference_outputs,
     locate_converted_model,
 )
-from tests.helpers.target_options import target_options
 
 _SIZE = 32
 # Constant the fidelity comparison runs on, inside the calibration range so the
@@ -64,32 +64,35 @@ def constant_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
-def _to_nchw(arr: np.ndarray, platform: str) -> np.ndarray:
+def _to_nchw(arr: np.ndarray, platform_name: str) -> np.ndarray:
     """The Hailo inferer returns spatial outputs channels-last; the others, and
     the golden reference, are already NCHW."""
     arr = np.asarray(arr)
-    if arr.ndim == 3 and platform == "hailo":
+    if arr.ndim == 3 and platform_name == "hailo":
         return arr.transpose(2, 0, 1)[np.newaxis]
     return arr
 
 
-@pytest.mark.parametrize("platform", platform_params())
+@pytest.mark.parametrize("platform_name", platform_params())
 def test_toy_precision(
-    platform: str, toy_conv_config: Path, constant_image: Path
+    platform_name: str, toy_conv_config: Path, constant_image: Path
 ):
-    target = Target(platform)
-    opts = (*target_options(target), *_PLATFORM_OPTS.get(platform, ()))
-    output_name = f"_toy-prec-{platform}"
+    platform = Platform(platform_name)
+    opts = (
+        *platform_options(platform),
+        *_PLATFORM_OPTS.get(platform_name, ()),
+    )
+    output_name = f"_toy-prec-{platform_name}"
 
     convert(
-        target,
+        platform,
         *opts,
         path=str(toy_conv_config),
         output_dir=output_name,
         to="native",
     )
 
-    cfg, _, _ = get_configs(target, str(toy_conv_config), list(opts))
+    cfg, _, _ = get_configs(platform, str(toy_conv_config), list(opts))
     stage = next(iter(cfg.stages.values()))
 
     reference = golden_reference_outputs(
@@ -98,9 +101,11 @@ def test_toy_precision(
         OUTPUTS_DIR / f"{output_name}_golden",
         float(_INFER_VALUE),
     )
-    model_path = locate_converted_model(OUTPUTS_DIR / output_name, platform)
+    model_path = locate_converted_model(
+        OUTPUTS_DIR / output_name, platform_name
+    )
     inferer = get_inferer(
-        target,
+        platform,
         str(model_path),
         constant_image.parent,
         OUTPUTS_DIR / f"{output_name}_infer",
@@ -111,7 +116,7 @@ def test_toy_precision(
     for (name, ref), conv in zip(
         reference.items(), converted.values(), strict=True
     ):
-        cos = cosine_similarity(ref, _to_nchw(conv, platform))
+        cos = cosine_similarity(ref, _to_nchw(conv, platform_name))
         assert cos >= _THRESHOLD, (
-            f"{platform} output {name!r}: cosine {cos:.5f} < {_THRESHOLD}"
+            f"{platform_name} output {name!r}: cosine {cos:.5f} < {_THRESHOLD}"
         )

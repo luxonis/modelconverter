@@ -2,7 +2,7 @@ import json
 import tarfile
 from itertools import pairwise
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator
@@ -15,16 +15,22 @@ from luxonis_ml.nn_archive.config_building_blocks import (
     InputType,
     PreprocessingBlock,
 )
+from luxonis_ml.typing import Params
 
-from modelconverter.utils.config import BlobBaseConfig, Config, TargetConfig
+from modelconverter.utils.config import (
+    BlobBaseConfig,
+    Config,
+    InputConfig,
+    PlatformConfig,
+)
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
 from modelconverter.utils.metadata import Metadata, get_metadata
 from modelconverter.utils.types import (
     DataType,
     Encoding,
+    Platform,
     QuantizationMode,
-    Target,
 )
 
 
@@ -36,13 +42,13 @@ def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
 
 
 def process_nn_archive(
-    target: Target, path: Path, overrides: dict[str, Any] | None
+    platform: Platform, path: Path, overrides: Params | None
 ) -> tuple[Config, NNArchiveConfig, str]:
     """Extracts the archive from tar and parses its config.
 
     @type path: Path
     @param path: Path to the archive.
-    @type overrides: Optional[Dict[str, Any]]
+    @type overrides: Optional[Params]
     @param overrides: Config overrides.
     @rtype: Tuple[Config, NNArchiveConfig, str]
     @return: Tuple of the parsed config, NNArchiveConfig and the main
@@ -86,7 +92,10 @@ def process_nn_archive(
         "outputs": [],
     }
 
-    if target is Target.RVC4 and (p := untar_path / "encodings.json").exists():
+    if (
+        platform is Platform.RVC4
+        and (p := untar_path / "encodings.json").exists()
+    ):
         logger.info("Using custom `encodings.json` from the NN Archive.")
         main_stage_config["rvc4"] = {
             "encodings": json.loads(p.read_text()),
@@ -232,22 +241,22 @@ def modelconverter_config_to_nn(
     preprocessing: dict[str, PreprocessingBlock],
     main_stage_key: str,
     model_path: Path,
-    target: Target,
+    platform: Platform,
 ) -> NNArchiveConfig:
     is_multistage = len(config.stages) > 1
     model_metadata = get_metadata(model_path)
 
     cfg = config.stages[main_stage_key]
-    target_cfg = cfg.get_target_config(target)
+    platform_cfg = cfg.get_platform_config(platform)
 
     # TODO: This might be more complicated for Hailo
-    quantization_mode = getattr(target_cfg, "quantization_mode", None)
+    quantization_mode = getattr(platform_cfg, "quantization_mode", None)
     if (
         quantization_mode is None
         or quantization_mode == QuantizationMode.CUSTOM
     ):
-        onnx_args = getattr(target_cfg, "snpe_onnx_to_dlc_args", [])
-        prep_args = getattr(target_cfg, "snpe_dlc_graph_prepare_args", [])
+        onnx_args = getattr(platform_cfg, "snpe_onnx_to_dlc_args", [])
+        prep_args = getattr(platform_cfg, "snpe_dlc_graph_prepare_args", [])
         fb16 = any(
             a == "--float_bitwidth" and str(b) == "16"
             for a, b in pairwise(onnx_args)
@@ -257,34 +266,34 @@ def modelconverter_config_to_nn(
             and x.split("=", 1)[1] == "16"
             for x in onnx_args
         )
-        compress_to_fp16 = getattr(target_cfg, "compress_to_fp16", False) or (
-            fb16 and "--use_float_io" in prep_args
-        )
+        compress_to_fp16 = getattr(
+            platform_cfg, "compress_to_fp16", False
+        ) or (fb16 and "--use_float_io" in prep_args)
     else:
         compress_to_fp16 = quantization_mode == QuantizationMode.FP16_STD
-    disable_calibration = target_cfg.disable_calibration
+    disable_calibration = platform_cfg.disable_calibration
 
-    match target, compress_to_fp16, disable_calibration:
-        case Target.RVC2, True, _:
+    match platform, compress_to_fp16, disable_calibration:
+        case Platform.RVC2, True, _:
             precision = DataType.FLOAT16
 
-        case Target.RVC2, False, _:
+        case Platform.RVC2, False, _:
             precision = DataType.FLOAT32
 
-        case Target.RVC3 | Target.RVC4, True, True:
+        case Platform.RVC3 | Platform.RVC4, True, True:
             precision = DataType.FLOAT16
 
-        case Target.RVC3 | Target.RVC4, False, True:
+        case Platform.RVC3 | Platform.RVC4, False, True:
             precision = DataType.FLOAT32
 
-        case Target.RVC3 | Target.RVC4, _, False:
+        case Platform.RVC3 | Platform.RVC4, _, False:
             precision = (
                 DataType.INT16
                 if quantization_mode == QuantizationMode.INT16_STD
                 else DataType.INT8
             )
 
-        case Target.HAILO, _, _:  # pragma: no branch
+        case Platform.HAILO, _, _:  # pragma: no branch
             precision = DataType.INT8
 
     archive_cfg = {
@@ -310,10 +319,10 @@ def modelconverter_config_to_nn(
             layout = make_default_layout(new_shape)
 
         dtype = _get_io_dtype(
-            target,
+            platform,
             inp.name,
             model_metadata,
-            target_cfg,
+            platform_cfg,
             mode="input",
         )
 
@@ -359,10 +368,10 @@ def modelconverter_config_to_nn(
             layout = make_default_layout(new_shape)
 
         dtype = _get_io_dtype(
-            target,
+            platform,
             out.name,
             model_metadata,
-            target_cfg,
+            platform_cfg,
             mode="output",
         )
         archive_cfg["model"]["outputs"].append(
@@ -419,11 +428,11 @@ def _default_archive_input_type(
 
 
 def _default_archive_preprocessing(
-    inp: Any,
+    inp: InputConfig,
     layout: str,
     *,
     input_type: Literal["raw", "image"],
-) -> dict[str, Any]:
+) -> Params:
     if input_type == "raw":
         return {
             "mean": None,
@@ -498,7 +507,7 @@ def archive_from_model(model_path: Path) -> NNArchiveConfig:
 
 
 def generate_archive(
-    target: Target,
+    platform: Platform,
     cfg: Config,
     main_stage: str,
     out_models: list[Path],
@@ -520,10 +529,10 @@ def generate_archive(
         preprocessing,
         main_stage,
         inference_model_path,
-        target,
+        platform,
     )
     generator = ArchiveGenerator(
-        archive_name=f"{archive_name or cfg.name}.{target.value.lower()}",
+        archive_name=f"{archive_name or cfg.name}.{platform.value.lower()}",
         save_path=str(output_path),
         cfg_dict=nn_archive.model_dump(),
         executables_paths=[
@@ -537,10 +546,10 @@ def generate_archive(
 
 
 def _get_io_dtype(
-    target: Target,
+    platform: Platform,
     name: str,
     metadata: Metadata,
-    cfg: TargetConfig,
+    cfg: PlatformConfig,
     *,
     mode: Literal["input", "output"],
 ) -> str:
@@ -548,7 +557,7 @@ def _get_io_dtype(
         dtypes = metadata.input_dtypes
     else:
         dtypes = metadata.output_dtypes
-    if target in {Target.RVC2, Target.RVC3}:
+    if platform in {Platform.RVC2, Platform.RVC3}:
         compile_tool_args: list[str] = getattr(cfg, "compile_tool_args", [])
         assert isinstance(cfg, BlobBaseConfig)
         # -iop is in a form of '-iop "<name1>:<dtype>,<name2>:<dtype2>"'

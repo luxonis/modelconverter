@@ -1,2 +1,4 @@
-tflite2onnx
+tflite2onnx~=0.1
+bsdiff4~=1.2
+pebble~=5.2
 ml-dtypes<0.6 # OpenVINO 2022.3 pins NumPy 1.x; ml-dtypes 0.6 requires NumPy 2.

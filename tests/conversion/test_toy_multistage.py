@@ -30,10 +30,10 @@ import pytest
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
-from modelconverter.packages.getters import get_inferer
+from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.config import Config
 from modelconverter.utils.constants import OUTPUTS_DIR
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.conversion import (
     HAILO_FAST_OPTS,
     assert_produced,
@@ -44,13 +44,13 @@ from tests.helpers.onnx_factory import (
     build_toy_aggregator_onnx,
     build_toy_integration_onnx,
 )
+from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import platform_params
 from tests.helpers.precision import (
     cosine_similarity,
     golden_reference_outputs,
     locate_converted_model,
 )
-from tests.helpers.target_options import target_options
 
 _SIZE = 64
 _CALIB_VALUE = 100
@@ -134,14 +134,16 @@ def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
     )
 
 
-@pytest.mark.parametrize("platform", platform_params(xfails=_CONVERT_XFAILS))
-def test_toy_multistage(platform: str, multistage_config: Path):
-    target = Target(platform)
-    output_name = f"_toy-multistage-{platform}"
-    extra = HAILO_FAST_OPTS if platform == "hailo" else ()
+@pytest.mark.parametrize(
+    "platform_name", platform_params(xfails=_CONVERT_XFAILS)
+)
+def test_toy_multistage(platform_name: str, multistage_config: Path):
+    platform = Platform(platform_name)
+    output_name = f"_toy-multistage-{platform_name}"
+    extra = HAILO_FAST_OPTS if platform_name == "hailo" else ()
     convert(
-        target,
-        *target_options(target),
+        platform,
+        *platform_options(platform),
         *extra,
         path=str(multistage_config),
         output_dir=output_name,
@@ -189,13 +191,15 @@ def _golden_pipeline(
     return np.asarray(out), from_first, from_second
 
 
-@pytest.mark.parametrize("platform", platform_params(CORRECTNESS_PLATFORMS))
-def test_toy_multistage_precision(platform: str, multistage_config: Path):
-    target = Target(platform)
-    options = target_options(target)
-    output_name = f"_toy-multistage-prec-{platform}"
+@pytest.mark.parametrize(
+    "platform_name", platform_params(CORRECTNESS_PLATFORMS)
+)
+def test_toy_multistage_precision(platform_name: str, multistage_config: Path):
+    platform = Platform(platform_name)
+    options = platform_options(platform)
+    output_name = f"_toy-multistage-prec-{platform_name}"
     convert(
-        target,
+        platform,
         *options,
         path=str(multistage_config),
         output_dir=output_name,
@@ -205,7 +209,7 @@ def test_toy_multistage_precision(platform: str, multistage_config: Path):
 
     work = OUTPUTS_DIR / f"{output_name}_work"
     work.mkdir(parents=True, exist_ok=True)
-    cfg, _, _ = get_configs(target, str(multistage_config), list(options))
+    cfg, _, _ = get_configs(platform, str(multistage_config), list(options))
     golden, from_first_arr, from_second_arr = _golden_pipeline(cfg, work)
 
     # Feed the converted `third` the same fp32 upstream tensors as the golden.
@@ -213,7 +217,7 @@ def test_toy_multistage_precision(platform: str, multistage_config: Path):
     # layout that backend expects: SNPE (rvc4) consumes NHWC, OpenVINO (rvc2)
     # NCHW, and `from_*_arr` is NCHW.
     def as_input(arr: np.ndarray) -> np.ndarray:
-        return arr[0].transpose(1, 2, 0) if platform == "rvc4" else arr
+        return arr[0].transpose(1, 2, 0) if platform_name == "rvc4" else arr
 
     from_first = work / "from_first.npy"
     from_second = work / "from_second.npy"
@@ -221,10 +225,10 @@ def test_toy_multistage_precision(platform: str, multistage_config: Path):
     np.save(from_second, as_input(from_second_arr))
 
     model_path = locate_converted_model(
-        OUTPUTS_DIR / output_name / "third", platform
+        OUTPUTS_DIR / output_name / "third", platform_name
     )
     inferer = get_inferer(
-        target,
+        platform,
         str(model_path),
         work,
         OUTPUTS_DIR / f"{output_name}_infer",
@@ -237,5 +241,6 @@ def test_toy_multistage_precision(platform: str, multistage_config: Path):
     (conv_out,) = converted.values()
     cos = cosine_similarity(golden, conv_out)
     assert cos >= _THRESHOLD, (
-        f"{platform} multistage final output: cosine {cos:.5f} < {_THRESHOLD}"
+        f"{platform_name} multistage final output: "
+        f"cosine {cos:.5f} < {_THRESHOLD}"
     )

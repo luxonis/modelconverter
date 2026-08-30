@@ -7,10 +7,10 @@ full ``Config.get_config`` pipeline.
 
 import json
 from pathlib import Path
-from typing import Any
 
 import onnx
 import pytest
+from luxonis_ml.typing import ParamValue
 from onnx import TensorProto, checker, helper
 from pydantic import ValidationError
 
@@ -30,6 +30,9 @@ from modelconverter.utils.config import (
     RVC3Config,
     RVC4Config,
     SingleStageConfig,
+    _as_dict,
+    _as_entries,
+    _as_shape,
     _extract_bin_xml_from_ir,
     _get_onnx_inter_info,
     _get_onnx_node_info,
@@ -42,9 +45,9 @@ from modelconverter.utils.types import (
     DataType,
     Encoding,
     InputFileType,
+    Platform,
     QuantizationMode,
     ResizeMethod,
-    Target,
 )
 from tests.helpers.onnx_factory import (
     dynamic_batch_onnx,
@@ -53,12 +56,12 @@ from tests.helpers.onnx_factory import (
 )
 
 
-def _input_config(**data: Any) -> InputConfig:
+def _input_config(**data: ParamValue) -> InputConfig:
     """Validate raw user configuration through Pydantic's public API."""
     return InputConfig.model_validate(data)
 
 
-def _rvc4_config(**data: Any) -> RVC4Config:
+def _rvc4_config(**data: ParamValue) -> RVC4Config:
     """Validate raw user configuration through Pydantic's public API."""
     return RVC4Config.model_validate(data)
 
@@ -129,6 +132,13 @@ def test_flat_config_with_explicit_name_kept():
     assert set(config.stages) == {"custom"}
 
 
+def test_stage_name_must_be_a_string():
+    """A single-stage config takes its stage name from `name`, which
+    then keys the stage dictionary."""
+    with pytest.raises(TypeError, match="`name` must be a string"):
+        Config.get_config(None, {"name": 123, "input_model": "model.onnx"})
+
+
 def test_multistage_extras_fanned_into_each_stage():
     """Top-level extras are distributed to stages missing them, and the
     derived name joins the stage keys."""
@@ -194,6 +204,13 @@ def test_get_stage_config_explicit_key():
 def test_missing_input_model_raises():
     with pytest.raises(ValueError, match="`input_model` must be provided"):
         Config.get_config(None, {})
+
+
+def test_input_model_must_be_a_path():
+    with pytest.raises(
+        TypeError, match="`input_model` must be a string or a path"
+    ):
+        Config.get_config(None, {"input_model": 123})
 
 
 def test_onnx_path_resolved_absolute():
@@ -308,6 +325,13 @@ def test_output_layout_length_mismatch_raises():
 def test_output_explicit_layout_uppercased():
     out = OutputConfig(name="o", shape=[1, 10], layout="nc")
     assert out.layout == "NC"
+
+
+def test_layout_must_be_a_string():
+    """`layout` reaches the validator as raw input, so a caller can put
+    anything there."""
+    with pytest.raises(TypeError, match="`layout` must be a string"):
+        OutputConfig(name="o", shape=[1, 10], layout=5)  # type: ignore[arg-type]
 
 
 def test_encoding_config_defaults():
@@ -511,12 +535,12 @@ def test_encodings_none():
     assert RVC4Config(encodings=None).encodings is None
 
 
-def test_target_config_dispatch():
+def test_platform_config_dispatch():
     cfg = SingleStageConfig.model_construct()
-    assert cfg.get_target_config(Target.HAILO) is cfg.hailo
-    assert cfg.get_target_config(Target.RVC2) is cfg.rvc2
-    assert cfg.get_target_config(Target.RVC3) is cfg.rvc3
-    assert cfg.get_target_config(Target.RVC4) is cfg.rvc4
+    assert cfg.get_platform_config(Platform.HAILO) is cfg.hailo
+    assert cfg.get_platform_config(Platform.RVC2) is cfg.rvc2
+    assert cfg.get_platform_config(Platform.RVC3) is cfg.rvc3
+    assert cfg.get_platform_config(Platform.RVC4) is cfg.rvc4
 
 
 def test_is_symmetric_json_serialization():
@@ -826,9 +850,9 @@ def test_top_level_and_input_calibration_merged(tmp_path: Path):
     assert cal1.max_images == -1
 
 
-def test_disable_calibration_fans_out_to_all_targets():
+def test_disable_calibration_fans_out_to_all_platforms():
     # ``rvc4`` is already present in the data, exercising the branch
-    # that skips re-creating an existing target dict.
+    # that skips re-creating an existing platform dict.
     config = Config.get_config(
         None,
         {
@@ -977,3 +1001,32 @@ def test_renames_node_io():
     }
     assert "renamed" in tensors
     assert "described_node" not in tensors
+
+
+def test_as_dict_rejects_a_non_dictionary():
+    with pytest.raises(TypeError, match="`calibration` must be a dictionary"):
+        _as_dict([1, 2], "calibration")
+
+
+def test_as_entries_rejects_a_non_list():
+    with pytest.raises(
+        TypeError, match="`inputs` must be a list of dictionaries"
+    ):
+        _as_entries("input0", "inputs")
+
+
+def test_as_entries_rejects_a_non_dictionary_entry():
+    with pytest.raises(
+        TypeError, match="`inputs` must be a list of dictionaries"
+    ):
+        _as_entries([{"name": "input0"}, "input1"], "inputs")
+
+
+def test_as_shape_rejects_a_non_list():
+    with pytest.raises(TypeError, match="`shape` must be a list of integers"):
+        _as_shape("1,3,8,8", "shape")
+
+
+def test_as_shape_rejects_a_non_integer_dimension():
+    with pytest.raises(TypeError, match="`shape` must be a list of integers"):
+        _as_shape([1, 3, "8"], "shape")

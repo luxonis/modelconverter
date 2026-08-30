@@ -28,10 +28,10 @@ from modelconverter.utils.constants import (
     in_docker,
 )
 from modelconverter.utils.input_staging import claim_cache
-from modelconverter.utils.target_versions import (
-    get_default_target_version,
-)
 from modelconverter.utils.telemetry import telemetry_environment
+from modelconverter.utils.tool_versions import (
+    get_default_tool_version,
+)
 
 UserNamespaceMode = Literal["rootless", "userns", "rootful", "unknown"]
 
@@ -231,7 +231,7 @@ def docker_bin() -> str:
 
 # NOTE: docker SDK is not used here because it's too slow
 def docker_build(
-    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+    platform: Literal["rvc2", "rvc3", "rvc4", "hailo"],
     bare_tag: str,
     version: str | None = None,
     image: str | None = None,
@@ -239,11 +239,11 @@ def docker_build(
     check_docker()
 
     if version is None:
-        version = get_default_target_version(target)
+        version = get_default_tool_version(platform)
 
-    tag_version = rvc4_tag_version(version) if target == "rvc4" else version
-    if target == "rvc4" and bare_tag != "dev":
-        build_dir = prepare_build_environemnt(target, version)
+    tag_version = rvc4_tag_version(version) if platform == "rvc4" else version
+    if platform == "rvc4" and bare_tag != "dev":
+        build_dir = prepare_build_environment(platform, version)
     else:
         build_dir = Path()
 
@@ -254,13 +254,13 @@ def docker_build(
         if image_tag is None:
             image = f"{image}:{tag}"
     else:
-        image = f"luxonis/modelconverter-{target}:{tag}"
+        image = f"luxonis/modelconverter-{platform}:{tag}"
 
     args = [
         docker_bin(),
         "build",
         "-f",
-        str(build_dir / "docker" / target / "Dockerfile"),
+        str(build_dir / "docker" / platform / "Dockerfile"),
         "-t",
         image,
         "--load",
@@ -278,15 +278,15 @@ def docker_build(
     return image
 
 
-def prepare_build_environemnt(
-    target: Literal["rvc2", "rvc3", "rvc4", "hailo"], version: str
+def prepare_build_environment(
+    platform: Literal["rvc2", "rvc3", "rvc4", "hailo"], version: str
 ) -> Path:
-    if target != "rvc4":
+    if platform != "rvc4":
         raise NotImplementedError(
             "Fully automatic docker build is only implemented for RVC4"
         )
 
-    build_path = Path(".build", target)
+    build_path = Path(".build", platform)
     build_path.mkdir(parents=True, exist_ok=True)
     _download_file(
         f"https://github.com/luxonis/modelconverter/archive/refs/tags/v{__version__}-beta.zip",
@@ -431,32 +431,32 @@ def pull_image(client: docker.DockerClient, image: str) -> str:
 
 
 def get_docker_image(
-    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+    platform: Literal["rvc2", "rvc3", "rvc4", "hailo"],
     bare_tag: str,
     version: str,
     image: str | None = None,
 ) -> str:
     check_docker()
 
-    local_image = get_local_docker_image(target, bare_tag, version, image)
+    local_image = get_local_docker_image(platform, bare_tag, version, image)
     if local_image is not None:
         return local_image
 
     candidate_images = _get_candidate_docker_images(
-        target, bare_tag, version, image
+        platform, bare_tag, version, image
     )
     return _get_or_build_docker_image(
-        target, bare_tag, version, candidate_images, image
+        platform, bare_tag, version, candidate_images, image
     )
 
 
 def _get_candidate_docker_images(
-    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+    platform: Literal["rvc2", "rvc3", "rvc4", "hailo"],
     bare_tag: str,
     version: str,
     image: str | None = None,
 ) -> list[str]:
-    tag_version = rvc4_tag_version(version) if target == "rvc4" else version
+    tag_version = rvc4_tag_version(version) if platform == "rvc4" else version
     tag = f"{tag_version}-{bare_tag}"
 
     if image is not None:
@@ -464,21 +464,21 @@ def _get_candidate_docker_images(
         if image_tag is None:
             image = f"{image_repo}:{tag}"
     else:
-        image_repo = f"luxonis/modelconverter-{target}"
+        image_repo = f"luxonis/modelconverter-{platform}"
         image_tag = None
         image = f"{image_repo}:{tag}"
 
     candidate_images = [image]
     # Add full version if the specified RVC4 tag includes a build number
     # (e.g. version=2.32.6.250402 instead of version=2.32.6).
-    if target == "rvc4" and tag_version != version and image_tag is None:
+    if platform == "rvc4" and tag_version != version and image_tag is None:
         candidate_images.append(f"{image_repo}:{version}-{bare_tag}")
 
     return candidate_images
 
 
 def get_local_docker_image(
-    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+    platform: Literal["rvc2", "rvc3", "rvc4", "hailo"],
     bare_tag: str,
     version: str,
     image: str | None = None,
@@ -486,7 +486,7 @@ def get_local_docker_image(
     check_docker()
 
     candidate_images = _get_candidate_docker_images(
-        target, bare_tag, version, image
+        platform, bare_tag, version, image
     )
     client = get_docker_client_from_active_context()
     candidate_tags = set()
@@ -504,7 +504,7 @@ def get_local_docker_image(
 
 
 def _get_or_build_docker_image(
-    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+    platform: Literal["rvc2", "rvc3", "rvc4", "hailo"],
     bare_tag: str,
     version: str,
     candidate_images: list[str],
@@ -521,11 +521,11 @@ def _get_or_build_docker_image(
             return pull_image(client, f"ghcr.io/{candidate}")
 
     logger.error("Failed to pull the image, building it locally...")
-    return docker_build(target, bare_tag, version, image)
+    return docker_build(platform, bare_tag, version, image)
 
 
 def docker_exec(
-    target: Literal["rvc2", "rvc3", "rvc4", "hailo"],
+    platform: Literal["rvc2", "rvc3", "rvc4", "hailo"],
     *args: str,
     bare_tag: str,
     use_gpu: bool,
@@ -534,8 +534,8 @@ def docker_exec(
     memory: int | None = None,
     cpus: float | None = None,
 ) -> None:
-    version = version or get_default_target_version(target)
-    image = get_docker_image(target, bare_tag, version, image)
+    version = version or get_default_tool_version(platform)
+    image = get_docker_image(platform, bare_tag, version, image)
 
     # Create the writable host directories up front so they are owned by the
     # invoking user (the cache also holds the staged inputs, and `./output`
@@ -551,17 +551,17 @@ def docker_exec(
         f.write(
             generate_compose_config(
                 image,
-                gpu=use_gpu and target == "hailo",
+                gpu=use_gpu and platform == "hailo",
                 memory=memory,
                 cpus=cpus,
                 extra_environment={
                     **telemetry_environment(),
                     # Lets the in-container test suite auto-select this
                     # platform's conversion tests (see tests/conftest.py).
-                    "MODELCONVERTER_TARGET": target,
+                    "MODELCONVERTER_PLATFORM": platform,
                     # Lets conversion fixtures select tool-version-specific
                     # test assets.
-                    "MODELCONVERTER_TARGET_VERSION": version,
+                    "MODELCONVERTER_TOOL_VERSION": version,
                 },
             ).encode()
         )

@@ -36,7 +36,7 @@ def pytest_collection_modifyitems(
     ``rvc3`` / ``rvc4`` / ``hailo``) applied at parametrization, so
     ``pytest -m rvc2`` selects only the RVC2 conversions.
 
-    When running inside a platform Docker image, ``MODELCONVERTER_TARGET``
+    When running inside a platform Docker image, ``MODELCONVERTER_PLATFORM``
     is set (injected by the launcher), so conversion tests for the *other*
     platforms are auto-deselected. That way ``modelconverter shell rvc4
     --dev -c "pytest -x"`` runs exactly the unit + RVC4 conversion tests
@@ -46,8 +46,8 @@ def pytest_collection_modifyitems(
         if f"{os.sep}unit{os.sep}" in str(item.fspath):
             item.add_marker("unit")
 
-    target = os.getenv("MODELCONVERTER_TARGET")
-    if not target:
+    platform = os.getenv("MODELCONVERTER_PLATFORM")
+    if not platform:
         return
 
     selected, deselected = [], []
@@ -56,7 +56,7 @@ def pytest_collection_modifyitems(
             marker.name for marker in item.iter_markers()
         )
         # Keep unit tests (no platform marker) and this platform's tests.
-        if not item_platforms or target in item_platforms:
+        if not item_platforms or platform in item_platforms:
             selected.append(item)
         else:
             deselected.append(item)

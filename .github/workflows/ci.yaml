@@ -277,7 +277,7 @@ jobs:
               pip install \
               \"luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}\" \
               --upgrade --force-reinstall && \
-              pip install -r /app/modelconverter/packages/${PACKAGE}/requirements.txt && \
+              pip install -r /app/modelconverter/platforms/${PACKAGE}/requirements.txt && \
               pip install -r /tmp/numpy-pin.txt &&"
           else
             ML_INSTALL_COMMAND=""
