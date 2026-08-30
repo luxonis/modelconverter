@@ -230,10 +230,14 @@ class Benchmark(ABC):
         self, full: bool = True, save: bool = False, **kwargs: ConfigValue
     ) -> None:
         logger.info(f"Running benchmarking for {self.model_name}")
+        # `all_configurations` names only the options it varies, so the
+        # rest have to come from the defaults. An explicit null stays
+        # null.
         for key, default in self.default_configuration.items():
-            value = kwargs.get(key)
+            value = kwargs.get(key, default)
             if default is not None and value is not None:
-                kwargs[key] = type(default)(value)
+                value = type(default)(value)
+            kwargs[key] = value
 
         if not full:
             configurations = [{**self.default_configuration, **kwargs}]
