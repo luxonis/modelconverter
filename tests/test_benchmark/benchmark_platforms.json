@@ -1,9 +1,9 @@
 {
   "rvc4": {
     "luxonis/yolov6-nano:r2-coco-512x288": {
-      "expected_fps": 750.00,
+      "expected_fps": 1100.00,
       "tolerance_low": 0.10,
-      "tolerance_high": 0.30
+      "tolerance_high": 0.10
     },
     "luxonis/yolov8-instance-segmentation-nano:coco-512x288": {
       "expected_fps": 554.68,
