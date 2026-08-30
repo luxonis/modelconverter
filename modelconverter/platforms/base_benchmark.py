@@ -235,7 +235,14 @@ class Benchmark(ABC):
         # null.
         for key, default in self.default_configuration.items():
             value = kwargs.get(key, default)
-            if default is not None and value is not None:
+            # `bool` accepts any object, so it turns the string "false"
+            # into `True`. A boolean option keeps its value and
+            # `get_option` refuses a value of the wrong type.
+            if (
+                default is not None
+                and value is not None
+                and not isinstance(default, bool)
+            ):
                 value = type(default)(value)
             kwargs[key] = value
 
