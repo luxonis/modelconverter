@@ -6,6 +6,7 @@ from typing import TypeAlias, TypeVar
 
 import polars as pl
 from loguru import logger
+from luxonis_ml.typing import PathType
 
 from modelconverter.utils import is_hubai_model_variant_available, resolve_path
 
@@ -68,6 +69,9 @@ class Benchmark(ABC):
     )
 
     def __init__(self, model_path: str):
+        self.model_path: PathType
+        self._model_instance: str | None
+
         if any(model_path.endswith(ext) for ext in self._VALID_EXTENSIONS):
             self.model_path = resolve_path(model_path, Path.cwd())
             self.model_name = self.model_path.stem
