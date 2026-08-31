@@ -950,7 +950,11 @@ def launcher(
     memory: Annotated[str | None, Parameter(group=docker_parameters)] = None,
     cpus: Annotated[float | None, Parameter(group=docker_parameters)] = None,
 ):
-    """Run a command, in a docker container unless already inside one.
+    """Convert neural network models for Luxonis devices.
+
+    The ``convert``, ``infer`` and ``shell`` commands run in a docker
+    container, unless they already run inside one. The other commands
+    run on the host.
 
     Args:
         *tokens: The command and its arguments, parsed by the wrapped
