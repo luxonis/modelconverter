@@ -1,5 +1,7 @@
 pre-commit~=4.6
-pyright~=1.1
+# The type gate runs this exact release, so a new pyright cannot turn CI red
+# on its own. Raise it deliberately.
+pyright==1.1.411
 pytest-cov~=7.1
 pytest-xdist~=3.5
 pytest-sugar~=1.1
