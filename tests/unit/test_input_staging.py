@@ -1423,6 +1423,9 @@ def test_a_config_reference_that_is_not_a_path_is_left_alone(
     )
 
 
+@pytest.mark.skipif(
+    not hasattr(os, "mkfifo"), reason="os.mkfifo is not available"
+)
 def test_staging_a_directory_skips_metadata_and_special_files(
     tmp_path: Path, cache_dir: Path
 ) -> None:
