@@ -107,7 +107,6 @@ class DeviceMonitor:
             counter that could not be read.
 
         """
-
         return (
             self._read_power()
             | self._read_ram()
@@ -187,7 +186,6 @@ class DeviceMonitor:
             the mean over the zones that could be read.
 
         """
-
         temps = {
             f"temp_zone{zone}": self._read_temp(zone) for zone in range(92, 97)
         }
@@ -234,7 +232,6 @@ class DeviceMonitor:
             The frequency in MHz, or ``None`` if it could not be read.
 
         """
-
         try:
             _, out, _ = self._device_handler.shell(
                 "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
@@ -326,7 +323,6 @@ class DeviceMonitor:
             counters.
 
         """
-
         return {
             "cpu_frequency": self._read_cpu_frequency(),
             "cpu_utilization": self._read_cpu_utilization(),
@@ -423,7 +419,6 @@ class DeviceMonitor:
             listed on the device, ``False`` otherwise.
 
         """
-
         try:
             self._device_handler.shell(
                 f"ls /sys/class/hwmon/{hwmon}/power1_input"
@@ -446,7 +441,6 @@ class DeviceMonitor:
             hardware monitor is missing or unreadable.
 
         """
-
         system = self._read_hwmon("hwmon0")
         proc = self._read_hwmon("hwmon1")
         return {
@@ -462,7 +456,6 @@ class DeviceMonitor:
             ``False`` otherwise.
 
         """
-
         try:
             self._device_handler.shell(
                 f"{self._DSP_SYS_MON_APP} getPowerStats --q6 cdsp --clear 1"

@@ -1,12 +1,12 @@
 """Platform-agnostic scaffolding for the model exporters.
 
 Converting a model means handing it to a vendor toolchain that only
-exists inside that platform's Docker image, so what the exporters share
-everything around that call: staging the input model in the output
-directory, optionally simplifying the ONNX, producing calibration data
-for the inputs that ask for random ones, and recording what was run.
-That part lives in `Exporter`, which the per-platform exporters
-subclass.
+exists inside that platform's Docker image, so what the exporters
+share is everything around that call: staging the input model in the
+output directory, optionally simplifying the ONNX, producing
+calibration data for the inputs that ask for random ones, and
+recording what was run. That part lives in `Exporter`, which the
+per-platform exporters subclass.
 """
 
 import json

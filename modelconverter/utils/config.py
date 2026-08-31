@@ -632,7 +632,6 @@ class RVC4Config(PlatformConfig):
             The parsed encodings, or ``None`` if no value was given.
 
         """
-
         if value is None:
             return None
 
@@ -705,9 +704,8 @@ class SingleStageConfig(BaseModelExtraForbid):
 
     Holds everything needed to convert one model: the model itself, its
     inputs and outputs, and the options of every supported platform.
-    Most
-    of the fields are filled in from the metadata of the input model
-    when they are not given explicitly.
+    Most of the fields are filled in from the metadata of the input
+    model when they are not given explicitly.
 
     Attributes:
         input_model: Path to the model to convert. Downloaded to the

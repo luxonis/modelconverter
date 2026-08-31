@@ -410,7 +410,6 @@ class DataType(Enum):
             <class 'numpy.int8'>
 
         """
-
         return self._transform(
             {
                 "bfloat16": np.float32,  # Preserve bfloat16 range better than float16.
@@ -593,7 +592,6 @@ class InputFileType(Enum):
             <InputFileType.TFLITE: 'TFLITE'>
 
         """
-
         path = Path(path)
         if path.suffix == ".onnx":
             return cls.ONNX

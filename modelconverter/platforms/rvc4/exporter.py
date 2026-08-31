@@ -359,7 +359,6 @@ class RVC4Exporter(Exporter):
             Path to the written ``encodings.json``.
 
         """
-
         encodings_dict = encodings.model_dump(mode="json", exclude_none=True)
         # DAI does not support custom TF8 encodings on exposed tensors.
         # Keep AIMET's internal tensor encodings, but normalize exposed
@@ -387,7 +386,6 @@ class RVC4Exporter(Exporter):
             Path to the converted DLC model.
 
         """
-
         logger.info("Exporting for RVC4")
         args = self._snpe_onnx_to_dlc
         self._add_args(args, ["-i", self._input_model])
@@ -470,7 +468,6 @@ class RVC4Exporter(Exporter):
             was exported with and the HTP SoCs it was prepared for.
 
         """
-
         snpe_version = subprocess.run(
             ["snpe-dlc-quant", "--version"], capture_output=True, check=False
         )

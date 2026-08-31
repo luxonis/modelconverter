@@ -1,12 +1,11 @@
 """Helpers smoothing over differences between ONNX releases.
 
-ONNX is the input format every platform can take, so modelconverter has
-to
-cope with whatever the ONNX package in a given image offers: helper
-functions come and go between releases, and a model too large for a
-single protobuf keeps its weights in companion files. This module
-patches the missing helpers back in and gathers the external-data
-handling the rest of the package needs.
+ONNX is the input format every platform can take, so modelconverter
+has to cope with whatever the ONNX package in a given image offers:
+helper functions come and go between releases, and a model too large
+for a single protobuf keeps its weights in companion files. This
+module patches the missing helpers back in and gathers the
+external-data handling the rest of the package needs.
 """
 
 from collections.abc import Iterable, Iterator

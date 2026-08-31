@@ -1,8 +1,7 @@
 """Reading of input and output metadata from model files.
 
 Every conversion platform speaks a different model format, so the rest
-of
-modelconverter asks for shapes and data types through the single
+of modelconverter asks for shapes and data types through the single
 `get_metadata` entry point, which dispatches on the file suffix: ONNX,
 OpenVINO IR (RVC2/RVC3), SNPE DLC (RVC4), Hailo HAR and TFLite. The
 readers for the platform-specific formats rely on tooling that is only
