@@ -175,7 +175,6 @@ omit = [
   "modelconverter/utils/device_monitors.py",
   "modelconverter/utils/telemetry.py",
   "modelconverter/utils/log_latency.py",
-  "modelconverter/utils/hub_requests.py",
   "modelconverter/utils/hubai_utils.py",
   "modelconverter/utils/docker_utils.py",
   "modelconverter/utils/progress_handler.py",

@@ -605,8 +605,15 @@ def test_fp16_disables_calibration():
     assert cfg.disable_calibration
 
 
-def test_non_fp16_keeps_calibration():
-    cfg = RVC4Config(quantization_mode=QuantizationMode.INT8_STD)
+@pytest.mark.parametrize(
+    "mode",
+    [
+        QuantizationMode.INT8_STD,
+        QuantizationMode.INT16_STD,
+    ],
+)
+def test_non_fp16_keeps_calibration(mode: QuantizationMode):
+    cfg = RVC4Config(quantization_mode=mode)
     assert not cfg.disable_calibration
 
 

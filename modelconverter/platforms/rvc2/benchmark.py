@@ -87,14 +87,14 @@ class RVC2Benchmark(Benchmark):
         inputNames = []
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
             modelArchive = dai.NNArchive(modelPath)
-            for input in modelArchive.getConfig().model.inputs:
-                inputSizes.append(input.shape[::-1])
-                inputNames.append(input.name)
+            for archive_input in modelArchive.getConfig().model.inputs:
+                inputSizes.append(archive_input.shape[::-1])
+                inputNames.append(archive_input.name)
         elif str(model_path).endswith(".blob"):
             blob_model = dai.OpenVINO.Blob(modelPath)
-            for input in blob_model.networkInputs:
-                inputSizes.append(blob_model.networkInputs[input].dims)
-                inputNames.append(input)
+            for input_name in blob_model.networkInputs:
+                inputSizes.append(blob_model.networkInputs[input_name].dims)
+                inputNames.append(input_name)
 
         inputData = dai.NNData()
         for name, inputSize in zip(inputNames, inputSizes, strict=True):

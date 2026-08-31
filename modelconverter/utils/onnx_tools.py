@@ -273,9 +273,29 @@ class ONNXModifier:
     ) -> bool:
         """Modify the ONNX model by applying a series of optimizations.
 
-        @param passes: List of optimization passes to apply to the ONNX
-            model
-        @type passes: Optional[List[str]]
+        Each flag enables one step. A step that changes the outputs of
+        the model is reverted.
+
+        @param substitute_sub_with_add: Replace Sub nodes with Add
+            nodes.
+        @type substitute_sub_with_add: bool
+        @param substitute_div_with_mul: Replace Div nodes with Mul
+            nodes.
+        @type substitute_div_with_mul: bool
+        @param fuse_add_mul_to_bn: Fuse Add and Mul nodes into
+            BatchNormalization nodes.
+        @type fuse_add_mul_to_bn: bool
+        @param fuse_comb_add_mul_to_conv: Fuse a combined Add and Mul
+            pair into a Conv node.
+        @type fuse_comb_add_mul_to_conv: bool
+        @param fuse_single_add_mul_to_conv: Fuse a single Add or Mul
+            node into a Conv node.
+        @type fuse_single_add_mul_to_conv: bool
+        @param fuse_split_concat_to_conv: Fuse Split and Concat nodes
+            into Conv nodes.
+        @type fuse_split_concat_to_conv: bool
+        @rtype: bool
+        @return: C{True} if the model was modified and exported.
         """
         if self._has_dynamic_shape:
             logger.warning(
@@ -329,8 +349,12 @@ class ONNXModifier:
     def compare_outputs(self, from_modelproto: bool = False) -> bool:
         """Compare the outputs of two ONNX models.
 
-        @param half: Flag to use half precision for the input tensors
-        @type half: bool
+        @param from_modelproto: Compare the model held in memory against
+            the previous one. If C{False}, compare the file at
+            C{model_path} against the file at C{output_path}.
+        @type from_modelproto: bool
+        @rtype: bool
+        @return: C{True} if every output of the two models agrees.
         """
         import onnxruntime as ort
 
@@ -422,12 +446,7 @@ class ONNXModifier:
         self._onnx_gs = gs.import_onnx(self._onnx_model)
 
     def _optimize_onnx(self) -> None:
-        """Optimize and simplify the ONNX model's graph.
-
-        @param passes: List of optimization passes to apply to the ONNX
-            model
-        @type passes: Optional[List[str]]
-        """
+        """Optimize and simplify the ONNX model's graph."""
         self._onnx_model.ir_version = min(self._onnx_model.ir_version, 10)
 
         if self._skip_optimization:
@@ -485,12 +504,7 @@ class ONNXModifier:
         )
 
     def _export_onnx(self) -> None:
-        """Export the modified ONNX model to the output path.
-
-        @param passes: List of optimization passes to apply to the ONNX
-            model
-        @type passes: Optional[List[str]]
-        """
+        """Export the modified ONNX model to the output path."""
         self._optimize_onnx()
 
         self._onnx_model.ir_version = min(self._onnx_model.ir_version, 10)

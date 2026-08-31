@@ -5,7 +5,6 @@ import shlex
 import shutil
 import tempfile
 from collections.abc import Iterable
-from contextlib import suppress
 from pathlib import Path
 from subprocess import CalledProcessError, SubprocessError
 from typing import Final
@@ -34,6 +33,7 @@ from modelconverter.utils import (
     environ,
     subprocess_run,
 )
+from modelconverter.utils.hubai_utils import create_hubai_client
 from modelconverter.utils.log_latency import (
     RVC4_INFERENCE_LATENCY_RE,
     parse_inference_latency,
@@ -707,6 +707,7 @@ class RVC4Benchmark(Benchmark):
             return result
 
         cfg = archive.getConfig()
+        hubai_precision = self._get_hubai_type()
         return [
             InputSpec(
                 name=inp.name,
@@ -719,63 +720,46 @@ class RVC4Benchmark(Benchmark):
                     )
                     if cfg.model.metadata.precision
                     else None,
-                    hubai_precision=self._get_hubai_type(),
+                    hubai_precision=hubai_precision,
                 ),
             )
             for inp in cfg.model.inputs
         ]
 
     def _get_hubai_type(self) -> DataType | None:
-        from modelconverter.cli import Request, slug_to_id
-
         if not isinstance(
             self.model_path, str
         ) or not self._HUB_MODEL_PATTERN.match(self.model_path):
             return None
 
-        model_id = slug_to_id(self.model_name, "models")
-        model_variant = self.model_path.split(":")[1]
-
-        model_variants = []
-        for is_public in [True, False, None]:
-            with suppress(Exception):
-                model_variants += Request.get_records(
-                    "modelVersions/",
-                    params={"model_id": model_id, "is_public": is_public},
-                )
-
-        model_version_id = None
-        for version in model_variants:
-            if version["variant_slug"] == model_variant:
-                model_version_id = version["id"]
-                break
-
-        if not model_version_id:
-            return DataType.INT8
+        client = create_hubai_client()
+        model_variant = client.variants.get_variant(
+            f"{self._hub_model_identifier}:{self._model_variant}"
+        )
 
         model_instances = []
-        for is_public in [True, False]:
-            with suppress(Exception):
-                model_instances += Request.get_records(
-                    "modelInstances/",
-                    params={
-                        "model_id": model_id,
-                        "model_version_id": model_version_id,
-                        "is_public": is_public,
-                    },
+        for is_public in (True, False):
+            model_instances.extend(
+                client.instances.list_instances(
+                    model_id=model_variant.model_id,
+                    variant_id=model_variant.id,
+                    is_public=is_public,
+                    limit=500,
                 )
-
-        model_precision_type = None
+            )
         for instance in model_instances:
-            if instance["platforms"] == ["RVC4"] and (
+            if any(
+                platform.value == "RVC4"
+                for platform in instance.platforms or []
+            ) and (
                 self._model_instance is None
-                or instance["hash_short"] == self._model_instance
+                or instance.hash_short == self._model_instance
             ):
-                model_precision_type = instance.get("model_precision_type")
-                break
-
-        if model_precision_type is not None:
-            return DataType.from_hubai_dtype(model_precision_type)
+                if instance.model_precision_type is not None:
+                    return DataType.from_hubai_dtype(
+                        instance.model_precision_type.value
+                    )
+                return None
         return None
 
     @staticmethod

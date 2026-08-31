@@ -1,27 +1,23 @@
-from contextlib import suppress
+from hubai_sdk import HubAIClient
+from hubai_sdk.errors import ResourceNotFoundError
+from hubai_sdk.utils.environ import environ as hubai_sdk_environ
+
+from modelconverter.utils.environ import environ
 
 
-def is_hubai_available(model_name: str, model_variant: str) -> bool:
-    from modelconverter.cli import slug_to_id
-    from modelconverter.utils.hub_requests import Request
+def create_hubai_client() -> HubAIClient:
+    """Create an authenticated HubAI SDK client using ModelConverter settings."""
+    hubai_sdk_environ.HUBAI_URL = environ.HUBAI_URL
+    return HubAIClient(api_key=environ.HUBAI_API_KEY)
 
-    model_slug = f"{model_name}:{model_variant}"
 
-    model_id = slug_to_id(
-        model_name,
-        "models",
-    )
-
-    model_variants = []
-    for is_public in [True, False]:
-        with suppress(Exception):
-            model_variants += Request.get_records(
-                "modelVersions/",
-                params={"model_id": model_id, "is_public": is_public},
-            )
-
-    for version in model_variants:
-        if f"{model_name}:{version['variant_slug']}" == model_slug:
-            return True
-
-    return False
+def is_hubai_model_variant_available(
+    model_identifier: str, model_variant: str
+) -> bool:
+    """Return whether a model variant is visible to the configured HubAI key."""
+    client = create_hubai_client()
+    try:
+        client.variants.get_variant(f"{model_identifier}:{model_variant}")
+    except ResourceNotFoundError:
+        return False
+    return True

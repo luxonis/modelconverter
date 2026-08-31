@@ -6,8 +6,9 @@ from typing import TypeAlias, TypeVar
 
 import polars as pl
 from loguru import logger
+from luxonis_ml.typing import PathType
 
-from modelconverter.utils import is_hubai_available, resolve_path
+from modelconverter.utils import is_hubai_model_variant_available, resolve_path
 
 ConfigValue: TypeAlias = str | int | bool | None
 Configuration: TypeAlias = dict[str, ConfigValue]
@@ -68,6 +69,9 @@ class Benchmark(ABC):
     )
 
     def __init__(self, model_path: str):
+        self.model_path: PathType
+        self._model_instance: str | None
+
         if any(model_path.endswith(ext) for ext in self._VALID_EXTENSIONS):
             self.model_path = resolve_path(model_path, Path.cwd())
             self.model_name = self.model_path.stem
@@ -86,10 +90,17 @@ class Benchmark(ABC):
                 model_variant,
                 model_instance,
             ) = hub_match.groups()
-            if is_hubai_available(model_name, model_variant):
+            hub_model_identifier = (
+                f"{team_name}/{model_name}" if team_name else model_name
+            )
+            if is_hubai_model_variant_available(
+                hub_model_identifier, model_variant
+            ):
                 self.model_path = model_path
                 self.model_name = model_name
+                self._model_variant = model_variant
                 self._model_instance = model_instance
+                self._hub_model_identifier = hub_model_identifier
             else:
                 raise ValueError(
                     f"Model {team_name + '/' if team_name else ''}{model_name}:{model_variant}{':' + model_instance if model_instance else ''} not found in HubAI."
@@ -219,10 +230,21 @@ class Benchmark(ABC):
         self, full: bool = True, save: bool = False, **kwargs: ConfigValue
     ) -> None:
         logger.info(f"Running benchmarking for {self.model_name}")
+        # `all_configurations` names only the options it varies, so the
+        # rest have to come from the defaults. An explicit null stays
+        # null.
         for key, default in self.default_configuration.items():
-            value = kwargs.get(key)
-            if default is not None and value is not None:
-                kwargs[key] = type(default)(value)
+            value = kwargs.get(key, default)
+            # `bool` accepts any object, so it turns the string "false"
+            # into `True`. A boolean option keeps its value and
+            # `get_option` refuses a value of the wrong type.
+            if (
+                default is not None
+                and value is not None
+                and not isinstance(default, bool)
+            ):
+                value = type(default)(value)
+            kwargs[key] = value
 
         if not full:
             configurations = [{**self.default_configuration, **kwargs}]
