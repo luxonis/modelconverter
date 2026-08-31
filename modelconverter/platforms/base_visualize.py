@@ -14,7 +14,7 @@ class Visualizer(ABC):
     """Base class for visualizing the results of a model analysis.
 
     Attributes:
-        dir_path: Directory the analysis results are read from.
+        _dir_path: Directory the analysis results are read from.
 
     """
 
@@ -31,4 +31,4 @@ class Visualizer(ABC):
 
     @abstractmethod
     def visualize(self) -> None:
-        """Visualize the analysis results found in ``dir_path``."""
+        """Visualize the analysis results found in ``_dir_path``."""

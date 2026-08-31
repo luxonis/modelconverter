@@ -24,12 +24,12 @@ class Analyzer(ABC):
     the directories holding the images the analysis is run on.
 
     Attributes:
-        image_dirs: Resolved image directory per model input.
-        dlc_model_path: Resolved path to the analyzed DLC model.
-        model_name: Name of the model, taken from its file name.
-        input_sizes: Shape of each input of the DLC model.
-        data_types: Data type of each input of the DLC model.
-        output_sizes: Shape of each output layer of the DLC model.
+        _image_dirs: Resolved image directory per model input.
+        _dlc_model_path: Resolved path to the analyzed DLC model.
+        _model_name: Name of the model, taken from its file name.
+        _input_sizes: Shape of each input of the DLC model.
+        _data_types: Data type of each input of the DLC model.
+        _output_sizes: Shape of each output layer of the DLC model.
 
     """
 
