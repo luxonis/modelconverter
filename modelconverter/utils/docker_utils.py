@@ -7,8 +7,9 @@ import tempfile
 import zipfile
 from contextlib import suppress
 from functools import cache
+from http.client import HTTPMessage
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -35,16 +36,6 @@ from modelconverter.utils.tool_versions import (
 )
 
 UserNamespaceMode = Literal["rootless", "userns", "rootful", "unknown"]
-
-
-class _HeaderGetter(Protocol):
-    """The one method `_download_file` reads off a response.
-
-    `urlopen` is typed to return `Any`, so the response gives the header
-    lookup no type of its own.
-    """
-
-    def __call__(self, name: str, /) -> str | None: ...
 
 
 @cache
@@ -364,18 +355,13 @@ def _download_file(
     try:
         request = Request(url, headers={"User-Agent": "modelconverter"})  # noqa: S310
         with urlopen(request, timeout=30) as response:  # noqa: S310
-            if getattr(response, "status", 200) >= 400:
+            if response.status >= 400:
                 raise RuntimeError(
                     f"HTTP {response.status} while downloading {url}"
                 )
-            total = None
-            getheader: _HeaderGetter | None = getattr(
-                response, "getheader", None
-            )
-            if callable(getheader):
-                length = getheader("Content-Length")
-                if length and length.isdigit():
-                    total = int(length)
+            headers: HTTPMessage = response.headers
+            length = headers.get("Content-Length")
+            total = int(length) if length and length.isdigit() else None
             with tempfile.NamedTemporaryFile(
                 delete=False, dir=dest.parent, suffix=".zip"
             ) as tmp_file:
