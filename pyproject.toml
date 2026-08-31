@@ -130,6 +130,9 @@ ignore = [
 ]
 unfixable = ["B905", "PLC0208"]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.ruff.lint.per-file-ignores]
 # A docstring on every `def test_*` would be noise -- the name and the body say
 # what the case is. The module, class and helper docstrings around them are not
