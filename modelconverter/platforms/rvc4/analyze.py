@@ -199,7 +199,7 @@ class RVC4Analyzer(Analyzer):
     def _prepare_raw_inputs(
         self,
         input_matcher: dict[int, dict[str, str]],
-        type: type = np.uint8,
+        dtype: type[np.generic] = np.uint8,
         *,
         verbose: bool = True,
         reset_workspace: bool = True,
@@ -231,7 +231,7 @@ class RVC4Analyzer(Analyzer):
                         raise TypeError(
                             f"Input `{img_name}` is not a single array."
                         )
-                    raw_image = loaded.astype(type)
+                    raw_image = loaded.astype(dtype)
 
                     if raw_image.shape != tuple(width_height):
                         raise ValueError(
@@ -239,7 +239,7 @@ class RVC4Analyzer(Analyzer):
                         )
                 else:
                     image = self._resize_image(img_path, width_height)
-                    raw_image = image.astype(type)
+                    raw_image = image.astype(dtype)
 
                 raw_file_name = (
                     f"{input_name}.raw"
