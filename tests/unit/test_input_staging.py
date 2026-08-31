@@ -1347,7 +1347,7 @@ def test_arg_list_override_that_is_not_a_list(tmp_path: Path) -> None:
 
 
 def test_a_remote_url_is_not_path_like() -> None:
-    assert input_staging._is_path_like("s3://bucket/model.onnx") is False
+    assert not input_staging._is_path_like("s3://bucket/model.onnx")
 
 
 def test_a_dot_prefixed_name_is_path_like(
@@ -1358,7 +1358,7 @@ def test_a_dot_prefixed_name_is_path_like(
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".hidden").write_text("x")
 
-    assert input_staging._is_path_like(".hidden") is True
+    assert input_staging._is_path_like(".hidden")
 
 
 def test_a_value_naming_no_home_is_not_a_path() -> None:
@@ -1495,13 +1495,13 @@ def test_an_entry_whose_claims_cannot_be_listed_is_free(
 
     monkeypatch.setattr(Path, "glob", refuse_glob)
 
-    assert input_staging._is_in_use(tmp_path) is False
+    assert not input_staging._is_in_use(tmp_path)
 
 
 def test_a_claim_without_a_pid_is_ignored(tmp_path: Path) -> None:
     (tmp_path / f"{input_staging._IN_USE_PREFIX}notapid").write_text("0")
 
-    assert input_staging._is_in_use(tmp_path) is False
+    assert not input_staging._is_in_use(tmp_path)
 
 
 def test_a_claim_that_cannot_be_inspected_still_holds(
@@ -1517,7 +1517,7 @@ def test_a_claim_that_cannot_be_inspected_still_holds(
 
     monkeypatch.setattr(input_staging.psutil, "Process", refuse_inspection)
 
-    assert input_staging._is_in_use(tmp_path) is True
+    assert input_staging._is_in_use(tmp_path)
 
 
 def test_claiming_an_unwritable_cache_is_not_fatal(
@@ -1574,7 +1574,7 @@ def test_an_entry_that_cannot_be_renamed_is_not_evicted(
 
     monkeypatch.setattr(Path, "rename", refuse_rename)
 
-    assert input_staging._evict(entry) is False
+    assert not input_staging._evict(entry)
     assert entry.exists()
 
 
@@ -1601,7 +1601,7 @@ def test_an_entry_claimed_mid_eviction_that_cannot_be_put_back(
 
     monkeypatch.setattr(Path, "rename", refuse_second_rename)
 
-    assert input_staging._evict(entry) is False
+    assert not input_staging._evict(entry)
     assert not entry.exists()
 
 
