@@ -17,6 +17,9 @@ from loguru import logger
 
 import modelconverter
 
+# The toolchains that only exist inside a target's Docker image.
+_VENDOR_MODULES = frozenset({"hailo_sdk_client", "openvino", "plotly"})
+
 
 def _module_names() -> list[str]:
     return sorted(
@@ -39,7 +42,11 @@ def test_doctests(module_name: str) -> None:
     try:
         tests = _find_doctests(module_name)
     except ImportError as e:
-        pytest.skip(f"needs a vendor toolchain: {e}")
+        # Only a missing vendor toolchain is an expected failure. Any
+        # other import error is a regression, so let it fail the test.
+        if e.name not in _VENDOR_MODULES:
+            raise
+        pytest.skip(f"needs the {e.name} toolchain")
 
     runner = doctest.DocTestRunner()
     # The log goes to stdout, which is what doctest compares against.
