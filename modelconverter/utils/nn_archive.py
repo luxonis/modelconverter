@@ -67,17 +67,22 @@ def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
 def process_nn_archive(
     platform: Platform, path: Path, overrides: Params | None
 ) -> tuple[Config, NNArchiveConfig, str]:
-    """Extract the archive from tar and parse its config.
+    """Read an NN Archive and parse its config.
 
     Args:
         platform: Platform the config is built for.
-        path: Path to the ``.tar.xz`` archive to unpack.
+        path: Path to the archive. It is either a tar file to unpack, or
+            a directory that already holds an unpacked archive.
         overrides: CLI overrides applied on top of the archive's own
             configuration.
 
     Returns:
         Tuple of the parsed `Config`, ``NNArchiveConfig`` and the main
         stage key.
+
+    Raises:
+        RuntimeError: If the path is neither a directory nor a tar file,
+            or if the archive holds no ``config.json``.
 
     """
     untar_path = MISC_DIR / path.stem

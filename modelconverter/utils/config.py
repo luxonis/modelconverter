@@ -1063,6 +1063,7 @@ class Config(LuxonisConfig):
         Raises:
             ValueError: If no stage name is given and the configuration
                 has more than one stage.
+            KeyError: If no stage of the given name exists.
 
         """
         if stage is None:
