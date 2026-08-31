@@ -2,10 +2,10 @@
 
 ``modelconverter`` converts a trained model into the format required by
 the RVC2, RVC3, RVC4 or Hailo platform, passed either directly or
-packaged in an NN Archive. ONNX is the format every target accepts;
-which other formats a target takes is a property of its toolchain and
+packaged in an NN Archive. ONNX is the format every platform accepts;
+which other formats a platform takes is a property of its toolchain and
 is documented by the corresponding sub-package of
-`modelconverter.packages`. Each conversion is executed inside a
+`modelconverter.platforms`. Each conversion is executed inside a
 per-backend Docker image that bundles the corresponding vendor
 toolchain, so the host only needs Docker and this package.
 

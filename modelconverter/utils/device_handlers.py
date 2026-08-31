@@ -31,7 +31,7 @@ class DeviceHandler(ABC):
             silent: If ``True``, suppress command logging by default.
 
         """
-        self.silent = silent
+        self._silent = silent
 
     @abstractmethod
     def shell(
@@ -155,7 +155,7 @@ class SSHHandler(DeviceHandler):
             self._address,
             cmd,
             check=check,
-            silent=silent if silent is not None else self.silent,
+            silent=silent if silent is not None else self._silent,
         )
 
     @override
@@ -168,7 +168,7 @@ class SSHHandler(DeviceHandler):
             f"{self._address}:{src}",
             dst,
             check=check,
-            silent=self.silent,
+            silent=self._silent,
         )
 
     @override
@@ -181,7 +181,7 @@ class SSHHandler(DeviceHandler):
             src,
             f"{self._address}:{dst}",
             check=check,
-            silent=self.silent,
+            silent=self._silent,
         )
 
 
@@ -229,7 +229,7 @@ class AdbHandler(DeviceHandler):
             "shell",
             cmd,
             check=check,
-            silent=silent if silent is not None else self.silent,
+            silent=silent if silent is not None else self._silent,
         )
 
     @override

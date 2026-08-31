@@ -1,4 +1,4 @@
-"""Enumerations describing models and conversion targets.
+"""Enumerations describing models and conversion platforms.
 
 Defines the platforms a model can be converted for and the data types,
 color encodings, and resize methods used to describe model inputs and
@@ -10,12 +10,15 @@ Lite, and SNPE.
 
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
+from luxonis_ml.typing import PathType
 from onnx.onnx_pb import TensorProto
 
-__all__ = ["DataType", "Encoding", "PotDevice", "ResizeMethod", "Target"]
+__all__ = ["DataType", "Encoding", "Platform", "PotDevice", "ResizeMethod"]
+
+_T = TypeVar("_T")
 
 if TYPE_CHECKING:
     import depthai as dai
@@ -215,7 +218,7 @@ class DataType(Enum):
             ValueError: If the type has no `DataType` equivalent.
 
         """
-        dtype_map = {
+        dtype_map: dict[int, str] = {
             TensorProto.BFLOAT16: "bfloat16",
             TensorProto.FLOAT16: "float16",
             TensorProto.FLOAT: "float32",
@@ -238,7 +241,7 @@ class DataType(Enum):
         return cls(dtype_map[dtype])
 
     @classmethod
-    def from_numpy_dtype(cls, dtype: np.dtype) -> "DataType":
+    def from_numpy_dtype(cls, dtype: type[np.generic]) -> "DataType":
         """Create a `DataType` from a ``numpy`` data type.
 
         Args:
@@ -251,7 +254,7 @@ class DataType(Enum):
             ValueError: If the type has no `DataType` equivalent.
 
         """
-        dtype_map = {
+        dtype_map: dict[type[np.generic], str] = {
             np.float16: "float16",
             np.float32: "float32",
             np.float64: "float64",
@@ -387,7 +390,7 @@ class DataType(Enum):
             "ufxp16",
         }
 
-    def as_numpy_dtype(self) -> np.dtype:
+    def as_numpy_dtype(self) -> type[np.generic]:
         """Convert to the closest ``numpy`` data type.
 
         Types without an exact counterpart are widened: ``bfloat16``
@@ -407,6 +410,7 @@ class DataType(Enum):
             <class 'numpy.int8'>
 
         """
+
         return self._transform(
             {
                 "bfloat16": np.float32,  # Preserve bfloat16 range better than float16.
@@ -497,7 +501,7 @@ class DataType(Enum):
             return self.value.replace("fxp", "int")
         return self.value
 
-    def _transform(self, mapping: dict[str, Any], desc: str) -> Any:
+    def _transform(self, mapping: dict[str, _T], desc: str) -> _T:
         if self.value not in mapping:
             raise ValueError(
                 f"`{self.value}` cannot be transformed to {desc} data type"
@@ -529,10 +533,10 @@ class PotDevice(Enum):
     ANY = "ANY"
 
 
-class Target(Enum):
+class Platform(Enum):
     """Platform a model is converted for.
 
-    Each target has its own conversion package and Docker image.
+    Each platform has its own conversion backend and Docker image.
     """
 
     HAILO = "hailo"
@@ -553,6 +557,7 @@ class QuantizationMode(Enum):
     INT8_ACC = "INT8_ACCURACY_FOCUSED"
     INT8_16_MIX = "INT8_INT16_MIXED"
     INT8_16_MIX_ACC = "INT8_INT16_MIXED_ACCURACY_FOCUSED"
+    INT16_STD = "INT16_STANDARD"
     FP16_STD = "FP16_STANDARD"
     CUSTOM = "CUSTOM"
 
@@ -568,7 +573,7 @@ class InputFileType(Enum):
     PYTORCH = "PYTORCH"
 
     @classmethod
-    def from_path(cls, path: str | Path) -> "InputFileType":
+    def from_path(cls, path: PathType) -> "InputFileType":
         """Determine the input file type from a path.
 
         Args:
@@ -588,6 +593,7 @@ class InputFileType(Enum):
             <InputFileType.TFLITE: 'TFLITE'>
 
         """
+
         path = Path(path)
         if path.suffix == ".onnx":
             return cls.ONNX

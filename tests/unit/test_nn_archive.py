@@ -6,16 +6,18 @@ No network, cloud, Docker or vendor tooling: the dummy ONNX models and NN-archiv
 """
 
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 import pytest
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import (
     Head,
+    HeadMetadata,
     InputType,
     PreprocessingBlock,
 )
+from luxonis_ml.typing import Params, ParamValue
 
 from modelconverter.utils.config import (
     Config,
@@ -36,7 +38,7 @@ from modelconverter.utils.nn_archive import (
     modelconverter_config_to_nn,
     process_nn_archive,
 )
-from modelconverter.utils.types import DataType, Target
+from modelconverter.utils.types import DataType, Platform
 from tests.helpers.archive_factory import (
     default_archive_config,
     pack_archive,
@@ -49,20 +51,20 @@ from tests.helpers.onnx_factory import (
 )
 
 
-def _input_config(**data: Any) -> InputConfig:
+def _input_config(**data: ParamValue) -> InputConfig:
     """Validate raw user configuration through Pydantic's public API."""
     return InputConfig.model_validate(data)
 
 
 def _single_input_archive_config(
-    preprocessing: dict[str, Any],
+    preprocessing: Mapping[str, ParamValue],
     *,
     shape: list[int] | None = None,
     layout: str = "NCHW",
     input_type: str = "image",
     dtype: str = "float32",
     model_name: str = "model.onnx",
-) -> dict[str, Any]:
+) -> Params:
     """Build a one-input / one-output NN-archive ``config.json`` dict.
 
     The single input's ``preprocessing`` block is fully controllable.
@@ -95,21 +97,24 @@ def _single_input_archive_config(
 
 def _pack_single_input(
     work_dir: Path,
-    preprocessing: dict[str, Any],
+    preprocessing: Mapping[str, ParamValue],
     *,
     grayscale: bool = False,
-    **cfg_kwargs: Any,
+    input_type: str = "image",
 ) -> Path:
     """Build a matching dummy ONNX + single-input archive and return
     the ``.tar`` path.
     """
     model_path = work_dir / "model.onnx"
+    shape = None
     if grayscale:
         grayscale_onnx(model_path)
-        cfg_kwargs.setdefault("shape", [1, 1, 64, 64])
+        shape = [1, 1, 64, 64]
     else:
         single_io_onnx(model_path)
-    config = _single_input_archive_config(preprocessing, **cfg_kwargs)
+    config = _single_input_archive_config(
+        preprocessing, shape=shape, input_type=input_type
+    )
     return pack_archive(work_dir / "model.tar", model_path, config)
 
 
@@ -123,7 +128,7 @@ def test_process_plain_tar(work_dir: Path):
         work_dir / "dummy_model.tar", onnx, default_archive_config()
     )
     config, archive_cfg, main_stage = process_nn_archive(
-        Target.RVC4, tar, None
+        Platform.RVC4, tar, None
     )
     assert isinstance(config, Config)
     assert isinstance(archive_cfg, NNArchiveConfig)
@@ -139,7 +144,7 @@ def test_process_tar_xz(work_dir: Path):
         default_archive_config(),
         mode="w:xz",
     )
-    _, archive_cfg, _ = process_nn_archive(Target.RVC4, tar, None)
+    _, archive_cfg, _ = process_nn_archive(Platform.RVC4, tar, None)
     assert archive_cfg is not None
     assert (MISC_DIR / "dummy_model" / "config.json").exists()
 
@@ -149,7 +154,7 @@ def test_process_already_extracted_directory(work_dir: Path):
     model_dir.mkdir()
     standard_dummy_onnx(model_dir / "dummy_model.onnx")
     write_json(default_archive_config(), model_dir / "config.json")
-    _, archive_cfg, _ = process_nn_archive(Target.RVC4, model_dir, None)
+    _, archive_cfg, _ = process_nn_archive(Platform.RVC4, model_dir, None)
     assert archive_cfg is not None
 
 
@@ -165,7 +170,7 @@ def test_unsafe_members_are_skipped(work_dir: Path):
         default_archive_config(),
         extra_files={"../evil.txt": evil, "/abs.txt": absolute},
     )
-    _, archive_cfg, _ = process_nn_archive(Target.RVC4, tar, None)
+    _, archive_cfg, _ = process_nn_archive(Platform.RVC4, tar, None)
     assert archive_cfg is not None
     untar = MISC_DIR / "dummy_model"
     # Traversal members are dropped, safe ones extracted.
@@ -178,14 +183,14 @@ def test_missing_config_raises(work_dir: Path):
     model_dir.mkdir()
     standard_dummy_onnx(model_dir / "dummy_model.onnx")
     with pytest.raises(RuntimeError, match="config not found"):
-        process_nn_archive(Target.RVC4, model_dir, None)
+        process_nn_archive(Platform.RVC4, model_dir, None)
 
 
 def test_unknown_path_type_raises(work_dir: Path):
     bogus = work_dir / "not_an_archive.txt"
     bogus.write_text("definitely not a tar")
     with pytest.raises(RuntimeError, match="Unknown NN Archive path"):
-        process_nn_archive(Target.RVC4, bogus, None)
+        process_nn_archive(Platform.RVC4, bogus, None)
 
 
 ENCODINGS = {
@@ -205,7 +210,7 @@ def test_custom_encodings_used_for_rvc4(work_dir: Path):
         default_archive_config(),
         extra_files={"encodings.json": enc},
     )
-    config, _, main_stage = process_nn_archive(Target.RVC4, tar, None)
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, None)
     assert config.stages[main_stage].rvc4.encodings is not None
 
 
@@ -218,7 +223,7 @@ def test_encodings_ignored_for_non_rvc4(work_dir: Path):
         default_archive_config(),
         extra_files={"encodings.json": enc},
     )
-    config, _, main_stage = process_nn_archive(Target.RVC2, tar, None)
+    config, _, main_stage = process_nn_archive(Platform.RVC2, tar, None)
     assert main_stage in config.stages
 
 
@@ -234,7 +239,7 @@ def test_rgb_planar_conflicting_reverse_and_interleaved(work_dir: Path):
             "interleaved_to_planar": True,  # conflicts with 'p'
         },
     )
-    config, *_ = process_nn_archive(Target.RVC4, tar, None)
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
     assert (inp.encoding.from_.value, inp.encoding.to.value) == (
         "RGB",
@@ -254,7 +259,7 @@ def test_bgr_interleaved_conflicting_reverse_and_interleaved(work_dir: Path):
             "interleaved_to_planar": False,  # conflicts with 'i'
         },
     )
-    config, *_ = process_nn_archive(Target.RVC4, tar, None)
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
     assert inp.encoding.from_.value == "BGR"
     assert inp.layout == "NHWC"
@@ -266,7 +271,7 @@ def test_gray_planar_no_conflicts(work_dir: Path):
         {"dai_type": "GRAY8p"},
         grayscale=True,
     )
-    config, *_ = process_nn_archive(Target.RVC4, tar, None)
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
     assert inp.encoding.from_.value == "GRAY"
     assert inp.layout == "NCHW"
@@ -279,7 +284,7 @@ def test_unknown_dai_type_defaults_to_rgb(work_dir: Path):
         work_dir,
         {"dai_type": "XYZ123"},  # neither RGB/BGR/GRAY, ends in neither i/p
     )
-    config, *_ = process_nn_archive(Target.RVC4, tar, None)
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
     assert (inp.encoding.from_.value, inp.encoding.to.value) == (
         "RGB",
@@ -297,7 +302,7 @@ def test_reverse_true_interleaved_true(work_dir: Path):
         work_dir,
         {"reverse_channels": True, "interleaved_to_planar": True},
     )
-    config, *_ = process_nn_archive(Target.RVC4, tar, None)
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
     assert inp.encoding.from_.value == "RGB"
     assert inp.layout == "NHWC"
@@ -308,7 +313,7 @@ def test_reverse_false_interleaved_false(work_dir: Path):
         work_dir,
         {"reverse_channels": False, "interleaved_to_planar": False},
     )
-    config, *_ = process_nn_archive(Target.RVC4, tar, None)
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
     assert inp.encoding.from_.value == "BGR"
     assert inp.layout == "NCHW"
@@ -317,7 +322,7 @@ def test_reverse_false_interleaved_false(work_dir: Path):
 
 def test_no_flags_defaults_to_rgb(work_dir: Path):
     tar = _pack_single_input(work_dir, {})
-    config, *_ = process_nn_archive(Target.RVC4, tar, None)
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
     assert (inp.encoding.from_.value, inp.encoding.to.value) == (
         "RGB",
@@ -327,7 +332,7 @@ def test_no_flags_defaults_to_rgb(work_dir: Path):
 
 def test_grayscale_from_single_channel(work_dir: Path):
     tar = _pack_single_input(work_dir, {}, grayscale=True)
-    config, *_ = process_nn_archive(Target.RVC4, tar, None)
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
     assert inp.encoding.from_.value == "GRAY"
     assert inp.mean_values == [0]
@@ -339,7 +344,7 @@ def test_explicit_mean_scale_not_overwritten(work_dir: Path):
         work_dir,
         {"mean": [10, 20, 30], "scale": [2, 3, 4]},
     )
-    config, *_ = process_nn_archive(Target.RVC4, tar, None)
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
     assert inp.mean_values == [10, 20, 30]
     assert inp.scale_values == [2, 3, 4]
@@ -357,7 +362,7 @@ def test_raw_input_keeps_none_encoding(work_dir: Path):
         },
         input_type="raw",
     )
-    config, archive_cfg, _ = process_nn_archive(Target.RVC4, tar, None)
+    config, archive_cfg, _ = process_nn_archive(Platform.RVC4, tar, None)
     assert archive_cfg.model.inputs[0].input_type == InputType.RAW
     inp = _stage_input(config)
     # Non-image input -> no mean/scale defaults filled.
@@ -368,35 +373,39 @@ def test_raw_input_keeps_none_encoding(work_dir: Path):
 def test_postprocessor_path_adds_stage(work_dir: Path):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     post = single_io_onnx(work_dir / "post.onnx")
-    config_dict = default_archive_config()
-    config_dict["model"]["heads"] = [
-        # A head without a postprocessor_path is skipped (loop continues).
-        {
-            "parser": "Classification",
-            "metadata": {},
-            "outputs": ["output1"],
-        },
-        {
-            "parser": "Classification",
-            "metadata": {"postprocessor_path": "post.onnx"},
-            "outputs": ["output0"],
-        },
-    ]
+    config_dict = default_archive_config(
+        heads=[
+            # A head without a postprocessor_path is skipped (the loop
+            # continues).
+            {
+                "parser": "Classification",
+                "metadata": {},
+                "outputs": ["output1"],
+            },
+            {
+                "parser": "Classification",
+                "metadata": {"postprocessor_path": "post.onnx"},
+                "outputs": ["output0"],
+            },
+        ]
+    )
     tar = pack_archive(
         work_dir / "dummy_model.tar",
         onnx,
         config_dict,
         extra_files={"post.onnx": post},
     )
-    config, _, main_stage = process_nn_archive(Target.RVC4, tar, None)
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, None)
     # Two stages: the main model plus the postprocessor.
     assert len(config.stages) == 2
     assert main_stage in config.stages
     assert "post" in config.stages
 
 
-def _config_from_overrides(dummy_onnx: Path, **overrides: Any) -> Config:
-    opts: dict[str, Any] = {"input_model": str(dummy_onnx)}
+def _config_from_overrides(
+    dummy_onnx: Path, **overrides: ParamValue
+) -> Config:
+    opts: Params = {"input_model": str(dummy_onnx)}
     opts.update(overrides)
     return Config.get_config(None, opts)
 
@@ -408,7 +417,7 @@ def _config_to_nn(
     orig: NNArchiveConfig | None = None,
     preprocessing: dict[str, PreprocessingBlock] | None = None,
     main_stage: str | None = None,
-    target: Target = Target.RVC4,
+    platform: Platform = Platform.RVC4,
 ) -> NNArchiveConfig:
     """``modelconverter_config_to_nn`` with the fixed test boilerplate (output
     name + model path) filled in, exposing only what tests vary.
@@ -420,23 +429,23 @@ def _config_to_nn(
         preprocessing or {},
         main_stage if main_stage is not None else next(iter(config.stages)),
         dummy_onnx,
-        target,
+        platform,
     )
 
 
 @pytest.mark.parametrize(
-    ("target", "overrides", "expected"),
+    ("platform", "overrides", "expected"),
     [
         # RVC2: compress_to_fp16 defaults True -> FLOAT16
-        (Target.RVC2, {}, DataType.FLOAT16),
+        (Platform.RVC2, {}, DataType.FLOAT16),
         (
-            Target.RVC2,
+            Platform.RVC2,
             {"rvc2.compress_to_fp16": False},
             DataType.FLOAT32,
         ),
         # RVC3 mirrors RVC4 for the disable_calibration cases.
         (
-            Target.RVC3,
+            Platform.RVC3,
             {
                 "rvc3.compress_to_fp16": True,
                 "rvc3.disable_calibration": True,
@@ -444,37 +453,42 @@ def _config_to_nn(
             DataType.FLOAT16,
         ),
         (
-            Target.RVC3,
+            Platform.RVC3,
             {
                 "rvc3.compress_to_fp16": False,
                 "rvc3.disable_calibration": True,
             },
             DataType.FLOAT32,
         ),
-        (Target.RVC3, {}, DataType.INT8),
+        (Platform.RVC3, {}, DataType.INT8),
         # RVC4 via quantization_mode.
         (
-            Target.RVC4,
+            Platform.RVC4,
             {"rvc4.quantization_mode": "FP16_STANDARD"},
             DataType.FLOAT16,
         ),
         (
-            Target.RVC4,
+            Platform.RVC4,
+            {"rvc4.quantization_mode": "INT16_STANDARD"},
+            DataType.INT16,
+        ),
+        (
+            Platform.RVC4,
             {"rvc4.disable_calibration": True},
             DataType.FLOAT32,
         ),
-        (Target.RVC4, {}, DataType.INT8),
-        (Target.HAILO, {}, DataType.INT8),
+        (Platform.RVC4, {}, DataType.INT8),
+        (Platform.HAILO, {}, DataType.INT8),
     ],
 )
-def test_archive_precision_per_target(
+def test_archive_precision_per_platform(
     dummy_onnx: Path,
-    target: Target,
-    overrides: dict[str, Any],
+    platform: Platform,
+    overrides: Mapping[str, ParamValue],
     expected: DataType,
 ):
     config = _config_from_overrides(dummy_onnx, **overrides)
-    nn = _config_to_nn(config, dummy_onnx, target=target)
+    nn = _config_to_nn(config, dummy_onnx, platform=platform)
     assert nn.model.metadata.precision.value == expected.value
 
 
@@ -590,7 +604,7 @@ def test_multistage_two_stages_sets_postprocessor(dummy_onnx: Path):
         Head(
             name="head",
             parser="Classification",
-            metadata={},  # type: ignore
+            metadata=HeadMetadata(postprocessor_path=None),
             outputs=["output0"],
         )
     ]
@@ -686,11 +700,11 @@ def test_iop_input_and_output(dummy_onnx: Path):
         ]
     )
     assert (
-        _get_io_dtype(Target.RVC2, "input0", metadata, cfg, mode="input")
+        _get_io_dtype(Platform.RVC2, "input0", metadata, cfg, mode="input")
         == "float16"
     )
     assert (
-        _get_io_dtype(Target.RVC2, "output0", metadata, cfg, mode="output")
+        _get_io_dtype(Platform.RVC2, "output0", metadata, cfg, mode="output")
         == "uint8"
     )
 
@@ -701,19 +715,19 @@ def test_iop_name_not_found_raises(dummy_onnx: Path):
     metadata = get_metadata(dummy_onnx)
     cfg = RVC2Config(compile_tool_args=["-iop", "other:FP16"])
     with pytest.raises(ValueError, match="Unsupported IR data type"):
-        _get_io_dtype(Target.RVC2, "input0", metadata, cfg, mode="input")
+        _get_io_dtype(Platform.RVC2, "input0", metadata, cfg, mode="input")
 
 
 def test_ip_input_and_default_output(dummy_onnx: Path):
     metadata = get_metadata(dummy_onnx)
     cfg = RVC2Config(compile_tool_args=["-ip", "FP16"])
     assert (
-        _get_io_dtype(Target.RVC2, "input0", metadata, cfg, mode="input")
+        _get_io_dtype(Platform.RVC2, "input0", metadata, cfg, mode="input")
         == "float16"
     )
     # Output falls through to the model's own dtype (float32).
     assert (
-        _get_io_dtype(Target.RVC2, "output0", metadata, cfg, mode="output")
+        _get_io_dtype(Platform.RVC2, "output0", metadata, cfg, mode="output")
         == "float32"
     )
 
@@ -722,11 +736,11 @@ def test_op_output_and_default_input(dummy_onnx: Path):
     metadata = get_metadata(dummy_onnx)
     cfg = RVC2Config(compile_tool_args=["-op", "U8"])
     assert (
-        _get_io_dtype(Target.RVC2, "output0", metadata, cfg, mode="output")
+        _get_io_dtype(Platform.RVC2, "output0", metadata, cfg, mode="output")
         == "uint8"
     )
     assert (
-        _get_io_dtype(Target.RVC2, "input0", metadata, cfg, mode="input")
+        _get_io_dtype(Platform.RVC2, "input0", metadata, cfg, mode="input")
         == "float32"
     )
 
@@ -735,7 +749,7 @@ def test_rvc3_default(dummy_onnx: Path):
     metadata = get_metadata(dummy_onnx)
     cfg = RVC3Config()
     assert (
-        _get_io_dtype(Target.RVC3, "input0", metadata, cfg, mode="input")
+        _get_io_dtype(Platform.RVC3, "input0", metadata, cfg, mode="input")
         == "float32"
     )
 
@@ -744,7 +758,7 @@ def test_rvc4_default(dummy_onnx: Path):
     metadata = get_metadata(dummy_onnx)
     cfg = RVC4Config()
     assert (
-        _get_io_dtype(Target.RVC4, "output0", metadata, cfg, mode="output")
+        _get_io_dtype(Platform.RVC4, "output0", metadata, cfg, mode="output")
         == "float32"
     )
 
@@ -848,7 +862,7 @@ def test_single_model_roundtrip(dummy_onnx: Path):
     config = _config_from_overrides(dummy_onnx)
     main_stage = next(iter(config.stages))
     archive = generate_archive(
-        Target.RVC4,
+        Platform.RVC4,
         config,
         main_stage,
         [out_model],
@@ -861,7 +875,7 @@ def test_single_model_roundtrip(dummy_onnx: Path):
     assert archive.exists()
     assert archive.name.endswith(".rvc4.tar.xz")
     # Re-parsing the produced archive must succeed.
-    reparsed, archive_cfg, _ = process_nn_archive(Target.RVC4, archive, None)
+    reparsed, archive_cfg, _ = process_nn_archive(Platform.RVC4, archive, None)
     assert archive_cfg is not None
     assert isinstance(reparsed, Config)
 
@@ -875,7 +889,7 @@ def test_multiple_models_use_stage_name(dummy_onnx: Path):
     config = _config_from_overrides(dummy_onnx)
     main_stage = next(iter(config.stages))
     archive = generate_archive(
-        Target.RVC2,
+        Platform.RVC2,
         config,
         main_stage,
         [out_a, out_b],

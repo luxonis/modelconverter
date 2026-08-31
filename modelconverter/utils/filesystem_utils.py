@@ -11,6 +11,7 @@ import os
 from contextvars import ContextVar
 from pathlib import Path
 
+from luxonis_ml.typing import PathType
 from luxonis_ml.utils import LuxonisFileSystem
 
 from modelconverter.utils.constants import SHARED_DIR, in_docker
@@ -77,7 +78,7 @@ def resolve_path(string: str, dest: Path) -> Path:
 
 
 def download_from_remote(
-    url: str, dest: Path | str, max_files: int = -1
+    url: str, dest: PathType, max_files: int = -1
 ) -> Path:
     """Download file(s) from remote bucket storage.
 
@@ -120,7 +121,7 @@ def download_from_remote(
 
 
 def upload_to_remote(
-    local_path: Path | str,
+    local_path: PathType,
     url: str,
     put_file_plugin: str | None = None,
 ) -> None:

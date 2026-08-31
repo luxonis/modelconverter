@@ -137,8 +137,8 @@ def load_from_ldf(
 ) -> Path:
     """Write the images of an LDF dataset view out as calibration data.
 
-    The images are saved as PNGs into a per-dataset subdirectory of the
-    calibration data directory.
+    The images are saved as PNG files into a per-dataset subdirectory
+    of the calibration data directory.
 
     Args:
         dataset_name: Name of the ``LuxonisDataset`` to load. With
@@ -163,7 +163,7 @@ def load_from_ldf(
         dataset = LuxonisDataset(dataset_name)
         loader = LuxonisLoader(dataset, view=view)
 
-    for i, (img_arr, _) in enumerate(loader):  # type: ignore
+    for i, (img_arr, _) in enumerate(loader):
         if not isinstance(img_arr, np.ndarray):
             raise NotImplementedError(
                 "Multi input LDF datasets are not yet "

@@ -28,11 +28,12 @@ import time
 from collections.abc import Callable, Collection, Iterator
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import psutil
 import yaml
 from loguru import logger
+from luxonis_ml.typing import ParamValue
 
 from modelconverter.utils.constants import CONTAINER_SHARED_DIR, get_cache_dir
 from modelconverter.utils.environ import environ
@@ -40,8 +41,8 @@ from modelconverter.utils.filesystem_utils import get_protocol
 from modelconverter.utils.general import dir_stats, human_size, parse_size
 from modelconverter.utils.onnx_compatibility import get_external_data_paths
 
-# Target names are positional tokens that must not be mistaken for paths.
-_TARGET_NAMES = {"rvc2", "rvc3", "rvc4", "hailo"}
+# Platform names are positional tokens that must not be mistaken for paths.
+_PLATFORM_NAMES = {"rvc2", "rvc3", "rvc4", "hailo"}
 
 # Extensions that clearly denote a file input.
 _KNOWN_EXTS = {
@@ -104,15 +105,17 @@ _OUTPUT_FIELDS = {"output_remote_url", "intermediate_outputs_remote_url"}
 _IGNORED_DIR_NAMES = {".git"}
 
 
-def path_flags_for(command: Callable[..., Any] | None) -> set[str]:
+def path_flags_for(command: Callable[..., object] | None) -> set[str]:
     """Return the CLI flags of ``command`` whose value is a local path.
 
     Derived from the command signature the launcher has already parsed, so
     staging follows the CLI rather than duplicating its knowledge: a path
     option that is added or renamed is picked up without touching this module.
     """
+    if command is None:
+        return set()
     try:
-        parameters = inspect.signature(command).parameters  # type: ignore[arg-type]
+        parameters = inspect.signature(command).parameters
     except (TypeError, ValueError):
         return set()
 
@@ -132,7 +135,7 @@ def path_flags_for(command: Callable[..., Any] | None) -> set[str]:
     return flags
 
 
-def _is_path_parameter(name: str, annotation: Any) -> bool:
+def _is_path_parameter(name: str, annotation: object) -> bool:
     return (
         name in {"path", "config"}
         or name.endswith("_path")
@@ -206,8 +209,8 @@ def _maybe_stage_token(
         if kind == "args":
             return _stage_arg_list_token(token, prev, inputs_dir)
 
-    # A bare positional token (target, unknown override value, ...). Only stage
-    # it when it clearly looks like an existing local path.
+    # A bare positional token (platform, unknown override value, ...).
+    # Only stage it when it clearly looks like an existing local path.
     if _is_path_like(token):
         return _stage_value(token, inputs_dir)
     return None
@@ -289,7 +292,7 @@ def _is_path_like(value: str) -> bool:
     says so, or when it is a file with a known model/config extension.
     Anything else has to be written with a ``./`` prefix to be staged.
     """
-    if value in _TARGET_NAMES:
+    if value in _PLATFORM_NAMES:
         return False
     if get_protocol(value) != "file":
         return False
@@ -532,12 +535,12 @@ def _stage_config_text(content: str, src: Path, inputs_dir: Path) -> Path:
 
 
 def _rewrite_config_paths(
-    value: Any,
+    value: ParamValue,
     config_dir: Path,
     inputs_dir: Path,
     key: str | None = None,
     parent: str | None = None,
-) -> tuple[Any, bool]:
+) -> tuple[ParamValue, bool]:
     """Stages the local paths ``value`` names and returns it with those
     references replaced by their container-side paths.
     """
@@ -586,18 +589,18 @@ def _rewrite_config_paths(
 
 
 def _rewrite_arg_list(
-    args: list[Any],
+    args: list[ParamValue],
     path_flags: frozenset[str],
     config_dir: Path,
     inputs_dir: Path,
-) -> tuple[list[Any], bool]:
+) -> tuple[list[ParamValue], bool]:
     """Stages the values ``path_flags`` introduce in a raw argument list.
 
     The list is passed to the conversion tool verbatim, so everything
     else in it -- the flags themselves, numeric options, tool-specific
     switches -- has to survive untouched.
     """
-    rewritten: list[Any] = []
+    rewritten: list[ParamValue] = []
     changed = False
     for index, item in enumerate(args):
         previous = args[index - 1] if index else None
@@ -1160,7 +1163,7 @@ def _entry_size(entry: Path) -> int:
     try:
         if entry.is_file():
             return entry.stat().st_size
-    except OSError:
+    except OSError:  # pragma: no cover
         return 0
     return dir_stats(entry)[0]
 
@@ -1179,7 +1182,7 @@ def _used_time(entry: Path) -> float:
         pass
     try:
         return entry.stat().st_mtime
-    except OSError:
+    except OSError:  # pragma: no cover
         return 0.0
 
 

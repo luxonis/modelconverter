@@ -10,16 +10,16 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from rich.progress import Progress, TextColumn
+from rich.progress import Progress, TaskID, TextColumn
 
 
 @dataclass
 class _PBState:
     use_time: bool
     total: int
-    start_time: float | None
+    start_time: float
     reps_done: int
-    task_id: int
+    task_id: TaskID
 
 
 def _format_time(seconds: float) -> str:
@@ -59,18 +59,18 @@ def create_progress_handler(
     else:
         progress = Progress()
         task_id = progress.add_task("[magenta]Repetition", total=total)
-        state = _PBState(False, total, None, 0, task_id)
+        state = _PBState(False, total, time.time(), 0, task_id)
 
     def should_continue() -> bool:
         if state.use_time:
-            return (time.time() - state.start_time) < state.total  # type: ignore[arg-type]
+            return (time.time() - state.start_time) < state.total
         return state.reps_done < state.total
 
     def on_tick() -> None:
         if state.use_time:
-            elapsed = min(time.time() - state.start_time, state.total)  # type: ignore[arg-type]
+            elapsed = min(time.time() - state.start_time, state.total)
             progress.update(
-                state.task_id,  # type: ignore[arg-type]
+                state.task_id,
                 completed=int(elapsed),
                 description=(
                     f"[magenta]Time Elapsed (mm:ss) "
@@ -79,6 +79,6 @@ def create_progress_handler(
             )
         else:
             state.reps_done += 1
-            progress.update(state.task_id, advance=1)  # type: ignore[arg-type]
+            progress.update(state.task_id, advance=1)
 
     return progress, on_tick, should_continue

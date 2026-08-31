@@ -5,17 +5,38 @@ local file, so the slug has to be checked against the zoo before the
 model is pulled from it.
 """
 
-from contextlib import suppress
+from hubai_sdk import HubAIClient
+from hubai_sdk.errors import ResourceNotFoundError
+from hubai_sdk.utils.environ import environ as hubai_sdk_environ
+
+from modelconverter.utils.environ import environ
 
 
-def is_hubai_available(model_name: str, model_variant: str) -> bool:
+def create_hubai_client() -> HubAIClient:
+    """Create a HubAI SDK client from the ModelConverter settings.
+
+    The client is pointed at the configured HubAI URL and is
+    authenticated with the configured API key.
+
+    Returns:
+        The authenticated client.
+
+    """
+    hubai_sdk_environ.HUBAI_URL = environ.HUBAI_URL
+    return HubAIClient(api_key=environ.HUBAI_API_KEY)
+
+
+def is_hubai_model_variant_available(
+    model_identifier: str, model_variant: str
+) -> bool:
     """Check whether a model variant is published on HubAI.
 
-    Both the public and the private variants of the model are queried,
-    and a request that fails is treated as returning no variants.
+    The variant is looked up with the configured API key, so a private
+    variant counts as available only for a key that can see it.
 
     Args:
-        model_name: Name of the model, the first part of its slug.
+        model_identifier: Name of the model, the first part of its
+            slug.
         model_variant: Variant of the model, the part of the slug that
             follows the colon.
 
@@ -24,26 +45,9 @@ def is_hubai_available(model_name: str, model_variant: str) -> bool:
         otherwise.
 
     """
-    from modelconverter.cli import slug_to_id
-    from modelconverter.utils.hub_requests import Request
-
-    model_slug = f"{model_name}:{model_variant}"
-
-    model_id = slug_to_id(
-        model_name,
-        "models",
-    )
-
-    model_variants = []
-    for is_public in [True, False]:
-        with suppress(Exception):
-            model_variants += Request.get(
-                "modelVersions/",
-                params={"model_id": model_id, "is_public": is_public},
-            )
-
-    for version in model_variants:
-        if f"{model_name}:{version['variant_slug']}" == model_slug:
-            return True
-
-    return False
+    client = create_hubai_client()
+    try:
+        client.variants.get_variant(f"{model_identifier}:{model_variant}")
+    except ResourceNotFoundError:
+        return False
+    return True

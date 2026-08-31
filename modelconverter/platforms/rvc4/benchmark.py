@@ -1,0 +1,832 @@
+"""Throughput and latency measurements on RVC4 devices.
+
+An RVC4 model can be measured in two ways, and `RVC4Benchmark` covers
+both: a DepthAI pipeline that feeds a neural network node as fast as it
+will accept data, and SNPE's own ``snpe-parallel-run``, which is
+executed on the device over ADB or SSH against inputs staged there
+beforehand. Power, DSP, memory and CPU usage can be sampled alongside
+either of them.
+"""
+
+import io
+import json
+import re
+import shlex
+import shutil
+import tempfile
+from collections.abc import Iterable
+from pathlib import Path
+from subprocess import CalledProcessError, SubprocessError
+from typing import Final
+
+import depthai as dai
+import numpy as np
+import polars as pl
+from depthai import XLinkPlatform
+from loguru import logger
+from luxonis_ml.typing import BaseModelExtraForbid, PathType
+from rich.progress import track
+
+from modelconverter.platforms.base_benchmark import (
+    Benchmark,
+    Configuration,
+    Result,
+    get_option,
+    get_optional_option,
+)
+from modelconverter.platforms.rvc4.utils import get_device_info
+from modelconverter.utils import (
+    DataType,
+    DeviceMonitor,
+    create_handler,
+    create_progress_handler,
+    environ,
+    subprocess_run,
+)
+from modelconverter.utils.hubai_utils import create_hubai_client
+from modelconverter.utils.log_latency import (
+    RVC4_INFERENCE_LATENCY_RE,
+    parse_inference_latency,
+)
+
+
+class InputSpec(BaseModelExtraForbid):
+    """Description of one model input to generate benchmark data for.
+
+    The shape is required: a random tensor cannot be made for an input
+    whose shape is unknown.
+
+    Attributes:
+        name: Name of the input tensor.
+        shape: Shape of the input tensor.
+        data_type: Data type of the input tensor.
+
+    """
+
+    name: str
+    shape: list[int]
+    data_type: DataType
+
+
+PROFILES: Final[list[str]] = [
+    "low_balanced",
+    "balanced",
+    "high_performance",
+    "sustained_high_performance",
+    "burst",
+    "low_power_saver",
+    "power_saver",
+    "high_power_saver",
+    "extreme_power_saver",
+    "system_settings",
+]
+
+RUNTIMES: dict[str, str] = {
+    "dsp": "use_dsp",
+    "cpu": "use_cpu",
+}
+
+
+class RVC4Benchmark(Benchmark):
+    """Benchmark of an NN archive, a ``.dlc`` or a HubAI slug on RVC4.
+
+    Which of the two backends is used is decided by the
+    ``dai_benchmark`` option: a DepthAI pipeline, which also reports
+    per-inference latency but only accepts a ``.tar.xz`` archive or a
+    slug, or ``snpe-parallel-run`` run over the device handler, which
+    only reports throughput and takes a bare ``.dlc`` as well. Both
+    need the input tensor specifications, read from the DLC with
+    ``snpe-dlc-info`` and falling back to the NN archive when that is
+    unavailable.
+    """
+
+    # How many distinct random inputs are written to the device for the
+    # SNPE backend. Anything beyond that is hard-linked to them so that
+    # the device does not run out of storage.
+    _MAX_REAL_SNPE_INPUTS = 100
+
+    @property
+    def default_configuration(self) -> Configuration:
+        """Default configuration for RVC4 benchmarking.
+
+        Options:
+            profile: The SNPE profile to use for inference.
+            runtime: The SNPE runtime to use for inference.
+            num_images: The number of images to use for inference.
+            dai_benchmark: Whether to use the DepthAI for benchmarking.
+            repetitions: The number of repetitions to perform (dai-benchmark only, ignored if benchmark_time is set).
+            benchmark_time: Duration in seconds for time-based benchmarking (overrides repetitions).
+            num_threads: The number of threads to use for inference (dai-benchmark only).
+            num_messages: The number of messages to use for inference (dai-benchmark only).
+            device_ip: Address of the device to benchmark on, or None to use the first one found.
+            device_id: Device ID or ADB serial of the device to benchmark on, or None to use the first one found.
+            device_monitor: Whether to sample power, DSP, memory and CPU usage alongside the benchmark.
+
+        """
+        return {
+            "profile": "balanced",
+            "runtime": "dsp",
+            "num_images": 500,
+            "dai_benchmark": True,
+            "repetitions": 10,
+            "benchmark_time": 20,
+            "num_threads": 2,
+            "num_messages": 50,
+            "device_ip": None,
+            "device_id": None,
+            "device_monitor": True,
+        }
+
+    @property
+    def all_configurations(self) -> list[Configuration]:
+        """Return every SNPE profile at one and at two threads."""
+        return [
+            {"profile": profile, "num_threads": threads}
+            for profile in PROFILES
+            for threads in [1, 2]
+        ]
+
+    def _get_dlc_input_specs(
+        self, model_path: PathType | None = None
+    ) -> list[InputSpec]:
+        """Retrieve normalized input specs from a DLC or NNArchive."""
+        model_path = self.model_path if model_path is None else model_path
+
+        if str(model_path).endswith(".tar.xz"):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                shutil.unpack_archive(model_path, tmp_dir)
+                dlc_files = list(Path(tmp_dir).rglob("*.dlc"))
+                if not dlc_files:
+                    raise ValueError("No .dlc file found in the archive.")
+                return self._get_dlc_input_specs(dlc_files[0])
+
+        if not str(model_path).endswith(".dlc"):
+            raise ValueError("Expected .dlc, or .tar.xz model format.")
+
+        csv_path = Path("info.csv")
+        if shutil.which("snpe-dlc-info") is not None:
+            subprocess_run(
+                [
+                    "snpe-dlc-info",
+                    "-i",
+                    model_path,
+                    "-s",
+                    csv_path,
+                ],
+                silent=True,
+            )
+            content = csv_path.read_text()
+            csv_path.unlink()
+        elif (
+            self._handler is not None
+            and self._handler.shell("snpe-dlc-info -h", check=False)[0] == 0
+        ):
+            self._handler.shell(f"mkdir -p {self._device_pwd}")
+            self._handler.push(model_path, self._device_pwd / "model.dlc")
+            device_csv_path = self._device_pwd / "info.csv"
+            self._handler.shell(
+                f"snpe-dlc-info -i {self._device_pwd / 'model.dlc'} -s {device_csv_path}",
+            )
+            _, content, _ = self._handler.shell(f"cat {device_csv_path}")
+        else:
+            raise RuntimeError(
+                "Neither local nor remote `snpe-dlc-info` "
+                "command is available to read the DLC input specs."
+            )
+
+        start_marker = "Input Name,Dimensions,Type,Encoding Info"
+        end_marker = "Output Name,Dimensions,Type,Encoding Info"
+        start_index = content.find(start_marker)
+        end_index = content.find(end_marker, start_index)
+
+        # Extract and load the relevant CSV part into a polars DataFrame.
+        relevant_csv_part = content[start_index:end_index].strip()
+        df = pl.read_csv(io.StringIO(relevant_csv_part))
+        df = df.with_columns(
+            pl.col("Dimensions").str.split(",").cast(pl.List(pl.Int64))
+        )
+
+        rows = df.rows(named=True)
+
+        return [
+            InputSpec(
+                name=str(row["Input Name"]),
+                shape=list(row["Dimensions"]),
+                data_type=DataType.from_dlc_dtype(str(row["Type"])),
+            )
+            for row in rows
+        ]
+
+    def _prepare_raw_inputs(
+        self, input_specs: list[InputSpec], num_images: int
+    ) -> None:
+        if self._handler is None:
+            raise RuntimeError(
+                "Device handler is not initialized. "
+                "Cannot prepare `.raw` inputs on the device."
+            )
+
+        if num_images < 1:
+            raise ValueError("num_images must be at least 1.")
+
+        inputs_dir = self._device_pwd / "inputs"
+        real_input_count = min(num_images, self._MAX_REAL_SNPE_INPUTS)
+
+        self._handler.shell(f"mkdir -p {self._device_pwd}")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_model_dir = Path(tmp_dir) / self.model_name
+            local_inputs_dir = local_model_dir / "inputs"
+            local_inputs_dir.mkdir(parents=True)
+            local_input_list_path = local_model_dir / "input_list.txt"
+
+            with local_input_list_path.open("w", encoding="utf-8") as f:
+                for i in track(
+                    range(num_images),
+                    description="Preparing inputs",
+                    total=min(num_images, self._MAX_REAL_SNPE_INPUTS),
+                ):
+                    input_paths: list[str] = []
+                    for spec in input_specs:
+                        input_path = f"{inputs_dir}/{spec.name}_{i}.raw"
+                        input_paths.append(f"{spec.name}:={input_path}")
+
+                        if i < real_input_count:
+                            input_data = self._create_random_input(spec)
+                            local_input_path = local_inputs_dir / (
+                                f"{spec.name}_{i}.raw"
+                            )
+                            input_data.tofile(local_input_path)
+
+                    f.write(" ".join(input_paths))
+                    f.write(" \n")
+
+            self._handler.push(local_model_dir, self._device_pwd.parent)
+
+        if num_images > real_input_count and input_specs:
+            logger.info(
+                f"Linking additional {num_images - real_input_count} inputs "
+                f"to the first {real_input_count} inputs to avoid filling "
+                "up the device storage."
+            )
+            self._handler.shell(
+                self._create_raw_input_link_script(
+                    input_specs,
+                    str(inputs_dir),
+                    real_input_count,
+                    num_images,
+                )
+            )
+
+    @staticmethod
+    def _create_raw_input_link_script(
+        input_specs: list[InputSpec],
+        inputs_dir: str,
+        real_input_count: int,
+        num_images: int,
+    ) -> str:
+        spec_names = " ".join(shlex.quote(spec.name) for spec in input_specs)
+        return "\n".join(
+            [
+                "set -eu",
+                f"inputs_dir={shlex.quote(inputs_dir)}",
+                f"real_input_count={real_input_count}",
+                f"num_images={num_images}",
+                f"for spec_name in {spec_names}; do",
+                '    i="$real_input_count"',
+                '    while [ "$i" -lt "$num_images" ]; do',
+                "        source_index=$((i % real_input_count))",
+                '        ln -f "$inputs_dir/${spec_name}_${source_index}.raw" "$inputs_dir/${spec_name}_${i}.raw"',
+                "        i=$((i + 1))",
+                "    done",
+                "done",
+            ]
+        )
+
+    @staticmethod
+    def _create_random_input(spec: InputSpec) -> np.ndarray:
+        if spec.data_type is DataType.INT32:
+            # INT inputs are often token/index tensors;
+            # zero keeps synthetic benchmark inputs in a safe range.
+            return np.zeros(spec.shape, dtype=np.int32)
+        if spec.data_type == DataType.INT8:
+            return np.random.randint(-128, 128, size=spec.shape, dtype=np.int8)
+        if spec.data_type == DataType.INT16:
+            return np.random.randint(
+                -32768, 32768, size=spec.shape, dtype=np.int16
+            )
+        if spec.data_type in {DataType.UINT8, DataType.UFXP8}:
+            return np.random.randint(0, 256, size=spec.shape, dtype=np.uint8)
+        if spec.data_type in {DataType.UINT16, DataType.UFXP16}:
+            return np.random.randint(
+                0, 65536, size=spec.shape, dtype=np.uint16
+            )
+
+        return np.random.rand(*spec.shape).astype(
+            spec.data_type.as_numpy_dtype()
+        )
+
+    @staticmethod
+    def _validate_dai_input_specs(input_specs: Iterable[InputSpec]) -> None:
+        unsupported_inputs = [
+            f"{spec.name} ({spec.data_type.value})"
+            for spec in input_specs
+            if not spec.data_type.supports_dai_dtype()
+        ]
+        if unsupported_inputs:
+            details = ", ".join(unsupported_inputs)
+            raise ValueError(
+                "DepthAI benchmark does not support these input tensor "
+                f"data types: {details}. Use SNPE benchmarking for these "
+                "models."
+            )
+
+    def benchmark(self, configuration: Configuration) -> Result:
+        """Run one benchmark of the model on an RVC4 device.
+
+        Connects to the device, starts the device monitor if it was
+        asked for, and hands the run to the DepthAI or the SNPE backend.
+        Whatever the SNPE backend put on the device is removed again
+        afterwards.
+
+        .. warning::
+            ``configuration`` is modified in place: the keys the chosen
+            backend does not take are removed from it, and
+            ``device_ip`` is filled in with the address the device was
+            found at.
+
+        Args:
+            configuration: Options for this run.
+
+        Returns:
+            The measured ``fps`` and ``latency``, together with the
+            device monitor's readings when it was running.
+
+        """
+        dai_benchmark = get_option(configuration, "dai_benchmark", bool)
+        device_monitor = get_option(configuration, "device_monitor", bool)
+
+        device_ip, device_adb_id = get_device_info(
+            get_optional_option(configuration, "device_ip", str),
+            get_optional_option(configuration, "device_id", str),
+        )
+        if device_monitor or not dai_benchmark:
+            self._handler = create_handler(device_ip, device_adb_id)
+        else:
+            self._handler = None
+
+        configuration["device_ip"] = device_ip
+        self._device_pwd = Path("/", "data", "modelconverter", self.model_name)
+
+        self._monitor = None
+        idle_measurements: dict[str, float | None] = {}
+        if device_monitor and self._handler is not None:
+            self._monitor = DeviceMonitor(self._handler)
+            idle_measurements = self._monitor.get_idle_measurements()
+
+        try:
+            if dai_benchmark:
+                for key in [
+                    "dai_benchmark",
+                    "num_images",
+                    "device_id",
+                    "device_monitor",
+                ]:
+                    configuration.pop(key)
+                result = self._benchmark_dai(
+                    self.model_path,
+                    profile=get_option(configuration, "profile", str),
+                    runtime=get_option(configuration, "runtime", str),
+                    repetitions=get_option(configuration, "repetitions", int),
+                    num_threads=get_option(configuration, "num_threads", int),
+                    num_messages=get_option(
+                        configuration, "num_messages", int
+                    ),
+                    benchmark_time=get_option(
+                        configuration, "benchmark_time", int
+                    ),
+                    device_ip=device_ip,
+                )
+            else:
+                for key in [
+                    "dai_benchmark",
+                    "repetitions",
+                    "num_threads",
+                    "num_messages",
+                    "benchmark_time",
+                    "device_ip",
+                    "device_id",
+                    "device_monitor",
+                ]:
+                    configuration.pop(key, None)
+                logger.info("Running SNPE benchmark directly on the device...")
+                result = self._benchmark_snpe(
+                    self.model_path,
+                    num_images=get_option(configuration, "num_images", int),
+                    profile=get_option(configuration, "profile", str),
+                    runtime=get_option(configuration, "runtime", str),
+                )
+
+            if self._monitor is not None:
+                result |= self._monitor.get_stats()
+                result |= idle_measurements
+            return result
+        finally:
+            if self._monitor is not None:
+                self._monitor.stop()
+            if not dai_benchmark and self._handler is not None:
+                # so we don't delete the wrong directory
+                # if `model_name` gets unset for any reason
+                if not self.model_name:
+                    raise AssertionError(
+                        "`model_name` is not set, "
+                        "cannot clean up model files on the device."
+                    )
+
+                self._handler.shell(f"rm -rf {self._device_pwd}")
+
+    def _benchmark_snpe(
+        self,
+        model_path: PathType,
+        num_images: int,
+        profile: str,
+        runtime: str,
+    ) -> Result:
+        runtime = RUNTIMES.get(runtime, "use_dsp")
+
+        if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
+            if isinstance(model_path, str):
+                model_archive = dai.getModelFromZoo(
+                    dai.NNModelDescription(
+                        model_path,
+                        platform=dai.Platform.RVC4.name,
+                    ),
+                    apiKey=environ.HUBAI_API_KEY or "",
+                )
+            else:
+                model_archive = model_path
+
+            tmp_dir = Path(model_archive).parent / "tmp"
+            shutil.unpack_archive(model_archive, tmp_dir)
+
+            dlc_model_name = json.loads((tmp_dir / "config.json").read_text())[
+                "model"
+            ]["metadata"]["path"]
+            dlc_path = next(tmp_dir.rglob(dlc_model_name), None)
+            if not dlc_path:
+                raise ValueError("Could not find model.dlc in the archive.")
+            try:
+                input_specs = self._get_dlc_input_specs(dlc_path)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to read input specs from the DLC "
+                    f"with error: {e}. Reading from the archive."
+                )
+                input_specs = self._get_archive_input_specs(
+                    dai.NNArchive(model_archive)
+                )
+
+        elif str(model_path).endswith(".dlc"):
+            dlc_path = model_path
+            input_specs = self._get_dlc_input_specs(dlc_path)
+
+        else:
+            raise ValueError(
+                "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
+            )
+        logger.info(
+            f"Using SNPE profile '{profile}' and runtime '{runtime}' for benchmarking."
+        )
+        logger.info(f"Moving model '{dlc_path.name}' to the device.")
+
+        if self._handler is None:
+            raise RuntimeError(
+                "Handler is not initialized. Cannot benchmark directly on the device."
+            )
+        self._handler.shell(f"mkdir -p {self._device_pwd}")
+        self._handler.push(str(dlc_path), f"{self._device_pwd}/model.dlc")
+        self._prepare_raw_inputs(input_specs, num_images)
+
+        logger.info("Starting SNPE benchmark...")
+
+        if self._monitor is not None:
+            self._monitor.start()
+
+        try:
+            _, stdout, _ = self._handler.shell(
+                "snpe-parallel-run "
+                f"--container {self._device_pwd}/model.dlc "
+                f"--input_list {self._device_pwd}/input_list.txt "
+                f"--output_dir {self._device_pwd}/outputs "
+                f"--perf_profile {profile} "
+                "--cpu_fallback true "
+                f"--{runtime}",
+            )
+        except CalledProcessError as e:
+            if e.returncode == 137:
+                raise SubprocessError(
+                    "Benchmark process was killed, likely due to out-of-memory. "
+                    "Consider decreasing the number of images (`--num-images`)."
+                ) from e
+
+            raise SubprocessError(
+                f"Benchmark process failed with return code {e.returncode}.\n"
+                f"stdout:\n{e.stdout}\n"
+                f"stderr:\n{e.stderr}"
+            ) from e
+
+        pattern = re.compile(r"(\d+\.\d+) infs/sec")
+        match = pattern.search(stdout)
+        if match is None:
+            raise RuntimeError(
+                "Could not find throughput in stdout. Likely a server error.\n"
+                f"stdout:\n{stdout}"
+            )
+        fps = float(match.group(1))
+        return {"fps": fps, "latency": "N/A"}
+
+    def _benchmark_dai(
+        self,
+        model_path: PathType,
+        profile: str,
+        runtime: str,
+        repetitions: int,
+        num_threads: int,
+        num_messages: int,
+        benchmark_time: int,
+        device_ip: str | None = None,
+    ) -> Result:
+        if isinstance(model_path, str):
+            resolved_model_path = Path(
+                dai.getModelFromZoo(
+                    dai.NNModelDescription(
+                        model_path,
+                        platform=dai.Platform.RVC4.name,
+                    ),
+                    apiKey=environ.HUBAI_API_KEY or "",
+                )
+            )
+        elif str(model_path).endswith(".tar.xz"):
+            resolved_model_path = Path(model_path)
+        elif str(model_path).endswith(".dlc"):
+            raise ValueError(
+                "DLC model format is not currently supported for dai-benchmark. Please use SNPE for DLC models."
+            )
+        else:
+            raise ValueError(
+                "Unsupported model format. Supported formats: .tar.xz, or HubAI model slug."
+            )
+
+        model_archive = dai.NNArchive(resolved_model_path)
+        try:
+            logger.info("Trying to get input specs from the DLC file...")
+            input_specs = self._get_dlc_input_specs(resolved_model_path)
+        except Exception as e:
+            logger.warning(
+                f"Failed to read input specs from the DLC with error: {e}"
+            )
+            logger.info("Reading specs from the archive.")
+            input_specs = self._get_archive_input_specs(model_archive)
+
+        self._validate_dai_input_specs(input_specs)
+
+        input_data_packet = dai.NNData()
+        for spec in input_specs:
+            input_data = self._create_random_input(spec)
+            input_data_packet.addTensor(
+                spec.name, input_data, dataType=spec.data_type.as_dai_dtype()
+            )
+
+        if device_ip:
+            device = dai.Device(dai.DeviceInfo(device_ip))
+        else:
+            for info in dai.Device.getAllAvailableDevices():
+                if info.platform == XLinkPlatform.X_LINK_RVC4:
+                    device = dai.Device(info)
+                    break
+            else:
+                raise RuntimeError("No RVC4 device found.")
+
+        if device.getPlatform() != dai.Platform.RVC4:
+            raise ValueError(
+                f"Found {device.getPlatformAsString()}, expected RVC4 platform."
+            )
+
+        logger.info(
+            f"Using {device.getPlatformAsString()} device on IP {device.getDeviceInfo().name}."
+        )
+
+        if self._monitor is not None:
+            self._monitor.start()
+
+        latencies: list[float] = []
+
+        def on_log_message(log_message: dai.LogMessage) -> None:
+            latency = parse_inference_latency(
+                log_message, RVC4_INFERENCE_LATENCY_RE
+            )
+            if latency is not None:
+                latencies.append(latency)
+
+        callback_id = device.addLogCallback(on_log_message)
+        # RVC4 reports per-inference latency at DEBUG level.  Suppress the
+        # verbose device output while retaining callback delivery.
+        device.setLogLevel(dai.LogLevel.DEBUG)
+        device.setLogOutputLevel(dai.LogLevel.WARN)
+
+        fps_list = []
+        try:
+            with dai.Pipeline(device) as pipeline:
+                benchmark_out = pipeline.create(dai.node.BenchmarkOut)
+                benchmark_out.setRunOnHost(False)
+                benchmark_out.setFps(-1)
+
+                neural_network = pipeline.create(dai.node.NeuralNetwork)
+                neural_network.setNNArchive(model_archive)
+
+                neural_network.setBackendProperties(
+                    {
+                        "runtime": runtime,
+                        "performance_profile": profile,
+                    }
+                )
+
+                neural_network.setNumInferenceThreads(num_threads)
+
+                benchmark_in = pipeline.create(dai.node.BenchmarkIn)
+                benchmark_in.setRunOnHost(False)
+                benchmark_in.sendReportEveryNMessages(num_messages)
+                benchmark_in.logReportsAsWarnings(False)
+
+                benchmark_out.out.link(neural_network.input)
+                neural_network.out.link(benchmark_in.input)
+
+                output_queue = benchmark_in.report.createOutputQueue()
+                input_queue = benchmark_out.input.createInputQueue()
+
+                pipeline.start()
+                input_queue.send(input_data_packet)
+
+                progress, on_tick, should_continue = create_progress_handler(
+                    benchmark_time, repetitions
+                )
+
+                with progress:
+                    while pipeline.isRunning() and should_continue():
+                        benchmark_report = output_queue.get()
+                        if not isinstance(
+                            benchmark_report, dai.BenchmarkReport
+                        ):
+                            raise TypeError(
+                                f"Expected BenchmarkReport, got {type(benchmark_report)}"
+                            )
+
+                        fps_list.append(benchmark_report.fps)
+                        on_tick()
+        finally:
+            device.removeLogCallback(callback_id)
+
+        return {
+            "fps": float(np.mean(fps_list)),
+            "latency": float(np.mean(latencies)) if latencies else "N/A",
+        }
+
+    def _extra_header(
+        self,
+        results: list[tuple[Configuration, Result]],
+    ) -> list[str]:
+        heads = []
+        if self._monitor is not None:
+            heads.append("power_sys (W)")
+            heads.append("power_core (W)")
+            heads.append("dsp (%)")
+            heads.append("memory (MiB)")
+            heads.append("cpu (%)")
+        return heads
+
+    def _extra_row_cells(
+        self,
+        configuration: Configuration,
+        result: Result,
+    ) -> Iterable[str]:
+        if self._monitor is None:
+            return
+
+        yield self._format_measurement(result.get("power_system"))
+        yield self._format_measurement(result.get("power_processor"))
+        yield self._format_measurement(result.get("dsp_utilization"))
+        yield self._format_measurement(result.get("ram_used"))
+        yield self._format_measurement(result.get("cpu_utilization"))
+
+    def _get_archive_input_specs(
+        self, archive: dai.NNArchive
+    ) -> list[InputSpec]:
+        def guess_dtype(
+            name: str,
+            input_precision: DataType,
+            archive_precision: DataType | None,
+            hubai_precision: DataType | None = None,
+        ) -> DataType:
+            logger.info(f"Resolving correct type for input '{name}'")
+            logger.info(f"model.inputs.{name}.dtype = {input_precision}")
+            logger.info(f"model.metadata.precision = {archive_precision}")
+            if hubai_precision is not None:
+                logger.info(f"HubAI is reporting {hubai_precision}")
+
+            result = None
+
+            # e.g. for inputs representing indices
+            if input_precision not in {
+                DataType.INT8,
+                DataType.FLOAT16,
+                DataType.FLOAT32,
+            }:
+                result = input_precision
+                logger.info("Using the model.inputs value")
+            elif hubai_precision is not None:
+                logger.info("Using the HubAI value")
+                result = hubai_precision
+            else:
+                match archive_precision, input_precision:
+                    case (
+                        DataType.INT8 | None,
+                        DataType.INT8 | DataType.FLOAT32,
+                    ):
+                        result = DataType.INT8
+                    case (
+                        DataType.FLOAT16 | None,
+                        DataType.FLOAT16 | DataType.FLOAT32,
+                    ):
+                        result = DataType.FLOAT16
+                    case DataType.FLOAT32 | None, DataType.FLOAT32:
+                        result = DataType.FLOAT32
+                    case _:
+                        result = input_precision
+            if result is None:
+                raise ValueError("Unable to resolve the type combination")
+            logger.info(
+                f"Resolved the type of '{name}' to be '{result.name.upper()}'"
+            )
+            return result
+
+        cfg = archive.getConfig()
+        hubai_precision = self._get_hubai_type()
+        return [
+            InputSpec(
+                name=inp.name,
+                shape=inp.shape,
+                data_type=guess_dtype(
+                    inp.name,
+                    DataType(inp.dtype.name.lower()),
+                    archive_precision=DataType(
+                        cfg.model.metadata.precision.name.lower()
+                    )
+                    if cfg.model.metadata.precision
+                    else None,
+                    hubai_precision=hubai_precision,
+                ),
+            )
+            for inp in cfg.model.inputs
+        ]
+
+    def _get_hubai_type(self) -> DataType | None:
+        if not isinstance(
+            self.model_path, str
+        ) or not self._HUB_MODEL_PATTERN.match(self.model_path):
+            return None
+
+        client = create_hubai_client()
+        model_variant = client.variants.get_variant(
+            f"{self._hub_model_identifier}:{self._model_variant}"
+        )
+
+        model_instances = []
+        for is_public in (True, False):
+            model_instances.extend(
+                client.instances.list_instances(
+                    model_id=model_variant.model_id,
+                    variant_id=model_variant.id,
+                    is_public=is_public,
+                    limit=500,
+                )
+            )
+        for instance in model_instances:
+            if any(
+                platform.value == "RVC4"
+                for platform in instance.platforms or []
+            ) and (
+                self._model_instance is None
+                or instance.hash_short == self._model_instance
+            ):
+                if instance.model_precision_type is not None:
+                    return DataType.from_hubai_dtype(
+                        instance.model_precision_type.value
+                    )
+                return None
+        return None
+
+    @staticmethod
+    def _format_measurement(value: float | str | None) -> str:
+        if not isinstance(value, int | float) or not value:
+            return "[orange3]N/A[reset]"
+        return f"{value:.2f}"

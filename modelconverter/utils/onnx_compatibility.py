@@ -1,6 +1,7 @@
 """Helpers smoothing over differences between ONNX releases.
 
-ONNX is the input format every target can take, so modelconverter has to
+ONNX is the input format every platform can take, so modelconverter has
+to
 cope with whatever the ONNX package in a given image offers: helper
 functions come and go between releases, and a model too large for a
 single protobuf keeps its weights in companion files. This module
@@ -13,7 +14,9 @@ from pathlib import Path
 
 import ml_dtypes
 import numpy as np
+import numpy.typing as npt
 import onnx
+from luxonis_ml.typing import PathType
 from onnx.external_data_helper import ExternalDataInfo, uses_external_data
 
 
@@ -28,7 +31,7 @@ def ensure_onnx_helper_compatibility() -> None:
     helper = onnx.helper
 
     def _convert_scalar(
-        value: float, dtype: np.dtype, container: np.dtype
+        value: float, dtype: npt.DTypeLike, container: npt.DTypeLike
     ) -> int:
         arr = np.asarray(value, dtype=dtype)
         return arr.view(container).item()
@@ -56,7 +59,7 @@ def ensure_onnx_helper_compatibility() -> None:
 
 def save_onnx_model(
     model: onnx.ModelProto,
-    output_path: str | Path,
+    output_path: PathType,
     *,
     save_as_external_data: bool = False,
     location: str | None = None,
@@ -143,7 +146,7 @@ def _iter_model_tensors(model: onnx.ModelProto) -> Iterator[onnx.TensorProto]:
         yield from _iter_node_tensors(function.node)
 
 
-def get_external_data_paths(model_path: str | Path) -> list[Path]:
+def get_external_data_paths(model_path: PathType) -> list[Path]:
     """Return every companion file holding the model's external tensor
     data.
 
@@ -174,7 +177,7 @@ def get_external_data_paths(model_path: str | Path) -> list[Path]:
     return paths
 
 
-def has_external_data(model_path: str | Path) -> bool:
+def has_external_data(model_path: PathType) -> bool:
     """Whether the model keeps any of its tensors in companion files.
 
     Callers that re-save the model consolidate every tensor into one new

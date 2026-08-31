@@ -7,13 +7,14 @@ the per-input dictionaries is exercised through a minimal stand-in
 subclass instead.
 """
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pytest
+from luxonis_ml.typing import ParamValue
 
-from modelconverter.packages.base_inferer import Inferer
+from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.utils.config import Config
 from modelconverter.utils.types import Encoding, ResizeMethod
 from tests.helpers.onnx_factory import single_io_onnx
@@ -30,7 +31,9 @@ class _StubInferer(Inferer):
         return {}
 
 
-def _build(work_dir: Path, shape: list[int], **overrides: Any) -> _StubInferer:
+def _build(
+    work_dir: Path, shape: list[int], **overrides: ParamValue
+) -> _StubInferer:
     """Build an inferer from a single-input model of the given shape."""
     model = single_io_onnx(
         work_dir / "m.onnx",
@@ -57,7 +60,7 @@ def _build(work_dir: Path, shape: list[int], **overrides: Any) -> _StubInferer:
 def test_encoding_follows_the_config(
     work_dir: Path,
     shape: list[int],
-    overrides: dict[str, Any],
+    overrides: Mapping[str, ParamValue],
     expected: Encoding,
 ):
     """``encoding.to`` is passed through whatever the calibration is.
@@ -96,3 +99,10 @@ def test_shapes_and_dtypes_are_mapped(work_dir: Path):
     inferer = _build(work_dir, [1, 3, 64, 64])
     assert inferer.in_shapes == {"input0": [1, 3, 64, 64]}
     assert inferer.out_shapes == {"output0": [1, 10]}
+
+
+def test_the_stand_in_reports_no_outputs(work_dir: Path):
+    """The stand-in has no vendor runtime, so its forward pass produces
+    nothing; `from_config` needs no more than that.
+    """
+    assert _build(work_dir, [1, 3, 64, 64]).infer({}) == {}

@@ -1,25 +1,21 @@
 """Helpers shared by the ``modelconverter`` CLI commands.
 
-Turns what the user typed on the command line into what the conversion
+Turns what the user typed on the command line into what the platform
 packages expect: the directory a run writes its results to, the parsed
-configuration (from a config file or an NN Archive), the preprocessing
-that is handed to the NN Archive instead of being baked into the model,
-and lookups of Luxonis Hub resources by slug.
+configuration (from a config file or an NN Archive), and the
+preprocessing that is handed to the NN Archive instead of being baked
+into the model.
 """
 
 import shutil
-from contextlib import suppress
 from datetime import datetime, timezone
-from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
 
 from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
 from luxonis_ml.typing import Params
-from requests.exceptions import HTTPError
 
 from modelconverter.utils import (
     ModelconverterException,
@@ -38,47 +34,7 @@ from modelconverter.utils.constants import (
     in_docker,
 )
 from modelconverter.utils.filesystem_utils import set_input_base
-from modelconverter.utils.hub_requests import Request
-from modelconverter.utils.types import DataType, Encoding, Target
-
-
-class ModelType(str, Enum):
-    """Model format, either one that can be converted or a target one."""
-
-    ONNX = "ONNX"
-    IR = "IR"
-    PYTORCH = "PYTORCH"
-    TFLITE = "TFLITE"
-    RVC2 = "RVC2"
-    RVC3 = "RVC3"
-    RVC4 = "RVC4"
-    HAILO = "HAILO"
-
-    @classmethod
-    def from_suffix(cls, suffix: str) -> "ModelType":
-        """Determine the model type from a file suffix.
-
-        Args:
-            suffix: File suffix, leading dot included, such as
-                ``".onnx"``.
-
-        Returns:
-            Model type the suffix belongs to.
-
-        Raises:
-            ValueError: If the suffix belongs to none of the formats
-                that can be converted.
-
-        """
-        if suffix == ".onnx":
-            return cls.ONNX
-        if suffix == ".tflite":
-            return cls.TFLITE
-        if suffix in [".xml", ".bin"]:
-            return cls.IR
-        if suffix in [".pt", ".pth"]:
-            return cls.PYTORCH
-        raise ValueError(f"Unsupported model format: {suffix}")
+from modelconverter.utils.types import DataType, Encoding, Platform
 
 
 def resolve_output_dir(output_dir: str) -> Path:
@@ -104,7 +60,7 @@ def resolve_output_dir(output_dir: str) -> Path:
 
 
 def get_output_dir_name(
-    target: Target, name: str, output_dir: str | None
+    platform: Platform, name: str, output_dir: str | None
 ) -> Path:
     """Determine the directory the conversion writes its results to.
 
@@ -113,11 +69,12 @@ def get_output_dir_name(
     `CONVERSION_MARKER` file -- or an empty one.
 
     Args:
-        target: Conversion target, used in the generated name.
+        platform: Platform the model is converted for, used in the
+            generated name.
         name: Name of the model, sanitized before use.
         output_dir: Directory named by the user, resolved under
             `OUTPUTS_DIR`. If ``None``, a directory named
-            ``<name>_to_<target>_<timestamp>`` is used instead.
+            ``<name>_to_<platform>_<timestamp>`` is used instead.
 
     Returns:
         Path to the output directory. It is not created here.
@@ -151,7 +108,7 @@ def get_output_dir_name(
                 )
             shutil.rmtree(dest)
         return dest
-    return OUTPUTS_DIR / f"{name}_to_{target.name.lower()}_{date}"
+    return OUTPUTS_DIR / f"{name}_to_{platform.name.lower()}_{date}"
 
 
 def init_dirs() -> None:
@@ -162,14 +119,14 @@ def init_dirs() -> None:
 
 
 def get_configs(
-    target: Target,
+    platform: Platform,
     path: str | None,
-    opts: list[str] | dict[str, Any] | None = None,
+    opts: list[str] | Params | None = None,
 ) -> tuple[Config, NNArchiveConfig | None, str | None]:
     """Set up the configuration.
 
     Args:
-        target: Conversion target the config is built for.
+        platform: Platform the config is built for.
         path: Path to the configuration file or NN Archive. If
             ``None``, the config is built from the overrides alone.
         opts: Optional CLI overrides of the config file. Either a
@@ -203,7 +160,7 @@ def get_configs(
     if path is not None:
         path_ = resolve_path(path, MISC_DIR)
         if path_.is_dir() or is_nn_archive(path_):
-            return process_nn_archive(target, path_, overrides)
+            return process_nn_archive(platform, path_, overrides)
         # Resolve files referenced *inside* the config (calibration data,
         # scripts, encodings, ...) relative to the config file's directory.
         set_input_base(path_.parent)
@@ -289,33 +246,3 @@ def extract_preprocessing(
         inp.encoding.to = Encoding.NONE
 
     return cfg, preprocessing
-
-
-def slug_to_id(
-    slug: str, endpoint: Literal["models", "modelVersions", "modelInstances"]
-) -> str:
-    """Look up the ID of a HubAI resource by its slug.
-
-    Public resources are searched first, private ones after them.
-
-    Args:
-        slug: Slug of the resource to look up.
-        endpoint: HubAI endpoint to search on.
-
-    Returns:
-        ID of the first resource matching the slug.
-
-    Raises:
-        ValueError: If no resource with that slug is found.
-
-    """
-    for is_public in [True, False]:
-        with suppress(HTTPError):
-            params = {
-                "is_public": is_public,
-                "slug": slug,
-            }
-            data = Request.get(f"{endpoint}/", params=params)
-            if data:
-                return data[0]["id"]
-    raise ValueError(f"Model with slug '{slug}' not found.")

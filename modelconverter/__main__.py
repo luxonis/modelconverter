@@ -1,13 +1,12 @@
 """Entry point of the ``modelconverter`` command-line interface.
 
-Defines the commands the CLI exposes: converting a model for a target
-platform, running inference, benchmarking and analyzing it on a device,
+Defines the commands the CLI exposes: converting a model for a platform,
+running inference, benchmarking and analyzing it on a device,
 visualizing the analysis, packaging a model into an NN Archive, opening
-a shell in a target's container and managing the cache. The commands
+a shell in a platform's container and managing the cache. The commands
 that need the vendor conversion tools -- ``convert``, ``infer`` and
-``shell`` -- are re-run inside the Docker image of the requested target
-platform unless they already run inside one; the others run on the
-host.
+``shell`` -- are re-run inside the Docker image of the requested
+platform unless they already run inside one; the others run on the host.
 """
 
 import importlib.metadata
@@ -18,11 +17,13 @@ import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from types import FrameType
+from typing import Annotated, Literal
 
 from cyclopts import App, Group, Parameter
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator, is_nn_archive
+from luxonis_ml.typing import ParamValue
 from luxonis_ml.utils import LuxonisFileSystem, setup_logging
 from rich import box
 from rich.console import Console
@@ -37,20 +38,21 @@ from modelconverter.cli import (
     init_dirs,
     resolve_output_dir,
 )
-from modelconverter.packages import (
+from modelconverter.platforms import (
     get_analyzer,
     get_benchmark,
     get_exporter,
     get_inferer,
     get_visualizer,
 )
-from modelconverter.packages.multistage_exporter import MultiStageExporter
+from modelconverter.platforms.base_benchmark import Configuration
+from modelconverter.platforms.multistage_exporter import MultiStageExporter
 from modelconverter.utils import (
     ModelconverterException,
     archive_from_model,
     docker_build,
     docker_exec,
-    get_default_target_version,
+    get_default_tool_version,
     get_local_docker_image,
     in_docker,
     resolve_path,
@@ -95,10 +97,10 @@ from modelconverter.utils.telemetry import (
     get_component_telemetry,
     get_conversion_run_id,
     peak_ram_usage_bytes,
-    resolve_target_tool_version,
+    resolve_tool_version,
     runtime_failure_reason_from_exception,
 )
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 
 app = App(
     name="Modelconverter",
@@ -137,7 +139,7 @@ def catch_exceptions():
 
 @app.command(group=docker_commands)
 def convert(
-    target: Target,
+    platform: Platform,
     /,
     *opts: str,
     path: str | None = None,
@@ -146,10 +148,10 @@ def convert(
     main_stage: str | None = None,
     archive_preprocess: bool = False,
 ) -> None:
-    """Export the model for the specified target platform.
+    """Export the model for the specified platform.
 
     Args:
-        target: The target platform to export the model for.
+        platform: The platform to export the model for.
         opts: A list of optional CLI overrides for the configuration
             file.
         path: A URL or a path to the configuration file, NN Archive
@@ -168,7 +170,7 @@ def convert(
 
     """
 
-    def handle_signal(signum: int, frame: Any) -> None:
+    def handle_signal(signum: int, frame: FrameType | None) -> None:
         signame = signal.Signals(signum).name
         logger.error(f"{signame} received, exiting...")
         sys.exit(130)
@@ -181,9 +183,9 @@ def convert(
     runtime_telemetry = get_component_telemetry()
     conversion_run_id = get_conversion_run_id()
     original_path = path
-    opts: list[str] = list(opts or [])
+    overrides: list[str] = list(opts)
     conversion_start: float | None = None
-    conversion_summary: dict[str, Any] | None = None
+    conversion_summary: dict[str, ParamValue] | None = None
     output_artifact_count: int | None = None
     uploaded_output = False
     uploaded_intermediate_outputs = False
@@ -194,34 +196,36 @@ def convert(
         main_stage_provided = main_stage is not None
         if path is not None:
             suffix = Path(path).suffix
-            if suffix in {".xml", ".bin"} and target not in {
-                Target.RVC2,
-                Target.RVC3,
+            if suffix in {".xml", ".bin"} and platform not in {
+                Platform.RVC2,
+                Platform.RVC3,
             }:
                 raise ValueError(
-                    f"OpenVINO IR format is not supported for target {target.name}."
+                    f"OpenVINO IR format is not supported for platform {platform.name}."
                 )
             if suffix in {".onnx", ".xml", ".dlc", ".tflite"}:
-                opts = ["input_model", path, *opts]
+                overrides = ["input_model", path, *overrides]
                 if suffix == ".xml":
-                    opts = [
+                    overrides = [
                         "input_bin",
                         str(Path(path).with_suffix(".bin")),
-                        *opts,
+                        *overrides,
                     ]
                 path = None
             elif suffix == ".bin":
-                opts = [
+                overrides = [
                     "input_model",
                     str(Path(path).with_suffix(".xml")),
                     "input_bin",
                     path,
-                    *opts,
+                    *overrides,
                 ]
                 path = None
 
         init_dirs()
-        cfg, archive_cfg, _main_stage = get_configs(target, path, list(opts))
+        cfg, archive_cfg, _main_stage = get_configs(
+            platform, path, list(overrides)
+        )
         main_stage = main_stage or _main_stage
         is_multistage = len(cfg.stages) > 1
         if is_multistage and main_stage is None:
@@ -232,7 +236,7 @@ def convert(
         if archive_preprocess:
             cfg, preprocessing = extract_preprocessing(cfg)
 
-        output_path = get_output_dir_name(target, cfg.name, output_dir)
+        output_path = get_output_dir_name(platform, cfg.name, output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         (output_path / CONVERSION_MARKER).touch()
         setup_logging(
@@ -241,11 +245,11 @@ def convert(
         )
         if is_multistage:
             exporter = MultiStageExporter(
-                target=target, config=cfg, output_dir=output_path
+                platform=platform, config=cfg, output_dir=output_path
             )
         else:
             exporter = get_exporter(
-                target,
+                platform,
                 config=next(iter(cfg.stages.values())),
                 output_dir=output_path,
             )
@@ -255,9 +259,9 @@ def convert(
             TelemetryFlowStep.CONFIGURATION_RESOLVED,
             build_conversion_summary(
                 cfg,
-                target=target,
+                platform=platform,
                 config_source=detect_config_source(
-                    original_path, opts, archive_cfg
+                    original_path, overrides, archive_cfg
                 ),
                 archive_output_mode=ArchiveOutputMode(to),
                 archive_preprocess=archive_preprocess,
@@ -277,7 +281,7 @@ def convert(
         if not isinstance(out_models, list):
             out_models = [out_models]
         if to == "nn_archive":
-            from modelconverter.packages.base_exporter import Exporter
+            from modelconverter.platforms.base_exporter import Exporter
 
             archive_name = None
             if original_path is not None and is_nn_archive(original_path):
@@ -292,7 +296,7 @@ def convert(
             assert main_stage is not None
             out_models = [
                 generate_archive(
-                    target=target,
+                    platform=platform,
                     cfg=cfg,
                     main_stage=main_stage,
                     out_models=out_models,
@@ -386,7 +390,9 @@ def convert(
                             if key != "flow_step"
                         }
                         if conversion_summary is not None
-                        else {"target": target.value}
+                        # Pre-rename telemetry key, kept for analytics
+                        # continuity (see telemetry.py).
+                        else {"target": platform.value}
                     ),
                     **build_conversion_result_properties(
                         result=(
@@ -418,7 +424,7 @@ def convert(
 
 @app.command(group=docker_commands)
 def infer(
-    target: Target,
+    platform: Platform,
     /,
     *opts: str,
     model_path: str,
@@ -428,10 +434,10 @@ def infer(
     path: str | None = None,
     stage: str | None = None,
 ) -> None:
-    """Run inference on the specified target platform.
+    """Run inference on the specified platform.
 
     Args:
-        target: The target platform to run the inference on.
+        platform: The platform to run the inference on.
         opts: A list of optional CLI overrides for the configuration
             file.
         model_path: A URL or a path to the model file.
@@ -450,7 +456,7 @@ def infer(
     if path is not None:
         config = path
     with catch_exceptions():
-        mult_cfg, _, _ = get_configs(target, str(config), list(opts))
+        mult_cfg, _, _ = get_configs(platform, str(config), list(opts))
         cfg = mult_cfg.get_stage_config(stage)
         output_path = resolve_output_dir(output_dir)
         setup_logging(
@@ -458,21 +464,21 @@ def infer(
             use_rich=mult_cfg.rich_logging,
         )
         logger.info("Starting inference")
-        get_inferer(target, model_path, input_path, output_path, cfg).run()
+        get_inferer(platform, model_path, input_path, output_path, cfg).run()
 
 
 @app.command(group=docker_commands)
 def shell(
-    target: Target,
+    platform: Platform,
     /,
     *,
     command: Annotated[str | None, Parameter(name=["-c", "--command"])] = None,
 ) -> None:
     """Boot up a shell inside a docker container for the specified
-    target platform.
+    platform.
 
     Args:
-        target: The target platform.
+        platform: The platform.
         command: The command to run in the shell. If not provided, a
             bash shell is started. If you want to run a command with
             arguments, use quotes around the command.
@@ -481,12 +487,12 @@ def shell(
     args = ["bash"]
     if command is not None:
         args.extend(["-c", command])
-    os.execle("/bin/bash", *args, os.environ)
+    os.execle("/bin/bash", *args, os.environ)  # noqa: S606
 
 
 @app.meta.command(group=device_commands)
 def benchmark(
-    target: Target,
+    platform: Platform,
     /,
     *,
     model_path: str,
@@ -519,10 +525,10 @@ def benchmark(
     dai_benchmark: Annotated[bool, Parameter(group="RVC4")] = True,
     device_monitor: Annotated[bool, Parameter(group="RVC4")] = True,
 ) -> None:
-    """Run benchmark on the specified target platform.
+    """Run benchmark on the specified platform.
 
     Args:
-        target: The target platform to run the benchmark on.
+        platform: The platform to run the benchmark on.
         model_path: A URL or a path to the model file.
         full: If ``True``, runs the full benchmark using all
             configurations.
@@ -552,17 +558,17 @@ def benchmark(
             ``False``, the SNPE tools are used.
         device_monitor: Whether to monitor the device performance during
             benchmarking and include it in the results. Only relevant
-            for RVC4 target.
+            for RVC4.
 
     """
-    if target in {Target.RVC2, Target.RVC4}:
-        kwargs = {
+    if platform in {Platform.RVC2, Platform.RVC4}:
+        kwargs: Configuration = {
             "repetitions": repetitions,
             "benchmark_time": benchmark_time,
             "num_threads": num_threads,
             "num_messages": num_messages,
         }
-        if target is Target.RVC4:
+        if platform is Platform.RVC4:
             kwargs |= {
                 "profile": profile,
                 "runtime": runtime,
@@ -572,11 +578,11 @@ def benchmark(
                 "device_id": device_id,
                 "device_monitor": device_monitor,
             }
-    elif target is Target.RVC3:
+    elif platform is Platform.RVC3:
         kwargs = {
             "requests": requests,
         }
-    get_benchmark(target, model_path).run(full=full, save=save, **kwargs)
+    get_benchmark(platform, model_path).run(full=full, save=save, **kwargs)
 
 
 @app.meta.command(group=device_commands)
@@ -635,7 +641,7 @@ def analyze(
             }
 
         analyzer = get_analyzer(
-            Target.RVC4,
+            Platform.RVC4,
             device_ip,
             device_id,
             dlc_model_path,
@@ -662,7 +668,7 @@ def visualize(dir_path: str) -> None:
             results. The default search path is ``output/analysis``.
 
     """
-    get_visualizer(Target.RVC4, dir_path).visualize()
+    get_visualizer(Platform.RVC4, dir_path).visualize()
 
 
 @app.meta.command
@@ -949,13 +955,13 @@ def launcher(
     Args:
         *tokens: The command and its arguments, parsed by the wrapped
             app.
-        dev: If ``True``, builds and runs the target's ``dev`` image,
+        dev: If ``True``, builds and runs the platform's ``dev`` image,
             which also mounts the host's sources, tests and
             ``pyproject.toml`` over the ones baked into it.
         gpu: If ``True``, runs the container with the ``nvidia``
-            runtime. Only has an effect for the ``hailo`` target.
+            runtime. Only has an effect for the ``hailo`` platform.
         tool_version: Version of the underlying conversion tools to use.
-            Available options differ based on the target platform.
+            Available options differ based on the platform.
         image: Full name of the docker image to use. If the name
             includes a tag (e.g. ``:latest``), it will be used as is and
             the ``--tool-version`` argument will be ignored.
@@ -969,7 +975,7 @@ def launcher(
 
     """
     command, bound, _ = app.parse_args(tokens)
-    target = bound.arguments.get("target")
+    platform = bound.arguments.get("platform")
     is_convert_command = getattr(command, "__name__", "") == "convert"
     running_in_docker = in_docker()
 
@@ -980,31 +986,32 @@ def launcher(
     if cpus is not None and cpus <= 0:
         raise ValueError("CPUs value must be a positive number.")
 
-    def run_in_configured_environment() -> Any:
+    def run_in_configured_environment() -> None:
         if running_in_docker:
-            return command(*bound.args, **bound.kwargs)
+            command(*bound.args, **bound.kwargs)
+            return
 
-        assert target is not None
+        assert platform is not None
         tag = "dev" if dev else "latest"
         if dev:
-            version = tool_version or get_default_target_version(target.value)
+            version = tool_version or get_default_tool_version(platform.value)
             if not (
                 os.getenv("CI") == "true"
                 and get_local_docker_image(
-                    target.value,
+                    platform.value,
                     bare_tag=tag,
                     version=version,
                     image=image,
                 )
             ):
                 docker_build(
-                    target.value, bare_tag=tag, version=version, image=image
+                    platform.value, bare_tag=tag, version=version, image=image
                 )
 
         staged_tokens = stage_inputs(list(tokens), path_flags_for(command))
 
         docker_exec(
-            target.value,
+            platform.value,
             *staged_tokens,
             bare_tag=tag,
             use_gpu=gpu,
@@ -1013,7 +1020,7 @@ def launcher(
             memory=memory_bytes,
             cpus=cpus,
         )
-        return None
+        return
 
     if not is_convert_command:
         return run_in_configured_environment()
@@ -1021,7 +1028,7 @@ def launcher(
     if running_in_docker:
         return run_in_configured_environment()
 
-    assert target is not None
+    assert platform is not None
     command_telemetry = get_component_telemetry()
     previous_conversion_run_id = os.environ.get(CONVERSION_RUN_ID_ENV_VAR)
     conversion_run_id = get_conversion_run_id()
@@ -1039,12 +1046,12 @@ def launcher(
                 COMMAND_EVENT,
                 build_command_properties(
                     conversion_run_id=conversion_run_id,
-                    target=target,
+                    platform=platform,
                     runs_in_docker=not running_in_docker,
                     dev_image=dev,
                     gpu_enabled=gpu,
-                    target_tool_version=resolve_target_tool_version(
-                        target=target,
+                    tool_version=resolve_tool_version(
+                        platform=platform,
                         tool_version=tool_version,
                         image=image,
                     ),

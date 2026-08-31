@@ -1,7 +1,7 @@
-"""Utilities shared by the modelconverter CLI and the target packages.
+"""Utilities shared by the modelconverter CLI and the platform packages.
 
 Collects the helpers that are not specific to a single conversion
-target: filesystem and remote storage access, Docker image handling,
+platform: filesystem and remote storage access, Docker image handling,
 device communication, ONNX manipulation, NN Archive handling, image and
 calibration data loading, and the common exception types. The names
 re-exported here are the ones meant to be used from outside this
@@ -39,7 +39,7 @@ from .filesystem_utils import (
     upload_to_remote,
 )
 from .general import sanitize_net_name
-from .hubai_utils import is_hubai_available
+from .hubai_utils import is_hubai_model_variant_available
 from .image import read_calib_dir, read_image
 from .layout import guess_new_layout, make_default_layout
 from .metadata import Metadata, get_metadata
@@ -55,7 +55,7 @@ from .onnx_tools import (
 )
 from .progress_handler import create_progress_handler
 from .subprocess import SubprocessHandle, subprocess_run
-from .target_versions import get_default_target_version
+from .tool_versions import get_default_tool_version
 from .types import DataType
 
 __all__ = [
@@ -82,14 +82,14 @@ __all__ = [
     "get_archive_input",
     "get_container_memory_available",
     "get_container_memory_limit",
-    "get_default_target_version",
+    "get_default_tool_version",
     "get_docker_image",
     "get_local_docker_image",
     "get_metadata",
     "get_protocol",
     "guess_new_layout",
     "in_docker",
-    "is_hubai_available",
+    "is_hubai_model_variant_available",
     "make_default_layout",
     "modelconverter_config_to_nn",
     "onnx_attach_normalization_to_inputs",

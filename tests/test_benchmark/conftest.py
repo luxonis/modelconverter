@@ -16,10 +16,10 @@ INFLUX_BUCKET = "fps_metrics"
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
-        "--benchmark-target",
+        "--benchmark-platform",
         action="store",
         default="rvc4",
-        help="Target platform to benchmark (default: rvc4).",
+        help="Platform to benchmark (default: rvc4).",
     )
     parser.addoption(
         "--benchmark-run-id",
@@ -50,10 +50,10 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 @pytest.fixture
-def benchmark_target(request: pytest.FixtureRequest) -> str:
-    target = request.config.getoption("--benchmark-target")
-    assert isinstance(target, str)
-    return target
+def benchmark_platform(request: pytest.FixtureRequest) -> str:
+    platform = request.config.getoption("--benchmark-platform")
+    assert isinstance(platform, str)
+    return platform
 
 
 @pytest.fixture(scope="session")

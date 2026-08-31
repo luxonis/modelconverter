@@ -6,32 +6,32 @@ superblob option is skipped.
 
 import pytest
 
-from modelconverter.utils.types import Target
-from tests.helpers.target_options import (
+from modelconverter.utils.types import Platform
+from tests.helpers.platform_options import (
+    platform_options,
     superblob_skip_reason,
-    target_options,
 )
 
 
 @pytest.mark.parametrize(
-    ("target", "version", "expected"),
+    ("platform", "version", "expected"),
     [
-        (Target.RVC2, "2021.4.0", ("rvc2.superblob", "False")),
-        (Target.RVC2, "2022.3.0", ()),
-        (Target.RVC3, "2021.4.0", ()),
-        (Target.RVC4, "2.41.0", ()),
-        (Target.HAILO, "2025.04", ()),
+        (Platform.RVC2, "2021.4.0", ("rvc2.superblob", "False")),
+        (Platform.RVC2, "2022.3.0", ()),
+        (Platform.RVC3, "2021.4.0", ()),
+        (Platform.RVC4, "2.41.0", ()),
+        (Platform.HAILO, "2025.04", ()),
     ],
 )
-def test_target_options(
+def test_platform_options(
     monkeypatch: pytest.MonkeyPatch,
-    target: Target,
+    platform: Platform,
     version: str,
     expected: tuple[str, ...],
 ):
-    monkeypatch.setenv("MODELCONVERTER_TARGET_VERSION", version)
+    monkeypatch.setenv("MODELCONVERTER_TOOL_VERSION", version)
 
-    assert target_options(target) == expected
+    assert platform_options(platform) == expected
 
 
 @pytest.mark.parametrize(
@@ -41,20 +41,20 @@ def test_target_options(
 def test_superblob_skip_reason(
     monkeypatch: pytest.MonkeyPatch, version: str, skipped: bool
 ):
-    monkeypatch.setenv("MODELCONVERTER_TARGET_VERSION", version)
+    monkeypatch.setenv("MODELCONVERTER_TOOL_VERSION", version)
 
     assert (superblob_skip_reason() is not None) is skipped
 
 
-def test_no_target_version_keeps_superblob(
+def test_no_tool_version_keeps_superblob(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Outside a conversion container nothing is forced off.
 
-    Host-side runs have no ``MODELCONVERTER_TARGET_VERSION``, and defaulting to
+    Host-side runs have no ``MODELCONVERTER_TOOL_VERSION``, and defaulting to
     "skip superblob" there would silently weaken every RVC2 conversion.
     """
-    monkeypatch.delenv("MODELCONVERTER_TARGET_VERSION", raising=False)
+    monkeypatch.delenv("MODELCONVERTER_TOOL_VERSION", raising=False)
 
     assert superblob_skip_reason() is None
-    assert target_options(Target.RVC2) == ()
+    assert platform_options(Platform.RVC2) == ()

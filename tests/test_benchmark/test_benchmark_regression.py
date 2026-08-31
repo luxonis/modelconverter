@@ -6,22 +6,63 @@ fails when the measured FPS regresses against the recorded value.
 
 import json
 import platform
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Protocol
 
 import pytest
 from hil_framework.lib_testbed.db_source.InfluxClient import InfluxClient
+from hil_framework.lib_testbed.utils.Testbed import Testbed
+from luxonis_ml.typing import Params
 
-from modelconverter.packages import get_benchmark
-from modelconverter.utils.types import Target
+from modelconverter.platforms import get_benchmark
+from modelconverter.utils.types import Platform
 
-TARGETS_FILE = Path(__file__).parent / "benchmark_targets.json"
+PLATFORMS_FILE = Path(__file__).parent / "benchmark_platforms.json"
 
-_targets_data = json.loads(TARGETS_FILE.read_text())
+_platforms_data = json.loads(PLATFORMS_FILE.read_text())
 
 
-def _model_slugs(target: str) -> list[str]:
-    return list(_targets_data.get(target, {}).keys())
+class BenchmarkCamera(Protocol):
+    """The part of the HIL framework camera API that this suite uses."""
+
+    @property
+    def name(self) -> str:
+        """Name the framework reserved the camera under."""
+        ...
+
+    @property
+    def mxid(self) -> str:
+        """Unique ID of the device."""
+        ...
+
+    @property
+    def model(self) -> str:
+        """Model of the device, such as ``OAK4-D``."""
+        ...
+
+    @property
+    def revision(self) -> str:
+        """Hardware revision of the device."""
+        ...
+
+    @property
+    def hostname(self) -> str:
+        """Host name the device is reachable at."""
+        ...
+
+    @property
+    def platform(self) -> str:
+        """Platform of the device, such as ``RVC4``."""
+        ...
+
+    def get_os_version(self) -> str:
+        """Return the version of the OS running on the device."""
+        ...
+
+
+def _model_slugs(benchmark_platform: str) -> list[str]:
+    return list(_platforms_data.get(benchmark_platform, {}).keys())
 
 
 def _model_id(slug: str) -> str:
@@ -36,9 +77,9 @@ def _build_fps_benchmark_data(
     bucket: str,
     token: str,
     model_slug: str,
-    benchmark_target: str,
+    benchmark_platform: str,
     benchmark_run_id: str,
-    benchmark_camera: Any,
+    benchmark_camera: BenchmarkCamera,
     testbed_name: str | None,
     depthai_version: str | None,
     actual_fps: float,
@@ -49,7 +90,7 @@ def _build_fps_benchmark_data(
     fps_max: float,
     deviation_pct: float,
     success: bool,
-) -> dict[str, Any]:
+) -> Params:
     camera_os_version = _get_camera_os_version(benchmark_camera)
     server_os = platform.system().strip().lower() or None
     benchmark_device_ip = _get_benchmark_device_ip(benchmark_camera)
@@ -69,7 +110,9 @@ def _build_fps_benchmark_data(
         "token": token,
         "tags": [
             {"name": "model_slug", "value": model_slug},
-            {"name": "benchmark_target", "value": benchmark_target},
+            # Pre-rename InfluxDB tag name, kept so stored series and
+            # dashboard queries stay consistent.
+            {"name": "benchmark_target", "value": benchmark_platform},
             {"name": "run_id", "value": benchmark_run_id},
             {"name": "status", "value": "passed" if success else "failed"},
             {"name": "testbed_name", "value": testbed_name},
@@ -99,9 +142,9 @@ def _write_fps_benchmark_result(
     bucket: str,
     token: str,
     model_slug: str,
-    benchmark_target: str,
+    benchmark_platform: str,
     benchmark_run_id: str,
-    benchmark_camera: Any,
+    benchmark_camera: BenchmarkCamera,
     testbed_name: str | None,
     depthai_version: str | None,
     actual_fps: float,
@@ -117,7 +160,7 @@ def _write_fps_benchmark_result(
         bucket=bucket,
         token=token,
         model_slug=model_slug,
-        benchmark_target=benchmark_target,
+        benchmark_platform=benchmark_platform,
         benchmark_run_id=benchmark_run_id,
         benchmark_camera=benchmark_camera,
         testbed_name=testbed_name,
@@ -142,7 +185,7 @@ def _write_fps_benchmark_result(
         client.close()
 
 
-def _get_camera_os_version(benchmark_camera: Any) -> str:
+def _get_camera_os_version(benchmark_camera: BenchmarkCamera) -> str:
     if not hasattr(benchmark_camera, "get_os_version"):
         raise RuntimeError(
             f"Camera {benchmark_camera.name} does not expose get_os_version()."
@@ -155,7 +198,7 @@ def _get_camera_os_version(benchmark_camera: Any) -> str:
         ) from exc
 
 
-def _get_benchmark_device_ip(benchmark_camera: Any) -> str:
+def _get_benchmark_device_ip(benchmark_camera: BenchmarkCamera) -> str:
     device_ip = getattr(benchmark_camera, "hostname", None)
     if not device_ip:
         raise RuntimeError(
@@ -164,7 +207,7 @@ def _get_benchmark_device_ip(benchmark_camera: Any) -> str:
     return device_ip
 
 
-def _require_metadata(metadata: dict[str, Any]) -> None:
+def _require_metadata(metadata: Mapping[str, str | None]) -> None:
     missing_fields = [
         field_name
         for field_name, value in metadata.items()
@@ -178,29 +221,29 @@ def _require_metadata(metadata: dict[str, Any]) -> None:
 
 
 def _select_benchmark_camera(
-    hil_testbed: Any,
-    benchmark_target: str,
-) -> Any:
-    target_matches = [
+    hil_testbed: Testbed,
+    benchmark_platform: str,
+) -> BenchmarkCamera:
+    platform_matches = [
         camera
         for camera in hil_testbed.cameras
         if str(getattr(camera, "platform", "")).lower()
-        == benchmark_target.lower()
+        == benchmark_platform.lower()
     ]
-    if len(target_matches) == 1:
-        return target_matches[0]
+    if len(platform_matches) == 1:
+        return platform_matches[0]
 
     available_cameras = ", ".join(
         f"{camera.name}:{getattr(camera, 'hostname', None)}:{getattr(camera, 'platform', None)}"
         for camera in hil_testbed.cameras
     )
-    if not target_matches:
+    if not platform_matches:
         raise RuntimeError(
-            f"No camera found for benchmark target {benchmark_target}. "
+            f"No camera found for benchmark platform {benchmark_platform}. "
             f"Available cameras: {available_cameras}"
         )
     raise RuntimeError(
-        f"Unable to select a unique camera for benchmark target {benchmark_target}. "
+        f"Unable to select a unique camera for benchmark platform {benchmark_platform}. "
         f"Available cameras: {available_cameras}"
     )
 
@@ -212,41 +255,47 @@ def _select_benchmark_camera(
 )
 def test_benchmark_fps(
     model_slug: str,
-    benchmark_target: str,
+    benchmark_platform: str,
     benchmark_run_id: str,
     influx_bucket: str | None,
     influx_token: str | None,
     depthai_version: str | None,
-    hil_testbed: Any,
+    hil_testbed: Testbed,
 ) -> None:
     assert influx_bucket is not None
     assert influx_token is not None
-    model_config = _targets_data[benchmark_target][model_slug]
+    model_config = _platforms_data[benchmark_platform][model_slug]
     expected_fps = model_config["expected_fps"]
 
     if expected_fps is None:
         pytest.skip(
             f"No expected_fps set for {model_slug}."
-            "Establish a baseline and add it to benchmark_targets.json."
+            "Establish a baseline and add it to benchmark_platforms.json."
         )
     assert isinstance(expected_fps, float)
 
-    target_enum = Target(benchmark_target)
+    platform_enum = Platform(benchmark_platform)
 
-    bench = get_benchmark(target_enum, model_slug)
+    bench = get_benchmark(platform_enum, model_slug)
     configuration = {
         **bench.default_configuration,
         "device_monitor": False,
     }
     benchmark_camera = _select_benchmark_camera(
         hil_testbed=hil_testbed,
-        benchmark_target=benchmark_target,
+        benchmark_platform=benchmark_platform,
     )
     benchmark_device_ip = _get_benchmark_device_ip(benchmark_camera)
     configuration["device_ip"] = benchmark_device_ip
 
     result = bench.benchmark(configuration)
     actual_fps = result["fps"]
+    # A benchmark reports a string, for example "N/A", if the
+    # measurement is not available.
+    assert isinstance(actual_fps, int | float), (
+        f"The benchmark did not measure the FPS of {model_slug}: "
+        f"{actual_fps!r}."
+    )
 
     tolerance_low = model_config["tolerance_low"]
     tolerance_high = model_config["tolerance_high"]
@@ -265,7 +314,7 @@ def test_benchmark_fps(
         bucket=influx_bucket,
         token=influx_token,
         model_slug=model_slug,
-        benchmark_target=benchmark_target,
+        benchmark_platform=benchmark_platform,
         benchmark_run_id=benchmark_run_id,
         benchmark_camera=benchmark_camera,
         testbed_name=hil_testbed.config.name,

@@ -3,10 +3,11 @@
 import ast
 import subprocess
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import NamedTuple
 
 import pytest
 import yaml
+from luxonis_ml.typing import Params, ParamValue
 
 from modelconverter.__main__ import app
 from modelconverter.utils import constants, docker_utils
@@ -16,17 +17,37 @@ from tests.helpers.onnx_factory import single_io_onnx
 _IMAGE = "luxonis/modelconverter-rvc4:test"
 
 
+def _mapping(value: ParamValue) -> Params:
+    """Return the value as the mapping the compose file holds."""
+    assert isinstance(value, dict)
+    return value
+
+
+def _strings(value: ParamValue) -> list[str]:
+    """Return the value as the list of strings the compose file holds."""
+    assert isinstance(value, list)
+    strings = [item for item in value if isinstance(item, str)]
+    assert len(strings) == len(value)
+    return strings
+
+
+def _text(value: ParamValue) -> str:
+    assert isinstance(value, str)
+    return value
+
+
 class _Launch(NamedTuple):
     argv: list[str]
-    compose: dict[str, Any]
+    compose: Params
 
     @property
     def container_args(self) -> list[str]:
         return self.argv[self.argv.index("modelconverter") + 1 :]
 
     @property
-    def service(self) -> dict[str, Any]:
-        return next(iter(self.compose["services"].values()))
+    def service(self) -> Params:
+        services = _mapping(self.compose["services"])
+        return _mapping(next(iter(services.values())))
 
 
 def _launch(
@@ -48,13 +69,11 @@ def _launch(
     )
 
     def fake_run(
-        argv: list[str], **_kwargs: Any
+        argv: list[str], **_kwargs: object
     ) -> subprocess.CompletedProcess:
         nonlocal launch
         compose_file = Path(argv[argv.index("-f") + 1])
-        compose = cast(
-            dict[str, Any], yaml.safe_load(compose_file.read_text())
-        )
+        compose = _mapping(yaml.safe_load(compose_file.read_text()))
         launch = _Launch(argv, compose)
         return subprocess.CompletedProcess(argv, 0)
 
@@ -82,14 +101,11 @@ def _project(work_dir: Path) -> Path:
 
     config = project / "config.yaml"
     config.write_text(
-        cast(
-            str,
-            yaml.safe_dump(
-                {
-                    "input_model": "model.onnx",
-                    "calibration": {"path": "calibration"},
-                }
-            ),
+        yaml.safe_dump(
+            {
+                "input_model": "model.onnx",
+                "calibration": {"path": "calibration"},
+            }
         )
     )
     return config
@@ -108,12 +124,11 @@ def test_config_and_its_references_reach_the_container(
     input_prefix = f"{CONTAINER_SHARED_DIR}/inputs/"
     assert path_argument.startswith(input_prefix)
 
-    staged = cast(
-        dict[str, Any],
-        yaml.safe_load(_staged_on_host(path_argument).read_text()),
+    staged = _mapping(
+        yaml.safe_load(_staged_on_host(path_argument).read_text())
     )
-    model_path = staged["input_model"]
-    calibration_path = staged["calibration"]["path"]
+    model_path = _text(staged["input_model"])
+    calibration_path = _text(_mapping(staged["calibration"])["path"])
     assert model_path.startswith(input_prefix)
     assert calibration_path.startswith(input_prefix)
     assert _staged_on_host(model_path).is_file()
@@ -179,7 +194,7 @@ def test_host_identity_follows_the_daemon(
         namespace_mode=namespace_mode,
     )
 
-    environment = launch.service["environment"]
+    environment = _mapping(launch.service["environment"])
     assert ("HOST_UID" in environment) is identity_passed
     assert ("HOST_GID" in environment) is identity_passed
 
@@ -212,7 +227,7 @@ def test_the_repository_is_only_mounted_into_dev_images(
     (work_dir / "tests").mkdir()
     (work_dir / "modelconverter").mkdir()
 
-    volumes = _launch(config, monkeypatch).service["volumes"]
+    volumes = _strings(_launch(config, monkeypatch).service["volumes"])
 
     assert not [
         v for v in volumes if v.endswith(("/app/tests", "/app/modelconverter"))
@@ -229,9 +244,9 @@ def test_the_repository_is_mounted_into_a_dev_image(
     (work_dir / "tests").mkdir()
     (work_dir / "modelconverter").mkdir()
 
-    volumes = _launch(config, monkeypatch, image=f"{_IMAGE}-dev").service[
-        "volumes"
-    ]
+    volumes = _strings(
+        _launch(config, monkeypatch, image=f"{_IMAGE}-dev").service["volumes"]
+    )
 
     assert f"{work_dir / 'tests'}:/app/tests" in volumes
     assert f"{work_dir / 'modelconverter'}:/app/modelconverter" in volumes
@@ -259,7 +274,7 @@ def test_a_serialized_argument_list_reaches_the_container_staged(
 
     args = launch.container_args
     value = args[args.index("rvc4.snpe_onnx_to_dlc_args") + 1]
-    staged = ast.literal_eval(value)
+    staged = _strings(ast.literal_eval(value))
     assert staged[0] == "--quantization_overrides"
     assert staged[1].startswith(f"{CONTAINER_SHARED_DIR}/inputs/")
     assert _staged_on_host(staged[1]).read_text() == encodings.read_text()
@@ -278,7 +293,8 @@ def test_the_memory_limit_reaches_compose_as_bytes(
 
     launch = _launch(config, monkeypatch, extra=["--memory", spelling])
 
-    limits = launch.service["deploy"]["resources"]["limits"]
+    deploy = _mapping(launch.service["deploy"])
+    limits = _mapping(_mapping(deploy["resources"])["limits"])
     assert limits["memory"] == str(4 * 1024**3)
 
 

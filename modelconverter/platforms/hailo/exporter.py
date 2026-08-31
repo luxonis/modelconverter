@@ -1,0 +1,311 @@
+"""Export of models to the Hailo ``.hef`` format.
+
+Drives the ``hailo_sdk_client`` toolchain: the model is translated to
+the Hailo IR, optionally quantized using the configured calibration
+images and finally compiled for the selected Hailo hardware
+architecture. Requires the Hailo Docker image, which provides the SDK.
+"""
+
+import shutil
+from pathlib import Path
+
+import hailo_sdk_client
+import numpy as np
+import tensorflow as tf
+from hailo_sdk_client import ClientRunner
+from loguru import logger
+from luxonis_ml.typing import Params
+
+from modelconverter.platforms.base_exporter import Exporter
+from modelconverter.utils import exit_with, read_image
+from modelconverter.utils.config import (
+    ImageCalibrationConfig,
+    SingleStageConfig,
+)
+from modelconverter.utils.types import Platform
+
+
+class HailoExporter(Exporter):
+    """Exporter producing models for Hailo devices.
+
+    Translates the input model to the Hailo IR, calibrates it on the
+    configured calibration images and compiles it into a ``.hef``
+    binary. Calibration and compilation can be disabled individually,
+    in which case an intermediate ``.har`` model is produced instead.
+    """
+
+    platform: Platform = Platform.HAILO
+
+    def __init__(self, config: SingleStageConfig, output_dir: Path):
+        """Initialize the exporter.
+
+        If TensorFlow reports no available GPU, the optimization and
+        compression levels are lowered to ``0``.
+
+        Args:
+            config: Configuration of the model being converted.
+            output_dir: Directory the exported model and the
+                intermediate artifacts are written to.
+
+        """
+        super().__init__(config=config, output_dir=output_dir)
+        self._force_onnx_names_enabled = config.hailo.force_onnx_names
+        self._optimization_level = config.hailo.optimization_level
+        self._compression_level = config.hailo.compression_level
+        self._batch_size = config.hailo.batch_size
+        self._disable_compilation = config.hailo.disable_compilation
+        self._alls: list[str] = []
+        self._hw_arch = config.hailo.hw_arch
+        if not tf.config.list_physical_devices("GPU"):
+            logger.error(
+                "No GPU found. Setting optimization and compression level to 0."
+            )
+            self._optimization_level = 0
+            self._compression_level = 0
+
+    def _get_start_nodes(self) -> tuple[list[str], dict[str, list[int]]]:
+        start_nodes = []
+        net_input_shapes = {}
+        for name, inp in self._inputs.items():
+            start_nodes.append(name)
+            if inp.shape is not None:
+                net_input_shapes[inp.name] = inp.shape
+        return start_nodes, net_input_shapes
+
+    def export(self) -> Path:
+        """Translate, calibrate and compile the model.
+
+        Returns:
+            Path to the compiled ``.hef`` model. If calibration is
+            disabled, the path to the translated ``.har`` model is
+            returned instead; if only compilation is disabled, the path
+            to a copy of the quantized ``.har`` model is returned.
+
+        """
+        runner = ClientRunner(hw_arch=self._hw_arch)
+        start_nodes, net_input_shapes = self._get_start_nodes()
+
+        logger.info("Translating model to Hailo IR.")
+        if self._is_tflite:
+            runner.translate_tf_model(
+                str(self._input_model),
+                net_name=self._model_name,
+                start_node_names=start_nodes,
+                tensor_shapes=net_input_shapes,
+                end_node_names=list(self._outputs.keys()),
+            )
+        else:
+            runner.translate_onnx_model(
+                str(self._input_model),
+                net_name=self._model_name,
+                start_node_names=start_nodes,
+                net_input_shapes=net_input_shapes,
+                end_node_names=list(self._outputs.keys()),
+            )
+        logger.info("Model translated to Hailo IR.")
+        har_path = self._input_model.with_suffix(".har")
+        runner.save_har(har_path)
+
+        if self._force_onnx_names_enabled:
+            har_path = self._force_onnx_names(har_path)
+
+        if self._disable_calibration:
+            self._inference_model_path = self.output_dir / Path(
+                self._original_model_name
+            ).with_suffix(".har")
+            return har_path
+
+        quantized_har_path = self._calibrate(har_path)
+        self._inference_model_path = Path(quantized_har_path)
+        if self._disable_compilation:
+            logger.warning("Compilation disabled, skipping compilation.")
+            copy_path = Path(quantized_har_path).parent / (
+                Path(quantized_har_path).stem + "_copy.har"
+            )
+            shutil.copy(
+                quantized_har_path,
+                copy_path,
+            )
+            return copy_path
+
+        runner = ClientRunner(hw_arch=self._hw_arch, har=quantized_har_path)
+        hef = runner.compile()
+
+        hef_path = self._input_model.with_suffix(".hef")
+        with open(hef_path, "wb") as hef_file:
+            hef_file.write(hef)
+        return hef_path
+
+    def _force_onnx_names(self, har_path: Path) -> Path:
+        """Force ONNX layer names into a .har model."""
+        runner = ClientRunner(hw_arch=self._hw_arch, har=str(har_path))
+        hn = runner.get_hn()
+        npz = dict(runner.get_params())
+
+        hn_layers = hn["layers"]
+
+        map_list = []
+        for layer in hn_layers.values():
+            if layer["type"] == "output_layer":
+                input_name = layer["input"][0]
+                context = input_name.split("/")[0]
+                orig_name = layer["original_names"][0]
+                new_name = f"{context}/{orig_name}"
+                map_list.append((input_name, new_name))
+
+        name_map = dict(map_list)
+
+        new_layers = {}
+        for name, layer in hn_layers.items():
+            new_name = name_map.get(name, name)
+            if "input" in layer:
+                layer["input"] = [name_map.get(i, i) for i in layer["input"]]
+            if "output" in layer:
+                layer["output"] = [name_map.get(o, o) for o in layer["output"]]
+            new_layers[new_name] = layer
+
+        hn["layers"] = new_layers
+
+        updated_npz = {}
+        for key, val in npz.items():
+            for old, new in name_map.items():
+                if old in key:
+                    key = key.replace(old, new)
+                    break
+            updated_npz[key] = val
+        npz = updated_npz
+
+        outputs = hn["net_params"]["output_layers_order"]
+        hn["net_params"]["output_layers_order"] = [
+            name_map.get(o, o) for o in outputs
+        ]
+
+        runner.set_hn(hn)
+        runner.load_params(npz)
+        runner.save_har(har_path)
+
+        return har_path
+
+    def _get_calibration_data(
+        self, runner: ClientRunner
+    ) -> dict[str, np.ndarray]:
+        data = {}
+        for orig_name, inp in self._inputs.items():
+            name, shape = self._get_hn_layer_info(runner, orig_name)
+            shape = shape[1:]
+
+            calib = inp.calibration
+            assert isinstance(calib, ImageCalibrationConfig)
+
+            images = self._read_img_dir(calib.path, calib.max_images)
+            calib_dataset = np.zeros((len(images), *shape), dtype=np.float32)
+
+            if len(shape) == 3:
+                H, W, C = shape
+                shape = [C, H, W]
+
+            for idx, img_path in enumerate(images):
+                img = read_image(
+                    img_path,
+                    [1, *shape],
+                    inp.encoding.to,
+                    calib.resize_method,
+                    data_type=inp.data_type,
+                    transpose=False,
+                )
+                if len(shape) == 3 and img.shape == (1, *shape):
+                    img = np.transpose(img, (0, 2, 3, 1))
+
+                calib_dataset[idx] = img
+
+            data[name] = calib_dataset
+
+        return data
+
+    def _calibrate(self, har_path: Path) -> str:
+        logger.info("Calibrating model.")
+
+        runner = ClientRunner(hw_arch=self._hw_arch, har=str(har_path))
+        alls = self._get_alls(runner)
+        logger.info(f"Using the following configuration: {alls}")
+
+        calib_dataset = self._get_calibration_data(runner)
+
+        runner.load_model_script(alls)
+        runner.optimize(calib_dataset)
+
+        quantized_model_har_path = self._attach_suffix(
+            har_path, "quantized.har"
+        )
+        runner.save_har(quantized_model_har_path)
+        logger.info("Model calibration finished.")
+        return str(quantized_model_har_path)
+
+    @staticmethod
+    def _get_hn_layer_info(
+        runner: ClientRunner, name: str
+    ) -> tuple[str, list[int]]:
+        for hn_name, params in runner.get_hn_dict()["layers"].items():
+            if name in params.get("original_names", []):
+                return hn_name, [1, *(params["input_shapes"][0])[1:]]
+        raise RuntimeError(  # pragma: no cover
+            f"Could not find HN layer name for {name}. This should not happen."
+        )
+
+    def _get_alls(self, runner: ClientRunner) -> str:
+        alls = self.config.hailo.alls
+        alls.append(
+            f"model_optimization_flavor("
+            f"optimization_level={self._optimization_level}, "
+            f"compression_level={self._compression_level}, "
+            f"batch_size={self._batch_size})"
+        )
+        for name, inp in self._inputs.items():
+            safe_name = name.replace(".", "")
+
+            hn_name, _ = self._get_hn_layer_info(runner, name)
+
+            if inp.shape is None:
+                exit_with(
+                    ValueError(f"Input `{name}` has no shape specified.")
+                )
+            if not all(x is not None for x in inp.shape):
+                exit_with(ValueError(f"Input `{name}` has dynamic shape."))
+
+            if self._is_tflite:
+                values_len = inp.shape[-1]
+            else:
+                values_len = inp.shape[1]
+
+            assert values_len is not None
+            scale_values = inp.scale_values or [1.0] * values_len
+            mean_values = inp.mean_values or [0.0] * values_len
+            alls.append(
+                f"normalization_{safe_name} = normalization("
+                f"{mean_values},{scale_values},{hn_name})"
+            )
+
+            if inp.encoding_mismatch:
+                alls.append(
+                    f"bgr_to_rgb_{safe_name} = input_conversion("
+                    f"{hn_name},bgr_to_rgb)"
+                )
+
+        self._alls = alls
+        return "\n".join(alls)
+
+    def exporter_buildinfo(self) -> Params:
+        """Return Hailo-specific information about the conversion.
+
+        Returns:
+            Dictionary with the version of the Hailo SDK, the
+            optimization and compression levels and the model script
+            (``alls``) used for calibration.
+
+        """
+        return {
+            "hailo_version": hailo_sdk_client.__version__,
+            "optimization_level": self._optimization_level,
+            "compression_level": self._compression_level,
+            "alls": self._alls,
+        }
