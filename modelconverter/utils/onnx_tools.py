@@ -1371,7 +1371,7 @@ class ONNXModifier:
                 current_node = concat_node
                 while current_node.op != "Conv":
                     next_node = next(
-                        (n for n in current_node.outputs[0].outputs), None
+                        iter(current_node.outputs[0].outputs), None
                     )
                     if next_node is None:
                         break
