@@ -85,8 +85,9 @@ def process_nn_archive(
     with open(untar_path / "config.json") as f:
         archive_config = NNArchiveConfig(**json.load(f))
 
+    main_stage_key = archive_config.model.metadata.name
     main_stage_config: Params = {
-        "name": archive_config.model.metadata.name,
+        "name": main_stage_key,
         "input_model": str(untar_path / archive_config.model.metadata.path),
     }
 
@@ -220,17 +221,9 @@ def process_nn_archive(
             }
             stages[input_model_path.stem] = head_stage_config
 
-    main_stage_key = (
-        main_stage_config.pop("name") if stages else main_stage_config["name"]
-    )
-    if not isinstance(main_stage_key, str):
-        raise TypeError(
-            f"The archive names its model {main_stage_key!r}, "
-            "which is not a string."
-        )
-
     config: Params = main_stage_config
     if stages:
+        del main_stage_config["name"]
         config = {
             "name": main_stage_key,
             "stages": {
