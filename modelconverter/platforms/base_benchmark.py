@@ -63,8 +63,11 @@ def get_optional_option(
         key: The name of the option.
         option_type: The necessary type of the option.
 
-    @return: The value of the option, or C{None} if it is not set.
-    @raise TypeError: If the option has a different type.
+    Returns:
+        The value of the option, or ``None`` if it is not set.
+
+    Raises:
+        TypeError: If the option has a different type.
 
     """
     if configuration.get(key) is None:
