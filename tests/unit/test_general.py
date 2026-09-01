@@ -142,7 +142,8 @@ def test_parse_size_reads_the_units_human_size_writes(
     value: str, expected: int
 ):
     """The two are read and written by the same people, so a size shown
-    by `cache info` has to be one the budget accepts back."""
+    by `cache info` has to be one the budget accepts back.
+    """
     assert parse_size(value) == expected
 
 
@@ -156,7 +157,8 @@ def test_parse_size_rejects_what_is_not_a_size(value: str):
 
 def test_human_size_stops_at_the_unit_parse_size_reads_back():
     """`cache info` shows a size the user may hand back as a budget, so
-    the largest unit written has to be one that is also read."""
+    the largest unit written has to be one that is also read.
+    """
     shown = human_size(1024**4)
     assert shown == "1.0 TiB"
     assert parse_size(shown) == 1024**4

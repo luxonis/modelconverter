@@ -1,3 +1,5 @@
+"""Tests for the shared benchmark scaffolding."""
+
 from pathlib import Path
 
 import pytest

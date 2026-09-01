@@ -1,3 +1,9 @@
+"""Check measured device throughput against the recorded targets.
+
+Benchmarks each model in ``benchmark_targets.json`` on a real device and
+fails when the measured FPS regresses against the recorded value.
+"""
+
 import json
 import platform
 from collections.abc import Mapping
@@ -21,24 +27,38 @@ class BenchmarkCamera(Protocol):
     """The part of the HIL framework camera API that this suite uses."""
 
     @property
-    def name(self) -> str: ...
+    def name(self) -> str:
+        """Name the framework reserved the camera under."""
+        ...
 
     @property
-    def mxid(self) -> str: ...
+    def mxid(self) -> str:
+        """Unique ID of the device."""
+        ...
 
     @property
-    def model(self) -> str: ...
+    def model(self) -> str:
+        """Model of the device, such as ``OAK4-D``."""
+        ...
 
     @property
-    def revision(self) -> str: ...
+    def revision(self) -> str:
+        """Hardware revision of the device."""
+        ...
 
     @property
-    def hostname(self) -> str: ...
+    def hostname(self) -> str:
+        """Host name the device is reachable at."""
+        ...
 
     @property
-    def platform(self) -> str: ...
+    def platform(self) -> str:
+        """Platform of the device, such as ``RVC4``."""
+        ...
 
-    def get_os_version(self) -> str: ...
+    def get_os_version(self) -> str:
+        """Return the version of the OS running on the device."""
+        ...
 
 
 def _model_slugs(benchmark_platform: str) -> list[str]:
@@ -47,7 +67,8 @@ def _model_slugs(benchmark_platform: str) -> list[str]:
 
 def _model_id(slug: str) -> str:
     """Take out the `luxonis` and use the remainder of the slug to name
-    the test."""
+    the test.
+    """
     return slug.rsplit("/", 1)[-1]
 
 
