@@ -9,7 +9,9 @@ classes in this package are picked by platform through the getters in
 `modelconverter.platforms`.
 
 .. note::
-    The SNPE tools these modules call live inside the RVC4 Docker
-    image, not on the host. Benchmarking and analysis additionally
+    The export runs inside the RVC4 Docker image, which ships the
+    SNPE tools. The host-run ``analyze`` command calls
+    ``snpe-dlc-info`` and ``snpe-diagview`` directly, so it needs
+    them on the host ``PATH``. Benchmarking and analysis additionally
     need a real RVC4 device, reachable over ADB or SSH.
 """

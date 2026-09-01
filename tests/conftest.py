@@ -1,8 +1,10 @@
 """Suite-wide pytest configuration.
 
 Disables telemetry, sets up logging, pins the Hypothesis profile so that
-property tests are reproducible, and applies the ``unit`` and
-per-platform markers during collection.
+property tests are reproducible, applies the ``unit`` marker during
+collection, and deselects the other platforms' conversion tests inside
+a platform Docker image. The per-platform markers themselves are
+applied at parametrization, in `tests.helpers.platforms`.
 """
 
 import os

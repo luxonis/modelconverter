@@ -4,9 +4,10 @@ Every conversion platform (RVC2, RVC3, RVC4 and Hailo) provides its own
 exporter and inferer; the benchmark is missing for Hailo, and the
 analyzer and the visualizer are provided by RVC4 only. The getters in
 this module map a `Platform` to the matching implementation and import
-it lazily, so that only the dependencies of the selected platform --
-which are installed in that platform's Docker image -- need to be
-available.
+it lazily, so that only the dependencies of the selected component
+need to be available. The exporter and inferer dependencies live in
+the platform's Docker image; the host-run benchmark, analyzer and
+visualizer take theirs from the host environment.
 """
 
 from modelconverter.platforms.base_analyze import Analyzer

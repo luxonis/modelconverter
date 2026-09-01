@@ -3,8 +3,9 @@
 An analyzer inspects a converted model layer by layer on a connected
 device: it compares the output of every layer against the ONNX model the
 conversion started from, and measures the cycles each layer takes. Only
-the RVC4 package implements it, on top of the SNPE tooling shipped in
-the RVC4 container.
+the RVC4 package implements it. The analyzer runs on the host and calls
+the SNPE tools there, so ``snpe-dlc-info`` and ``snpe-diagview`` must
+be on the host ``PATH``.
 """
 
 import io

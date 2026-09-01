@@ -320,9 +320,9 @@ class Benchmark(ABC):
                 addition to being printed.
             **kwargs: Overrides for individual configuration options.
                 An override of an option with a non-``None`` default is
-                cast to the type of that default. In a full run, an
-                override is only applied to configurations that do not
-                set the option themselves.
+                cast to the type of that default, unless the default is
+                a boolean. In a full run, an override is only applied to
+                configurations that do not set the option themselves.
 
         """
         logger.info(f"Running benchmarking for {self.model_name}")

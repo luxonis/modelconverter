@@ -234,9 +234,10 @@ class InputConfig(OutputConfig):
     """Description of a single input of the model.
 
     Extends `OutputConfig` with the pre-processing and calibration
-    settings of the input. ``mean_values`` and ``scale_values`` are the
-    normalization `onnx_attach_normalization_to_inputs` bakes into the
-    graph.
+    settings of the input. Each conversion applies ``mean_values`` and
+    ``scale_values`` in its own way: the RVC4 exporter bakes them into
+    the ONNX graph, RVC2 and RVC3 hand them to the OpenVINO model
+    optimizer, and Hailo puts them in the model script.
 
     Attributes:
         calibration: Source of the calibration data for this input.
@@ -671,10 +672,12 @@ class ONNXOptimizationsConfig(BaseModelExtraForbid):
         fuse_split_concat_to_conv: Whether to fuse ``Split`` and
             ``Concat`` nodes preceding a ``Conv`` node into the ``Conv``
             node.
-        substitute_sub_with_add: Whether to replace ``Sub`` nodes with
-            ``Add`` and ``Neg``.
-        substitute_div_with_mul: Whether to replace ``Div`` nodes with
-            ``Mul`` and ``Reciprocal``.
+        substitute_sub_with_add: Whether to replace a ``Sub`` node
+            whose second operand is a constant with an ``Add`` node
+            and a negated copy of that constant.
+        substitute_div_with_mul: Whether to replace a ``Div`` node
+            whose second operand is a float constant with a ``Mul``
+            node and a reciprocal copy of that constant.
 
     """
 

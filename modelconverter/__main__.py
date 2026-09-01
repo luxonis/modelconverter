@@ -605,14 +605,14 @@ def analyze(
     the ``adb`` command.
 
     Args:
-        device_ip: IP address of the device to run the benchmark on.
-            Interchangeable with ``device_id``. If neither is given, DAI
-            selects the default device. If both are given, ``device_id``
-            takes precedence.
-        device_id: DeviceId of the device to run the benchmark on.
-            Interchangeable with ``device_ip``. If neither is given, DAI
-            selects the default device. If both are given, ``device_id``
-            takes precedence.
+        device_ip: IP address of the device to run the analysis on.
+            Interchangeable with ``device_id``. If neither is given, ADB
+            selects the first connected device. If both are given,
+            ``device_id`` takes precedence.
+        device_id: The unique ID of the device to run the analysis on.
+            Interchangeable with ``device_ip``. If neither is given, ADB
+            selects the first connected device. If both are given,
+            ``device_id`` takes precedence.
         dlc_model_path: The path to the DLC model file.
         onnx_model_path: The path to the corresponding ONNX model file
             that was used for converting to DLC.
@@ -664,8 +664,9 @@ def visualize(dir_path: str) -> None:
     """Visualize the analysis results.
 
     Args:
-        dir_path: The path to the directory containing the analysis
-            results. The default search path is ``output/analysis``.
+        dir_path: The path to the directory holding the analysis CSV
+            files. The analyzer writes them to
+            ``output/analysis/<model_name>``.
 
     """
     get_visualizer(Platform.RVC4, dir_path).visualize()
