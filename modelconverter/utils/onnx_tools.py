@@ -1289,12 +1289,16 @@ class ONNXModifier:
                 intermediate_nodes = []
                 current_node = concat_node
                 while current_node.op != "Conv":
-                    current_node = next(
-                        (n for n in current_node.outputs[0].outputs), None
+                    next_node = next(
+                        iter(current_node.outputs[0].outputs), None
                     )
-                    intermediate_nodes.append(current_node)
-                    if current_node is None:
+                    if next_node is None:
                         break
+                    current_node = next_node
+                    intermediate_nodes.append(current_node)
+
+                if not intermediate_nodes:
+                    continue
 
                 conv_node = intermediate_nodes[-1]
                 if conv_node.op != "Conv":

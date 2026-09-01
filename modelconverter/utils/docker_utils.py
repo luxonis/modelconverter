@@ -7,6 +7,7 @@ import tempfile
 import zipfile
 from contextlib import suppress
 from functools import cache
+from http.client import HTTPMessage
 from pathlib import Path
 from typing import Literal
 from urllib.error import HTTPError, URLError
@@ -17,6 +18,7 @@ import psutil
 import yaml
 from docker.utils import parse_repository_tag
 from loguru import logger
+from luxonis_ml.typing import Params
 from luxonis_ml.utils import environ
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
@@ -176,24 +178,14 @@ def generate_compose_config(
     if is_dev and (cwd / "modelconverter").exists():
         volumes.append(f"{cwd / 'modelconverter'}:/app/modelconverter")
 
-    config = {
-        "services": {
-            "modelconverter": {
-                "environment": environment,
-                "volumes": volumes,
-                "secrets": ["gcp-credentials"],
-                "image": image,
-                "entrypoint": "/app/entrypoint.sh",
-            }
-        },
-        "secrets": {
-            "gcp-credentials": {
-                "file": environ.GOOGLE_APPLICATION_CREDENTIALS.get_secret_value()
-                if environ.GOOGLE_APPLICATION_CREDENTIALS
-                else tempfile.NamedTemporaryFile(delete=False).name,  # noqa: SIM115
-            }
-        },
+    service: Params = {
+        "environment": environment,
+        "volumes": volumes,
+        "secrets": ["gcp-credentials"],
+        "image": image,
+        "entrypoint": "/app/entrypoint.sh",
     }
+
     limits = {}
     if memory is not None:
         # Compose reads a bare number as bytes, so the limit is handed over
@@ -203,12 +195,21 @@ def generate_compose_config(
         limits["cpus"] = str(cpus)
 
     if limits:
-        config["services"]["modelconverter"]["deploy"] = {
-            "resources": {"limits": limits}
-        }
+        service["deploy"] = {"resources": {"limits": limits}}
 
     if gpu:
-        config["services"]["modelconverter"]["runtime"] = "nvidia"
+        service["runtime"] = "nvidia"
+
+    config = {
+        "services": {"modelconverter": service},
+        "secrets": {
+            "gcp-credentials": {
+                "file": environ.GOOGLE_APPLICATION_CREDENTIALS.get_secret_value()
+                if environ.GOOGLE_APPLICATION_CREDENTIALS
+                else tempfile.NamedTemporaryFile(delete=False).name,  # noqa: SIM115
+            }
+        },
+    }
 
     return yaml.dump(config)
 
@@ -354,16 +355,13 @@ def _download_file(
     try:
         request = Request(url, headers={"User-Agent": "modelconverter"})  # noqa: S310
         with urlopen(request, timeout=30) as response:  # noqa: S310
-            if getattr(response, "status", 200) >= 400:
+            if response.status >= 400:
                 raise RuntimeError(
                     f"HTTP {response.status} while downloading {url}"
                 )
-            total = None
-            getheader: str | None = getattr(response, "getheader", None)
-            if callable(getheader):
-                length = getheader("Content-Length")
-                if length and length.isdigit():
-                    total = int(length)
+            headers: HTTPMessage = response.headers
+            length = headers.get("Content-Length")
+            total = int(length) if length and length.isdigit() else None
             with tempfile.NamedTemporaryFile(
                 delete=False, dir=dest.parent, suffix=".zip"
             ) as tmp_file:
