@@ -10,7 +10,7 @@ from onnx import TensorProto, helper
 from modelconverter.packages.rvc4.exporter import RVC4Exporter
 from modelconverter.utils.config import Encodings, RVC4Config
 from modelconverter.utils.encodings import (
-    collect_onnx_encoding_names,
+    collect_onnx_tensor_names,
     parse_encodings,
     validate_quantization_override_names,
 )
@@ -125,6 +125,21 @@ def _single_intermediate_model(path: Path, intermediate_name: str) -> Path:
     return _save_model(path, graph)
 
 
+def _constant_output_model(path: Path) -> Path:
+    out = helper.make_tensor_value_info("output0", TensorProto.FLOAT, [1])
+    const_value = helper.make_tensor(
+        "const_value", TensorProto.FLOAT, [1], [1.0]
+    )
+    nodes = [
+        helper.make_node(
+            "Constant", [], ["constant_output"], value=const_value
+        ),
+        helper.make_node("Identity", ["constant_output"], ["output0"]),
+    ]
+    graph = helper.make_graph(nodes, "ConstantOutput", [], [out])
+    return _save_model(path, graph)
+
+
 def _exporter_for_validation(
     *,
     model_path: Path,
@@ -184,11 +199,43 @@ def test_strict_true_accepts_valid_top_level_onnx_names(work_dir: Path):
                 {"name": "output0", "bitwidth": 8},
                 {"name": "hidden", "bitwidth": 8},
             ],
-            "param_encodings": [{"name": "weight", "bitwidth": 8}],
+            "param_encodings": [
+                {"name": "weight", "bitwidth": 8},
+            ],
         }
     )
 
     validate_quantization_override_names(encodings, model)
+
+
+def test_strict_true_accepts_initializer_under_activation_encodings(
+    work_dir: Path,
+):
+    model = _probe_model(work_dir / "probe.onnx")
+
+    validate_quantization_override_names(
+        _encodings(activations=["weight"]), model
+    )
+
+
+def test_strict_true_accepts_constant_output_under_param_encodings(
+    work_dir: Path,
+):
+    model = _constant_output_model(work_dir / "constant.onnx")
+
+    validate_quantization_override_names(
+        _encodings(params=["constant_output"]), model
+    )
+
+
+def test_strict_true_accepts_same_name_in_both_encoding_groups(
+    work_dir: Path,
+):
+    model = _probe_model(work_dir / "probe.onnx")
+
+    validate_quantization_override_names(
+        _encodings(activations=["weight"], params=["weight"]), model
+    )
 
 
 def test_strict_true_rejects_unknown_activation(work_dir: Path):
@@ -281,22 +328,22 @@ def test_strict_true_reports_both_groups_sorted(work_dir: Path):
         )
 
 
-def test_activation_namespace_includes_node_outputs_without_value_info(
+def test_tensor_namespace_includes_node_outputs_without_value_info(
     work_dir: Path,
 ):
     model = _probe_model(work_dir / "probe.onnx")
 
-    activation_names, _ = collect_onnx_encoding_names(model)
+    model_names = collect_onnx_tensor_names(model)
 
-    assert "hidden" in activation_names
+    assert "hidden" in model_names
 
 
-def test_orphan_value_info_name_is_not_an_activation(work_dir: Path):
+def test_orphan_value_info_name_is_not_in_strict_namespace(work_dir: Path):
     model = _probe_model(work_dir / "probe.onnx")
 
-    activation_names, _ = collect_onnx_encoding_names(model)
+    model_names = collect_onnx_tensor_names(model)
 
-    assert "value_info_only" not in activation_names
+    assert "value_info_only" not in model_names
     with pytest.raises(
         ValueError,
         match=r"activation_encodings=\['value_info_only'\]",
@@ -325,10 +372,9 @@ def test_onnx_namespace_collection_does_not_load_external_data(
     model = _save_external_data_model(work_dir / "external.onnx", graph)
     (work_dir / "external.onnx_data").unlink()
 
-    activation_names, parameter_names = collect_onnx_encoding_names(model)
+    model_names = collect_onnx_tensor_names(model)
 
-    assert activation_names == {"input0", "output0"}
-    assert parameter_names == {"weight"}
+    assert model_names == {"input0", "output0", "weight"}
 
 
 def test_empty_optional_onnx_names_are_ignored(work_dir: Path):
@@ -344,25 +390,9 @@ def test_empty_optional_onnx_names_are_ignored(work_dir: Path):
     graph = helper.make_graph(nodes, "OptionalEmptyNames", [inp], [out])
     model = _save_model(work_dir / "optional_empty.onnx", graph)
 
-    activation_names, parameter_names = collect_onnx_encoding_names(model)
+    model_names = collect_onnx_tensor_names(model)
 
-    assert "" not in activation_names
-    assert "" not in parameter_names
-
-
-def test_parameter_names_are_not_activation_names(work_dir: Path):
-    model = _probe_model(work_dir / "probe.onnx")
-
-    with pytest.raises(
-        ValueError,
-        match=(
-            r"activation_encodings=\['weight'\]; "
-            r"param_encodings=\[\]"
-        ),
-    ):
-        validate_quantization_override_names(
-            _encodings(activations=["weight"]), model
-        )
+    assert "" not in model_names
 
 
 def test_strict_true_with_no_encodings_does_not_fail(work_dir: Path):
