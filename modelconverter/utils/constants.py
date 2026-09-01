@@ -54,6 +54,7 @@ MODELS_DIR: Final[Path] = SHARED_DIR / "models"
 # on purpose: an inference rerun must not wipe a conversion's output either.
 CONVERSION_MARKER: Final[str] = ".modelconverter_output"
 INFERENCE_MARKER: Final[str] = ".modelconverter_inference"
+HOST_OUTPUT_DIR_ENV_VAR: Final[str] = "MODELCONVERTER_HOST_OUTPUT_DIR"
 
 LOADERS = Registry(name="loaders")
 
@@ -62,6 +63,7 @@ __all__ = [
     "CONFIGS_DIR",
     "CONTAINER_SHARED_DIR",
     "CONVERSION_MARKER",
+    "HOST_OUTPUT_DIR_ENV_VAR",
     "INFERENCE_MARKER",
     "MISC_DIR",
     "MODELS_DIR",

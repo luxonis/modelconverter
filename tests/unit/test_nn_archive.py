@@ -19,6 +19,7 @@ from luxonis_ml.nn_archive.config_building_blocks import (
 )
 from luxonis_ml.typing import Params, ParamValue
 
+import modelconverter.utils.nn_archive as nn_archive_utils
 from modelconverter.utils.config import (
     Config,
     InputConfig,
@@ -26,9 +27,14 @@ from modelconverter.utils.config import (
     RVC3Config,
     RVC4Config,
 )
-from modelconverter.utils.constants import MISC_DIR, OUTPUTS_DIR
+from modelconverter.utils.constants import (
+    HOST_OUTPUT_DIR_ENV_VAR,
+    MISC_DIR,
+    OUTPUTS_DIR,
+)
 from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.nn_archive import (
+    _archive_display_path,
     _default_archive_preprocessing,
     _get_io_dtype,
     archive_from_model,
@@ -842,6 +848,129 @@ def test_find_archive_input_found_and_missing(dummy_onnx: Path):
     assert found_input is not None
     assert found_input.name == "input0"
     assert find_archive_input(archive, "nope") is None
+
+
+def test_archive_display_path_remaps_container_output(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("IN_DOCKER", "1")
+    monkeypatch.setenv(HOST_OUTPUT_DIR_ENV_VAR, "/home/user/project/output")
+    monkeypatch.setattr(nn_archive_utils, "OUTPUTS_DIR", Path("/app/output"))
+
+    assert (
+        _archive_display_path(Path("/app/output/model/model.rvc4.tar.xz"))
+        == "/home/user/project/output/model/model.rvc4.tar.xz"
+    )
+
+
+def test_archive_display_path_without_host_context_preserves_container_path(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("IN_DOCKER", "1")
+    monkeypatch.delenv(HOST_OUTPUT_DIR_ENV_VAR, raising=False)
+
+    archive = Path("/app/output/model/model.rvc4.tar.xz")
+
+    assert _archive_display_path(archive) == str(archive)
+
+
+def test_archive_display_path_preserves_unrelated_container_path(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("IN_DOCKER", "1")
+    monkeypatch.setenv(HOST_OUTPUT_DIR_ENV_VAR, "/home/user/project/output")
+    monkeypatch.setattr(nn_archive_utils, "OUTPUTS_DIR", Path("/app/output"))
+
+    archive = Path("/outside-output/model.rvc4.tar.xz")
+
+    assert _archive_display_path(archive) == str(archive)
+
+
+def test_archive_display_path_outside_docker_preserves_native_path(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.delenv("IN_DOCKER", raising=False)
+    monkeypatch.setenv(HOST_OUTPUT_DIR_ENV_VAR, "/home/user/project/output")
+
+    archive = Path("/app/output/model/model.rvc4.tar.xz")
+
+    assert _archive_display_path(archive) == str(archive)
+
+
+def test_archive_display_path_preserves_lexical_parent_segment(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("IN_DOCKER", "1")
+    monkeypatch.setenv(HOST_OUTPUT_DIR_ENV_VAR, "/home/user/project/output")
+    monkeypatch.setattr(nn_archive_utils, "OUTPUTS_DIR", Path("/app/output"))
+
+    archive = Path("/app/output/../other/model.rvc4.tar.xz")
+
+    assert _archive_display_path(archive) == str(archive)
+
+
+def test_archive_display_path_keeps_windows_host_style(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("IN_DOCKER", "1")
+    monkeypatch.setenv(HOST_OUTPUT_DIR_ENV_VAR, r"C:\Users\me\project\output")
+    monkeypatch.setattr(nn_archive_utils, "OUTPUTS_DIR", Path("/app/output"))
+
+    assert (
+        _archive_display_path(Path("/app/output/model/model.rvc4.tar.xz"))
+        == r"C:\Users\me\project\output\model\model.rvc4.tar.xz"
+    )
+
+
+class _FakeArchiveGenerator:
+    def __init__(self, **_kwargs: object) -> None:
+        pass
+
+    def make_archive(self) -> Path:
+        return Path("/app/output/model/model.rvc4.tar.xz")
+
+
+def test_generate_archive_logs_host_display_path_but_returns_archive_path(
+    dummy_onnx: Path, monkeypatch: pytest.MonkeyPatch
+):
+    config = _config_from_overrides(dummy_onnx)
+    main_stage = next(iter(config.stages))
+    archive = Path("/app/output/model/model.rvc4.tar.xz")
+    messages: list[str] = []
+
+    class FakeNNArchive:
+        def model_dump(self) -> Params:
+            return {"config_version": "1.0", "model": {}}
+
+    monkeypatch.setenv("IN_DOCKER", "1")
+    monkeypatch.setenv(HOST_OUTPUT_DIR_ENV_VAR, "/host/project/output")
+    monkeypatch.setattr(nn_archive_utils, "OUTPUTS_DIR", Path("/app/output"))
+    monkeypatch.setattr(
+        nn_archive_utils,
+        "modelconverter_config_to_nn",
+        lambda *_args: FakeNNArchive(),
+    )
+    monkeypatch.setattr(
+        nn_archive_utils, "ArchiveGenerator", _FakeArchiveGenerator
+    )
+    monkeypatch.setattr(nn_archive_utils.logger, "info", messages.append)
+
+    result = generate_archive(
+        Platform.RVC4,
+        config,
+        main_stage,
+        [Path("/app/output/model/model.dlc")],
+        Path("/app/output/model"),
+        None,
+        {},
+        dummy_onnx,
+        None,
+    )
+
+    assert result == archive
+    assert messages[-1] == (
+        "Model exported to /host/project/output/model/model.rvc4.tar.xz"
+    )
 
 
 def _prepare_output(name: str) -> Path:

@@ -26,6 +26,7 @@ import docker
 from modelconverter import __version__
 from modelconverter.utils.constants import (
     CONTAINER_SHARED_DIR,
+    HOST_OUTPUT_DIR_ENV_VAR,
     get_cache_dir,
     in_docker,
 )
@@ -150,9 +151,11 @@ def generate_compose_config(
         environment.update(extra_environment)
 
     cwd = Path.cwd().absolute()
+    host_output_dir = cwd / "output"
+    environment[HOST_OUTPUT_DIR_ENV_VAR] = str(host_output_dir)
     volumes = [
         f"{get_cache_dir()}:{CONTAINER_SHARED_DIR}",
-        f"{cwd / 'output'}:/app/output",
+        f"{host_output_dir}:/app/output",
     ]
     is_dev = image.endswith("-dev")
     # Mount the test suite (excluded from the image via .dockerignore) so a
