@@ -23,8 +23,9 @@ class RVC2Inferer(Inferer):
 
         Reads the ``.xml`` topology together with the ``.bin`` weights
         sitting next to it, takes the input shapes from the IR and
-        derives the layout of every 4-D input from where its channel
-        dimension sits, then loads the network onto the CPU.
+        guesses the layout of every 4-D input -- ``NCHW`` when the
+        second dimension is 1, 3 or 4, ``NHWC`` otherwise -- then loads
+        the network onto the CPU.
         """
         from openvino.inference_engine.ie_api import IECore
 

@@ -110,8 +110,10 @@ class SubprocessHandle:
                 will be converted to a string.
             silent: If ``True``, suppress all output from the command.
             timeout: If given, the maximum time in seconds to allow the
-                process to run. If the timeout is exceeded, the process
-                is terminated and ``subprocess.TimeoutExpired`` is raised.
+                process to run. An exceeded timeout raises
+                ``subprocess.TimeoutExpired`` -- from a truth test,
+                which also terminates the process, or from ``wait``,
+                which leaves it running.
 
         """
         if isinstance(cmd, str):
@@ -220,6 +222,11 @@ class SubprocessHandle:
 
         Returns:
             The return code of the process.
+
+        Raises:
+            subprocess.TimeoutExpired: If the process did not finish
+                within the timeout. Unlike a truth test, this leaves
+                the process running.
 
         """
         return self.proc.wait(timeout=self._timeout or timeout)

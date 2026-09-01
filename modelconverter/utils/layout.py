@@ -14,8 +14,8 @@ def make_default_layout(shape: list[int]) -> str:
     """Create a default layout for the given shape.
 
     Tries to guess most common layouts for the given shape pattern.
-    Otherwise, uses the first free letter of the alphabet for each
-    dimension.
+    Otherwise, starts at ``C`` and gives each remaining dimension the
+    next letter that is not in use yet.
 
     Args:
         shape: Shape to create the layout for.

@@ -2,8 +2,8 @@
 
 Every platform measures throughput and latency with its own
 runtime, but the surrounding work is the same: resolve the model to
-either a local file or a HubAI slug, run it once per configuration, and
-report the collected numbers. That shared part lives in `Benchmark`,
+either a path or URL of a model file or a HubAI slug, run it once per
+configuration, and report the collected numbers. That shared part lives in `Benchmark`,
 which the per-platform benchmarks subclass.
 """
 
@@ -92,10 +92,11 @@ class Benchmark(ABC):
         """Resolve the model to benchmark.
 
         Args:
-            model_path: Either a path to a local model file ending in
-                one of the supported extensions, or a HubAI model slug
-                of the form
-                ``[team_name/]model_name:variant[:model_instance]``.
+            model_path: Either a local path or a URL of a model file
+                ending in one of the supported extensions, or a HubAI
+                model slug of the form
+                ``[team_name/]model_name:variant[:model_instance]``. A
+                URL is downloaded first.
 
         Raises:
             ValueError: If ``model_path`` is neither a supported model

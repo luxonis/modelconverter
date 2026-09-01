@@ -587,11 +587,11 @@ class ONNXModifier:
         onnx.checker.check_model(str(self.output_path))
 
     def _add_outputs(self, output_names: list[str]) -> None:
-        """Add output nodes to the ONNX model.
+        """Expose the named tensors as outputs of the ONNX model.
 
         Args:
-            output_names: List of output node names to add to the ONNX
-                model.
+            output_names: Names of the output tensors to add to the
+                model's outputs.
 
         """
         graph_outputs = _output_names(self._onnx_gs)

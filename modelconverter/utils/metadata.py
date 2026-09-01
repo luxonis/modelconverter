@@ -57,7 +57,9 @@ def get_metadata(model_path: Path) -> Metadata:
 
     Raises:
         ValueError: If the suffix is not one of the supported formats,
-            or if the model cannot be read.
+            or if an ONNX or IR model cannot be read. The other
+            formats let their reader's own errors propagate, such as
+            ``FileNotFoundError`` for a missing file.
 
     """
     suffix = model_path.suffix

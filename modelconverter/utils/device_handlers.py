@@ -204,6 +204,8 @@ class AdbHandler(DeviceHandler):
             RuntimeError: If device enumeration fails or no connected
                 device is available.
             ValueError: If the specified device is not connected.
+            FileNotFoundError: If the ``adb`` executable is not
+                available.
 
         """
         super().__init__(silent)
@@ -258,6 +260,8 @@ class AdbHandler(DeviceHandler):
             RuntimeError: If device enumeration fails or no device is
                 connected.
             ValueError: If the requested device is not connected.
+            FileNotFoundError: If the ``adb`` executable is not
+                available.
 
         """
         result = subprocess.run(
@@ -308,6 +312,8 @@ def create_handler(
             queried, and no IP address was given.
         ValueError: If the requested ADB device is not connected and
             no IP address was given.
+        FileNotFoundError: If the ``adb`` executable is not available
+            and no IP address was given.
 
     """
     try:
