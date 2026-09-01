@@ -21,10 +21,10 @@ on:
         type: string
         default: ""
       modelconv_ref:
-        description: "modelconverter version (branch/tag/SHA)"
+        description: "modelconverter version (branch/tag/SHA). Empty tests the branch the run starts from."
         required: false
         type: string
-        default: main
+        default: ""
   workflow_call:
     inputs:
       platforms:
@@ -164,7 +164,7 @@ jobs:
         run: pip install -e .[dev]
 
       - name: Install LuxonisML from main
-        if: ${{ inputs.ml_ref || !startsWith(github.head_ref || github.ref_name, 'release/') }}
+        if: ${{ inputs.ml_ref || !startsWith(inputs.modelconv_ref || github.head_ref || github.ref_name, 'release/') }}
         env:
           ML_REF: ${{ inputs.ml_ref || 'main' }}
         run: |
@@ -216,7 +216,7 @@ jobs:
         run: pip install -e .[dev]
 
       - name: Install LuxonisML from main
-        if: ${{ inputs.ml_ref || !startsWith(github.head_ref || github.ref_name, 'release/') }}
+        if: ${{ inputs.ml_ref || !startsWith(inputs.modelconv_ref || github.head_ref || github.ref_name, 'release/') }}
         env:
           ML_REF: ${{ inputs.ml_ref || 'main' }}
         run: |
