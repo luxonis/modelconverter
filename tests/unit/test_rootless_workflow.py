@@ -18,13 +18,14 @@ _IMAGE = "luxonis/modelconverter-rvc4:test"
 
 
 def _mapping(value: ParamValue) -> Params:
-    """Return the value as the mapping the compose file holds."""
+    """The value as the mapping the compose file is known to hold."""
     assert isinstance(value, dict)
     return value
 
 
 def _strings(value: ParamValue) -> list[str]:
-    """Return the value as the list of strings the compose file holds."""
+    """The value as the list of strings the compose file is known to
+    hold."""
     assert isinstance(value, list)
     strings = [item for item in value if isinstance(item, str)]
     assert len(strings) == len(value)
@@ -221,8 +222,7 @@ def test_the_repository_is_only_mounted_into_dev_images(
 ):
     """The entrypoint hands every mount back to the invoking user, so a
     `tests/` that merely happens to sit in the working directory must not
-    be mounted -- let alone chowned -- by a plain conversion.
-    """
+    be mounted -- let alone chowned -- by a plain conversion."""
     config = _project(work_dir)
     (work_dir / "tests").mkdir()
     (work_dir / "modelconverter").mkdir()
@@ -238,8 +238,7 @@ def test_the_repository_is_mounted_into_a_dev_image(
     work_dir: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """A dev container runs the suite and the host source over the
-    installed package, which is what those mounts are for.
-    """
+    installed package, which is what those mounts are for."""
     config = _project(work_dir)
     (work_dir / "tests").mkdir()
     (work_dir / "modelconverter").mkdir()
@@ -257,8 +256,7 @@ def test_a_serialized_argument_list_reaches_the_container_staged(
 ):
     """The config-file form of this list is rewritten by the config
     walker; the CLI form has to come out the same way, since the
-    container opens the file either way.
-    """
+    container opens the file either way."""
     config = _project(work_dir)
     encodings = work_dir / "encodings.json"
     encodings.write_text('{"activation_encodings": {}, "param_encodings": {}}')
@@ -287,8 +285,7 @@ def test_the_memory_limit_reaches_compose_as_bytes(
     work_dir: Path, monkeypatch: pytest.MonkeyPatch, spelling: str
 ):
     """Every spelling of the same limit has to reach Compose as the same
-    number, which is what handing it over already parsed buys.
-    """
+    number, which is what handing it over already parsed buys."""
     config = _project(work_dir)
 
     launch = _launch(config, monkeypatch, extra=["--memory", spelling])
@@ -300,8 +297,7 @@ def test_the_memory_limit_reaches_compose_as_bytes(
 
 def test_a_memory_limit_that_is_not_a_size_is_rejected(work_dir: Path):
     """The launcher fails on the spot rather than handing Compose
-    something it will reject much later.
-    """
+    something it will reject much later."""
     config = _project(work_dir)
 
     with pytest.raises(ValueError, match="not a valid size"):

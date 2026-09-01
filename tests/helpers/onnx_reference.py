@@ -34,14 +34,6 @@ class ONNXReferenceInferer:
     """
 
     def __init__(self, model_path: Path, stage: SingleStageConfig) -> None:
-        """Open an ONNX session for the stage's model.
-
-        Args:
-            model_path: Path to the ONNX model to run.
-            stage: Stage config whose preprocessing is applied to the
-                inputs before inference.
-
-        """
         self.stage = stage
         self.session = ort.InferenceSession(
             str(model_path), providers=["CPUExecutionProvider"]
@@ -51,15 +43,6 @@ class ONNXReferenceInferer:
 
     @classmethod
     def from_stage(cls, stage: SingleStageConfig) -> "ONNXReferenceInferer":
-        """Build an inferer for the stage's own input model.
-
-        Args:
-            stage: Stage config to take the model and preprocessing from.
-
-        Returns:
-            An inferer for that stage.
-
-        """
         # `get_configs` downloads `input_model` and rewrites it to a local path.
         return cls(Path(stage.input_model), stage)
 
@@ -102,16 +85,6 @@ class ONNXReferenceInferer:
         return arr[np.newaxis, ...]
 
     def infer(self, image_path: PathType) -> dict[str, np.ndarray]:
-        """Run the model on one image, preprocessed per the config.
-
-        Args:
-            image_path: Path to the image to run on. It is fed to every
-                input, each preprocessed with that input's own settings.
-
-        Returns:
-            Mapping of output name to output array.
-
-        """
         # Config inputs pair with the session inputs positionally.
         feed = {
             name: self._preprocess(inp, image_path)

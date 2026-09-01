@@ -1,4 +1,4 @@
-r"""Task-metric regression tests for real public HubAI source models.
+"""Task-metric regression tests for real public HubAI source models.
 
 Unlike ``test_precision``, these score predictions against labelled images.
 Luxonis Eval is used purely as a test library -- modelconverter still does the
@@ -37,9 +37,7 @@ if TYPE_CHECKING:
 class Metric(Protocol):
     """The slice of a Luxonis Eval metric that the scoring needs."""
 
-    def compute(self) -> Mapping[str, SupportsFloat]:
-        """Return the metric values accumulated so far, keyed by name."""
-        ...
+    def compute(self) -> Mapping[str, SupportsFloat]: ...
 
 
 COCO_SAMPLE = "gs://luxonis-test-bucket/luxonis-ml-test-data/coco_sample.zip"
@@ -69,8 +67,6 @@ def run_script(outputs):
 
 @dataclass(frozen=True)
 class EvaluationCase:
-    """One HubAI source model scored against labelled images."""
-
     id: str
     # An immutable HubAI source instance, not a mutable model slug.
     instance_id: str
@@ -163,7 +159,7 @@ def coco_sample(
 
 
 def _calibration_images() -> list[Path]:
-    """Return the images materialized by modelconverter's LDF loader."""
+    """The images materialized by modelconverter's LDF loader."""
     directory = CALIBRATION_DIR / DATASET_NAME
     paths = sorted(directory.glob("*.png"), key=lambda path: int(path.stem))
     assert paths, f"no calibration images under {directory}"
@@ -171,9 +167,7 @@ def _calibration_images() -> list[Path]:
 
 
 def _link_options(stage: str, post_stage: str, inputs: list[str]) -> list[str]:
-    """Build the overrides wiring yolov8-seg's postprocessor to its
-    upstream stage.
-    """
+    """Overrides wiring yolov8-seg's postprocessor to its upstream stage."""
     prototypes = inputs.index("prototypes")
     coeffs = inputs.index("coeffs")
     prefix = f"stages.{post_stage}.inputs"

@@ -65,7 +65,7 @@ def _isolate_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 def work_dir(tmp_path: Path) -> Path:
-    """Return the isolated working directory (same as cwd for the test)."""
+    """The isolated working directory (same as cwd for the test)."""
     return tmp_path
 
 

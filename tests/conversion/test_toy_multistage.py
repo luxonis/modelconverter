@@ -1,4 +1,4 @@
-r"""Toy multistage conversion + correctness tests.
+"""Toy multistage conversion + correctness tests.
 
 A small, fully-controllable multistage net built from the toy pieces::
 

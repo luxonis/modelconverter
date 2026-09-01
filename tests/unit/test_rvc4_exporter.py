@@ -1,5 +1,3 @@
-"""Tests for the RVC4 exporter."""
-
 from pathlib import Path
 
 import pytest

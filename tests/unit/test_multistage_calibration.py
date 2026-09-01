@@ -48,13 +48,6 @@ class StubExporter:
     """The slice of ``Exporter`` that ``MultiStageExporter`` uses."""
 
     def __init__(self, config: SingleStageConfig, output_dir: Path) -> None:
-        """Record the attributes ``MultiStageExporter`` reads.
-
-        Args:
-            config: Config of the stage being exported.
-            output_dir: Directory the stage writes its outputs to.
-
-        """
         self.config = config
         self.output_dir = output_dir
         self.inputs = {inp.name: inp for inp in config.inputs}
@@ -65,20 +58,9 @@ class StubExporter:
 class StubInferer(Inferer):
     """A real ``Inferer`` with the vendor runtime replaced by ones."""
 
-    def setup(self) -> None:
-        """Do nothing -- there is no vendor runtime to set up."""
+    def setup(self) -> None: ...
 
     def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
-        """Return an array of ones for every output.
-
-        Args:
-            inputs: Mapping of input name to input file. Ignored, the
-                outputs do not depend on them.
-
-        Returns:
-            Mapping of output name to an array of ones of that shape.
-
-        """
         return {
             name: np.ones(shape, dtype=np.float32)
             for name, shape in self.out_shapes.items()
@@ -87,7 +69,7 @@ class StubInferer(Inferer):
 
 @pytest.fixture
 def calibration_dir(work_dir: Path) -> Path:
-    """Create a directory of images, never decoded -- ``infer`` is stubbed."""
+    """A directory of images, never decoded -- ``infer`` is stubbed."""
     path = work_dir / "calibration"
     path.mkdir()
     for i in range(N_CALIBRATION_IMAGES):
@@ -164,8 +146,7 @@ def test_script_calibration_uses_only_the_output_dirs(
 ):
     """The inferer marks its destination with a file that sits next to
     the per-output directories; feeding that file to the script as if it
-    were an output directory fails the whole conversion.
-    """
+    were an output directory fails the whole conversion."""
     exporter._produce_calibration_data(exporter.exporters["second"])
 
     path = _resolved_calibration(config).path
@@ -177,8 +158,7 @@ def test_script_calibration_uses_only_the_output_dirs(
 
 def test_inference_results_are_marked(exporter: MultiStageExporter):
     """The marker is what lets a rerun clear its own results, so it has
-    to be there even though the linking code skips it.
-    """
+    to be there even though the linking code skips it."""
     exporter._produce_calibration_data(exporter.exporters["second"])
 
     results_dir = (
@@ -195,8 +175,7 @@ def test_linked_output_calibration_points_at_the_output_dir(
     exporter: MultiStageExporter, config: Config
 ):
     """The ``output`` form of a link names one output directory
-    directly, so the marker never enters the picture.
-    """
+    directly, so the marker never enters the picture."""
     second = config.stages["second"]
     second.inputs[0].calibration = LinkCalibrationConfig(
         stage="first", output="output0"

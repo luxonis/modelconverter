@@ -54,7 +54,7 @@ def toy_tflite(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def solid_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Create an 8x8 image with a distinct constant value per channel."""
+    """An 8x8 image with a distinct constant value per channel."""
     path = tmp_path_factory.mktemp("toy_tflite_img") / "solid.png"
     cv2.imwrite(str(path), np.full((8, 8, 3), _CHANNEL_VALUES, dtype=np.uint8))
     return path

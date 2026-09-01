@@ -39,8 +39,6 @@ DEFAULT_THRESHOLD: Final[float] = 0.8
 
 @dataclass(frozen=True)
 class PrecisionCase:
-    """One model whose converted outputs are compared to the ONNX."""
-
     id: str
     # A config (or archive) whose `input_model` is the reference ONNX.
     config: str

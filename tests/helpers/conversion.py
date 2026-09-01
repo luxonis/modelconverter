@@ -53,10 +53,8 @@ def assert_produced_suffix(output_name: str, suffix: str) -> None:
 
 
 def toy_net_image_inputs(calib: dict, *, size: int = 64) -> list[dict]:
-    """Build the toy integration net's image inputs.
-
-    The ``bgr``/``rgb``/``gray`` inputs each carry their own
-    mean/scale/encoding and all share one ``calib`` spec.
+    """The toy integration net's ``bgr``/``rgb``/``gray`` inputs, each with its
+    own mean/scale/encoding and all sharing one ``calib`` spec.
 
     Shared by the toy-integration and toy-multistage tests, which differ only in
     the calibration (a random constant vs. an image directory).

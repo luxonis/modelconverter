@@ -38,8 +38,7 @@ def _make_img(
     color: tuple[int, int, int] = (10, 20, 30),
 ) -> Path:
     """Write a solid-color RGB image (``size`` is ``(width,
-    height)``).
-    """
+    height)``)."""
     Image.new("RGB", size, color).save(path)
     return path
 
@@ -262,8 +261,7 @@ def test_output_geometry_matches_the_requested_shape(
     transpose: bool,
 ):
     """Whatever the source size, the sample has the shape the model
-    asked for.
-    """
+    asked for."""
     src = _make_img(work_dir / "src.png", size=source)
     height, width = target
     encoding = Encoding.GRAY if channels == 1 else Encoding.RGB

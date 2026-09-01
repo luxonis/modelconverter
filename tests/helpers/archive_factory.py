@@ -1,6 +1,5 @@
 """Helpers for building NN-archive config JSON and packing ``.tar``
-archives for the host-side conversion tests.
-"""
+archives for the host-side conversion tests."""
 
 import json
 import tarfile
@@ -12,16 +11,11 @@ from luxonis_ml.typing import Params, ParamValue, PathType
 
 
 def default_archive_config(*, heads: Sequence[ParamValue] = ()) -> Params:
-    """Build a minimal, valid NN-archive ``config.json`` dict.
+    """A minimal, valid NN-archive ``config.json`` dict matching the
+    standard two-input dummy ONNX model.
 
-    Matches the standard two-input dummy ONNX model.
-
-    Args:
-        heads: Parser heads to declare on the model. Empty by default.
-
-    Returns:
-        The archive configuration.
-
+    @param heads: Parser heads to declare on the model. Empty by
+        default.
     """
     return {
         "config_version": "1.0",
@@ -72,22 +66,13 @@ def pack_archive(
     extra_files: dict[str, PathType] | None = None,
     mode: Literal["w", "w:xz", "w:gz", "w:bz2"] = "w",
 ) -> Path:
-    """Pack ``model_path`` + ``config.json`` (+ optional extras) into a
+    """Packs ``model_path`` + ``config.json`` (+ optional extras) into a
     tar archive.
 
-    Args:
-        tar_path: Path of the archive to create.
-        model_path: Path of the model file to add to the archive.
-        config: Config dict, serialized to ``config.json`` next to the
-            archive.
-        extra_files: Mapping of ``arcname -> file path`` for extra
-            members (e.g. ``encodings.json``, a postprocessor ONNX).
-        mode: Mode the tar archive is opened with, selecting the
-            compression.
-
-    Returns:
-        Path to the created archive.
-
+    @param config: config dict, serialized to ``config.json`` next to the
+        archive.
+    @param extra_files: mapping of ``arcname -> file path`` for extra
+        members (e.g. ``encodings.json``, a postprocessor ONNX).
     """
     tar_path = Path(tar_path)
     model_path = Path(model_path)

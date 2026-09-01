@@ -1,10 +1,3 @@
-"""Tests for staging user inputs into the hidden cache.
-
-Covers which paths are copied and rewritten to their container-side
-locations, how staged entries are keyed, claimed and evicted, and the
-budget that bounds the cache.
-"""
-
 import ast
 import errno
 import os
@@ -566,8 +559,7 @@ def test_restaging_a_changed_model_replaces_the_previous_bundle(
     tmp_path: Path, cache_dir: Path
 ) -> None:
     """An ONNX model and its external data are one entry, superseded as
-    one.
-    """
+    one."""
     inputs_dir = cache_dir / "inputs"
     model_path = tmp_path / "models" / "model.onnx"
     model_path.parent.mkdir()
@@ -589,8 +581,7 @@ def test_restaging_a_changed_config_replaces_the_previous_copy(
     tmp_path: Path, cache_dir: Path
 ) -> None:
     """The rewritten config is keyed by its own text, so every edit used
-    to leave the previous one behind for good.
-    """
+    to leave the previous one behind for good."""
     inputs_dir = cache_dir / "inputs"
     model = tmp_path / "model.onnx"
     model.write_bytes(b"model")
@@ -877,8 +868,7 @@ def test_stages_the_quantization_overrides_file(
     tmp_path: Path, cache_dir: Path
 ) -> None:
     """`rvc4.snpe_onnx_to_dlc_args` is a raw argument list, but the value
-    after `--quantization_overrides` is a file the config opens.
-    """
+    after `--quantization_overrides` is a file the config opens."""
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
     overrides = config_dir / "encodings.json"
@@ -921,8 +911,7 @@ def test_stages_the_transformations_config(
     tmp_path: Path, cache_dir: Path
 ) -> None:
     """`--transformations_config` names a file the model optimizer opens,
-    so it is staged like any other input the container has to read.
-    """
+    so it is staged like any other input the container has to read."""
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
     transformations = config_dir / "custom.json"
@@ -963,8 +952,7 @@ def test_stages_the_compile_tool_config(
     tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`compile_tool -c` names a configuration file, which the exporter
-    writes itself only when the user has not supplied one.
-    """
+    writes itself only when the user has not supplied one."""
     monkeypatch.chdir(tmp_path)
     compile_config = tmp_path / "compile.conf"
     compile_config.write_text("MYRIAD_NUMBER_OF_SHAVES 4")
@@ -993,8 +981,7 @@ def test_sibling_symlinks_to_one_directory_are_both_staged(
     tmp_path: Path, cache_dir: Path
 ) -> None:
     """The inferer expects one directory per input, and two of them may
-    well be the same images under different names.
-    """
+    well be the same images under different names."""
     shared = tmp_path / "images"
     shared.mkdir()
     (shared / "image.raw").write_bytes(b"image")
@@ -1016,8 +1003,7 @@ def test_a_symlink_pointing_back_up_is_not_followed(
     tmp_path: Path, cache_dir: Path
 ) -> None:
     """A convenience link such as `calib/all -> ..` would otherwise copy
-    the whole surrounding tree into the cache.
-    """
+    the whole surrounding tree into the cache."""
     (tmp_path / "unrelated.bin").write_bytes(b"unrelated")
     calib = tmp_path / "calib"
     calib.mkdir()
@@ -1039,8 +1025,7 @@ def test_an_output_destination_override_is_left_alone(
     tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Rewriting a destination would upload the converted model into the
-    cache instead of where the user asked for it.
-    """
+    cache instead of where the user asked for it."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "nas").mkdir()
     tokens = ["convert", "rvc4", "output_remote_url", "./nas"]
@@ -1052,8 +1037,7 @@ def test_a_bare_directory_name_is_staged_for_a_path_override(
     tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The config schema says the value is a path, which beats guessing
-    from a shape that a bare name does not have.
-    """
+    from a shape that a bare name does not have."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "calib").mkdir()
     (tmp_path / "calib" / "image.raw").write_bytes(b"image")
@@ -1071,8 +1055,7 @@ def test_a_single_dash_flag_value_is_not_staged(
     tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`-c` takes a shell command, not an input path; only long options
-    were recognised as introducing a value.
-    """
+    were recognised as introducing a value."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "script.py").write_bytes(b"print()")
     tokens = ["shell", "rvc4", "-c", "./script.py"]
@@ -1117,7 +1100,7 @@ def test_replacing_directory_content_in_place_restages_it(
 def _fabricated_file(
     path: Path, **stat_fields: int
 ) -> "input_staging._InputFile":
-    """Build an enumerated file with a stat this test controls.
+    """An enumerated file with a stat this test controls.
 
     Two filesystems cannot be mounted from a unit test, so the one
     property that distinguishes them -- `st_dev` -- has to be supplied.
@@ -1212,8 +1195,7 @@ def test_a_dotted_output_destination_override_is_left_alone(
     tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A destination field keeps naming a destination when it is reached
-    through a stage prefix.
-    """
+    through a stage prefix."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "exported").mkdir()
     tokens = [
@@ -1232,8 +1214,7 @@ def test_stages_the_flag_equals_value_quantization_overrides(
     tmp_path: Path, cache_dir: Path
 ) -> None:
     """`--quantization_overrides=file` names the same file as the
-    two-token spelling and has to reach the container all the same.
-    """
+    two-token spelling and has to reach the container all the same."""
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
     overrides = config_dir / "encodings.json"
@@ -1275,8 +1256,7 @@ def test_a_negative_decimal_is_not_mistaken_for_a_flag(
     tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`-.5` is an override value; treating it as an option would exempt
-    whatever comes after it from staging.
-    """
+    whatever comes after it from staging."""
     monkeypatch.chdir(tmp_path)
     model = tmp_path / "model.onnx"
     single_io_onnx(model)
@@ -1295,8 +1275,7 @@ def test_staged_files_are_claimed_while_the_process_lives(
 ) -> None:
     """`cache clean` consults the claims, so a conversion whose staged
     inputs are plain files needs them no less than one that staged a
-    directory.
-    """
+    directory."""
     monkeypatch.chdir(tmp_path)
     model = tmp_path / "model.onnx"
     single_io_onnx(model)
@@ -1310,8 +1289,7 @@ def test_staged_files_are_claimed_while_the_process_lives(
 def test_a_claim_from_a_recycled_pid_is_ignored(tmp_path: Path) -> None:
     """A killed run leaves its marker behind, and its pid may since have
     been handed to an unrelated long-lived process; the recorded creation
-    time is what tells the two apart.
-    """
+    time is what tells the two apart."""
     entry = tmp_path / "digest"
     entry.mkdir()
     marker = entry / f"{input_staging._IN_USE_PREFIX}{os.getpid()}"
@@ -1324,15 +1302,13 @@ def test_a_claim_from_a_recycled_pid_is_ignored(tmp_path: Path) -> None:
 
 def test_path_flags_of_no_command() -> None:
     """The launcher parses the command before staging; when it has none
-    there is nothing whose signature could name a path.
-    """
+    there is nothing whose signature could name a path."""
     assert input_staging.path_flags_for(None) == set()
 
 
 def test_path_flags_of_an_uninspectable_command() -> None:
     """Staging follows the command signature, so a command it cannot
-    read leaves every token alone rather than guessing.
-    """
+    read leaves every token alone rather than guessing."""
     assert input_staging.path_flags_for(object()) == set()  # type: ignore[arg-type]
 
 
@@ -1340,8 +1316,7 @@ def test_stages_a_path_joined_to_its_flag(
     tmp_path: Path, cache_dir: Path
 ) -> None:
     """`--model-path=<path>` carries the path in the same token as the
-    flag, so the token has to be rewritten around it.
-    """
+    flag, so the token has to be rewritten around it."""
     model = tmp_path / "model.dlc"
     model.write_bytes(b"dlc")
 
@@ -1362,8 +1337,7 @@ def test_leaves_a_joined_value_of_another_flag_alone(cache_dir: Path) -> None:
 
 def test_arg_list_override_that_is_not_a_list(tmp_path: Path) -> None:
     """The override is read the way `LuxonisConfig` reads it, and a
-    value that is not a list holds no arguments to rewrite.
-    """
+    value that is not a list holds no arguments to rewrite."""
     assert (
         input_staging._stage_arg_list_token(
             "42", "snpe_onnx_to_dlc_args", tmp_path
@@ -1380,8 +1354,7 @@ def test_a_dot_prefixed_name_is_path_like(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A leading `.` says the user meant a path, so the name is staged
-    even without a known extension.
-    """
+    even without a known extension."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".hidden").write_text("x")
 
@@ -1390,8 +1363,7 @@ def test_a_dot_prefixed_name_is_path_like(
 
 def test_a_value_naming_no_home_is_not_a_path() -> None:
     """`~` for a user that does not exist is not something `Path` can
-    represent.
-    """
+    represent."""
     assert input_staging._as_path("~nosuchuser4242/model.onnx") is None
 
 
@@ -1403,8 +1375,7 @@ def test_publishing_reraises_an_unexpected_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Losing the rename race is normal and accepted; anything else is
-    not staging's to swallow.
-    """
+    not staging's to swallow."""
 
     def refuse_rename(self: Path, target: Path) -> Path:
         raise OSError(errno.EACCES, "denied")
@@ -1419,8 +1390,7 @@ def test_an_unreadable_config_is_staged_verbatim(
     tmp_path: Path, cache_dir: Path
 ) -> None:
     """Staging must not be what reports a broken config: the container
-    validates it and says something useful.
-    """
+    validates it and says something useful."""
     config = tmp_path / "broken.yaml"
     config.write_text("a: [1, 2\n")
 
@@ -1444,8 +1414,7 @@ def test_a_config_reference_that_is_not_a_path_is_left_alone(
     tmp_path: Path,
 ) -> None:
     """`calibration.script` may hold the script itself rather than a
-    path to one.
-    """
+    path to one."""
     assert (
         input_staging._stage_config_reference(
             "~nosuchuser4242/x", tmp_path, tmp_path
@@ -1478,7 +1447,7 @@ def test_staging_a_directory_skips_metadata_and_special_files(
 
 
 def _break_stat(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
-    """Make ``Path.stat`` fail for the file called ``name``."""
+    """Makes ``Path.stat`` fail for the file called ``name``."""
     real_stat = Path.stat
 
     def failing_stat(self: Path, **kwargs: bool) -> os.stat_result:
@@ -1494,8 +1463,7 @@ def test_a_directory_that_cannot_be_stat_ed_has_no_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The identity is what a symlink cycle repeats; without one the
-    directory is simply skipped.
-    """
+    directory is simply skipped."""
     _break_stat(monkeypatch, "unstattable")
 
     assert input_staging._dir_key(tmp_path / "unstattable") is None
@@ -1505,8 +1473,7 @@ def test_a_claim_that_cannot_be_written_is_not_fatal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A read-only cache still has to let the conversion run; the claim
-    is an optimisation, not a precondition.
-    """
+    is an optimisation, not a precondition."""
 
     def refuse_write(dest: Path, content: str) -> None:
         raise OSError("read-only file system")
@@ -1541,8 +1508,7 @@ def test_a_claim_that_cannot_be_inspected_still_holds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The pid exists but belongs to another user, so the entry may
-    still be in use and must not be evicted.
-    """
+    still be in use and must not be evicted."""
     marker = tmp_path / f"{input_staging._IN_USE_PREFIX}{os.getpid()}"
     marker.write_text("0.0")
 
@@ -1574,8 +1540,7 @@ def test_claiming_an_unwritable_cache_is_not_fatal(
 
 def test_trash_without_a_pid_in_its_name_is_kept(tmp_path: Path) -> None:
     """The name records the sweep that made it; one that carries no pid
-    cannot be shown to be stale.
-    """
+    cannot be shown to be stale."""
     trash = tmp_path / f"{input_staging._TRASH_PREFIX}notapid-entry"
     trash.mkdir()
 
@@ -1588,8 +1553,7 @@ def test_an_uninspectable_process_starts_now(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The start time only protects what this run staged; falling back
-    to now keeps that protection rather than dropping it.
-    """
+    to now keeps that protection rather than dropping it."""
 
     def refuse_inspection() -> psutil.Process:
         raise psutil.AccessDenied(0)
@@ -1619,8 +1583,7 @@ def test_an_entry_claimed_mid_eviction_that_cannot_be_put_back(
 ) -> None:
     """A claim that landed between the check and the rename normally
     puts the entry back. When even that fails the copy is dropped, which
-    costs a re-staging rather than leaving it under a trash name.
-    """
+    costs a re-staging rather than leaving it under a trash name."""
     entry = tmp_path / "entry"
     entry.mkdir()
     (entry / f"{input_staging._IN_USE_PREFIX}{os.getpid()}").write_text(
@@ -1646,8 +1609,7 @@ def test_a_file_that_cannot_be_stat_ed_is_hashed_directly(
     tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The memo is keyed on the stat fingerprint; without one the
-    digest is still a description of the bytes.
-    """
+    digest is still a description of the bytes."""
     path = tmp_path / "model.dlc"
     path.write_bytes(b"payload")
     expected = input_staging._hash_file(path)

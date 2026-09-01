@@ -1,9 +1,3 @@
-"""Tests for the per-target conversion option helpers.
-
-Covers the target-specific CLI options and the conditions under which the
-superblob option is skipped.
-"""
-
 import pytest
 
 from modelconverter.utils.types import Platform

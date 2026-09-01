@@ -49,7 +49,7 @@ def shapes(
 def shape_permutations(
     draw: st.DrawFn, min_rank: int = 1, max_rank: int = MAX_RANK
 ) -> tuple[list[int], list[int]]:
-    """Draw a shape together with a permutation of it.
+    """A shape together with a permutation of it.
 
     Drawing the pair as a unit is what makes ``guess_new_layout``
     testable: it rejects any new shape that is not a rearrangement of
@@ -93,7 +93,7 @@ _SCALAR_FIELDS = {
 def encoding_items(
     draw: st.DrawFn, *, vector_length: int | None = None
 ) -> Params:
-    """Draw a single raw quantization-encoding entry.
+    """A single raw quantization-encoding entry.
 
     Values are valid for ``QuantizationOverridesItem``, so one strategy drives
     both the private normalisation helpers and the public ``parse_encodings``.
@@ -122,7 +122,7 @@ def encoding_items(
 
 @st.composite
 def encoding_groups(draw: st.DrawFn) -> dict[str, list[Params]]:
-    """Draw a ``{tensor_name: [entry, ...]}`` encoding group."""
+    """A ``{tensor_name: [entry, ...]}`` encoding group."""
     names = draw(st.lists(tensor_names, min_size=1, max_size=3, unique=True))
     return {
         name: draw(

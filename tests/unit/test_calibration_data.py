@@ -28,7 +28,7 @@ def _touch_img(directory: Path, name: str = "img.png") -> Path:
 
 
 def _img_dir(root: Path, count: int) -> Path:
-    """Create a directory holding ``count`` (empty) calibration images."""
+    """A directory holding ``count`` (empty) calibration images."""
     directory = root / "imgs"
     directory.mkdir(exist_ok=True)
     for path in directory.iterdir():

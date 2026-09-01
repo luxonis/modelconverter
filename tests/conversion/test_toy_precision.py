@@ -65,11 +65,8 @@ def constant_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def _to_nchw(arr: np.ndarray, platform_name: str) -> np.ndarray:
-    """Normalize a platform's spatial output to NCHW.
-
-    The Hailo inferer returns spatial outputs channels-last; the others,
-    and the golden reference, are already NCHW.
-    """
+    """The Hailo inferer returns spatial outputs channels-last; the others, and
+    the golden reference, are already NCHW."""
     arr = np.asarray(arr)
     if arr.ndim == 3 and platform_name == "hailo":
         return arr.transpose(2, 0, 1)[np.newaxis]

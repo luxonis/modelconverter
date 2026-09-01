@@ -31,8 +31,6 @@ IR_MODELS = f"{GS}/models"
 
 @dataclass(frozen=True)
 class Scenario:
-    """One end-to-end conversion the suite runs."""
-
     id: str
     # An NN archive (.tar.xz), a config (.yaml) or an OpenVINO IR.
     path: str

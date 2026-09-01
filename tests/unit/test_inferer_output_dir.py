@@ -22,8 +22,7 @@ from modelconverter.utils.constants import INFERENCE_MARKER
 
 class _StubInferer(Inferer):
     """The smallest concrete ``Inferer``; the destination handling runs
-    before anything vendor-specific would.
-    """
+    before anything vendor-specific would."""
 
     def setup(self) -> None: ...
 
@@ -57,8 +56,7 @@ def test_missing_destination_is_created_and_marked(work_dir: Path):
 def test_empty_destination_is_accepted(work_dir: Path):
     """An empty directory holds nothing that could be lost, so the
     missing marker must not block it -- the user may well have created
-    the directory themselves.
-    """
+    the directory themselves."""
     dest = work_dir / "output" / "results"
     dest.mkdir(parents=True)
 
@@ -69,8 +67,7 @@ def test_empty_destination_is_accepted(work_dir: Path):
 
 def test_own_results_are_replaced(work_dir: Path):
     """A rerun starts from a clean directory, so stale outputs from the
-    previous run cannot be mistaken for this run's.
-    """
+    previous run cannot be mistaken for this run's."""
     dest = work_dir / "output" / "results"
     dest.mkdir(parents=True)
     (dest / INFERENCE_MARKER).touch()
@@ -87,8 +84,7 @@ def test_own_results_are_replaced(work_dir: Path):
 def test_foreign_directory_is_refused(work_dir: Path):
     """``output/`` also holds the conversion results, so an
     ``--output-dir`` that collides with one must fail instead of
-    deleting it.
-    """
+    deleting it."""
     dest = work_dir / "output" / "mnist_to_rvc4_2026_01_01_00_00_00"
     dest.mkdir(parents=True)
     converted = dest / "mnist.dlc"
@@ -114,6 +110,5 @@ def test_file_destination_is_refused(work_dir: Path):
 def test_the_stand_in_reports_no_outputs(work_dir: Path):
     """`Inferer` is abstract; the stand-in exists so the destination
     handling can run, and its forward pass has no vendor runtime to
-    produce anything with.
-    """
+    produce anything with."""
     assert _infer_into(work_dir / "dest").infer({}) == {}

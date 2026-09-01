@@ -69,7 +69,7 @@ def golden_reference_outputs(
 
 
 def locate_converted_model(output_dir: Path, platform: str) -> Path:
-    """Locate the converted model a vendor inferer should load.
+    """The converted model a vendor inferer should load.
 
     Prefers the final artifact directly in ``output_dir`` -- running an
     intermediate DLC would test the un-quantized graph -- and falls back to a

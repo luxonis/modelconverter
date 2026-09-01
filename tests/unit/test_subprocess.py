@@ -21,7 +21,7 @@ def _command(code: str) -> list[str]:
 
 
 def _attached(process: Mock) -> SubprocessHandle:
-    """Create a handle whose psutil process is the given mock."""
+    """A handle whose psutil process is the given mock."""
     handle = SubprocessHandle(["command"])
     handle._ps_proc = process
     return handle
