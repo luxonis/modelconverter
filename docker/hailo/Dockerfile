@@ -14,7 +14,7 @@ ENV IN_DOCKER=
 WORKDIR /app
 
 COPY --link requirements.txt requirements.txt
-COPY --link modelconverter/packages/hailo/requirements.txt requirements-hailo.txt
+COPY --link modelconverter/platforms/hailo/requirements.txt requirements-hailo.txt
 
 RUN <<EOF
 

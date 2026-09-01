@@ -2,13 +2,20 @@ import json
 import struct
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import onnx
 import pytest
 from onnx import TensorProto, helper
 
-from modelconverter.packages.rvc4.exporter import RVC4Exporter
-from modelconverter.utils.config import Encodings, RVC4Config
+from modelconverter.platforms.rvc4.exporter import RVC4Exporter
+from modelconverter.utils.config import (
+    Encodings,
+    InputConfig,
+    OutputConfig,
+    RVC4Config,
+    SingleStageConfig,
+)
 from modelconverter.utils.encodings import (
     collect_onnx_tensor_names,
     parse_encodings,
@@ -149,11 +156,14 @@ def _exporter_for_validation(
     snpe_onnx_to_dlc_args: list[str] | None = None,
 ) -> RVC4Exporter:
     exporter = RVC4Exporter.__new__(RVC4Exporter)
-    exporter.strict_quantization_overrides = strict
-    exporter.encodings = encodings
-    exporter.input_model = model_path
-    exporter.config = SimpleNamespace(input_file_type=input_file_type)
-    exporter.snpe_onnx_to_dlc = list(snpe_onnx_to_dlc_args or [])
+    exporter._strict_quantization_overrides = strict
+    exporter._encodings = encodings
+    exporter._input_model = model_path
+    exporter.config = cast(
+        SingleStageConfig,
+        SimpleNamespace(input_file_type=input_file_type),
+    )
+    exporter._snpe_onnx_to_dlc = list(snpe_onnx_to_dlc_args or [])
     return exporter
 
 
@@ -170,7 +180,7 @@ def test_strict_false_does_not_validate_bogus_names(work_dir: Path):
         strict=False,
     )
 
-    exporter.validate_quantization_overrides()
+    exporter._validate_quantization_overrides()
 
 
 def test_strict_false_preserves_raw_equals_override(work_dir: Path):
@@ -185,9 +195,28 @@ def test_strict_false_preserves_raw_equals_override(work_dir: Path):
         snpe_onnx_to_dlc_args=[raw_arg],
     )
 
-    exporter.validate_quantization_overrides()
+    exporter._validate_quantization_overrides()
 
-    assert exporter.snpe_onnx_to_dlc == [raw_arg]
+    assert exporter._snpe_onnx_to_dlc == [raw_arg]
+
+
+def test_raw_quantization_override_paths_accept_mixed_path_args(
+    work_dir: Path,
+):
+    override_path = work_dir / "encodings.json"
+    args: list[str | Path] = [
+        "-i",
+        work_dir / "model.onnx",
+        "--input_dim",
+        "img",
+        "1,3,32,32",
+        "--quantization_overrides",
+        override_path,
+    ]
+
+    assert RVC4Exporter._raw_quantization_override_paths(args) == [
+        override_path
+    ]
 
 
 def test_strict_true_accepts_valid_top_level_onnx_names(work_dir: Path):
@@ -272,7 +301,7 @@ def test_strict_true_rejects_unknown_raw_equals_override(work_dir: Path):
             r"param_encodings=\[\]"
         ),
     ):
-        exporter.validate_quantization_overrides()
+        exporter._validate_quantization_overrides()
 
 
 def test_strict_true_rejects_unknown_parameter(work_dir: Path):
@@ -306,7 +335,7 @@ def test_strict_true_rejects_ambiguous_override_sources(work_dir: Path):
         ValueError,
         match=("requires exactly one effective quantization override source"),
     ):
-        exporter.validate_quantization_overrides()
+        exporter._validate_quantization_overrides()
 
 
 def test_strict_true_reports_both_groups_sorted(work_dir: Path):
@@ -402,10 +431,13 @@ def test_strict_true_with_no_encodings_does_not_fail(work_dir: Path):
         strict=True,
     )
 
-    exporter.validate_quantization_overrides()
+    exporter._validate_quantization_overrides()
 
 
-def test_fp16_strict_does_not_validate_unused_encodings(work_dir: Path):
+def test_fp16_strict_does_not_validate_unused_encodings(
+    work_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
     model = _probe_model(work_dir / "probe.onnx")
     cfg = RVC4Config(
         quantization_mode=QuantizationMode.FP16_STD,
@@ -419,18 +451,26 @@ def test_fp16_strict_does_not_validate_unused_encodings(work_dir: Path):
         encodings=cfg.encodings,
         strict=cfg.strict_quantization_overrides,
     )
-    exporter.inputs = {
-        "input0": SimpleNamespace(shape=[1], data_type=None, layout=None)
-    }
-    exporter.outputs = {"output0": object()}
-    exporter.quantization_mode = cfg.quantization_mode
-    exporter.is_tflite = False
-    subprocess_calls: list[tuple[str, list[object]]] = []
-    exporter._subprocess_run = lambda args, meta_name, **kwargs: (
-        subprocess_calls.append((meta_name, args))
+    exporter._inputs = {"input0": InputConfig(name="input0")}
+    exporter._outputs = {"output0": OutputConfig(name="output0")}
+    exporter._quantization_mode = cfg.quantization_mode
+    exporter._is_tflite = False
+    subprocess_calls: list[tuple[str, list[str]]] = []
+
+    def record_subprocess_call(
+        args: list[str],
+        meta_name: str,
+        **kwargs: object,
+    ) -> None:
+        subprocess_calls.append((meta_name, list(args)))
+
+    monkeypatch.setattr(
+        exporter,
+        "_subprocess_run",
+        record_subprocess_call,
     )
 
-    exporter.onnx_to_dlc()
+    exporter._onnx_to_dlc()
 
     assert len(subprocess_calls) == 1
     meta_name, args = subprocess_calls[0]
@@ -459,7 +499,7 @@ def test_strict_true_non_onnx_with_encodings_fails_before_qualcomm(
         ValueError,
         match="currently supported only for ONNX input models",
     ):
-        exporter.validate_quantization_overrides()
+        exporter._validate_quantization_overrides()
 
 
 def test_validation_uses_final_effective_input_model(work_dir: Path):
@@ -474,13 +514,13 @@ def test_validation_uses_final_effective_input_model(work_dir: Path):
         encodings=_encodings(activations=["final_activation"]),
         strict=True,
     )
-    exporter.original_input_model = original
+    assert original != final
 
-    exporter.validate_quantization_overrides()
+    exporter._validate_quantization_overrides()
 
-    exporter.encodings = _encodings(activations=["original_activation"])
+    exporter._encodings = _encodings(activations=["original_activation"])
     with pytest.raises(
         ValueError,
         match=r"activation_encodings=\['original_activation'\]",
     ):
-        exporter.validate_quantization_overrides()
+        exporter._validate_quantization_overrides()

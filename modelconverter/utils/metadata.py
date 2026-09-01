@@ -1,13 +1,15 @@
 import io
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING
 
 import onnx
 
 from modelconverter.utils.subprocess import subprocess_run
 from modelconverter.utils.types import DataType
+
+if TYPE_CHECKING:
+    import tflite
 
 
 @dataclass
@@ -230,22 +232,14 @@ def _get_metadata_tflite(model_path: Path) -> Metadata:
     output_dtypes = {}
 
     for i in range(subgraph.InputsLength()):
-        tensor = subgraph.Tensors(subgraph.Inputs(i))
-        input_shapes[tensor.Name().decode("utf-8")] = (  # type: ignore
-            tensor.ShapeAsNumpy().tolist()  # type: ignore
-        )
-        input_dtypes[tensor.Name().decode("utf-8")] = (  # type: ignore
-            DataType.from_tensorflow_dtype(tensor.Type())  # type: ignore
-        )
+        name, shape, dtype = _read_tflite_tensor(subgraph, subgraph.Inputs(i))
+        input_shapes[name] = shape
+        input_dtypes[name] = dtype
 
     for i in range(subgraph.OutputsLength()):
-        tensor = subgraph.Tensors(subgraph.Outputs(i))
-        output_shapes[tensor.Name().decode("utf-8")] = (  # type: ignore
-            tensor.ShapeAsNumpy().tolist()  # type: ignore
-        )
-        output_dtypes[tensor.Name().decode("utf-8")] = (  # type: ignore
-            DataType.from_tensorflow_dtype(tensor.Type())  # type: ignore
-        )
+        name, shape, dtype = _read_tflite_tensor(subgraph, subgraph.Outputs(i))
+        output_shapes[name] = shape
+        output_dtypes[name] = dtype
 
     return Metadata(
         input_shapes=input_shapes,
@@ -256,16 +250,14 @@ def _get_metadata_tflite(model_path: Path) -> Metadata:
 
 
 def _get_metadata_hailo(model_path: Path) -> Metadata:
-    from modelconverter.packages.hailo.exporter import ClientRunner
+    from hailo_sdk_client import ClientRunner
 
     input_shapes = {}
     input_dtypes = {}
     output_shapes = {}
     output_dtypes = {}
     runner = ClientRunner(hw_arch="hailo8", har=str(model_path))
-    for params in cast(Callable[..., dict], runner.get_hn_dict)()[
-        "layers"
-    ].values():
+    for params in runner.get_hn_dict()["layers"].values():
         if params["type"] in ["input_layer", "output_layer"]:
             name = params["original_names"][0]
             shape = list(params["input_shapes"][0])
@@ -284,4 +276,22 @@ def _get_metadata_hailo(model_path: Path) -> Metadata:
         input_dtypes=input_dtypes,
         output_shapes=output_shapes,
         output_dtypes=output_dtypes,
+    )
+
+
+def _read_tflite_tensor(
+    subgraph: "tflite.SubGraph", tensor_index: int
+) -> tuple[str, list[int], DataType]:
+    tensor = subgraph.Tensors(tensor_index)
+    if tensor is None:
+        raise ValueError(
+            f"TFLite model has no tensor at index {tensor_index}."
+        )
+    name = tensor.Name()
+    if name is None:
+        raise ValueError(f"TFLite tensor at index {tensor_index} has no name.")
+    return (
+        name.decode("utf-8"),
+        [tensor.Shape(j) for j in range(tensor.ShapeLength())],
+        DataType.from_tensorflow_dtype(tensor.Type()),
     )

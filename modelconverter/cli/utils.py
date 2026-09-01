@@ -1,8 +1,6 @@
 import shutil
 from datetime import datetime, timezone
-from enum import Enum
 from pathlib import Path
-from typing import Any
 
 from loguru import logger
 from luxonis_ml.nn_archive import is_nn_archive
@@ -27,30 +25,7 @@ from modelconverter.utils.constants import (
     in_docker,
 )
 from modelconverter.utils.filesystem_utils import set_input_base
-from modelconverter.utils.types import DataType, Encoding, Target
-
-
-class ModelType(str, Enum):
-    ONNX = "ONNX"
-    IR = "IR"
-    PYTORCH = "PYTORCH"
-    TFLITE = "TFLITE"
-    RVC2 = "RVC2"
-    RVC3 = "RVC3"
-    RVC4 = "RVC4"
-    HAILO = "HAILO"
-
-    @classmethod
-    def from_suffix(cls, suffix: str) -> "ModelType":
-        if suffix == ".onnx":
-            return cls.ONNX
-        if suffix == ".tflite":
-            return cls.TFLITE
-        if suffix in [".xml", ".bin"]:
-            return cls.IR
-        if suffix in [".pt", ".pth"]:
-            return cls.PYTORCH
-        raise ValueError(f"Unsupported model format: {suffix}")
+from modelconverter.utils.types import DataType, Encoding, Platform
 
 
 def resolve_output_dir(output_dir: str) -> Path:
@@ -76,7 +51,7 @@ def resolve_output_dir(output_dir: str) -> Path:
 
 
 def get_output_dir_name(
-    target: Target, name: str, output_dir: str | None
+    platform: Platform, name: str, output_dir: str | None
 ) -> Path:
     name = sanitize_net_name(name)
     date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
@@ -99,7 +74,7 @@ def get_output_dir_name(
                 )
             shutil.rmtree(dest)
         return dest
-    return OUTPUTS_DIR / f"{name}_to_{target.name.lower()}_{date}"
+    return OUTPUTS_DIR / f"{name}_to_{platform.name.lower()}_{date}"
 
 
 def init_dirs() -> None:
@@ -109,9 +84,9 @@ def init_dirs() -> None:
 
 
 def get_configs(
-    target: Target,
+    platform: Platform,
     path: str | None,
-    opts: list[str] | dict[str, Any] | None = None,
+    opts: list[str] | Params | None = None,
 ) -> tuple[Config, NNArchiveConfig | None, str | None]:
     """Sets up the configuration.
 
@@ -141,7 +116,7 @@ def get_configs(
     if path is not None:
         path_ = resolve_path(path, MISC_DIR)
         if path_.is_dir() or is_nn_archive(path_):
-            return process_nn_archive(target, path_, overrides)
+            return process_nn_archive(platform, path_, overrides)
         # Resolve files referenced *inside* the config (calibration data,
         # scripts, encodings, ...) relative to the config file's directory.
         set_input_base(path_.parent)

@@ -1,0 +1,37 @@
+# Extra imports that pyright must resolve, on top of `.[dev]`.
+#
+# The conversion code runs inside the platform Docker images, so these packages
+# are never installed on the host. The type checker still has to find them, or
+# every vendor import reports as unresolved.
+#
+# Install with `--no-deps`. Their pins are written for the images, not for the
+# host: OpenVINO 2022.3.0 requires `numpy<=1.23.4`, and luxonis-ml needs NumPy
+# 2. Resolving them would downgrade NumPy and break the environment. Nothing
+# here is imported on the host at run time, so only the declarations matter.
+#
+# This file is deliberately not a `pyproject.toml` extra, because an extra
+# would install it with its dependencies.
+#
+# The Hailo Dataflow Compiler is not on PyPI. The type-check CI job downloads
+# its wheel from the build-artifacts bucket and installs it alongside this file.
+
+# `rvc2/exporter.py`, superblob compilation.
+bsdiff4~=1.2
+pebble~=5.2
+
+# `hailo/exporter.py`.
+tensorflow-cpu
+
+# `rvc4/visualize.py`.
+plotly
+
+# `rvc2/inferer.py`, `rvc3/benchmark.py` and `utils/metadata.py`. 2022.3.0 is
+# the last release that still ships `openvino.inference_engine`, the API the
+# RVC2 and RVC3 images use.
+openvino==2022.3.0
+
+# `tests/conversion/test_model_evaluation.py`. Keep the commit in step with
+# `requirements-eval.txt`, which is where the pin belongs. Torch is not needed
+# here: pyright reports diagnostics for this repository only, never for the
+# libraries it reads.
+luxonis-eval @ git+https://github.com/luxonis/luxonis-eval.git@be0742210cd0f8ec7f63d4853d4cb97eeab49458

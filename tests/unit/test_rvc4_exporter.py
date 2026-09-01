@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from modelconverter.packages.rvc4.exporter import RVC4Exporter
+from modelconverter.platforms.rvc4.exporter import RVC4Exporter
 from modelconverter.utils.config import Config
 from tests.helpers.onnx_factory import single_io_onnx
 
@@ -36,7 +36,7 @@ def _make_exporter(
     # This is deliberately true in the source configuration. The INT16
     # contract must suppress the generic default at command construction time,
     # without changing the default for existing RVC4 modes.
-    assert exporter.use_per_channel_quantization
+    assert exporter._use_per_channel_quantization
 
     return exporter
 
@@ -51,7 +51,7 @@ def _capture_quant_command(
 
     monkeypatch.setattr(
         exporter,
-        "prepare_calibration_data",
+        "_prepare_calibration_data",
         lambda: input_list,
     )
 
@@ -72,7 +72,7 @@ def _capture_quant_command(
     input_dlc = work_dir / "input.dlc"
     input_dlc.touch()
 
-    exporter.calibrate(input_dlc)
+    exporter._calibrate(input_dlc)
 
     quant_calls = [
         command

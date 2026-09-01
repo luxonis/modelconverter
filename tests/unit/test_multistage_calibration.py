@@ -13,9 +13,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from modelconverter.packages import multistage_exporter
-from modelconverter.packages.base_inferer import Inferer
-from modelconverter.packages.multistage_exporter import MultiStageExporter
+from modelconverter.platforms import multistage_exporter
+from modelconverter.platforms.base_inferer import Inferer
+from modelconverter.platforms.multistage_exporter import MultiStageExporter
 from modelconverter.utils.config import (
     Config,
     ImageCalibrationConfig,
@@ -23,7 +23,7 @@ from modelconverter.utils.config import (
     SingleStageConfig,
 )
 from modelconverter.utils.constants import INFERENCE_MARKER
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 
 # Concatenates every output of the linked stage into one calibration
 # tensor. `standard_dummy_onnx` has a (1, 10) and a (1, 5, 5, 5) output.
@@ -121,18 +121,18 @@ def exporter(
     monkeypatch.setattr(
         multistage_exporter,
         "get_exporter",
-        lambda _target, stage_config, output_dir: StubExporter(
+        lambda _platform, stage_config, output_dir: StubExporter(
             stage_config, output_dir
         ),
     )
     monkeypatch.setattr(
         multistage_exporter,
         "get_inferer",
-        lambda _target, model_path, src, dest, stage_config: (
+        lambda _platform, model_path, src, dest, stage_config: (
             StubInferer.from_config(model_path, src, dest, stage_config)
         ),
     )
-    return MultiStageExporter(Target.RVC4, config, work_dir / "output")
+    return MultiStageExporter(Platform.RVC4, config, work_dir / "output")
 
 
 def _resolved_calibration(config: Config) -> ImageCalibrationConfig:
@@ -161,7 +161,9 @@ def test_inference_results_are_marked(exporter: MultiStageExporter):
     to be there even though the linking code skips it."""
     exporter._produce_calibration_data(exporter.exporters["second"])
 
-    results_dir = exporter.intermediate_outputs_dir / "dummy_model_calibration"
+    results_dir = (
+        exporter._intermediate_outputs_dir / "dummy_model_calibration"
+    )
     assert (results_dir / INFERENCE_MARKER).is_file()
     assert sorted(p.name for p in results_dir.iterdir() if p.is_dir()) == [
         "output0",

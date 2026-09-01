@@ -16,15 +16,15 @@ on:
         type: string
         default: ""
       ml_ref:
-        description: "luxonis-ml version (branch/tag/SHA)"
+        description: "luxonis-ml version (branch/tag/SHA). Empty keeps the pinned release. The unit and type-check jobs then use `main`, but not on a release branch."
         required: false
         type: string
-        default: main
+        default: ""
       modelconv_ref:
-        description: "modelconverter version (branch/tag/SHA)"
+        description: "modelconverter version (branch/tag/SHA). Empty tests the branch the run starts from."
         required: false
         type: string
-        default: main
+        default: ""
   workflow_call:
     inputs:
       platforms:
@@ -38,10 +38,10 @@ on:
         type: string
         default: ""
       ml_ref:
-        description: "luxonis-ml version (branch/tag/SHA)"
+        description: "luxonis-ml version (branch/tag/SHA). Empty keeps the pinned release. The unit and type-check jobs then use `main`, but not on a release branch."
         required: false
         type: string
-        default: main
+        default: ""
       modelconv_ref:
         description: "modelconverter version (branch/tag/SHA)"
         required: false
@@ -75,8 +75,63 @@ env:
   LUXONIS_TELEMETRY_ENABLED: "false"
 
 jobs:
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    env:
+      GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
+      HAILO_WHEEL: hailo_dataflow_compiler-5.3.0-py3-none-linux_x86_64.whl
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.modelconv_ref && 'Luxonis/modelconverter' || github.repository }}
+          ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install package
+        run: pip install -e .[dev]
+
+      - name: Install LuxonisML from main
+        if: ${{ inputs.ml_ref || !startsWith(inputs.modelconv_ref || github.head_ref || github.ref_name, 'release/') }}
+        env:
+          ML_REF: ${{ inputs.ml_ref || 'main' }}
+        run: |
+          pip uninstall luxonis-ml -y
+          pip install \
+            "luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
+            --upgrade --force-reinstall
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          token_format: access_token
+
+      - name: Install platform dependencies
+        run: |
+          gcloud storage cp "${GS_BUILD_ARTIFACTS}/${HAILO_WHEEL}" .
+          pip install --no-deps \
+            -r requirements-typecheck.txt \
+            "./${HAILO_WHEEL}"
+
+      - name: Run pyright
+        uses: jakebailey/pyright-action@8ec14b5cfe41f26e5f41686a31eb6012758217ef
+        with:
+          # `version: PATH` runs the pyright that `.[dev]` pins, so CI and a
+          # local run agree.
+          version: PATH
+          warnings: true
+
   unit:
     name: Unit tests
+    needs: [typecheck]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -95,14 +150,14 @@ jobs:
       - name: Install package
         run: pip install -e .[dev]
 
-      - name: Install specified LuxonisML
-        if: ${{ inputs.ml_ref != '' }}
+      - name: Install LuxonisML from main
+        if: ${{ inputs.ml_ref || !startsWith(inputs.modelconv_ref || github.head_ref || github.ref_name, 'release/') }}
         env:
-          ML_REF: ${{ inputs.ml_ref }}
+          ML_REF: ${{ inputs.ml_ref || 'main' }}
         run: |
           pip uninstall luxonis-ml -y
           pip install \
-            "luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
+            "luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
             --upgrade --force-reinstall
 
       - name: Run unit tests
@@ -277,7 +332,7 @@ jobs:
               pip install \
               \"luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}\" \
               --upgrade --force-reinstall && \
-              pip install -r /app/modelconverter/packages/${PACKAGE}/requirements.txt && \
+              pip install -r /app/modelconverter/platforms/${PACKAGE}/requirements.txt && \
               pip install -r /tmp/numpy-pin.txt &&"
           else
             ML_INSTALL_COMMAND=""

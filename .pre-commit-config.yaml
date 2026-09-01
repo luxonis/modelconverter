@@ -1,6 +1,11 @@
 default_language_version:
   python: python3
 repos:
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.47.2
+    hooks:
+      - id: typos
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.0
     hooks:
@@ -35,7 +40,6 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: check-docstring-first
-        exclude: luxonis_ml/typing.py
       - id: check-executables-have-shebangs
       - id: check-illegal-windows-names
       - id: check-shebang-scripts-are-executable

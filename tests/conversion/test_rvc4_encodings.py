@@ -7,13 +7,15 @@ RVC4 exporter actually consuming those encodings, nor the two related SNPE knobs
 so this e2e converts the toy conv net with:
 
   * a custom ``encodings.json`` referenced by path, driving
-    ``generate_io_encodings`` -> ``snpe-onnx-to-dlc --quantization_overrides``
+    ``_generate_io_encodings`` -> ``snpe-onnx-to-dlc --quantization_overrides``
     and ``snpe-dlc-quant --override_params``;
+  * ``strict_quantization_overrides`` -> ModelConverter validates custom
+    names against the effective ONNX before invoking SNPE;
   * ``use_per_row_quantization`` -> ``snpe-dlc-quant --use_per_row_quantization``
     (off by default, so otherwise never exercised);
   * a non-default ``htp_socs`` -> ``snpe-dlc-graph-prepare --htp_socs``.
 
-``generate_io_encodings`` normalizes the *exposed* input/output activation
+``_generate_io_encodings`` normalizes the *exposed* input/output activation
 encodings to default int8 IO whatever we pass, so the custom values mainly
 exercise the internal-tensor / param path. The point is the exporter code, not
 numeric fidelity, so asserting a quantized ``.dlc`` is produced is enough.
@@ -29,9 +31,9 @@ from pathlib import Path
 import pytest
 
 from modelconverter.__main__ import convert
-from modelconverter.packages.rvc4.exporter import RVC4Exporter
+from modelconverter.platforms.rvc4.exporter import RVC4Exporter
 from modelconverter.utils.constants import OUTPUTS_DIR
-from modelconverter.utils.types import Target
+from modelconverter.utils.types import Platform
 from tests.helpers.conversion import (
     assert_produced_suffix,
     write_toy_conv_config,
@@ -98,7 +100,7 @@ def test_rvc4_encodings(encodings_config: tuple[Path, Path]):
     # `ast.literal_eval` parses the list/bool opts; the path string for
     # `rvc4.encodings` falls through as-is.
     convert(
-        Target.RVC4,
+        Platform.RVC4,
         "rvc4.encodings",
         str(encodings_path),
         "rvc4.use_per_row_quantization",
@@ -126,7 +128,7 @@ def test_rvc4_strict_encodings_accept_effective_onnx_names(
 
     output_name = "_rvc4-strict-encodings"
     convert(
-        Target.RVC4,
+        Platform.RVC4,
         "rvc4.encodings",
         str(encodings_path),
         "rvc4.strict_quantization_overrides",
@@ -169,7 +171,9 @@ def test_rvc4_strict_encodings_reject_unknown_before_qualcomm(
         pytest.fail(f"Qualcomm subprocess unexpectedly invoked: {args}")
 
     monkeypatch.setattr(
-        RVC4Exporter, "_subprocess_run", record_subprocess_call
+        RVC4Exporter,
+        "_subprocess_run",
+        record_subprocess_call,
     )
 
     output_name = (
@@ -185,7 +189,7 @@ def test_rvc4_strict_encodings_reject_unknown_before_qualcomm(
 
     with pytest.raises(SystemExit) as exc_info:
         convert(
-            Target.RVC4,
+            Platform.RVC4,
             *override_args,
             "rvc4.strict_quantization_overrides",
             "True",

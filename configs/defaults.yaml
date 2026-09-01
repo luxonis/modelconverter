@@ -23,7 +23,7 @@ stages:
     # If specified, then the `calibration.path` must be provided.
     calibration:
       # Path to the calibration dataset. It can be either a local directory,
-      # an S3 url, or an LDF identificator in a form <dataset_name>:<split>.
+      # an S3 url, or an LDF identifier in a form <dataset_name>:<split>.
       # Example:
       # path: models/coco128
       # path: test_name:val

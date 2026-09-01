@@ -56,11 +56,13 @@ def sanitize_net_name(name: str, with_suffix: bool = False) -> str:
 
 
 def human_size(num: float) -> str:
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+    # The table stops where `parse_size` does: a size shown here is one a
+    # user may hand back as a cache budget.
+    for unit in ("B", "KiB", "MiB", "GiB"):
         if num < 1024:
             return f"{num:.1f} {unit}"
         num /= 1024
-    return f"{num:.1f} PiB"
+    return f"{num:.1f} TiB"
 
 
 def dir_stats(path: Path) -> tuple[int, int]:

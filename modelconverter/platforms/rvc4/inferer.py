@@ -1,0 +1,69 @@
+import shutil
+from pathlib import Path
+
+import numpy as np
+
+from modelconverter.platforms.base_inferer import Inferer
+from modelconverter.utils import read_image, subprocess_run
+from modelconverter.utils.types import DataType
+
+
+class RVC4Inferer(Inferer):
+    def setup(self) -> None:
+        self._raw_images_path = Path("raw_images")
+        self._header = f"%{' '.join(name for name in self.out_shapes)}"
+
+    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+        # Scratch directory for SNPE's raw outputs. Must NOT be literally
+        # "output": inside the container that resolves to `/app/output`, which
+        # is the bind-mounted results directory the inferer writes into. Using
+        # it here would wipe previously-saved results on every image.
+        outputs_path = Path("snpe_output")
+        shutil.rmtree(self._raw_images_path, ignore_errors=True)
+        self._raw_images_path.mkdir(parents=True)
+        shutil.rmtree(outputs_path, ignore_errors=True)
+
+        with open("input_list.txt", "w") as f:
+            f.write(self._header + "\n")
+            for input_name, path in inputs.items():
+                raw_path = Path(f"raw_images/{input_name}.raw")
+                arr = read_image(
+                    path,
+                    shape=self.in_shapes[input_name],
+                    encoding=self.encoding[input_name],
+                    resize_method=self.resize_method[input_name],
+                    data_type=DataType.FLOAT32,
+                    transpose=False,
+                    layout=self.layout.get(input_name),
+                )
+                arr.tofile(raw_path)
+                f.write(f"{input_name}:={raw_path} ")
+            f.write("\n")
+
+        subprocess_run(
+            [
+                "snpe-net-run",
+                "--container",
+                str(self.model_path),
+                "--input_list",
+                "input_list.txt",
+                "--output_dir",
+                str(outputs_path),
+            ],
+            silent=True,
+        )
+        out_paths = outputs_path.rglob("*.raw")
+        outputs = {}
+        for p in out_paths:
+            arr = np.fromfile(
+                p, dtype=self.out_dtypes[p.stem].as_numpy_dtype()
+            )
+            out_shape = self.out_shapes[p.stem]
+
+            # TODO: detect layout
+            if len(out_shape) == 4:
+                N, C, H, W = out_shape
+                outputs[p.stem] = arr.reshape(N, H, W, C).transpose(0, 3, 1, 2)
+            else:
+                outputs[p.stem] = arr.reshape(out_shape)
+        return outputs

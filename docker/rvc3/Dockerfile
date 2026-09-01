@@ -6,8 +6,8 @@ RUN <<EOF
 
     set -e
 
-    apt-get update
-    apt-get install -y  \
+    apt-get update -qq
+    apt-get install -y -qq \
         cmake           \
         unzip           \
         perl            \
@@ -67,8 +67,8 @@ RUN <<EOF
 
     set -e
 
-    apt-get update
-    apt-get install -y --no-install-recommends git
+    apt-get update -qq
+    apt-get install -y -qq --no-install-recommends git
     rm -rf /var/lib/apt/lists/*
 
 EOF
@@ -104,7 +104,7 @@ COPY --link --from=base /usr/local/lib /usr/local/lib
 
 
 COPY --link requirements.txt requirements.txt
-COPY --link modelconverter/packages/rvc3/requirements.txt requirements-rvc3.txt
+COPY --link modelconverter/platforms/rvc3/requirements.txt requirements-rvc3.txt
 
 RUN <<EOF
 

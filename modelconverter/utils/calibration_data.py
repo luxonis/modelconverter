@@ -101,7 +101,7 @@ def load_from_ldf(
         dataset = LuxonisDataset(dataset_name)
         loader = LuxonisLoader(dataset, view=view)
 
-    for i, (img_arr, _) in enumerate(loader):  # type: ignore
+    for i, (img_arr, _) in enumerate(loader):
         if not isinstance(img_arr, np.ndarray):
             raise NotImplementedError(
                 "Multi input LDF datasets are not yet "

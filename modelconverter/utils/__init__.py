@@ -45,7 +45,7 @@ from .onnx_tools import (
 )
 from .progress_handler import create_progress_handler
 from .subprocess import SubprocessHandle, subprocess_run
-from .target_versions import get_default_target_version
+from .tool_versions import get_default_tool_version
 from .types import DataType
 
 __all__ = [
@@ -72,7 +72,7 @@ __all__ = [
     "get_archive_input",
     "get_container_memory_available",
     "get_container_memory_limit",
-    "get_default_target_version",
+    "get_default_tool_version",
     "get_docker_image",
     "get_local_docker_image",
     "get_metadata",
