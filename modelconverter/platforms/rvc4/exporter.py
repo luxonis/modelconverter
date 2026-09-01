@@ -2,7 +2,6 @@ import json
 import shutil
 import subprocess
 import time
-from collections.abc import Sequence
 from pathlib import Path
 from typing import NamedTuple
 
@@ -21,10 +20,7 @@ from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
 )
-from modelconverter.utils.encodings import (
-    parse_encodings,
-    validate_quantization_override_names,
-)
+from modelconverter.utils.encodings import validate_quantization_override_names
 from modelconverter.utils.subprocess import subprocess_run
 from modelconverter.utils.types import (
     DataType,
@@ -38,11 +34,6 @@ from modelconverter.utils.types import (
 
 class RVC4Exporter(Exporter):
     platform: Platform = Platform.RVC4
-
-    class QuantizationOverrideSource(NamedTuple):
-        description: str
-        encodings: Encodings | None = None
-        path: Path | None = None
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         super().__init__(config=config, output_dir=output_dir)
@@ -302,93 +293,6 @@ class RVC4Exporter(Exporter):
             json.dump(encodings_dict, encodings_file, indent=4)
         return encodings_path
 
-    @staticmethod
-    def _raw_quantization_override_paths(
-        args: Sequence[str | Path],
-    ) -> list[Path]:
-        paths = []
-        index = 0
-        while index < len(args):
-            arg = args[index]
-            if not isinstance(arg, str):
-                index += 1
-                continue
-            if arg == "--quantization_overrides":
-                if index + 1 >= len(args):
-                    raise ValueError(
-                        "`--quantization_overrides` requires a path value."
-                    )
-                paths.append(Path(args[index + 1]))
-                index += 2
-                continue
-            if arg.startswith("--quantization_overrides="):
-                value = arg.split("=", 1)[1]
-                if not value:
-                    raise ValueError(
-                        "`--quantization_overrides` requires a path value."
-                    )
-                paths.append(Path(value))
-            index += 1
-        return paths
-
-    def _quantization_override_sources(
-        self,
-    ) -> list[QuantizationOverrideSource]:
-        sources = []
-        if self._encodings is not None:
-            sources.append(
-                self.QuantizationOverrideSource(
-                    description="rvc4.encodings",
-                    encodings=self._encodings,
-                )
-            )
-
-        sources.extend(
-            self.QuantizationOverrideSource(
-                description=f"raw --quantization_overrides {path}",
-                path=path,
-            )
-            for path in self._raw_quantization_override_paths(
-                self._snpe_onnx_to_dlc
-            )
-        )
-        return sources
-
-    def _validate_quantization_overrides(self) -> None:
-        if not self._strict_quantization_overrides:
-            return
-
-        sources = self._quantization_override_sources()
-        if not sources:
-            return
-
-        if self.config.input_file_type != InputFileType.ONNX:
-            raise ValueError(
-                "rvc4.strict_quantization_overrides is currently supported "
-                "only for ONNX input models."
-            )
-
-        if len(sources) > 1:
-            source_descriptions = ", ".join(
-                source.description for source in sources
-            )
-            raise ValueError(
-                "rvc4.strict_quantization_overrides requires exactly one "
-                "effective quantization override source; found "
-                f"{len(sources)}: {source_descriptions}"
-            )
-
-        source = sources[0]
-        encodings = source.encodings
-        if encodings is None:
-            assert source.path is not None
-            encodings = parse_encodings(source.path.read_text())
-
-        validate_quantization_override_names(
-            encodings,
-            self._input_model,
-        )
-
     def _onnx_to_dlc(self) -> Path:
         logger.info("Exporting for RVC4")
         args = self._snpe_onnx_to_dlc
@@ -476,3 +380,18 @@ class RVC4Exporter(Exporter):
             "snpe_version": snpe_version.stdout.decode("utf-8").strip(),
             "target_devices": self._htp_socs,
         }
+
+    def _validate_quantization_overrides(self) -> None:
+        if not self._strict_quantization_overrides or self._encodings is None:
+            return
+
+        if self.config.input_file_type != InputFileType.ONNX:
+            raise ValueError(
+                "rvc4.strict_quantization_overrides is currently supported "
+                "only for ONNX input models."
+            )
+
+        validate_quantization_override_names(
+            self._encodings,
+            self._input_model,
+        )

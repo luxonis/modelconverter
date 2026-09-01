@@ -580,24 +580,101 @@ def test_encodings_from_path():
     assert isinstance(cfg.encodings, Encodings)
 
 
-def test_quantization_overrides_extracted():
-    enc_file = MISC_DIR / "qo.json"
+def test_quantization_overrides_separated_form_normalized():
+    enc_file = MISC_DIR / "qo-separated.json"
     enc_file.write_text(
         json.dumps({"activation_encodings": {}, "param_encodings": {}})
     )
     cfg = _rvc4_config(
-        snpe_onnx_to_dlc_args=["--quantization_overrides", str(enc_file)]
+        snpe_onnx_to_dlc_args=[
+            "--foo",
+            "foo-value",
+            "--quantization_overrides",
+            str(enc_file),
+            "--bar",
+            "bar-value",
+        ]
     )
-    assert cfg.snpe_onnx_to_dlc_args == []
+    assert cfg.snpe_onnx_to_dlc_args == [
+        "--foo",
+        "foo-value",
+        "--bar",
+        "bar-value",
+    ]
     assert isinstance(cfg.encodings, Encodings)
 
 
+def test_quantization_overrides_equals_form_normalized():
+    enc_file = MISC_DIR / "qo-equals.json"
+    enc_file.write_text(
+        json.dumps({"activation_encodings": {}, "param_encodings": {}})
+    )
+    cfg = _rvc4_config(
+        snpe_onnx_to_dlc_args=[
+            "--foo",
+            "foo-value",
+            f"--quantization_overrides={enc_file}",
+            "--bar",
+            "bar-value",
+        ]
+    )
+    assert cfg.snpe_onnx_to_dlc_args == [
+        "--foo",
+        "foo-value",
+        "--bar",
+        "bar-value",
+    ]
+    assert isinstance(cfg.encodings, Encodings)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--quantization_overrides"],
+        ["--quantization_overrides", "--foo"],
+        ["--quantization_overrides="],
+    ],
+)
+def test_quantization_overrides_missing_value_raises(args: list[str]):
+    with pytest.raises(ValueError, match="requires a path value"):
+        _rvc4_config(snpe_onnx_to_dlc_args=args)
+
+
+def test_quantization_overrides_multiple_values_raise():
+    first = MISC_DIR / "qo-first.json"
+    second = MISC_DIR / "qo-second.json"
+    payload = json.dumps({"activation_encodings": {}, "param_encodings": {}})
+    first.write_text(payload)
+    second.write_text(payload)
+
+    with pytest.raises(ValueError, match="at most one"):
+        _rvc4_config(
+            snpe_onnx_to_dlc_args=[
+                "--quantization_overrides",
+                str(first),
+                f"--quantization_overrides={second}",
+            ]
+        )
+
+
 def test_quantization_overrides_conflict_raises():
+    enc_file = MISC_DIR / "qo-conflict.json"
+    enc_file.write_text(
+        json.dumps({"activation_encodings": {}, "param_encodings": {}})
+    )
+
     with pytest.raises(ValueError, match="Cannot specify both"):
         _rvc4_config(
-            snpe_onnx_to_dlc_args=["--quantization_overrides", "x.json"],
+            snpe_onnx_to_dlc_args=[f"--quantization_overrides={enc_file}"],
             encodings={"activation_encodings": {}, "param_encodings": {}},
         )
+
+
+def test_strict_quantization_overrides_without_source_is_valid():
+    cfg = _rvc4_config(strict_quantization_overrides=True)
+
+    assert cfg.encodings is None
+    assert cfg.snpe_onnx_to_dlc_args == []
 
 
 def test_fp16_disables_calibration():

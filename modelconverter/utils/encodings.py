@@ -143,8 +143,25 @@ def parse_encodings(value: "ParamValue | Encodings") -> "Encodings":
     )
 
 
-def _non_empty_names(values: Any) -> set[str]:
-    return {value.name for value in values if value.name}
+def validate_quantization_override_names(
+    encodings: "Encodings", model_path: str | Path
+) -> None:
+    """Reject custom encoding names that are absent from the effective ONNX model."""
+    model_names = collect_onnx_tensor_names(model_path)
+    unknown_activation_names = sorted(
+        set(encodings.activation_encodings) - model_names
+    )
+    unknown_parameter_names = sorted(
+        set(encodings.param_encodings) - model_names
+    )
+
+    if unknown_activation_names or unknown_parameter_names:
+        raise ValueError(
+            "Unknown RVC4 quantization override names for model "
+            f"'{model_path}': "
+            f"activation_encodings={unknown_activation_names}; "
+            f"param_encodings={unknown_parameter_names}"
+        )
 
 
 def collect_onnx_tensor_names(
@@ -169,22 +186,5 @@ def collect_onnx_tensor_names(
     return names
 
 
-def validate_quantization_override_names(
-    encodings: "Encodings", model_path: str | Path
-) -> None:
-    """Reject custom encoding names that are absent from the effective ONNX model."""
-    model_names = collect_onnx_tensor_names(model_path)
-    unknown_activation_names = sorted(
-        set(encodings.activation_encodings) - model_names
-    )
-    unknown_parameter_names = sorted(
-        set(encodings.param_encodings) - model_names
-    )
-
-    if unknown_activation_names or unknown_parameter_names:
-        raise ValueError(
-            "Unknown RVC4 quantization override names for model "
-            f"'{model_path}': "
-            f"activation_encodings={unknown_activation_names}; "
-            f"param_encodings={unknown_parameter_names}"
-        )
+def _non_empty_names(values: Any) -> set[str]:
+    return {value.name for value in values if value.name}

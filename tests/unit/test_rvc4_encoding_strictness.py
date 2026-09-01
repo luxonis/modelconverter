@@ -79,7 +79,6 @@ def _write_encodings_file(
     path: Path,
     *,
     activations: list[str] | None = None,
-    params: list[str] | None = None,
 ) -> Path:
     item = {"bitwidth": 8, "dtype": "int"}
     path.write_text(
@@ -88,7 +87,7 @@ def _write_encodings_file(
                 "activation_encodings": {
                     name: [item] for name in activations or []
                 },
-                "param_encodings": {name: [item] for name in params or []},
+                "param_encodings": {},
             }
         )
     )
@@ -153,7 +152,6 @@ def _exporter_for_validation(
     encodings: Encodings | None,
     strict: bool = True,
     input_file_type: InputFileType = InputFileType.ONNX,
-    snpe_onnx_to_dlc_args: list[str] | None = None,
 ) -> RVC4Exporter:
     exporter = RVC4Exporter.__new__(RVC4Exporter)
     exporter._strict_quantization_overrides = strict
@@ -163,7 +161,7 @@ def _exporter_for_validation(
         SingleStageConfig,
         SimpleNamespace(input_file_type=input_file_type),
     )
-    exporter._snpe_onnx_to_dlc = list(snpe_onnx_to_dlc_args or [])
+    exporter._snpe_onnx_to_dlc = []
     return exporter
 
 
@@ -183,40 +181,36 @@ def test_strict_false_does_not_validate_bogus_names(work_dir: Path):
     exporter._validate_quantization_overrides()
 
 
-def test_strict_false_preserves_raw_equals_override(work_dir: Path):
-    raw_arg = (
-        "--quantization_overrides="
-        f"{_write_encodings_file(work_dir / 'raw.json', activations=['bogus'])}"
-    )
-    exporter = _exporter_for_validation(
-        model_path=work_dir / "missing.onnx",
-        encodings=None,
-        strict=False,
-        snpe_onnx_to_dlc_args=[raw_arg],
-    )
-
-    exporter._validate_quantization_overrides()
-
-    assert exporter._snpe_onnx_to_dlc == [raw_arg]
-
-
-def test_raw_quantization_override_paths_accept_mixed_path_args(
+def test_sparse_initializer_name_is_valid_override(
     work_dir: Path,
 ):
-    override_path = work_dir / "encodings.json"
-    args: list[str | Path] = [
-        "-i",
-        work_dir / "model.onnx",
-        "--input_dim",
-        "img",
-        "1,3,32,32",
-        "--quantization_overrides",
-        override_path,
-    ]
+    model_path = _probe_model(work_dir / "sparse.onnx")
+    model = onnx.load(model_path)
 
-    assert RVC4Exporter._raw_quantization_override_paths(args) == [
-        override_path
-    ]
+    values = helper.make_tensor(
+        "sparse_weight",
+        TensorProto.FLOAT,
+        [1],
+        [1.0],
+    )
+    indices = helper.make_tensor(
+        "sparse_indices",
+        TensorProto.INT64,
+        [1],
+        [0],
+    )
+    sparse = helper.make_sparse_tensor(
+        values,
+        indices,
+        [1],
+    )
+    model.graph.sparse_initializer.extend([sparse])
+    onnx.save(model, model_path)
+
+    validate_quantization_override_names(
+        _encodings(params=["sparse_weight"]),
+        model_path,
+    )
 
 
 def test_strict_true_accepts_valid_top_level_onnx_names(work_dir: Path):
@@ -282,16 +276,22 @@ def test_strict_true_rejects_unknown_activation(work_dir: Path):
         )
 
 
-def test_strict_true_rejects_unknown_raw_equals_override(work_dir: Path):
+def test_strict_true_validates_config_normalized_raw_override(
+    work_dir: Path,
+):
     model = _probe_model(work_dir / "probe.onnx")
     encodings_path = _write_encodings_file(
         work_dir / "raw.json", activations=["unknown_activation"]
     )
+    cfg = RVC4Config(
+        strict_quantization_overrides=True,
+        snpe_onnx_to_dlc_args=[f"--quantization_overrides={encodings_path}"],
+    )
+
     exporter = _exporter_for_validation(
         model_path=model,
-        encodings=None,
-        strict=True,
-        snpe_onnx_to_dlc_args=[f"--quantization_overrides={encodings_path}"],
+        encodings=cfg.encodings,
+        strict=cfg.strict_quantization_overrides,
     )
 
     with pytest.raises(
@@ -317,25 +317,6 @@ def test_strict_true_rejects_unknown_parameter(work_dir: Path):
         validate_quantization_override_names(
             _encodings(params=["unknown_parameter"]), model
         )
-
-
-def test_strict_true_rejects_ambiguous_override_sources(work_dir: Path):
-    model = _probe_model(work_dir / "probe.onnx")
-    encodings_path = _write_encodings_file(
-        work_dir / "raw.json", activations=["hidden"]
-    )
-    exporter = _exporter_for_validation(
-        model_path=model,
-        encodings=_encodings(activations=["hidden"]),
-        strict=True,
-        snpe_onnx_to_dlc_args=[f"--quantization_overrides={encodings_path}"],
-    )
-
-    with pytest.raises(
-        ValueError,
-        match=("requires exactly one effective quantization override source"),
-    ):
-        exporter._validate_quantization_overrides()
 
 
 def test_strict_true_reports_both_groups_sorted(work_dir: Path):
