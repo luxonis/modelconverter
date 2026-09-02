@@ -1,3 +1,14 @@
+"""Well-known directories and registries shared across modelconverter.
+
+The same code runs twice: on the host, where it launches the per-backend
+Docker image, and inside that image, where the conversion itself
+happens. The two see different filesystems -- the container has the
+cache bind-mounted at ``/app/shared_with_container`` and writes its
+results to ``/app/output``, while on the host the cache directory and a
+local ``./output`` are used. The constants below settle that choice
+once, at import time, so the rest of the package can just refer to them.
+"""
+
 import os
 from pathlib import Path, PurePosixPath
 from typing import Final
@@ -11,11 +22,11 @@ def in_docker() -> bool:
 
 
 def get_cache_dir() -> Path:
-    """Returns the hidden, auto-managed cache directory used for staged
+    """Return the hidden, auto-managed cache directory used for staged
     inputs and remote downloads.
 
-    Respects C{XDG_CACHE_HOME} and defaults to
-    C{~/.cache/modelconverter}.
+    Respects ``XDG_CACHE_HOME`` and defaults to
+    ``~/.cache/modelconverter``.
     """
     base = os.environ.get("XDG_CACHE_HOME")
     root = Path(base) if base else Path.home() / ".cache"

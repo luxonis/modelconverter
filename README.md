@@ -9,7 +9,7 @@
 [![codecov](https://codecov.io/gh/luxonis/modelconverter/graph/badge.svg?token=EIPEE2RJ1F)](https://codecov.io/gh/luxonis/modelconverter)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-Convert your **ONNX** models to a format compatible with any generation of Luxonis camera using the **Model Compilation Library**.
+Convert your **ONNX**, **OpenVINO IR** and **TensorFlow Lite** models to a format compatible with any generation of Luxonis camera using the **Model Compilation Library**.
 
 `ModelConverter` is in an experimental public beta stage. Some parts might change in the future.
 
@@ -55,10 +55,10 @@ Run `modelconverter --help` to see the available commands and options.
 
 ## Configuration
 
-There are two main ways to execute configure the conversion process:
+There are two main ways to configure the conversion process:
 
 1. **NN Archive**:
-   Alternatively, you can use an [NN Archive](https://docs.luxonis.com/software-v3/ai-inference/nn-archive/#NN%20Archive) as input. An NN Archive includes a model in one of the supported formats—ONNX (.onnx), OpenVINO IR (.xml and .bin), or TensorFlow Lite (.tflite)—alongside a `config.json` file. The config.json file follows a specific configuration format as described under the `Configuration` section.
+   You can use an [NN Archive](https://docs.luxonis.com/software-v3/ai-inference/nn-archive/#NN%20Archive) as input. An NN Archive includes a model in one of the supported formats—ONNX (.onnx), OpenVINO IR (.xml and .bin), or TensorFlow Lite (.tflite)—alongside a `config.json` file. The config.json file follows a specific configuration format as described under the `Configuration` section.
 2. **YAML Configuration File (Legacy)**:
    An alternative way to configure the conversion is through a YAML configuration file. For reference, you can check [defaults.yaml](configs/defaults.yaml) and other examples located in the [configs](configs) directory.
 
@@ -638,7 +638,7 @@ input_path/
     └── ...
 ```
 
-**Note**: The numpy files are sent to the model with no preprocessing, so they must be provided in the correct format and shape.
+**Note**: The files may be images (`.jpg`, `.png`, `.jpeg`), `.npy` arrays or `.raw` buffers. Images are loaded and converted to the format specified in the config. `.npy` and `.raw` files are sent to the model with no preprocessing, so they must be provided in the correct format and shape.
 
 The output files are then saved in a similar structure.
 

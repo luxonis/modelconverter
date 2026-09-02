@@ -1,3 +1,12 @@
+"""Platform-agnostic scaffolding for on-device benchmarking.
+
+Every platform measures throughput and latency with its own
+runtime, but the surrounding work is the same: resolve the model to
+either a path or URL of a model file or a HubAI slug, run it once per
+configuration, and report the collected numbers. That shared part lives in `Benchmark`,
+which the per-platform benchmarks subclass.
+"""
+
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -21,17 +30,19 @@ OptionT = TypeVar("OptionT", bound=str | int | bool)
 def get_option(
     configuration: Configuration, key: str, option_type: type[OptionT]
 ) -> OptionT:
-    """Reads one benchmark option and checks its type.
+    """Read one benchmark option and check its type.
 
-    @type configuration: Configuration
-    @param configuration: The options of a single benchmark run.
-    @type key: str
-    @param key: The name of the option.
-    @type option_type: type[OptionT]
-    @param option_type: The necessary type of the option.
-    @rtype: OptionT
-    @return: The value of the option.
-    @raise TypeError: If the option is missing or has a different type.
+    Args:
+        configuration: The options of a single benchmark run.
+        key: The name of the option.
+        option_type: The necessary type of the option.
+
+    Returns:
+        The value of the option.
+
+    Raises:
+        TypeError: If the option is missing or has a different type.
+
     """
     value = configuration.get(key)
     if not isinstance(value, option_type):
@@ -45,17 +56,19 @@ def get_option(
 def get_optional_option(
     configuration: Configuration, key: str, option_type: type[OptionT]
 ) -> OptionT | None:
-    """As L{get_option}, but the option can also be unset.
+    """Read one benchmark option that may also be unset.
 
-    @type configuration: Configuration
-    @param configuration: The options of a single benchmark run.
-    @type key: str
-    @param key: The name of the option.
-    @type option_type: type[OptionT]
-    @param option_type: The necessary type of the option.
-    @rtype: OptionT | None
-    @return: The value of the option, or C{None} if it is not set.
-    @raise TypeError: If the option has a different type.
+    Args:
+        configuration: The options of a single benchmark run.
+        key: The name of the option.
+        option_type: The necessary type of the option.
+
+    Returns:
+        The value of the option, or ``None`` if it is not set.
+
+    Raises:
+        TypeError: If the option has a different type.
+
     """
     if configuration.get(key) is None:
         return None
@@ -63,12 +76,33 @@ def get_optional_option(
 
 
 class Benchmark(ABC):
+    """Base class for benchmarking a converted model on a device.
+
+    Subclasses implement the platform-specific measurement in
+    `benchmark` and describe what to measure it with in
+    `default_configuration` and `all_configurations`.
+    """
+
     _VALID_EXTENSIONS = (".tar.xz", ".blob", ".dlc")
     _HUB_MODEL_PATTERN = re.compile(
         r"^(?:([^/]+)/)?([^:]+):([^:]+)(?::(.+))?$"
     )
 
     def __init__(self, model_path: str):
+        """Resolve the model to benchmark.
+
+        Args:
+            model_path: Either a local path or a URL of a model file
+                ending in one of the supported extensions, or a HubAI
+                model slug of the form
+                ``[team_name/]model_name:variant[:model_instance]``. A
+                URL is downloaded first.
+
+        Raises:
+            ValueError: If ``model_path`` is neither a supported model
+                file nor a slug of a model available on HubAI.
+
+        """
         self.model_path: PathType
         self._model_instance: str | None
 
@@ -108,21 +142,40 @@ class Benchmark(ABC):
 
     @abstractmethod
     def benchmark(self, configuration: Configuration) -> Result:
-        pass
+        """Run a single benchmark with the given configuration.
+
+        Args:
+            configuration: The options to benchmark with.
+
+        Returns:
+            The measured metrics. Must contain a ``"fps"`` entry and may
+            contain a ``"latency"`` entry.
+
+        """
 
     @property
     @abstractmethod
     def default_configuration(self) -> Configuration:
-        pass
+        """Return the configuration a plain benchmark run uses."""
 
     @property
     @abstractmethod
     def all_configurations(self) -> list[Configuration]:
-        pass
+        """Return the configurations a full benchmark run sweeps."""
 
     def print_results(
         self, results: list[tuple[Configuration, Result]]
     ) -> None:
+        """Print the benchmark results as a table.
+
+        The table is transposed relative to the results: one column per
+        run, one row per configuration option and measured metric.
+
+        Args:
+            results: The configuration/result pairs to print. Must not
+                be empty.
+
+        """
         assert results, "No results to print"
 
         from rich import box
@@ -165,7 +218,8 @@ class Benchmark(ABC):
         result: Result,
     ) -> Iterable[str]:
         """Shared row cells for each result (configuration + fps +
-        latency)."""
+        latency).
+        """
         # configuration values
         for x in configuration.values():
             yield f"[magenta]{x}"
@@ -193,7 +247,16 @@ class Benchmark(ABC):
         self,
         results: list[tuple[Configuration, Result]],
     ) -> list[str]:
-        """Columns to append after the base header (default: none)."""
+        """Return columns to append after the base header.
+
+        Args:
+            results: All benchmark results, as configuration/result
+                pairs.
+
+        Returns:
+            The extra columns. Empty by default.
+
+        """
         return []
 
     def _extra_row_cells(
@@ -201,15 +264,34 @@ class Benchmark(ABC):
         configuration: Configuration,
         result: Result,
     ) -> Iterable[str]:
-        """Extra cells to append after the base row cells (default:
+        """Return extra cells to append after the base row cells.
 
-        none).
+        Args:
+            configuration: The configuration the result was produced
+                with.
+            result: A single benchmark result.
+
+        Returns:
+            The extra cells. Empty by default.
+
         """
         return []
 
     def save_results(
         self, results: list[tuple[Configuration, Result]]
     ) -> None:
+        """Save the benchmark results to a CSV file.
+
+        The file is named ``<model_name>_benchmark_results.csv`` and is
+        written to the current working directory. A nested ``power``
+        column is first split into ``power_system`` and
+        ``power_processor``.
+
+        Args:
+            results: The configuration/result pairs to save. Must not
+                be empty.
+
+        """
         assert results, "No results to save"
         df = pl.DataFrame(
             [configuration | result for configuration, result in results]
@@ -229,6 +311,21 @@ class Benchmark(ABC):
     def run(
         self, full: bool = True, save: bool = False, **kwargs: ConfigValue
     ) -> None:
+        """Benchmark the model and report the results.
+
+        Args:
+            full: If ``True``, benchmark every configuration in
+                `all_configurations`. If ``False``, benchmark only
+                `default_configuration`.
+            save: If ``True``, the results are written to a CSV file in
+                addition to being printed.
+            **kwargs: Overrides for individual configuration options.
+                An override of an option with a non-``None`` default is
+                cast to the type of that default, unless the default is
+                a boolean. In a full run, an override is only applied to
+                configurations that do not set the option themselves.
+
+        """
         logger.info(f"Running benchmarking for {self.model_name}")
         # `all_configurations` names only the options it varies, so the
         # rest have to come from the defaults. An explicit null stays

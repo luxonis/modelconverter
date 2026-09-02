@@ -1,3 +1,12 @@
+"""Helpers shared by the ``modelconverter`` CLI commands.
+
+Turns what the user typed on the command line into what the platform
+packages expect: the directory a run writes its results to, the parsed
+configuration (from a config file or an NN Archive), and the
+preprocessing that is handed to the NN Archive instead of being baked
+into the model.
+"""
+
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,11 +38,11 @@ from modelconverter.utils.types import DataType, Encoding, Platform
 
 
 def resolve_output_dir(output_dir: str) -> Path:
-    """Resolves a user-provided ``--output-dir`` under L{OUTPUTS_DIR}.
+    """Resolve a user-provided ``--output-dir`` under `OUTPUTS_DIR`.
 
     Only the host's ``./output`` is mounted into the container, so an
-    absolute path -- which C{pathlib} would let win over the mount point
-    -- or one escaping upwards through C{..} would be written to a
+    absolute path -- which ``pathlib`` would let win over the mount point
+    -- or one escaping upwards through ``..`` would be written to a
     container-only location and lost when the container is removed. A
     native run writes straight to the host filesystem, where every path
     the user names is reachable, so any path is honored there.
@@ -53,6 +62,31 @@ def resolve_output_dir(output_dir: str) -> Path:
 def get_output_dir_name(
     platform: Platform, name: str, output_dir: str | None
 ) -> Path:
+    """Determine the directory the conversion writes its results to.
+
+    An existing destination is cleared first, but only when it is a
+    directory that a previous conversion produced -- one holding a
+    `CONVERSION_MARKER` file -- or an empty one.
+
+    Args:
+        platform: Platform the model is converted for, used in the
+            generated name.
+        name: Name of the model, sanitized before use.
+        output_dir: Directory named by the user, resolved under
+            `OUTPUTS_DIR`. If ``None``, a directory named
+            ``<name>_to_<platform>_<timestamp>`` is used instead.
+
+    Returns:
+        Path to the output directory. It is not created here.
+
+    Raises:
+        ModelconverterException: If, in a containerized run,
+            ``output_dir`` is empty, absolute or contains ``..``; or if
+            the destination exists but is not a directory, or is a
+            non-empty directory that does not hold the results of a
+            previous conversion.
+
+    """
     name = sanitize_net_name(name)
     date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
     if output_dir is not None:
@@ -78,6 +112,7 @@ def get_output_dir_name(
 
 
 def init_dirs() -> None:
+    """Create the directories a conversion reads from and writes to."""
     for p in [CONFIGS_DIR, MODELS_DIR, OUTPUTS_DIR, CALIBRATION_DIR]:
         logger.debug(f"Creating {p}")
         p.mkdir(parents=True, exist_ok=True)
@@ -88,15 +123,24 @@ def get_configs(
     path: str | None,
     opts: list[str] | Params | None = None,
 ) -> tuple[Config, NNArchiveConfig | None, str | None]:
-    """Sets up the configuration.
+    """Set up the configuration.
 
-    @type path: Optional[str]
-    @param path: Path to the configuration file or NN Archive.
-    @type opts: Optional[List[str]]
-    @param opts: Optional CLI overrides of the config file.
-    @rtype: Tuple[Config, Optional[NNArchiveConfig], Optional[str]]
-    @return: Tuple of the parsed modelconverter L{Config},
-        L{NNArchiveConfig} and the main stage key.
+    Args:
+        platform: Platform the config is built for.
+        path: Path to the configuration file or NN Archive. If
+            ``None``, the config is built from the overrides alone.
+        opts: Optional CLI overrides of the config file. Either a
+            mapping, or a flat list alternating keys and values.
+
+    Returns:
+        Tuple of the parsed modelconverter `Config`, the
+        ``NNArchiveConfig`` if the input was an NN Archive and ``None``
+        otherwise, and the key of the main stage -- ``None`` for a
+        multi-stage config in which no main stage was recognized.
+
+    Raises:
+        ValueError: If ``opts`` is a list of odd length.
+
     """
     opts = opts or []
     # `infer` parses a second config after `convert` has returned, in the same
@@ -138,6 +182,26 @@ def get_configs(
 def extract_preprocessing(
     cfg: Config,
 ) -> tuple[Config, dict[str, PreprocessingBlock]]:
+    """Move the preprocessing out of the config into archive blocks.
+
+    Mean values, scale values and the color encoding are cleared on
+    every input of the config -- so they are not baked into the
+    converted model -- and returned as ``PreprocessingBlock`` objects to
+    be stored in the NN Archive instead. A raw input only gets a block
+    when it has mean or scale values.
+
+    Args:
+        cfg: Single-stage config to take the preprocessing from. Its
+            inputs are modified in place.
+
+    Returns:
+        Tuple of the modified config and the preprocessing blocks keyed
+        by input name.
+
+    Raises:
+        ValueError: If the config has more than one stage.
+
+    """
     if len(cfg.stages) > 1:
         raise ValueError(
             "Only single-stage models are supported with NN archive."

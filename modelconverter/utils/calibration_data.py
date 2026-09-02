@@ -1,3 +1,12 @@
+"""Collection of the images used to calibrate a quantized model.
+
+Quantizing a model for RVC3, RVC4 or Hailo needs a set of
+representative images. This module turns whatever the config points at
+-- a local directory, a remote file, archive or directory, or a view of
+a Luxonis Data Format dataset -- into a local directory of images the
+exporters can read.
+"""
+
 import shutil
 import zipfile
 from pathlib import Path
@@ -18,6 +27,19 @@ from .image import read_calib_dir
 
 
 def read_img_dir(path: Path, max_images: int) -> list[Path]:
+    """Return the calibration images found in a directory.
+
+    Exits the process if the directory contains no images.
+
+    Args:
+        path: Directory to read the images from.
+        max_images: Maximum number of images to use. A negative value
+            means all of them.
+
+    Returns:
+        Paths of the images to calibrate with.
+
+    """
     imgs = read_calib_dir(path)
     if not imgs:
         exit_with(FileNotFoundError(f"No images found in {path}"))
@@ -67,6 +89,26 @@ def _get_from_remote(string: str, dest: Path, max_images: int = -1) -> Path:
 
 
 def download_calibration_data(string: str, max_images: int = -1) -> Path:
+    """Resolve a calibration data specification to a local directory.
+
+    Args:
+        string: What to calibrate with. Either a remote URL, which is
+            downloaded and, if it is a ``.zip``, extracted; a path to a
+            local directory; or an LDF dataset specification of the
+            form ``<dataset_name>:<split>`` or
+            ``<dataset_name>:<split>:<loader_plugin>``.
+        max_images: Maximum number of files to download from a remote
+            directory. A negative value means no limit.
+
+    Returns:
+        Path to the local directory holding the calibration images.
+
+    Raises:
+        ModelconverterException: If the local path exists but is not a
+            directory, or if the string is neither an existing path nor
+            a well-formed LDF specification.
+
+    """
     protocol = get_protocol(string)
     if protocol != "file":
         return _get_from_remote(string, CALIBRATION_DIR, max_images)
@@ -93,6 +135,26 @@ def download_calibration_data(string: str, max_images: int = -1) -> Path:
 def load_from_ldf(
     dataset_name: str, view: str, loader_plugin: str | None = None
 ) -> Path:
+    """Write the images of an LDF dataset view out as calibration data.
+
+    The images are saved as PNG files into a per-dataset subdirectory
+    of the calibration data directory.
+
+    Args:
+        dataset_name: Name of the ``LuxonisDataset`` to load. With
+            ``loader_plugin`` given, it only names the directory the
+            images are written to.
+        view: Name of the dataset view (split) to load.
+        loader_plugin: Name of a loader registered in the ``loaders``
+            registry to use instead of ``LuxonisLoader``.
+
+    Returns:
+        Path to the directory the images were written to.
+
+    Raises:
+        NotImplementedError: If the dataset has more than one input.
+
+    """
     calibration_data_dir = CALIBRATION_DIR / f"{dataset_name}"
     calibration_data_dir.mkdir(parents=True, exist_ok=True)
     if loader_plugin:

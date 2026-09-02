@@ -1,3 +1,12 @@
+"""Inference with a Hailo model through the Hailo SDK.
+
+Holds the `Inferer` implementation the ``infer`` command uses for the
+Hailo platform: the converted HAR model is loaded with
+``hailo_sdk_client`` and run in the SDK's quantized inference context.
+It only works inside the Hailo Docker image, where that SDK is
+installed.
+"""
+
 import contextlib
 from io import StringIO
 from pathlib import Path
@@ -11,7 +20,21 @@ from modelconverter.utils import read_image
 
 
 class HailoInferer(Inferer):
+    """Inferer for Hailo HAR models based on the Hailo SDK client."""
+
     def setup(self) -> None:
+        """Load the HAR model and collect the output names.
+
+        The names are taken from the inverse postprocess map recorded
+        in the model metadata, which only a HAR translated from ONNX
+        carries, and from the original names of the output layers.
+
+        Raises:
+            RuntimeError: If the model carries no original metadata.
+            NotImplementedError: If the inverse postprocess map holds
+                more than one entry.
+
+        """
         self._runner = ClientRunner(
             hw_arch=self.config.hailo.hw_arch
             if self.config is not None
@@ -38,6 +61,23 @@ class HailoInferer(Inferer):
                 self._output_names.extend(params["original_names"])
 
     def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+        """Run the model on a single set of input files.
+
+        Every file is read according to the input it belongs to: an
+        image is converted, while ``.npy`` and ``.raw`` data is loaded
+        as is and must already be laid out as ``CHW``. The result is
+        handed to the runner as a channels-last batch of one, keyed by
+        the name of the matching HN layer. Whatever the SDK prints to
+        stdout and stderr while inferring is discarded.
+
+        Args:
+            inputs: Path to the image, ``.npy`` or ``.raw`` file for
+                every model input, keyed by input name.
+
+        Returns:
+            The model outputs, keyed by output name.
+
+        """
         stdout = stderr = StringIO()
         arr_inputs = {
             HailoExporter._get_hn_layer_info(self._runner, name)[

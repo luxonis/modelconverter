@@ -1,3 +1,10 @@
+"""General-purpose helpers shared across modelconverter.
+
+Holds the small utilities that fit nowhere more specific: sanitizing
+model names into something the conversion tools accept, and formatting
+or parsing the byte sizes used to report on and bound the disk cache.
+"""
+
 import re
 from pathlib import Path
 
@@ -14,11 +21,22 @@ def sanitize_net_name(name: str, with_suffix: bool = False) -> str:
     If input is a path, only sanitize the basename. If input is a name,
     sanitize the whole string. Collapse multiple underscores.
 
-    @type name: str
-    @param name: The name or path to sanitize.
-    @type with_suffix: bool
-    @param with_suffix: If True, the suffix (file extension) is
-        preserved and not sanitized.
+    Args:
+        name: The name or path to sanitize.
+        with_suffix: If ``True``, the suffix (file extension) is
+            preserved and not sanitized.
+
+    Returns:
+        The sanitized name or path.
+
+    Example:
+        >>> sanitize_net_name("my model!.onnx")
+        'my_model_onnx'
+        >>> sanitize_net_name("my model!.onnx", with_suffix=True)
+        'my_model_.onnx'
+        >>> sanitize_net_name("a/b/my model!.onnx")
+        'a/b/my_model_onnx'
+
     """
     p = Path(name)
     base, stem, suffix = p.name, p.stem, p.suffix
@@ -56,6 +74,22 @@ def sanitize_net_name(name: str, with_suffix: bool = False) -> str:
 
 
 def human_size(num: float) -> str:
+    """Format a number of bytes for display.
+
+    Args:
+        num: Size in bytes.
+
+    Returns:
+        The size with one decimal place and a binary unit, such as
+        ``"1.5 GiB"``.
+
+    Example:
+        >>> human_size(1536)
+        '1.5 KiB'
+        >>> human_size(5 * 1024**3)
+        '5.0 GiB'
+
+    """
     # The table stops where `parse_size` does: a size shown here is one a
     # user may hand back as a cache budget.
     for unit in ("B", "KiB", "MiB", "GiB"):
@@ -66,7 +100,7 @@ def human_size(num: float) -> str:
 
 
 def dir_stats(path: Path) -> tuple[int, int]:
-    """Returns the total size (bytes) and number of files under ``path``.
+    """Return the total size (bytes) and number of files under ``path``.
 
     Entries that cannot be stat'ed are skipped: a container run killed
     before its entrypoint could chown the mounts back leaves root-owned
@@ -92,14 +126,32 @@ _SIZE_PATTERN = re.compile(
 
 
 def parse_size(value: str | int) -> int:
-    """Parses a human-written byte size such as ``"50GiB"`` into bytes.
+    """Parse a human-written byte size such as ``"50GiB"`` into bytes.
 
     The unit is optional and its prefixes are binary, matching
-    L{human_size} on the way out and Docker's own byte values on the way
+    `human_size` on the way out and Docker's own byte values on the way
     in: ``50G``, ``50GB`` and ``50GiB`` all mean the same 50 * 1024^3
     bytes, and a bare number is a count of bytes.
 
-    @raises ValueError: If C{value} is not a size.
+    Args:
+        value: Size to parse. An integer is returned unchanged.
+
+    Returns:
+        The size in bytes.
+
+    Raises:
+        ValueError: If ``value`` is not a size.
+
+    Example:
+        >>> parse_size("50GiB")
+        53687091200
+        >>> parse_size("50GB")
+        53687091200
+        >>> parse_size("512m")
+        536870912
+        >>> parse_size(1024)
+        1024
+
     """
     if isinstance(value, int):
         return value

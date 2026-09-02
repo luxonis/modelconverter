@@ -1,3 +1,13 @@
+"""Base class of the per-platform model analyzers.
+
+An analyzer inspects a converted model layer by layer on a connected
+device: it compares the output of every layer against the ONNX model the
+conversion started from, and measures the cycles each layer takes. Only
+the RVC4 package implements it. The analyzer runs on the host and calls
+the SNPE tools there, so ``snpe-dlc-info`` and ``snpe-diagview`` must
+be on the host ``PATH``.
+"""
+
 import io
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -8,7 +18,38 @@ from modelconverter.utils import resolve_path, subprocess_run
 
 
 class Analyzer(ABC):
+    """Base class for the layer-wise analysis of a DLC model.
+
+    Reads the names and shapes of the model's inputs and outputs, and
+    the data types of its inputs, from ``snpe-dlc-info``, and checks
+    the directories holding the images the analysis is run on.
+
+    Attributes:
+        _image_dirs: Resolved image directory per model input.
+        _dlc_model_path: Resolved path to the analyzed DLC model.
+        _model_name: Name of the model, taken from its file name.
+        _input_sizes: Shape of each input of the DLC model.
+        _data_types: Data type of each input of the DLC model.
+        _output_sizes: Shape of each output layer of the DLC model.
+
+    """
+
     def __init__(self, dlc_model_path: str, image_dirs: dict[str, str]):
+        """Initialize the analyzer and read the model's layer shapes.
+
+        Args:
+            dlc_model_path: Path to the DLC model to analyze.
+            image_dirs: Directory of input images per model input, keyed
+                by input name. All of them must hold the same number of
+                files. A single directory keyed by any name is matched
+                to the only input of a single-input model.
+
+        Raises:
+            ValueError: If the directories do not all hold the same
+                number of files, if there are no directories, or if an
+                input name matches none of the model's inputs.
+
+        """
         self._image_dirs: dict[str, Path] = {}
         for key, value in image_dirs.items():
             self._image_dirs[key] = resolve_path(value, Path.cwd())
@@ -20,10 +61,18 @@ class Analyzer(ABC):
         self._output_sizes: dict[str, list[int]] = self._get_output_sizes()
 
     @abstractmethod
-    def analyze_layer_outputs(self, onnx_model_path: Path) -> None: ...
+    def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
+        """Compare the layer outputs against the original ONNX model.
+
+        Args:
+            onnx_model_path: Path to the ONNX model the analyzed model
+                was converted from.
+
+        """
 
     @abstractmethod
-    def analyze_layer_cycles(self) -> None: ...
+    def analyze_layer_cycles(self) -> None:
+        """Measure the cycles each layer of the model takes."""
 
     def _get_input_sizes(self) -> tuple[dict[str, list[int]], dict[str, str]]:
         csv_path = Path("info.csv")

@@ -1,14 +1,34 @@
+"""Guessing of tensor layouts from tensor shapes.
+
+A layout is a lettercode such as ``"NCHW"`` naming every dimension of
+a tensor. Conversion needs one for each input and output -- to know
+which axes are spatial, and how an image has to be laid out before it
+is fed to the model -- but a model rarely states it, and the vendor
+toolchains reorder the dimensions along the way. The helpers here
+recover a plausible layout from a shape alone, and carry a known
+layout over to a reordered shape.
+"""
+
+
 def make_default_layout(shape: list[int]) -> str:
-    """Creates a default layout for the given shape.
+    """Create a default layout for the given shape.
 
     Tries to guess most common layouts for the given shape pattern.
-    Otherwise, uses the first free letter of the alphabet for each dimension.
+    Otherwise, starts at ``C`` and gives each remaining dimension the
+    next letter that is not in use yet.
+
+    Args:
+        shape: Shape to create the layout for.
+
+    Returns:
+        Lettercode representation of the layout.
 
     Example:
         >>> make_default_layout([1, 3, 256, 256])
-        >>> "NCHW"
+        'NCHW'
         >>> make_default_layout([1, 19, 7, 8])
-        >>> "NABC"
+        'NCDE'
+
     """
     layout = []
     i = 0
@@ -33,28 +53,28 @@ def make_default_layout(shape: list[int]) -> str:
 def guess_new_layout(
     old_layout: str, old_shape: list[int], new_shape: list[int]
 ) -> str:
-    """Tries to guess the layout of the new shape.
+    """Guess the layout of the new shape.
 
-    The new shape must contain the same elements as the old one.
-    If two values are the same, the order of their labels will be preserved.
+    The new shape must contain the same elements as the old one. If two
+    values are the same, the order of their labels will be preserved.
+
+    Args:
+        old_layout: Layout that describes ``old_shape``.
+        old_shape: Shape the layout is known for.
+        new_shape: Reordering of ``old_shape`` to label.
+
+    Returns:
+        Lettercode representation of the new layout.
+
+    Raises:
+        ValueError: If the new shape has a different length than the old
+            layout, or does not contain the same elements as the old
+            shape.
 
     Example:
-        >>> old_shape = [1, 3, 256, 256]
-        >>> old_layout = "NCHW"
-        >>> guess_new_layout(old_layout, old_shape, [1, 256, 256, 3])
-        >>> "NHWC"
+        >>> guess_new_layout("NCHW", [1, 3, 256, 256], [1, 256, 256, 3])
+        'NHWC'
 
-    @type old_layout: str
-    @param old_layout: Old layout
-
-    @type old_shape: List[int]
-    @param old_shape: Old shape
-
-    @type other: List[int]
-    @param other: New shape to guess the layout of
-
-    @rtype: str
-    @return: Lettercode representation of the new layout
     """
     if len(new_shape) != len(old_layout):
         raise ValueError(

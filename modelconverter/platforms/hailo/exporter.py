@@ -1,3 +1,11 @@
+"""Export of models to the Hailo ``.hef`` format.
+
+Drives the ``hailo_sdk_client`` toolchain: the model is translated to
+the Hailo IR, optionally quantized using the configured calibration
+images and finally compiled for the selected Hailo hardware
+architecture. Requires the Hailo Docker image, which provides the SDK.
+"""
+
 import os
 import shutil
 from pathlib import Path
@@ -19,9 +27,28 @@ from modelconverter.utils.types import Platform
 
 
 class HailoExporter(Exporter):
+    """Exporter producing models for Hailo devices.
+
+    Translates the input model to the Hailo IR, calibrates it on the
+    configured calibration images and compiles it into a ``.hef``
+    binary. Calibration and compilation can be disabled individually,
+    in which case an intermediate ``.har`` model is produced instead.
+    """
+
     platform: Platform = Platform.HAILO
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
+        """Initialize the exporter.
+
+        If TensorFlow reports no available GPU, the optimization and
+        compression levels are lowered to ``0``.
+
+        Args:
+            config: Configuration of the model being converted.
+            output_dir: Directory the exported model and the
+                intermediate artifacts are written to.
+
+        """
         super().__init__(config=config, output_dir=output_dir)
         self._force_onnx_names_enabled = config.hailo.force_onnx_names
         self._optimization_level = config.hailo.optimization_level
@@ -47,6 +74,15 @@ class HailoExporter(Exporter):
         return start_nodes, net_input_shapes
 
     def export(self) -> Path:
+        """Translate, calibrate and compile the model.
+
+        Returns:
+            Path to the compiled ``.hef`` model. If calibration is
+            disabled, the path to the translated ``.har`` model is
+            returned instead; if only compilation is disabled, the path
+            to a copy of the quantized ``.har`` model is returned.
+
+        """
         runner = ClientRunner(hw_arch=self._hw_arch)
         start_nodes, net_input_shapes = self._get_start_nodes()
 
@@ -263,6 +299,14 @@ class HailoExporter(Exporter):
         return "\n".join(alls)
 
     def exporter_buildinfo(self) -> Params:
+        """Return Hailo-specific information about the conversion.
+
+        Returns:
+            Dictionary with the version of the Hailo SDK, the
+            optimization and compression levels and the model script
+            (``alls``) used for calibration.
+
+        """
         return {
             "hailo_version": hailo_sdk_client.__version__,
             "optimization_level": self._optimization_level,

@@ -1,4 +1,4 @@
-pre-commit~=4.6
+prek~=0.4.13
 # The type gate runs this exact release, so a new pyright cannot turn CI red
 # on its own. Raise it deliberately.
 pyright==1.1.411
