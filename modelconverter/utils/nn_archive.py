@@ -1,5 +1,4 @@
 import json
-import os
 import tarfile
 from itertools import pairwise
 from pathlib import Path
@@ -24,12 +23,7 @@ from modelconverter.utils.config import (
     InputConfig,
     PlatformConfig,
 )
-from modelconverter.utils.constants import (
-    HOST_OUTPUT_DIR_ENV_VAR,
-    MISC_DIR,
-    OUTPUTS_DIR,
-    in_docker,
-)
+from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
 from modelconverter.utils.metadata import Metadata, get_metadata
 from modelconverter.utils.types import (
@@ -45,37 +39,6 @@ def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
         if inp.name == name:
             return inp
     raise ValueError(f"Input {name} not found in the archive config")
-
-
-def _join_display_path(root: str, relative: Path) -> str:
-    relative_display = relative.as_posix()
-    if relative_display == ".":
-        return root
-
-    use_backslash = "\\" in root and "/" not in root
-    separator = "\\" if use_backslash else "/"
-    if use_backslash:
-        relative_display = relative_display.replace("/", separator)
-
-    clean_root = root.rstrip("/\\")
-    if not clean_root:
-        return f"{separator}{relative_display}"
-    return f"{clean_root}{separator}{relative_display}"
-
-
-def _archive_display_path(archive: Path) -> str:
-    host_output_dir = os.environ.get(HOST_OUTPUT_DIR_ENV_VAR)
-    if not in_docker() or not host_output_dir:
-        return str(archive)
-
-    try:
-        relative = archive.relative_to(OUTPUTS_DIR)
-    except ValueError:
-        return str(archive)
-
-    if ".." in relative.parts:
-        return str(archive)
-    return _join_display_path(host_output_dir, relative)
 
 
 def process_nn_archive(
@@ -578,9 +541,7 @@ def generate_archive(
             output_path / "buildinfo.json",
         ],
     )
-    archive = generator.make_archive()
-    logger.info(f"Model exported to {_archive_display_path(archive)}")
-    return archive
+    return generator.make_archive()
 
 
 def _get_io_dtype(
