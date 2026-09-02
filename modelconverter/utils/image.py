@@ -1,3 +1,11 @@
+"""Loading of calibration and inference input data.
+
+Calibration data is provided as a directory of images or of raw arrays.
+This module finds those files and turns a single one of them into the
+array shape, color encoding and data type that the exporters and
+inferers of the individual platforms feed to their models.
+"""
+
 from itertools import chain
 from pathlib import Path
 
@@ -18,6 +26,39 @@ def read_image(
     transpose: bool = True,
     layout: str | None = None,
 ) -> np.ndarray:
+    """Read a single calibration or inference input from a file.
+
+    ``.npy`` files are loaded as they are and ``.raw`` files are read as
+    a flat buffer of ``data_type`` reshaped to ``shape``. Any other file
+    is opened as an image, converted to ``encoding``, and fitted to the
+    height and width taken from ``shape``.
+
+    Args:
+        path: Path of the file to read.
+        shape: Shape of the model input the file is read for.
+        encoding: Color encoding the image is converted to. Ignored for
+            ``.npy`` and ``.raw`` files.
+        resize_method: How the image is fitted to the requested height
+            and width. Ignored for ``.npy`` and ``.raw`` files.
+        data_type: Data type the resulting array is cast to. Images are
+            cast to ``uint8`` if it is ``None``. Required for ``.raw``
+            files and ignored for ``.npy`` files.
+        transpose: If ``True``, the image is transposed from ``HWC`` to
+            ``CHW``. Ignored for ``.npy`` and ``.raw`` files.
+        layout: Lettercode layout of ``shape``, used to find the ``H``,
+            ``W``, and ``C`` axes. If it is ``None``, its length does
+            not match ``shape``, or it lacks ``H`` or ``W``, the axes
+            are guessed from the number of dimensions.
+
+    Returns:
+        The loaded data as a ``numpy.ndarray``.
+
+    Raises:
+        ModelconverterException: If a ``.raw`` file is read without
+            ``data_type``, or if ``shape`` has a length that cannot be
+            interpreted as an image.
+
+    """
     path = Path(path)
     if path.suffix == ".npy":
         return np.load(path)
@@ -111,6 +152,16 @@ def read_image(
 
 
 def read_calib_dir(path: Path) -> list[Path]:
+    """Collect the calibration files in a directory.
+
+    Args:
+        path: Directory to search. It is not searched recursively.
+
+    Returns:
+        Paths of the ``.jpg``, ``.png``, ``.jpeg``, ``.npy``, and
+        ``.raw`` files in the directory.
+
+    """
     return list(
         chain(
             *[

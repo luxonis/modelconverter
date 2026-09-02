@@ -1,3 +1,5 @@
+"""Tests for RVC4 quantization override strictness."""
+
 import json
 import struct
 from pathlib import Path

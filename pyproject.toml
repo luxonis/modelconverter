@@ -56,6 +56,7 @@ select = [
   "ASYNC",
   "B",
   "C4",
+  "D",
   "DTZ",
   "E",
   "ERA",
@@ -97,7 +98,11 @@ ignore = [
   "ANN003",
   "ANN204",
   "ANN401",
-  "D1",
+  "D202",
+  "D203",
+  "D205",
+  "D212",
+  "D213",
   "E501",
   "ICN002",
   "NPY002",
@@ -125,8 +130,11 @@ ignore = [
 ]
 unfixable = ["B905", "PLC0208"]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["ANN201"]
+"tests/*" = ["ANN201", "D103"]
 "__main__.py" = ["ANN201"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
@@ -134,7 +142,7 @@ unfixable = ["B905", "PLC0208"]
 
 [tool.docformatter]
 black = true
-style = "epytext"
+style = "google"
 wrap-summaries = 72
 wrap-descriptions = 72
 

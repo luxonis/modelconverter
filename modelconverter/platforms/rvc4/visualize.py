@@ -1,3 +1,12 @@
+"""Visualization of the RVC4 analysis results.
+
+Turns the CSV reports written by the RVC4 analyzer into interactive
+``plotly`` figures: one comparing the per-layer outputs of the
+quantized model with the original ONNX model, and one comparing the
+per-layer inference times. Both are saved as HTML files that load
+``plotly.js`` from a CDN.
+"""
+
 from pathlib import Path
 
 import plotly.graph_objects as go
@@ -8,7 +17,23 @@ from modelconverter.utils import constants
 
 
 class RVC4Visualizer(Visualizer):
+    """Visualizer of the CSV reports produced by the RVC4 analyzer.
+
+    Collects the layer comparison and layer cycles CSV files lying
+    directly in the analysis directory -- keyed by the name of that
+    directory, which the analyzer names after the model -- and plots
+    one series per key.
+    """
+
     def __init__(self, dir_path: str | None = None) -> None:
+        """Initialize the visualizer and locate the CSV reports.
+
+        Args:
+            dir_path: Directory containing the analysis results. If
+                ``None``, the ``analysis`` subdirectory of the default
+                output directory is used.
+
+        """
         super().__init__(dir_path=dir_path)
         self._layer_csvs = self._get_csv_paths(
             dir_path=self._dir_path, comparison_type="layer_comparison"
@@ -18,6 +43,12 @@ class RVC4Visualizer(Visualizer):
         )
 
     def visualize(self) -> None:
+        """Create, save and show the analysis figures.
+
+        Writes ``layer_outputs_visual.html`` and
+        ``layer_cycles_visual.html`` into the analysis directory and
+        opens both figures.
+        """
         fig_layers = self._visualize_layer_outputs()
         fig_layers.write_html(
             self._dir_path / "layer_outputs_visual.html",

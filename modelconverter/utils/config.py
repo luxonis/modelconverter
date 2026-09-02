@@ -1,3 +1,18 @@
+"""Configuration models describing a conversion.
+
+A conversion is described by a YAML file (see ``configs/defaults.yaml``)
+that is parsed into the pydantic models defined here. The top-level
+`Config` holds one `SingleStageConfig` per stage, each describing the
+input model, its inputs and outputs, the calibration data and the
+platform-specific options (`HailoConfig`, `RVC2Config`, `RVC3Config` and
+`RVC4Config`).
+
+Values that the user did not provide are filled in from the metadata of
+the input model itself, so that the exporter running inside the
+per-backend Docker image receives a fully resolved description of the
+model.
+"""
+
 import warnings
 from itertools import chain
 from pathlib import Path
@@ -51,6 +66,22 @@ NAMED_VALUES = {
 
 
 class LinkCalibrationConfig(BaseModelExtraForbid):
+    """Calibration data produced by another stage of the conversion.
+
+    Used for multi-stage models, where the calibration data of one stage
+    is obtained by running inference with a previously converted stage.
+
+    Attributes:
+        stage: Name of the stage to take the calibration data from.
+        output: Name of the output of ``stage`` to use as the
+            calibration data.
+        script: Python script post-processing the outputs of ``stage``.
+            Either the source code itself or a path to a ``.py`` file,
+            whose contents are read during validation. Either ``output``
+            or ``script`` must be provided.
+
+    """
+
     stage: str
     output: str | None = None
     script: str | None = None
@@ -75,6 +106,19 @@ class LinkCalibrationConfig(BaseModelExtraForbid):
 
 
 class ImageCalibrationConfig(BaseModelExtraForbid):
+    """Calibration data read from a directory of files.
+
+    Attributes:
+        path: Path to the calibration data. Can be a local directory, a
+            remote URL, or an LDF dataset identifier in the
+            ``<dataset_name>:<split>`` form; it is downloaded during
+            validation and stored as a local path.
+        max_images: Number of files to use from the calibration data.
+            A negative value means all of them.
+        resize_method: How to resize the images to the input shape.
+
+    """
+
     path: Path
     max_images: int = -1
     resize_method: ResizeMethod = ResizeMethod.RESIZE
@@ -88,6 +132,21 @@ class ImageCalibrationConfig(BaseModelExtraForbid):
 
 
 class RandomCalibrationConfig(BaseModelExtraForbid):
+    """Calibration data generated from a normal distribution.
+
+    Used when no calibration data is provided. The generated values are
+    drawn from a normal distribution and clipped to the allowed range.
+
+    Attributes:
+        max_images: Number of samples to generate.
+        min_value: Lower bound the generated values are clipped to.
+        max_value: Upper bound the generated values are clipped to.
+        mean: Mean of the normal distribution.
+        std: Standard deviation of the normal distribution.
+        data_type: Data type the generated samples are cast to.
+
+    """
+
     max_images: int = 20
     min_value: float = 0.0
     max_value: float = 255.0
@@ -97,6 +156,19 @@ class RandomCalibrationConfig(BaseModelExtraForbid):
 
 
 class OutputConfig(BaseModelExtraForbid):
+    """Description of a single output of the model.
+
+    Attributes:
+        name: Name of the output tensor or node.
+        shape: Shape of the output. Inferred from the model if not
+            provided.
+        layout: Lettercode representation of the layout, e.g. ``"NCHW"``.
+            Requires ``shape`` to be provided; a default layout is
+            guessed from the shape if only ``shape`` is given.
+        data_type: Data type of the output.
+
+    """
+
     name: str
     shape: list[int] | None = None
     layout: str | None = None
@@ -120,6 +192,16 @@ class OutputConfig(BaseModelExtraForbid):
 
     @model_validator(mode="after")
     def validate_layout(self) -> Self:
+        """Check that the layout and the shape have the same length.
+
+        Returns:
+            The validated model.
+
+        Raises:
+            ValueError: If the length of the layout does not match the
+                length of the shape.
+
+        """
         if self.shape is None:
             return self
         assert self.layout is not None
@@ -132,13 +214,46 @@ class OutputConfig(BaseModelExtraForbid):
 
 
 class EncodingConfig(BaseModelExtraForbid):
-    from_: Annotated[
-        Encoding, Field(alias="from", serialization_alias="from")
-    ] = Encoding.RGB
+    """Color encoding conversion requested for an input.
+
+    The ``from`` field, named ``from_`` in Python, is the encoding the
+    original model expects. The ``to`` field is the encoding the
+    converted model is fed with at runtime. If the two differ, a
+    channel reversal is prepended to the input, so that the converted
+    model takes ``to`` data while the original graph still receives
+    ``from`` data.
+    """
+
+    from_: Encoding = Field(
+        default=Encoding.RGB, alias="from", serialization_alias="from"
+    )
     to: Encoding = Encoding.BGR
 
 
 class InputConfig(OutputConfig):
+    """Description of a single input of the model.
+
+    Extends `OutputConfig` with the pre-processing and calibration
+    settings of the input. Each conversion applies ``mean_values`` and
+    ``scale_values`` in its own way: the RVC4 exporter bakes them into
+    the ONNX graph, RVC2 and RVC3 hand them to the OpenVINO model
+    optimizer, and Hailo puts them in the model script.
+
+    Attributes:
+        calibration: Source of the calibration data for this input.
+        scale_values: Per-channel values the input is divided by, after
+            ``mean_values`` has been subtracted. Can be given as a
+            single number, a list, or the name of a preset such as
+            ``"imagenet"``.
+        mean_values: Per-channel values subtracted from the input, with
+            the same options as ``scale_values``.
+        frozen_value: List of constant values the input is frozen to.
+            Used only by the OpenVINO-based conversions (RVC2 and
+            RVC3), which pass it on to the model optimizer.
+        encoding: Color encoding conversion for this input.
+
+    """
+
     calibration: (
         ImageCalibrationConfig
         | RandomCalibrationConfig
@@ -151,14 +266,17 @@ class InputConfig(OutputConfig):
 
     @property
     def encoding_mismatch(self) -> bool:
+        """Return whether the ``from`` and ``to`` encodings differ."""
         return self.encoding.from_ != self.encoding.to
 
     @property
     def is_color_input(self) -> bool:
+        """Return whether the input is fed with color image data."""
         return self.encoding.from_ in {Encoding.RGB, Encoding.BGR}
 
     @property
     def is_raw_input(self) -> bool:
+        """Return whether the input is fed with non-image data."""
         return (
             self.encoding.from_ == Encoding.NONE
             and self.encoding.to == Encoding.NONE
@@ -218,20 +336,20 @@ class InputConfig(OutputConfig):
     @field_validator("scale_values", mode="before")
     @staticmethod
     def _parse_scale_values(value: ParamValue) -> ParamValue:
-        """Parses the scale_values from the config."""
+        """Parse the scale_values from the config."""
         return InputConfig._parse_values("scale", value)
 
     @field_validator("mean_values", mode="before")
     @staticmethod
     def _parse_mean_values(value: ParamValue) -> ParamValue:
-        """Parses the mean_values from the config."""
+        """Parse the mean_values from the config."""
         return InputConfig._parse_values("mean", value)
 
     @staticmethod
     def _parse_values(
         values_type: Literal["mean", "scale"], value: ParamValue
     ) -> ParamValue:
-        """Resolves named values from the config."""
+        """Resolve named values from the config."""
         if value is None:
             return None
         if isinstance(value, str) and value in NAMED_VALUES:
@@ -243,6 +361,19 @@ class InputConfig(OutputConfig):
     def requires_onnx_input_modification(
         self, *, reverse_only: bool = False
     ) -> bool:
+        """Check whether the ONNX graph must be modified for this input.
+
+        Args:
+            reverse_only: If ``True``, only the channel reversal is
+                taken into account and the mean and scale values are
+                ignored.
+
+        Returns:
+            ``True`` if the encodings differ or -- unless
+            ``reverse_only`` is set -- if any non-neutral mean or scale
+            values are set.
+
+        """
         if self.encoding_mismatch:
             return True
         if reverse_only:
@@ -257,10 +388,35 @@ class InputConfig(OutputConfig):
 
 
 class PlatformConfig(BaseModelExtraForbid):
+    """Base class for the platform-specific sections of a stage.
+
+    Attributes:
+        disable_calibration: Whether to skip calibration, and with it
+            the quantization of the model.
+
+    """
+
     disable_calibration: bool = False
 
 
 class HailoConfig(PlatformConfig):
+    """Options of the Hailo conversion.
+
+    Attributes:
+        force_onnx_names: Whether to force the ONNX names on the
+            produced ``.har`` and ``.hef`` models.
+        optimization_level: Optimization level, between ``0`` and ``4``,
+            or ``-100`` to disable all optimizations.
+        compression_level: Compression level, between ``0`` and ``5``.
+        batch_size: Batch size used for the calibration.
+        disable_compilation: Whether to stop after the quantization,
+            without compiling the model.
+        alls: Additional lines of the Hailo model script (``alls``)
+            passed to the model optimizer.
+        hw_arch: Hailo hardware architecture to compile for.
+
+    """
+
     force_onnx_names: bool = True
     optimization_level: Literal[-100, 0, 1, 2, 3, 4] = 2
     compression_level: Literal[0, 1, 2, 3, 4, 5] = 2
@@ -273,12 +429,41 @@ class HailoConfig(PlatformConfig):
 
 
 class BlobBaseConfig(PlatformConfig):
+    """Options shared by the OpenVINO-based platforms.
+
+    Base class for the RVC2 and RVC3 configurations, which both convert
+    the model through OpenVINO into a blob.
+
+    Attributes:
+        mo_args: Additional arguments passed to the OpenVINO model
+            optimizer. They take precedence over the default ones.
+        compile_tool_args: Additional arguments passed to the OpenVINO
+            ``compile_tool``. They take precedence over the default
+            ones.
+        compress_to_fp16: Whether to compress FP32 weights and biases of
+            the original model to FP16. All intermediate data is kept in
+            the original precision.
+
+    """
+
     mo_args: list[str] = []
     compile_tool_args: list[str] = []
     compress_to_fp16: bool = True
 
 
 class RVC2Config(BlobBaseConfig):
+    """Options of the RVC2 conversion.
+
+    Attributes:
+        number_of_shaves: Number of SHAVE cores the blob is compiled
+            for. Forced to ``8`` when ``superblob`` is enabled.
+        superblob: Whether to produce a ``.superblob`` file instead of a
+            regular ``.blob``.
+        n_workers: Number of workers used for the parallel superblob
+            compilation. Overrides the automatically determined number.
+
+    """
+
     number_of_shaves: int = 8
     superblob: bool = True
     n_workers: PositiveInt | None = None
@@ -293,10 +478,34 @@ class RVC2Config(BlobBaseConfig):
 
 
 class RVC3Config(BlobBaseConfig):
+    """Options of the RVC3 conversion.
+
+    Attributes:
+        pot_target_device: Target device of the OpenVINO
+            post-training optimization tool.
+
+    """
+
     pot_target_device: PotDevice = PotDevice.VPU
 
 
 class QuantizationOverridesItem(BaseModelExtraForbid):
+    """Quantization encoding of a single tensor.
+
+    Follows the AIMET encoding specification and is used to override the
+    quantization parameters computed during the RVC4 conversion.
+
+    Attributes:
+        bitwidth: Number of bits used to represent the tensor.
+        is_symmetric: Whether the quantization is symmetric.
+        dtype: Whether the tensor is quantized as an integer or a float.
+        max: Largest representable value.
+        min: Smallest representable value.
+        offset: Zero-point offset of the quantization grid.
+        scale: Step size of the quantization grid.
+
+    """
+
     bitwidth: Annotated[int, Literal[4, 8, 16, 32]] | None = None
     is_symmetric: bool | None = None
     dtype: Literal["int", "float"] | None = None
@@ -308,17 +517,66 @@ class QuantizationOverridesItem(BaseModelExtraForbid):
     @field_serializer("is_symmetric", when_used="json")
     @staticmethod
     def serialize_is_symmetric(value: bool | None) -> str | None:
+        """Serialize ``is_symmetric`` as a string in JSON output.
+
+        Args:
+            value: Value of the ``is_symmetric`` field.
+
+        Returns:
+            The string representation of the value, or ``None`` if the
+            value is ``None``.
+
+        """
         if value is None:
             return None
         return str(value)
 
 
 class Encodings(BaseModelExtraForbid):
+    """Set of quantization encodings overriding the computed ones.
+
+    Attributes:
+        activation_encodings: Encodings of the activation tensors, keyed
+            by tensor name.
+        param_encodings: Encodings of the parameter tensors, keyed by
+            tensor name.
+
+    """
+
     activation_encodings: dict[str, list[QuantizationOverridesItem]]
     param_encodings: dict[str, list[QuantizationOverridesItem]]
 
 
 class RVC4Config(PlatformConfig):
+    """Options of the RVC4 conversion.
+
+    Attributes:
+        snpe_onnx_to_dlc_args: Additional arguments passed to SNPE
+            ``snpe-onnx-to-dlc``. They take precedence over the default
+            ones.
+        snpe_dlc_quant_args: Additional arguments passed to SNPE
+            ``snpe-dlc-quant``.
+        snpe_dlc_graph_prepare_args: Additional arguments passed to SNPE
+            ``snpe-dlc-graph-prepare``.
+        keep_raw_images: Whether to keep the raw calibration images in
+            the intermediate outputs. They can get very large.
+        use_per_channel_quantization: Whether to use per-axis-element
+            quantization for the weights and biases of the supported
+            layer types.
+        use_per_row_quantization: Whether to use row-wise quantization
+            of the ``MatMul`` and ``FullyConnected`` operations.
+        strict_quantization_overrides: Whether to validate that configured
+            quantization override names exist in the effective ONNX model.
+        optimization_level: Optimization level of the DLC graph
+            preparation. Higher levels take longer but yield a faster
+            graph.
+        quantization_mode: Pre-defined quantization mode. All modes
+            except ``CUSTOM`` override the user-provided SNPE arguments.
+        htp_socs: Platforms to pre-compute the DLC graph for.
+        encodings: Quantization encodings overriding the computed ones.
+
+    """
+
     snpe_onnx_to_dlc_args: list[str] = []
     snpe_dlc_quant_args: list[str] = []
     snpe_dlc_graph_prepare_args: list[str] = []
@@ -335,6 +593,22 @@ class RVC4Config(PlatformConfig):
 
     @model_validator(mode="after")
     def validate_quantization_overrides(self) -> Self:
+        """Normalize raw quantization override arguments into `Encodings`.
+
+        Both ``--quantization_overrides PATH`` and
+        ``--quantization_overrides=PATH`` forms are removed from
+        ``snpe_onnx_to_dlc_args`` and the referenced JSON file is parsed
+        into the ``encodings`` field.
+
+        Returns:
+            The validated model.
+
+        Raises:
+            ValueError: If a raw override path is missing, more than one raw
+                override is provided, or a raw override is combined with
+                ``encodings``.
+
+        """
         flag = "--quantization_overrides"
         prefix = f"{flag}="
         args = self.snpe_onnx_to_dlc_args
@@ -395,6 +669,16 @@ class RVC4Config(PlatformConfig):
     @field_validator("encodings", mode="before")
     @staticmethod
     def validate_encodings(value: ParamValue | Encodings) -> Encodings | None:
+        """Parse the quantization encodings from the config.
+
+        Args:
+            value: Either ``None``, a JSON string, a path to a JSON
+                file, or an already parsed mapping.
+
+        Returns:
+            The parsed encodings, or ``None`` if no value was given.
+
+        """
         if value is None:
             return None
 
@@ -415,6 +699,34 @@ class RVC4Config(PlatformConfig):
 
 
 class ONNXOptimizationsConfig(BaseModelExtraForbid):
+    """Switches of the individual ONNX graph optimizations.
+
+    The optimizations are applied to the ONNX model before it is handed
+    over to the platform-specific conversion. All of them are enabled by
+    default.
+
+    Attributes:
+        fuse_add_mul_to_bn: Whether to fuse ``Add``/``Sub`` and ``Mul``
+            nodes following a ``Conv`` node into a
+            ``BatchNormalization`` node.
+        fuse_comb_add_mul_to_conv: Whether to fuse combinations of
+            ``Add`` and ``Mul`` nodes preceding a ``Conv`` node into the
+            ``Conv`` node.
+        fuse_single_add_mul_to_conv: Whether to fuse a single ``Add`` or
+            ``Mul`` node preceding a ``Conv`` node into the ``Conv``
+            node.
+        fuse_split_concat_to_conv: Whether to fuse ``Split`` and
+            ``Concat`` nodes preceding a ``Conv`` node into the ``Conv``
+            node.
+        substitute_sub_with_add: Whether to replace a ``Sub`` node
+            whose second operand is a constant with an ``Add`` node
+            and a negated copy of that constant.
+        substitute_div_with_mul: Whether to replace a ``Div`` node
+            whose second operand is a float constant with a ``Mul``
+            node and a reciprocal copy of that constant.
+
+    """
+
     fuse_add_mul_to_bn: bool = True
     fuse_comb_add_mul_to_conv: bool = True
     fuse_single_add_mul_to_conv: bool = True
@@ -423,6 +735,7 @@ class ONNXOptimizationsConfig(BaseModelExtraForbid):
     substitute_div_with_mul: bool = True
 
     def all_disabled(self) -> bool:
+        """Check whether every optimization is switched off."""
         return not any(
             [
                 self.fuse_add_mul_to_bn,
@@ -436,6 +749,39 @@ class ONNXOptimizationsConfig(BaseModelExtraForbid):
 
 
 class SingleStageConfig(BaseModelExtraForbid):
+    """Description of a single stage of the conversion.
+
+    Holds everything needed to convert one model: the model itself, its
+    inputs and outputs, and the options of every supported platform.
+    Most of the fields are filled in from the metadata of the input
+    model when they are not given explicitly.
+
+    Attributes:
+        input_model: Path to the model to convert. Downloaded to the
+            local models directory during validation.
+        input_bin: Path to the ``.bin`` file of an OpenVINO IR model.
+            Derived from ``input_model`` for IR models.
+        input_file_type: Type of the input model, derived from the
+            suffix of ``input_model``.
+        inputs: Descriptions of the model inputs.
+        outputs: Descriptions of the model outputs.
+        keep_intermediate_outputs: Whether to keep the files created
+            during the conversion.
+        onnx_simplification: ONNX simplification method to use, or
+            ``False`` to disable the simplification.
+        onnx_optimizations: Switches of the ONNX graph optimizations.
+        output_remote_url: Remote URL to upload the converted model to.
+        intermediate_outputs_remote_url: Remote URL to upload the
+            intermediate outputs to.
+        put_file_plugin: Name of the registered plugin used for the
+            uploads.
+        hailo: Options of the Hailo conversion.
+        rvc2: Options of the RVC2 conversion.
+        rvc3: Options of the RVC3 conversion.
+        rvc4: Options of the RVC4 conversion.
+
+    """
+
     input_model: Path
     input_bin: Path | None = None
     input_file_type: InputFileType
@@ -458,6 +804,23 @@ class SingleStageConfig(BaseModelExtraForbid):
     @model_validator(mode="before")
     @classmethod
     def validate_onnx_simplification(cls, data: Params) -> Params:
+        """Translate the deprecated ``disable_onnx_simplification``.
+
+        .. deprecated:: 0.5.6
+            Use ``onnx_simplification: false`` instead.
+
+        Args:
+            data: Raw stage configuration.
+
+        Returns:
+            The configuration with ``onnx_simplification`` set to
+            ``False`` if the deprecated option was enabled.
+
+        Raises:
+            ValueError: If ``disable_onnx_simplification`` is enabled
+                and ``onnx_simplification`` is specified as well.
+
+        """
         if data.pop("disable_onnx_simplification", False):
             if "onnx_simplification" in data:
                 raise ValueError(
@@ -475,7 +838,7 @@ class SingleStageConfig(BaseModelExtraForbid):
         return data
 
     def get_platform_config(self, platform: Platform) -> PlatformConfig:
-        """Returns the platform configuration for the given platform."""
+        """Return the platform configuration for the given platform."""
         if platform == Platform.HAILO:
             return self.hailo
         if platform == Platform.RVC2:
@@ -488,6 +851,17 @@ class SingleStageConfig(BaseModelExtraForbid):
     @model_validator(mode="before")
     @classmethod
     def validate_onnx_optimizations(cls, data: Params) -> Params:
+        """Expand the shorthand values of ``onnx_optimizations``.
+
+        Args:
+            data: Raw stage configuration.
+
+        Returns:
+            The configuration with ``onnx_optimizations`` replaced by an
+            `ONNXOptimizationsConfig` with all optimizations either
+            enabled or disabled, if a shorthand value was used.
+
+        """
         if "onnx_optimizations" not in data:
             return data
         optimizations = data["onnx_optimizations"]
@@ -502,6 +876,23 @@ class SingleStageConfig(BaseModelExtraForbid):
     @model_validator(mode="before")
     @classmethod
     def validate_disable_onnx_optimizations(cls, data: Params) -> Params:
+        """Translate the deprecated ``disable_onnx_optimizations``.
+
+        .. deprecated:: 0.5.6
+            Use ``onnx_optimizations: false`` instead.
+
+        Args:
+            data: Raw stage configuration.
+
+        Returns:
+            The configuration with all ONNX optimizations disabled if
+            the deprecated option was enabled.
+
+        Raises:
+            ValueError: If ``disable_onnx_optimizations`` is enabled
+                and ``onnx_optimizations`` is specified as well.
+
+        """
         if "disable_onnx_optimizations" not in data:
             return data
         if data.pop("disable_onnx_optimizations", False):
@@ -672,11 +1063,56 @@ class SingleStageConfig(BaseModelExtraForbid):
 
 # TODO: Output remote url
 class Config(LuxonisConfig):
+    """Top-level configuration of a conversion.
+
+    A single-stage configuration is accepted as well: the stage fields
+    can be given at the top level and are wrapped into a single stage
+    during validation, so the shorthand
+
+    .. code-block:: yaml
+
+        input_model: models/yolov6n.onnx
+        encoding:
+          from: RGB
+          to: BGR
+        calibration:
+          path: models/coco128
+
+    is equivalent to the same fields nested under a single entry of
+    ``stages``. See ``configs/defaults.yaml`` for every field with its
+    default.
+
+    Attributes:
+        stages: Configurations of the individual stages, keyed by stage
+            name.
+        name: Name of the model. Defaults to the stage names joined by
+            dashes, or to the stem of the input model for a single
+            unnamed stage.
+        rich_logging: Whether to use rich formatting for the log
+            messages.
+
+    """
+
     stages: Annotated[dict[str, SingleStageConfig], Field(min_length=1)]
     name: str
     rich_logging: bool = True
 
     def get_stage_config(self, stage: str | None) -> SingleStageConfig:
+        """Return the configuration of the given stage.
+
+        Args:
+            stage: Name of the stage. Can be ``None`` only if the
+                configuration has a single stage.
+
+        Returns:
+            The configuration of the requested stage.
+
+        Raises:
+            ValueError: If no stage name is given and the configuration
+                has more than one stage.
+            KeyError: If no stage of the given name exists.
+
+        """
         if stage is None:
             if len(self.stages) == 1:
                 return next(iter(self.stages.values()))
@@ -719,8 +1155,9 @@ class Config(LuxonisConfig):
 
     @model_validator(mode="after")
     def _validate_single_stage_name(self) -> Self:
-        """Changes the default 'default_stage' name to the name of the
-        input model."""
+        """Change the default 'default_stage' name to the name of the
+        input model.
+        """
         if len(self.stages) == 1 and "default_stage" in self.stages:
             stage = next(iter(self.stages.values()))
             model_name = stage.input_model.stem
@@ -760,11 +1197,22 @@ def _as_shape(value: ParamValue, name: str) -> list[int]:
 
 
 def _as_path_type(value: ParamValue, name: str) -> PathType:
-    """Narrows a raw configuration value to something C{Path} accepts.
+    """Narrow a raw configuration value to something ``Path`` accepts.
 
-    Returned as it arrived rather than as a C{Path}: a remote location
-    is carried in these fields as a string, and C{Path} would fold the
-    C{//} of its protocol away.
+    Returned as it arrived rather than as a ``Path``: a remote location
+    is carried in these fields as a string, and ``Path`` would fold the
+    ``//`` of its protocol away.
+
+    Args:
+        value: Raw value taken from the configuration.
+        name: Name of the field, used in the error message.
+
+    Returns:
+        The value unchanged.
+
+    Raises:
+        TypeError: If the value is neither a string nor a path.
+
     """
     if not isinstance(value, PathType):
         raise TypeError(f"`{name}` must be a string or a path.")
@@ -772,17 +1220,24 @@ def _as_path_type(value: ParamValue, name: str) -> PathType:
 
 
 def _extract_bin_xml_from_ir(ir_path: ParamValue | Path) -> tuple[Path, Path]:
-    """Extracts the corresponding second path from a single IR path.
+    """Extract the corresponding second path from a single IR path.
 
-    We assume that the base filename matches between the .bin and .xml
-    file. Otherwise, an error will be thrown.
+    The base file name must match between the ``.bin`` and the ``.xml``
+    file. Otherwise, an error is raised.
 
-    @type ir_path: ParamValue | Path
-    @param ir_path: The path of either the C{.bin} or the C{.xml} file.
-        It arrives unvalidated, straight out of the configuration, so it
-        is only a path once the check below has run.
-    @rtype: tuple[Path, Path]
-    @return: The C{.bin} path and the C{.xml} path.
+    Args:
+        ir_path: The path of either the ``.bin`` or the ``.xml`` file.
+            It arrives unvalidated, straight out of the configuration,
+            so it is only a path once the check below has run.
+
+    Returns:
+        The ``.bin`` path and the ``.xml`` path.
+
+    Raises:
+        TypeError: If ``ir_path`` is neither a string nor a path.
+        ValueError: If the path has neither the ``.bin`` nor the
+            ``.xml`` extension.
+
     """
     if not isinstance(ir_path, PathType):
         raise TypeError("`input_path` must be str or Path.")
@@ -929,6 +1384,18 @@ def generate_renamed_onnx(
     rename_dict: dict[str, str],
     output_path: PathType,
 ) -> None:
+    """Save a copy of an ONNX model with renamed node connections.
+
+    Every node input and output whose name appears in ``rename_dict`` is
+    replaced by the new name. The model is saved with external data if
+    the original model used it.
+
+    Args:
+        onnx_path: Path to the ONNX model to rename.
+        rename_dict: Mapping from the old tensor names to the new ones.
+        output_path: Path to save the renamed model to.
+
+    """
     onnx_path = Path(onnx_path)
     output_path = Path(output_path)
     model = onnx.load(str(onnx_path))

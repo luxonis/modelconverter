@@ -150,6 +150,8 @@ configs/_*
 tests/data/test_packages
 tests/data/test_utils/hubai_models
 inference_inputs/
+# Generated API documentation.
+apidocs/
 
 .build
 
