@@ -1,3 +1,13 @@
+"""Docker plumbing behind the ``modelconverter`` commands.
+
+Conversions do not run on the host but inside a per-platform image
+(``rvc2``, ``rvc3``, ``rvc4`` or ``hailo``), which carries the vendor
+conversion tools. This module finds such an image locally, pulls it or
+builds it, describes the conversion container -- its mounts,
+environment and resource limits -- as a Docker Compose configuration,
+and runs the requested command inside it.
+"""
+
 import json
 import os
 import shutil
@@ -41,7 +51,7 @@ UserNamespaceMode = Literal["rootless", "userns", "rootful", "unknown"]
 
 @cache
 def docker_user_namespace_mode() -> UserNamespaceMode:
-    """Returns how the active Docker daemon maps the container's root
+    """Return how the active Docker daemon maps the container's root
     user onto the host.
 
     - ``rootless``: the daemon itself runs as the invoking user, so
@@ -77,6 +87,17 @@ def docker_user_namespace_mode() -> UserNamespaceMode:
 
 
 def get_docker_client_from_active_context() -> docker.DockerClient:
+    """Create a Docker client for the active Docker context.
+
+    The daemon endpoint is read from the context ``docker context show``
+    reports, so a non-default context (rootless, remote, Colima, ...) is
+    honored instead of the environment defaults. TLS is enabled for a
+    ``tcp://`` endpoint unless the context skips the verification.
+
+    Returns:
+        A client talking to the active context's daemon.
+
+    """
     ctx_name = subprocess.check_output(
         [docker_bin(), "context", "show"], text=True
     ).strip()
@@ -100,8 +121,21 @@ def get_docker_client_from_active_context() -> docker.DockerClient:
 
 
 def rvc4_tag_version(version: str) -> str:
-    """Removes build component from version string (e.g. 2.41.0.251128
-    -> 2.41.0)"""
+    """Remove the build component from a version string.
+
+    Args:
+        version: Version string to strip, e.g. ``2.41.0.251128``.
+
+    Returns:
+        The version without its build component, e.g. ``2.41.0``.
+
+    Example:
+        >>> rvc4_tag_version("2.41.0.251128")
+        '2.41.0'
+        >>> rvc4_tag_version("2.41.0")
+        '2.41.0'
+
+    """
     parts = version.split(".")
     if len(parts) <= 3:
         return version
@@ -115,6 +149,29 @@ def generate_compose_config(
     cpus: float | None = None,
     extra_environment: dict[str, str] | None = None,
 ) -> str:
+    """Generate the Compose configuration of the conversion service.
+
+    The service mounts the modelconverter cache and the host's
+    ``./output`` directory, forwards the bucket-storage credentials, and
+    -- for a rootful daemon -- the host user's uid and gid, so that the
+    container can hand the files it wrote back to the invoking user.
+
+    Args:
+        image: Image the service runs. An image whose name ends in
+            ``-dev`` additionally mounts the host's sources, tests and
+            ``pyproject.toml`` over the ones baked into it.
+        gpu: Whether to run the container with the ``nvidia`` runtime.
+        memory: Memory limit of the container in bytes. ``None`` sets no
+            limit.
+        cpus: Number of CPU cores the container may use, possibly
+            fractional. ``None`` sets no limit.
+        extra_environment: Additional environment variables for the
+            container, merged over the defaults.
+
+    Returns:
+        The Compose configuration as a YAML document.
+
+    """
     environment = {
         "AWS_ACCESS_KEY_ID": environ.AWS_ACCESS_KEY_ID.get_secret_value()
         if environ.AWS_ACCESS_KEY_ID
@@ -218,6 +275,13 @@ def generate_compose_config(
 
 
 def check_docker() -> None:
+    """Check that Docker commands can be run from here.
+
+    Raises:
+        RuntimeError: If this process already runs inside a container,
+            or if Docker is not installed on this system.
+
+    """
     if in_docker():
         raise RuntimeError(
             "Already running in Docker, cannot run Docker commands from within Docker."
@@ -227,6 +291,15 @@ def check_docker() -> None:
 
 
 def docker_bin() -> str:
+    """Return the path of the ``docker`` executable.
+
+    Returns:
+        The path ``docker`` was found at.
+
+    Raises:
+        RuntimeError: If Docker is not installed on this system.
+
+    """
     docker_path = shutil.which("docker")
     if docker_path is None:
         raise RuntimeError("Docker is not installed on this system.")
@@ -240,6 +313,27 @@ def docker_build(
     version: str | None = None,
     image: str | None = None,
 ) -> str:
+    """Build the Docker image of the given platform.
+
+    Args:
+        platform: Platform to build the image for.
+        bare_tag: Suffix of the image tag, appended to the tool version.
+            ``dev`` additionally installs the test tooling into the
+            image; for RVC4 any other tag first prepares a clean build
+            environment with `prepare_build_environment`.
+        version: Version of the underlying conversion tools. Defaults to
+            the platform's default version.
+        image: Full name of the image to build. If it carries no tag,
+            the ``<version>-<bare_tag>`` tag is appended. Defaults to
+            ``luxonis/modelconverter-<platform>``.
+
+    Returns:
+        The name of the built image, including its tag.
+
+    Raises:
+        RuntimeError: If the ``docker build`` invocation fails.
+
+    """
     check_docker()
 
     if version is None:
@@ -285,6 +379,25 @@ def docker_build(
 def prepare_build_environment(
     platform: Literal["rvc2", "rvc3", "rvc4", "hailo"], version: str
 ) -> Path:
+    """Prepare a directory the platform's image can be built from.
+
+    Downloads and extracts the modelconverter sources of the running
+    version and puts the SNPE archive of ``version`` in place, either by
+    copying a locally available one or by downloading it.
+
+    Args:
+        platform: Platform to prepare the build for. Only ``rvc4`` is
+            supported.
+        version: Version of the conversion tools whose SNPE archive the
+            build needs.
+
+    Returns:
+        Path to the extracted source tree to build the image from.
+
+    Raises:
+        NotImplementedError: If ``platform`` is not ``rvc4``.
+
+    """
     if platform != "rvc4":
         raise NotImplementedError(
             "Fully automatic docker build is only implemented for RVC4"
@@ -318,6 +431,21 @@ def prepare_build_environment(
 
 
 def download_snpe_archive(version: str, dest: Path) -> Path:
+    """Download the SNPE archive of the given version.
+
+    Args:
+        version: Version of the Qualcomm AI Runtime (SNPE) to download.
+        dest: Directory to place the archive in. Created if missing.
+
+    Returns:
+        Path to the archive. If it is already present, it is returned
+        without downloading anything.
+
+    Raises:
+        RuntimeError: If the download fails. The message explains how to
+            download the archive manually.
+
+    """
     archive_path = dest / f"snpe-{version}.zip"
     if archive_path.exists():
         return archive_path
@@ -401,6 +529,20 @@ def _download_file(
 # We cannot simply call `docker pull` in a subprocess because
 # it interactively asks for login credentials if the image is private.
 def pull_image(client: docker.DockerClient, image: str) -> str:
+    """Pull an image, showing a progress bar for each of its layers.
+
+    The Docker SDK is used instead of a ``docker pull`` subprocess
+    because the latter asks for login credentials interactively when the
+    image is private.
+
+    Args:
+        client: Docker client to pull with.
+        image: Image to pull, optionally including a tag.
+
+    Returns:
+        The name of the pulled image.
+
+    """
     repository, tag = parse_repository_tag(image)
 
     with Progress(
@@ -437,6 +579,25 @@ def get_docker_image(
     version: str,
     image: str | None = None,
 ) -> str:
+    """Return an image to run the given platform's conversion in.
+
+    A matching local image is used if there is one. Otherwise the
+    candidate images are pulled from ``ghcr.io``, and should that fail
+    as well, the image is built locally.
+
+    Args:
+        platform: Platform the image is for.
+        bare_tag: Suffix of the image tag, appended to the tool version,
+            e.g. ``latest`` or ``dev``.
+        version: Version of the underlying conversion tools.
+        image: Full name of the image to use. If it carries no tag, the
+            ``<version>-<bare_tag>`` tag is appended. Defaults to
+            ``luxonis/modelconverter-<platform>``.
+
+    Returns:
+        The name of the image to run, including its tag.
+
+    """
     check_docker()
 
     local_image = get_local_docker_image(platform, bare_tag, version, image)
@@ -484,6 +645,25 @@ def get_local_docker_image(
     version: str,
     image: str | None = None,
 ) -> str | None:
+    """Return a matching image already present on the local daemon.
+
+    Both the bare candidate names and their ``docker.io`` and
+    ``ghcr.io`` spellings are looked for among the local images.
+
+    Args:
+        platform: Platform the image is for.
+        bare_tag: Suffix of the image tag, appended to the tool version,
+            e.g. ``latest`` or ``dev``.
+        version: Version of the underlying conversion tools.
+        image: Full name of the image to look for. If it carries no tag,
+            the ``<version>-<bare_tag>`` tag is appended. Defaults to
+            ``luxonis/modelconverter-<platform>``.
+
+    Returns:
+        The full name of the first matching local image, including its
+        tag, or ``None`` if no candidate is available locally.
+
+    """
     check_docker()
 
     candidate_images = _get_candidate_docker_images(
@@ -535,6 +715,37 @@ def docker_exec(
     memory: int | None = None,
     cpus: float | None = None,
 ) -> None:
+    """Run a command inside the given platform's container.
+
+    Creates the host directories mounted into the container, writes a
+    temporary Compose file for it and runs the command with
+    ``docker compose run``. The arguments are handed to the container's
+    entrypoint as ``argv`` and never re-evaluated by a shell.
+
+    .. note::
+        This never returns: the host process exits with the container's
+        return code.
+
+    Args:
+        platform: Platform whose image the command runs in.
+        *args: The command and its arguments.
+        bare_tag: Suffix of the image tag, appended to the tool version,
+            e.g. ``latest`` or ``dev``.
+        use_gpu: Whether to give the container the GPU. Only has an
+            effect for the ``hailo`` platform.
+        version: Version of the underlying conversion tools. Defaults to
+            the platform's default version.
+        image: Full name of the image to use. Defaults to the official
+            image of the platform.
+        memory: Memory limit of the container in bytes. ``None`` sets no
+            limit.
+        cpus: Number of CPU cores the container may use, possibly
+            fractional. ``None`` sets no limit.
+
+    Raises:
+        SystemExit: Always, carrying the container's return code.
+
+    """
     version = version or get_default_tool_version(platform)
     image = get_docker_image(platform, bare_tag, version, image)
 
@@ -591,7 +802,7 @@ def docker_exec(
 
 
 def get_container_memory_limit() -> int:
-    """Returns the memory limit of the current container in bytes."""
+    """Return the memory limit of the current container in bytes."""
     # cgroup v2 (common on modern Linux/Docker)
     cgroup_v2_path = Path("/sys/fs/cgroup/memory.max")
     if cgroup_v2_path.exists():
@@ -610,8 +821,11 @@ def get_container_memory_limit() -> int:
 
 
 def get_container_memory_available() -> int:
-    """Return bytes of memory available to this container, or None if
-    unlimited."""
+    """Return the bytes of memory still available to this container.
+
+    That is its memory limit less the resident memory of every process
+    running inside it, never less than zero.
+    """
     limit = get_container_memory_limit()
     # sum RSS of all processes in the container
     total_usage = 0

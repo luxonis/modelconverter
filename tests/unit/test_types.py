@@ -247,7 +247,8 @@ class _FakeTensorType:
 @pytest.fixture
 def fake_tflite(monkeypatch: pytest.MonkeyPatch) -> None:
     """Inject a fake ``tflite`` package so the import inside
-    ``from_tensorflow_dtype`` resolves without the real dependency."""
+    ``from_tensorflow_dtype`` resolves without the real dependency.
+    """
     tflite = ModuleType("tflite")
     tensor_type = ModuleType("tflite.TensorType")
     tensor_type.TensorType = _FakeTensorType  # type: ignore[attr-defined]
@@ -426,7 +427,7 @@ def test_as_nn_archive_dtype_all(dtype: DataType, expected: str):
 
 
 def _width(value: str) -> str:
-    """The trailing bit-width digits of a dtype name, if any."""
+    """Return the trailing bit-width digits of a dtype name, if any."""
     match = re.search(r"\d+$", value)
     return match.group() if match else ""
 

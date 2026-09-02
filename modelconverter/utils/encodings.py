@@ -1,3 +1,12 @@
+"""Parsing of externally supplied quantization encodings.
+
+Quantization encodings describe the scale, offset and bit width used to
+quantize activations and parameters of a model. They can be handed to
+the RVC4 conversion to override the values derived from calibration.
+The files come in several shapes, so this module normalizes them into
+the ``Encodings`` model used by the conversion configuration.
+"""
+
 import json
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
@@ -116,6 +125,33 @@ def _normalize_encoding_group(
 
 
 def parse_encodings(value: "ParamValue | Encodings") -> "Encodings":
+    """Parse quantization encodings into an ``Encodings`` model.
+
+    Accepts an ``Encodings`` instance, which is returned unchanged, a
+    JSON string, or a dictionary with ``activation_encodings`` and
+    ``param_encodings`` keys. Each of the two groups may either be a
+    mapping from tensor name to entries, or a list of entries carrying
+    a ``name`` field. Entries are normalized on the way: the legacy
+    ``bw`` and ``is_sym`` keys are renamed to ``bitwidth`` and
+    ``is_symmetric``, the ``dtype`` is lower-cased, unknown keys are
+    dropped, single-element lists are unwrapped and per-channel entries
+    are expanded into one entry per channel.
+
+    Args:
+        value: Encodings to parse.
+
+    Returns:
+        Parsed encodings.
+
+    Raises:
+        TypeError: If ``value`` is not a dictionary once deserialized,
+            if a group is neither a list nor a dictionary, or if an
+            individual entry is not a dictionary.
+        ValueError: If an entry in a list-shaped group has a missing or
+            invalid tensor name, or if the per-channel fields of an
+            entry have different lengths.
+
+    """
     from modelconverter.utils.config import Encodings
 
     if isinstance(value, Encodings):

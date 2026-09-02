@@ -1,3 +1,12 @@
+"""Export of models to the Hailo ``.hef`` format.
+
+Drives the ``hailo_sdk_client`` toolchain: the model is translated to
+the Hailo IR, optionally quantized using the configured calibration
+images and finally compiled for the selected Hailo hardware
+architecture. Requires the Hailo Docker image, which provides the SDK.
+"""
+
+import os
 import shutil
 from pathlib import Path
 
@@ -18,9 +27,28 @@ from modelconverter.utils.types import Platform
 
 
 class HailoExporter(Exporter):
+    """Exporter producing models for Hailo devices.
+
+    Translates the input model to the Hailo IR, calibrates it on the
+    configured calibration images and compiles it into a ``.hef``
+    binary. Calibration and compilation can be disabled individually,
+    in which case an intermediate ``.har`` model is produced instead.
+    """
+
     platform: Platform = Platform.HAILO
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
+        """Initialize the exporter.
+
+        If TensorFlow reports no available GPU, the optimization and
+        compression levels are lowered to ``0``.
+
+        Args:
+            config: Configuration of the model being converted.
+            output_dir: Directory the exported model and the
+                intermediate artifacts are written to.
+
+        """
         super().__init__(config=config, output_dir=output_dir)
         self._force_onnx_names_enabled = config.hailo.force_onnx_names
         self._optimization_level = config.hailo.optimization_level
@@ -46,17 +74,29 @@ class HailoExporter(Exporter):
         return start_nodes, net_input_shapes
 
     def export(self) -> Path:
+        """Translate, calibrate and compile the model.
+
+        Returns:
+            Path to the compiled ``.hef`` model. If calibration is
+            disabled, the path to the translated ``.har`` model is
+            returned instead; if only compilation is disabled, the path
+            to a copy of the quantized ``.har`` model is returned.
+
+        """
         runner = ClientRunner(hw_arch=self._hw_arch)
         start_nodes, net_input_shapes = self._get_start_nodes()
 
         logger.info("Translating model to Hailo IR.")
         if self._is_tflite:
+            translate_kwargs = {
+                "net_name": self._model_name,
+                "start_node_names": start_nodes,
+                "end_node_names": list(self._outputs.keys()),
+            }
+            if _supports_tf_tensor_shapes():
+                translate_kwargs["tensor_shapes"] = net_input_shapes
             runner.translate_tf_model(
-                str(self._input_model),
-                net_name=self._model_name,
-                start_node_names=start_nodes,
-                tensor_shapes=net_input_shapes,
-                end_node_names=list(self._outputs.keys()),
+                str(self._input_model), **translate_kwargs
             )
         else:
             runner.translate_onnx_model(
@@ -259,9 +299,37 @@ class HailoExporter(Exporter):
         return "\n".join(alls)
 
     def exporter_buildinfo(self) -> Params:
+        """Return Hailo-specific information about the conversion.
+
+        Returns:
+            Dictionary with the version of the Hailo SDK, the
+            optimization and compression levels and the model script
+            (``alls``) used for calibration.
+
+        """
         return {
             "hailo_version": hailo_sdk_client.__version__,
             "optimization_level": self._optimization_level,
             "compression_level": self._compression_level,
             "alls": self._alls,
         }
+
+
+def _supports_tf_tensor_shapes() -> bool:
+    """Whether the Hailo DFC accepts tensor shapes for TFLite inputs.
+
+    The image Dockerfile turns its build argument into ``VERSION`` (for
+    example, ``2025.07`` becomes ``2025-07``). Hailo removed the option in
+    2025.07, so retain it for older or unknown installations.
+    """
+    version = os.environ.get("VERSION")
+    if version is None:
+        return True
+
+    try:
+        year, release = (
+            int(part) for part in version.replace("-", ".").split(".")[:2]
+        )
+    except ValueError:
+        return True
+    return (year, release) < (2025, 7)

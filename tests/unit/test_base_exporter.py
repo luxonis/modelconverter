@@ -23,9 +23,11 @@ class StubExporter(Exporter):
     platform = Platform.RVC2
 
     def exporter_buildinfo(self) -> dict:
+        """Return empty build info."""
         return {}
 
     def export(self) -> Path:
+        """Return the input model unchanged."""
         return self._input_model
 
 

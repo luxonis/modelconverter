@@ -35,7 +35,7 @@ VENDOR_SUFFIXES = [
 
 
 def _assert_standard_io(meta: Metadata, output_dtype: DataType) -> None:
-    """The single-in/single-out shapes + dtypes the DLC CSV fixtures share."""
+    """Assert the single-in/single-out shapes + dtypes the DLC CSV fixtures share."""
     assert meta.input_shapes == {"input0": [1, 3, 64, 64]}
     assert meta.output_shapes == {"output0": [1, 10]}
     assert meta.input_dtypes["input0"] is DataType.FLOAT32
@@ -163,7 +163,8 @@ def test_output_section_runs_to_end_without_trailer(work_dir: Path):
 
 def test_missing_input_section_raises(work_dir: Path):
     """A CSV with no ``Input Name`` section is skipped, leaving the
-    inputs unset -- ``Metadata`` then rejects the partial result."""
+    inputs unset -- ``Metadata`` then rejects the partial result.
+    """
     csv = 'Output Name,Dimensions,Type\noutput0,"1,10",Float_32\n'
     path = work_dir / "no_inputs.csv"
     path.write_text(csv)
@@ -240,7 +241,8 @@ def test_tflite_missing_subgraph_raises(
 
 def test_read_tflite_tensor_without_a_tensor_raises():
     """A subgraph indexes its tensors, and an index it does not hold
-    says the model is malformed rather than empty."""
+    says the model is malformed rather than empty.
+    """
     subgraph = Mock()
     subgraph.Tensors.return_value = None
 
@@ -250,7 +252,8 @@ def test_read_tflite_tensor_without_a_tensor_raises():
 
 def test_read_tflite_tensor_without_a_name_raises():
     """The name keys the shape and dtype dictionaries, so a tensor
-    without one cannot be recorded."""
+    without one cannot be recorded.
+    """
     tensor = Mock()
     tensor.Name.return_value = None
     subgraph = Mock()

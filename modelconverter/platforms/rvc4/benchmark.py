@@ -1,3 +1,13 @@
+"""Throughput and latency measurements on RVC4 devices.
+
+An RVC4 model can be measured in two ways, and `RVC4Benchmark` covers
+both: a DepthAI pipeline that feeds a neural network node as fast as it
+will accept data, and SNPE's own ``snpe-parallel-run``, which is
+executed on the device over ADB or SSH against inputs staged there
+beforehand. Power, DSP, memory and CPU usage can be sampled alongside
+either of them.
+"""
+
 import io
 import json
 import re
@@ -41,6 +51,18 @@ from modelconverter.utils.log_latency import (
 
 
 class InputSpec(BaseModelExtraForbid):
+    """Description of one model input to generate benchmark data for.
+
+    The shape is required: a random tensor cannot be made for an input
+    whose shape is unknown.
+
+    Attributes:
+        name: Name of the input tensor.
+        shape: Shape of the input tensor.
+        data_type: Data type of the input tensor.
+
+    """
+
     name: str
     shape: list[int]
     data_type: DataType
@@ -66,6 +88,21 @@ RUNTIMES: dict[str, str] = {
 
 
 class RVC4Benchmark(Benchmark):
+    """Benchmark of an NN archive, a ``.dlc`` or a HubAI slug on RVC4.
+
+    Which of the two backends is used is decided by the
+    ``dai_benchmark`` option: a DepthAI pipeline, which also reports
+    per-inference latency but only accepts a ``.tar.xz`` archive or a
+    slug, or ``snpe-parallel-run`` run over the device handler, which
+    only reports throughput and takes a bare ``.dlc`` as well. Both
+    need the input tensor specifications, read from the DLC with
+    ``snpe-dlc-info`` and falling back to the NN archive when that is
+    unavailable.
+    """
+
+    # How many distinct random inputs are written to the device for the
+    # SNPE backend. Anything beyond that is hard-linked to them so that
+    # the device does not run out of storage.
     _MAX_REAL_SNPE_INPUTS = 100
 
     @property
@@ -81,6 +118,10 @@ class RVC4Benchmark(Benchmark):
             benchmark_time: Duration in seconds for time-based benchmarking (overrides repetitions).
             num_threads: The number of threads to use for inference (dai-benchmark only).
             num_messages: The number of messages to use for inference (dai-benchmark only).
+            device_ip: Address of the device to benchmark on, or None to use the first one found.
+            device_id: Device ID or ADB serial of the device to benchmark on, or None to use the first one found.
+            device_monitor: Whether to sample power, DSP, memory and CPU usage alongside the benchmark.
+
         """
         return {
             "profile": "balanced",
@@ -98,6 +139,7 @@ class RVC4Benchmark(Benchmark):
 
     @property
     def all_configurations(self) -> list[Configuration]:
+        """Return every SNPE profile at one and at two threads."""
         return [
             {"profile": profile, "num_threads": threads}
             for profile in PROFILES
@@ -300,6 +342,27 @@ class RVC4Benchmark(Benchmark):
             )
 
     def benchmark(self, configuration: Configuration) -> Result:
+        """Run one benchmark of the model on an RVC4 device.
+
+        Connects to the device, starts the device monitor if it was
+        asked for, and hands the run to the DepthAI or the SNPE backend.
+        Whatever the SNPE backend put on the device is removed again
+        afterwards.
+
+        .. warning::
+            ``configuration`` is modified in place: the keys the chosen
+            backend does not take are removed from it, and
+            ``device_ip`` is filled in with the address the device was
+            found at.
+
+        Args:
+            configuration: Options for this run.
+
+        Returns:
+            The measured ``fps`` and ``latency``, together with the
+            device monitor's readings when it was running.
+
+        """
         dai_benchmark = get_option(configuration, "dai_benchmark", bool)
         device_monitor = get_option(configuration, "device_monitor", bool)
 

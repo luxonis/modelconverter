@@ -1,3 +1,5 @@
+"""Tests for final conversion artifact logging."""
+
 from pathlib import Path
 from typing import Literal
 

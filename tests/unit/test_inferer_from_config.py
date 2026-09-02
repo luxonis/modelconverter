@@ -22,7 +22,8 @@ from tests.helpers.onnx_factory import single_io_onnx
 
 class _StubInferer(Inferer):
     """The smallest concrete ``Inferer``; ``from_config`` needs no
-    more."""
+    more.
+    """
 
     def setup(self) -> None: ...
 
@@ -102,5 +103,6 @@ def test_shapes_and_dtypes_are_mapped(work_dir: Path):
 
 def test_the_stand_in_reports_no_outputs(work_dir: Path):
     """The stand-in has no vendor runtime, so its forward pass produces
-    nothing; `from_config` needs no more than that."""
+    nothing; `from_config` needs no more than that.
+    """
     assert _build(work_dir, [1, 3, 64, 64]).infer({}) == {}
