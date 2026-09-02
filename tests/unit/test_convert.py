@@ -35,11 +35,30 @@ class _FakeExporter(Exporter):
         return self._inference_model_path
 
 
+class _FakeMultiStageExporter:
+    def __init__(
+        self,
+        platform: Platform,
+        config: Config,
+        output_dir: Path,
+    ) -> None:
+        self.platform = platform
+        self.config = config
+        self.output_dir = output_dir
+
+    def run(self) -> list[Path]:
+        return [
+            self.output_dir / "first.dlc",
+            self.output_dir / "second.dlc",
+        ]
+
+
 @pytest.mark.parametrize(
-    ("output_mode", "expected_name"),
+    ("output_mode", "expected_names", "multistage"),
     [
-        ("native", "model.dlc"),
-        ("nn_archive", "model.rvc4.tar.xz"),
+        ("native", ["model.dlc"], False),
+        ("nn_archive", ["model.rvc4.tar.xz"], False),
+        ("native", ["first.dlc", "second.dlc"], True),
     ],
 )
 def test_convert_logs_final_artifact_for_each_output_mode(
@@ -47,16 +66,30 @@ def test_convert_logs_final_artifact_for_each_output_mode(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     output_mode: Literal["native", "nn_archive"],
-    expected_name: str,
+    expected_names: list[str],
+    multistage: bool,
 ) -> None:
-    cfg = Config.get_config(
-        None,
-        {
-            "input_model": str(dummy_onnx),
-            "shape": [1, 3, 64, 64],
-        },
-    )
-    main_stage = next(iter(cfg.stages))
+    if multistage:
+        cfg = Config.get_config(
+            None,
+            {
+                "name": "pipeline",
+                "stages": {
+                    "first": {"input_model": str(dummy_onnx)},
+                    "second": {"input_model": str(dummy_onnx)},
+                },
+            },
+        )
+        main_stage = "first"
+    else:
+        cfg = Config.get_config(
+            None,
+            {
+                "input_model": str(dummy_onnx),
+                "shape": [1, 3, 64, 64],
+            },
+        )
+        main_stage = next(iter(cfg.stages))
     output_dir = tmp_path / "output"
     messages: list[str] = []
 
@@ -84,6 +117,11 @@ def test_convert_logs_final_artifact_for_each_output_mode(
             config,
             output_dir,
         ),
+    )
+    monkeypatch.setattr(
+        main_module,
+        "MultiStageExporter",
+        _FakeMultiStageExporter,
     )
     monkeypatch.setattr(
         main_module,
@@ -130,5 +168,5 @@ def test_convert_logs_final_artifact_for_each_output_mode(
     ]
 
     assert export_messages == [
-        f"Model exported to /host/output/{expected_name}"
+        f"Model exported to /host/output/{name}" for name in expected_names
     ]
