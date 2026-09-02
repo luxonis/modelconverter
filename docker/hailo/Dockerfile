@@ -13,26 +13,38 @@ ENV IN_DOCKER=
 
 WORKDIR /app
 
-COPY --link requirements.txt requirements.txt
+COPY --link --from=ghcr.io/astral-sh/uv:0.12.5 /uv /usr/local/bin/uv
+COPY --link pyproject.toml uv.lock ./
 COPY --link modelconverter/platforms/hailo/requirements.txt requirements-hailo.txt
 
 RUN <<EOF
 
     set -e
 
+    # pip installs the DALI archives below; uv installs everything else.
     # pip 26 ignores the non-PEP517 install path we need for the DALI TF
     # plugin archive and falls back to an isolated build that crashes on
     # missing pkg_resources.
     pip install --no-cache-dir "pip==25.0.1"
-    pip install -r requirements.txt --no-cache-dir
+
+    # The suite image ships its own Python environment. Aim uv at the same
+    # interpreter the suite's `pip` and `python` use.
+    PYTHON="$(command -v python)"
+
+    # Install the shared dependencies exactly as the lockfile pins them.
+    uv export --frozen --no-default-groups --no-emit-project \
+        -o /tmp/requirements.txt
+    uv pip install --python "$PYTHON" --no-cache --no-deps \
+        -r /tmp/requirements.txt
 
     # The suite's TensorFlow 2.12 is compiled against the NumPy 1.x ABI and
     # fails to import under NumPy 2, which luxonis-ml requires from 0.9.1 on.
-    # Resolve the requirements against NumPy 2 so luxonis-ml stays current, then
-    # step NumPy back down before anything imports TensorFlow: extensions built
-    # against NumPy 2 keep working on 1.x, only the reverse breaks. pip reports
-    # the deliberate mismatch with luxonis-ml's pin as a warning and carries on.
-    pip install --no-cache-dir "numpy<2"
+    # The locked install above brings NumPy 2 in. Step NumPy back down here,
+    # before anything imports TensorFlow. Extensions built against NumPy 2
+    # keep working on 1.x; only the reverse breaks. The downgrade
+    # deliberately violates luxonis-ml's pin. uv resolves only what each
+    # command asks for, so the rest of the environment stays as it is.
+    uv pip install --python "$PYTHON" --no-cache "numpy<2"
     python - <<PY
 from urllib.request import urlretrieve
 
@@ -58,19 +70,18 @@ PY
         "/tmp/nvidia_dali_cuda120-${DALI_VERSION}-py3-none-manylinux2014_x86_64.whl"
     PIP_USE_PEP517=0 pip install --no-cache-dir --no-deps \
         "/tmp/nvidia_dali_tf_plugin_cuda120-${DALI_VERSION}.tar.gz"
-    pip install --no-cache-dir -r requirements-hailo.txt
+    uv pip install --python "$PYTHON" --no-cache -r requirements-hailo.txt
 
 EOF
 
 ARG DEV=false
-COPY --link requirements-dev.txt /app/requirements-dev.txt
 RUN if [ "$DEV" = "true" ]; then \
-        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli; \
+        uv pip install --python "$(command -v python)" --no-cache \
+            --group dev codecov-cli; \
     fi
 
 COPY --link modelconverter /app/modelconverter/
-COPY --link pyproject.toml /app/pyproject.toml
-RUN pip install -e . --no-deps --no-cache-dir
+RUN uv pip install --python "$(command -v python)" --no-cache --no-deps -e .
 
 COPY --link docker/hailo/entrypoint.sh /app/entrypoint.sh
 COPY --link docker/entrypoint_common.sh /app/entrypoint_common.sh
