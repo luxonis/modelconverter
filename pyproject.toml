@@ -8,13 +8,52 @@ requires-python = ">=3.10"
 authors = [{ name = "Luxonis", email = "support@luxonis.com" }]
 maintainers = [{ name = "Luxonis", email = "support@luxonis.com" }]
 keywords = ["ml", "onnx", "openvino", "nn", "ai", "embedded"]
-dynamic = ["dependencies", "optional-dependencies", "version"]
+dynamic = ["version"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3.10",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Scientific/Engineering :: Image Processing",
   "Topic :: Scientific/Engineering :: Image Recognition",
+]
+dependencies = [
+  "Pillow",
+  "aiobotocore<2.18",
+  "cyclopts~=4.16",
+  "docker",
+  "hubai-sdk>=0.3.3",
+  "keyring",
+  "luxonis-ml[data,nn_archive,s3,gcs,telemetry]~=0.9.0",
+  "onnx==1.21.0",
+  "onnx_graphsurgeon",
+  "onnxruntime",
+  "onnxsim~=0.6",
+  "onnxslim~=0.1",
+  "psutil",
+  "wget",
+]
+
+[project.optional-dependencies]
+bench = ["depthai>=3.8.0,<4"]
+analysis = ["depthai>=3.8.0,<4", "plotly", "polars"]
+
+[dependency-groups]
+lint = ["prek~=0.4.13"]
+docs = ["pydoctor~=25.10"]
+dev = [
+  { include-group = "lint" },
+  { include-group = "docs" },
+  "depthai>=3.8.0,<4",
+  # Lets the tests emit tiny .tflite fixtures directly (no TensorFlow needed).
+  "flatbuffers~=25.12",
+  "hypothesis~=6.163",
+  # The type gate runs this exact release, so a new pyright cannot turn CI red
+  # on its own. Raise it deliberately.
+  "pyright==1.1.411",
+  "pytest-cov~=7.1",
+  "pytest-sugar~=1.1",
+  "pytest-xdist~=3.5",
+  "tflite2onnx~=0.1",
 ]
 
 [project.scripts]
@@ -28,18 +67,23 @@ issues = "https://github.com/luxonis/modelconverter/issues"
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.uv]
+# albumentations (a luxonis-ml[data] dependency) pulls opencv-python-headless
+# in next to the opencv-python that luxonis-ml already requires. Both packages
+# ship the same `cv2` module and overwrite each other, so keep the headless
+# build out of the resolution entirely.
+override-dependencies = ["opencv-python-headless; sys_platform == 'never'"]
+# onnxruntime 1.24 dropped Python 3.10: its metadata still allows it, but it
+# ships no cp310 wheels. Hold the 3.10 fork of the lock on the last release
+# that does.
+constraint-dependencies = ["onnxruntime<1.24; python_full_version < '3.11'"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["modelconverter*"]
 
 [tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
 version = { attr = "modelconverter.__version__" }
-
-[tool.setuptools.dynamic.optional-dependencies]
-bench = { file = ["requirements-bench.txt"] }
-analysis = { file = ["requirements-analysis.txt"] }
-dev = { file = ["requirements-dev.txt", "requirements-bench.txt"] }
 
 
 [tool.ruff]

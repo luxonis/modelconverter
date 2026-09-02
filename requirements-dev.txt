@@ -1,3 +1,6 @@
+# Only the Docker image builds still read this file. uv manages the host
+# environment from pyproject.toml and uv.lock. Keep this file in sync with
+# the `dev` dependency group until the image builds move to uv as well.
 prek~=0.4.13
 # The type gate runs this exact release, so a new pyright cannot turn CI red
 # on its own. Raise it deliberately.

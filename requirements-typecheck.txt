@@ -1,4 +1,4 @@
-# Extra imports that pyright must resolve, on top of `.[dev]`.
+# Extra imports that pyright must resolve, on top of the `dev` group.
 #
 # The conversion code runs inside the platform Docker images, so these packages
 # are never installed on the host. The type checker still has to find them, or
