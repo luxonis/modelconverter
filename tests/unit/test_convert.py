@@ -29,10 +29,10 @@ class _FakeExporter(Exporter):
         return {}
 
     def export(self) -> Path:
-        return self._inference_model_path
+        return self.inference_model_path
 
     def run(self) -> Path:
-        return self._inference_model_path
+        return self.inference_model_path
 
 
 class _FakeMultiStageExporter:
