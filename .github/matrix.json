@@ -37,13 +37,13 @@
   },
   {
     "package": "hailo",
-    "version": "2025.01",
+    "version": "2025.04",
     "default": "2025.04",
     "os": "ubuntu-22.04-4core"
   },
   {
     "package": "hailo",
-    "version": "2025.04",
+    "version": "2025.07",
     "default": "2025.04",
     "os": "ubuntu-22.04-4core"
   }

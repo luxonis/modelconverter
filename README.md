@@ -603,6 +603,11 @@ The `modelconverter` CLI is available inside the container as well.
 Calibration data can be a mix of images (`.jpg`, `.png`, `.jpeg`) and `.npy`, `.raw` files.
 Image files will be loaded and converted to the format specified in the config.
 
+LDF datasets are also supported as calibration data by setting `calibration.path` to `<dataset_name>:<split>`, or `<dataset_name>:<split>:<loader_plugin>` when using a custom loader.
+
+> [!NOTE]
+> Multi-input LDF datasets are not currently supported for calibration data.
+
 > [!IMPORTANT]
 > No conversion is performed for `.npy` or `.raw` files, the files are used as provided.
 
