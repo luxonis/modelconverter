@@ -55,12 +55,17 @@ RUN <<EOF
 
 EOF
 
-COPY --link requirements.txt requirements.txt
+COPY --link --from=ghcr.io/astral-sh/uv:0.12.5 /uv /usr/local/bin/uv
+COPY --link pyproject.toml uv.lock ./
 COPY --link modelconverter/platforms/rvc4/requirements.txt requirements-rvc4.txt
 
-RUN pip install --upgrade pip setuptools wheel
-RUN pip install -r requirements.txt
-RUN pip install --upgrade -r requirements-rvc4.txt
+# Install the shared dependencies exactly as the lockfile pins them. The
+# platform pins (including the NumPy downgrade for SNPE) then resolve on
+# top.
+RUN uv export --frozen --no-default-groups --no-emit-project \
+    -o /tmp/requirements.txt
+RUN uv pip install --system --no-cache --no-deps -r /tmp/requirements.txt
+RUN uv pip install --system --no-cache -r requirements-rvc4.txt
 
 FROM python:3.10-slim
 
@@ -70,7 +75,7 @@ ENV VERSION=${VERSION}
 
 WORKDIR /app
 
-RUN pip install --upgrade pip
+COPY --link --from=ghcr.io/astral-sh/uv:0.12.5 /uv /usr/local/bin/uv
 
 COPY --link --from=base /opt/ /opt/
 COPY --link --from=base /usr/local/lib /usr/local/lib
@@ -109,23 +114,22 @@ COPY --link docker/rvc4/entrypoint.sh /app/entrypoint.sh
 COPY --link docker/entrypoint_common.sh /app/entrypoint_common.sh
 
 ARG DEV=false
-COPY --link requirements-dev.txt /app/requirements-dev.txt
 COPY --link requirements-eval.txt /app/requirements-eval.txt
+COPY --link pyproject.toml /app/pyproject.toml
 RUN if [ "$DEV" = "true" ]; then \
         apt-get update -qq && \
         apt-get install -y -qq --no-install-recommends git && \
         rm -rf /var/lib/apt/lists/* && \
-        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli && \
-        pip install --no-cache-dir --no-deps -r /app/requirements-eval.txt; \
+        uv pip install --system --no-cache --group dev codecov-cli && \
+        uv pip install --system --no-cache --no-deps -r /app/requirements-eval.txt; \
     fi
 
 COPY --link modelconverter /app/modelconverter/
-COPY --link pyproject.toml /app/pyproject.toml
 RUN <<EOF
 
     set -e
 
-    pip install -e . --no-deps --no-cache-dir
+    uv pip install --system --no-cache --no-deps -e .
     chmod +x /app/entrypoint.sh
 
 EOF
