@@ -50,7 +50,7 @@ def build_onnx(
     inputs: list[tuple[str, list[int], int]],
     outputs: list[tuple[str, list[int], int]],
 ) -> Path:
-    """A minimal valid model with the given inputs/outputs.
+    """Build a minimal valid model with the given inputs/outputs.
 
     Each output comes off an ``Identity`` node fed from an input, so the graph
     is structurally valid whatever the declared shapes.
@@ -78,7 +78,7 @@ def build_onnx(
 def build_toy_integration_onnx(
     path: PathType, *, size: int = 64, with_flag: bool = False
 ) -> Path:
-    """A tiny multi-input net covering the whole preprocessing surface.
+    """Build a tiny multi-input net covering the whole preprocessing surface.
 
     Three image inputs, each meant to carry different mean/scale + encoding in
     the config: ``bgr`` (``BGR`` -> ``BGR``, no reversal), ``rgb`` (``RGB`` ->
@@ -159,7 +159,7 @@ def build_toy_integration_onnx(
 
 
 def build_toy_aggregator_onnx(path: PathType, *, size: int = 64) -> Path:
-    """The final stage of the toy multistage net.
+    """Build the final stage of the toy multistage net.
 
     Two ``[1, 3, size, size]`` inputs -- fed from two upstream toy stages via
     linked calibration -- combined as ``from_first * from_second + bias``. The
@@ -191,7 +191,7 @@ def build_toy_conv_onnx(
     out_channels: int = 4,
     external_data: bool = False,
 ) -> Path:
-    """A tiny single-input conv net for the numeric-fidelity tests.
+    """Build a tiny single-input conv net for the numeric-fidelity tests.
 
     ``build_toy_integration_onnx`` is a poor fidelity subject -- its output is
     essentially the preprocessed input, and its per-input scale spread is too
@@ -235,7 +235,7 @@ def build_toy_conv_onnx(
 def weights_only_external_onnx(
     path: PathType, *, single_file: bool = True
 ) -> list[Path]:
-    """A model that is nothing but externally stored weights.
+    """Build a model that is nothing but externally stored weights.
 
     Returns the companion files, in sorted order. Anything walking a
     model's external data has to find every one of them, so
@@ -282,7 +282,7 @@ def weights_only_external_onnx(
 
 
 def build_relu_onnx(path: PathType, shape: list[int]) -> Path:
-    """A shape-preserving ``Relu`` over a single input of the given shape.
+    """Build a shape-preserving ``Relu`` over a single input of the given shape.
 
     Used for conversions of shapes the usual 4D ``NCHW`` models never produce:
     a rank-3 ``HWC`` (channels-last, no batch dim) input, or a rank-3
@@ -296,7 +296,7 @@ def build_relu_onnx(path: PathType, shape: list[int]) -> Path:
 
 
 def split_concat_onnx(path: PathType) -> Path:
-    """A ``Split`` whose two branches a ``Concat`` rejoins.
+    """Build a ``Split`` whose two branches a ``Concat`` rejoins.
 
     The Concat produces a graph output, so nothing consumes it. The
     Split-Concat fusion walks forward from the Concat to find a ``Conv``,
@@ -313,7 +313,7 @@ def split_concat_onnx(path: PathType) -> Path:
 
 
 def standard_dummy_onnx(path: PathType) -> Path:
-    """The canonical two-in/two-out model used across the config tests."""
+    """Build the canonical two-in/two-out model used across the config tests."""
     inputs = [
         helper.make_tensor_value_info(
             "input0", TensorProto.FLOAT, [1, 3, 64, 64]
@@ -352,7 +352,7 @@ def single_io_onnx(
     output_name: str = "output0",
     output_shape: list[int] | None = None,
 ) -> Path:
-    """A single-input / single-output model."""
+    """Build a single-input / single-output model."""
     return build_onnx(
         path,
         inputs=[(name, shape or [1, 3, 64, 64], dtype)],
@@ -372,7 +372,8 @@ def dynamic_batch_onnx(path: PathType) -> Path:
 
 def intermediate_info_onnx(path: PathType) -> Path:
     """Model with one intermediate tensor described in ``value_info`` and one
-    that is not, for the ONNX introspection helpers in config.py."""
+    that is not, for the ONNX introspection helpers in config.py.
+    """
     inp = helper.make_tensor_value_info(
         "input0", TensorProto.FLOAT, [1, 3, 64, 64]
     )
@@ -401,12 +402,12 @@ def intermediate_info_onnx(path: PathType) -> Path:
 
 
 def multi_file_external_onnx(path: PathType) -> list[Path]:
-    """A conv model whose weight and bias each live in their own file.
+    """Build a conv model whose weight and bias each live in their own file.
 
     Returns the companion files, in sorted order. This is the layout
     ``all_tensors_to_one_file=False`` produces; two initializers are the
     smallest model that tells "copies the external data" apart from
-    "copies *all* of it". Unlike L{weights_only_external_onnx} the graph
+    "copies *all* of it". Unlike `weights_only_external_onnx` the graph
     has real inputs and outputs, so it can be put through a conversion.
     """
     path = Path(path)

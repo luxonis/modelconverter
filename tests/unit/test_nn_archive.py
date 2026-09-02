@@ -65,8 +65,10 @@ def _single_input_archive_config(
     dtype: str = "float32",
     model_name: str = "model.onnx",
 ) -> Params:
-    """A one-input / one-output NN-archive ``config.json`` dict whose
-    single input's ``preprocessing`` block is fully controllable."""
+    """Build a one-input / one-output NN-archive ``config.json`` dict.
+
+    The single input's ``preprocessing`` block is fully controllable.
+    """
     return {
         "config_version": "1.0",
         "model": {
@@ -100,8 +102,9 @@ def _pack_single_input(
     grayscale: bool = False,
     input_type: str = "image",
 ) -> Path:
-    """Builds a matching dummy ONNX + single-input archive and returns
-    the ``.tar`` path."""
+    """Build a matching dummy ONNX + single-input archive and return
+    the ``.tar`` path.
+    """
     model_path = work_dir / "model.onnx"
     shape = None
     if grayscale:
@@ -417,7 +420,8 @@ def _config_to_nn(
     platform: Platform = Platform.RVC4,
 ) -> NNArchiveConfig:
     """``modelconverter_config_to_nn`` with the fixed test boilerplate (output
-    name + model path) filled in, exposing only what tests vary."""
+    name + model path) filled in, exposing only what tests vary.
+    """
     return modelconverter_config_to_nn(
         config,
         Path("out.onnx"),

@@ -134,9 +134,7 @@ unfixable = ["B905", "PLC0208"]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-# The tests move to the Google style in the stacked PR; keep them out of
-# the docstring gate until then.
-"tests/*" = ["ANN201", "D"]
+"tests/*" = ["ANN201", "D103"]
 "__main__.py" = ["ANN201"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
