@@ -5,7 +5,8 @@ accepts an ONNX model, an OpenVINO IR pair or a TFLite model; a TFLite
 model is converted to ONNX first, which the exporter itself logs as
 experimental. The conversion then goes through OpenVINO: its model
 optimizer turns the ONNX model into an OpenVINO IR and ``compile_tool``
-compiles that into a ``.blob``.
+compiles that into a ``.blob`` -- by default one blob per SHAVE count,
+packed into a single ``.superblob``.
 
 .. note::
     These modules import the OpenVINO toolchain, which exists only
