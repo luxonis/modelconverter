@@ -1,3 +1,4 @@
+import os
 import shutil
 from pathlib import Path
 
@@ -51,12 +52,15 @@ class HailoExporter(Exporter):
 
         logger.info("Translating model to Hailo IR.")
         if self._is_tflite:
+            translate_kwargs = {
+                "net_name": self._model_name,
+                "start_node_names": start_nodes,
+                "end_node_names": list(self._outputs.keys()),
+            }
+            if _supports_tf_tensor_shapes():
+                translate_kwargs["tensor_shapes"] = net_input_shapes
             runner.translate_tf_model(
-                str(self._input_model),
-                net_name=self._model_name,
-                start_node_names=start_nodes,
-                tensor_shapes=net_input_shapes,
-                end_node_names=list(self._outputs.keys()),
+                str(self._input_model), **translate_kwargs
             )
         else:
             runner.translate_onnx_model(
@@ -265,3 +269,23 @@ class HailoExporter(Exporter):
             "compression_level": self._compression_level,
             "alls": self._alls,
         }
+
+
+def _supports_tf_tensor_shapes() -> bool:
+    """Whether the Hailo DFC accepts tensor shapes for TFLite inputs.
+
+    The image Dockerfile turns its build argument into ``VERSION`` (for
+    example, ``2025.07`` becomes ``2025-07``). Hailo removed the option in
+    2025.07, so retain it for older or unknown installations.
+    """
+    version = os.environ.get("VERSION")
+    if version is None:
+        return True
+
+    try:
+        year, release = (
+            int(part) for part in version.replace("-", ".").split(".")[:2]
+        )
+    except ValueError:
+        return True
+    return (year, release) < (2025, 7)
