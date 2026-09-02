@@ -4,7 +4,9 @@ from pathlib import Path
 
 import pytest
 
+import modelconverter.cli.utils as cli_utils
 from modelconverter.cli.utils import (
+    display_output_path,
     extract_preprocessing,
     get_configs,
     get_output_dir_name,
@@ -16,6 +18,7 @@ from modelconverter.utils.constants import (
     CALIBRATION_DIR,
     CONFIGS_DIR,
     CONVERSION_MARKER,
+    HOST_OUTPUT_DIR_ENV_VAR,
     MODELS_DIR,
     OUTPUTS_DIR,
 )
@@ -37,6 +40,74 @@ def test_output_dir_default_name():
     out = get_output_dir_name(Platform.RVC4, "my_model", None)
     assert out.parent == OUTPUTS_DIR
     assert out.name.startswith("my_model_to_rvc4_")
+
+
+@pytest.mark.parametrize(
+    (
+        "in_docker_context",
+        "host_output_dir",
+        "path",
+        "expected",
+    ),
+    [
+        (
+            True,
+            "/home/user/project/output",
+            Path("/app/output/model/model.rvc4.tar.xz"),
+            "/home/user/project/output/model/model.rvc4.tar.xz",
+        ),
+        (
+            True,
+            None,
+            Path("/app/output/model/model.rvc4.tar.xz"),
+            "/app/output/model/model.rvc4.tar.xz",
+        ),
+        (
+            True,
+            "/home/user/project/output",
+            Path("/outside-output/model.rvc4.tar.xz"),
+            "/outside-output/model.rvc4.tar.xz",
+        ),
+        (
+            False,
+            "/home/user/project/output",
+            Path("/app/output/model/model.rvc4.tar.xz"),
+            "/app/output/model/model.rvc4.tar.xz",
+        ),
+        (
+            True,
+            "/home/user/project/output",
+            Path("/app/output/../other/model.rvc4.tar.xz"),
+            "/app/output/../other/model.rvc4.tar.xz",
+        ),
+        (
+            True,
+            r"C:\Users\me\project\output",
+            Path("/app/output/model/model.rvc4.tar.xz"),
+            r"C:\Users\me\project\output\model\model.rvc4.tar.xz",
+        ),
+    ],
+)
+def test_display_output_path(
+    monkeypatch: pytest.MonkeyPatch,
+    in_docker_context: bool,
+    host_output_dir: str | None,
+    path: Path,
+    expected: str,
+):
+    if in_docker_context:
+        monkeypatch.setenv("IN_DOCKER", "1")
+    else:
+        monkeypatch.delenv("IN_DOCKER", raising=False)
+
+    if host_output_dir is None:
+        monkeypatch.delenv(HOST_OUTPUT_DIR_ENV_VAR, raising=False)
+    else:
+        monkeypatch.setenv(HOST_OUTPUT_DIR_ENV_VAR, host_output_dir)
+
+    monkeypatch.setattr(cli_utils, "OUTPUTS_DIR", Path("/app/output"))
+
+    assert display_output_path(path) == expected
 
 
 def test_output_dir_explicit_and_previous_conversion_is_wiped():

@@ -7,6 +7,7 @@ preparing the shared directories and resolving the output directory.
 """
 
 from .utils import (
+    display_output_path,
     extract_preprocessing,
     get_configs,
     get_output_dir_name,
@@ -15,6 +16,7 @@ from .utils import (
 )
 
 __all__ = [
+    "display_output_path",
     "extract_preprocessing",
     "get_configs",
     "get_output_dir_name",

@@ -652,9 +652,7 @@ def generate_archive(
             output_path / "buildinfo.json",
         ],
     )
-    archive = generator.make_archive()
-    logger.info(f"Model exported to {archive}")
-    return archive
+    return generator.make_archive()
 
 
 def _get_io_dtype(

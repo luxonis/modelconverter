@@ -7,6 +7,7 @@ preprocessing that is handed to the NN Archive instead of being baked
 into the model.
 """
 
+import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +29,7 @@ from modelconverter.utils.constants import (
     CALIBRATION_DIR,
     CONFIGS_DIR,
     CONVERSION_MARKER,
+    HOST_OUTPUT_DIR_ENV_VAR,
     MISC_DIR,
     MODELS_DIR,
     OUTPUTS_DIR,
@@ -57,6 +59,32 @@ def resolve_output_dir(output_dir: str) -> Path:
             "without `..`."
         )
     return OUTPUTS_DIR / relative
+
+
+def display_output_path(path: Path) -> str:
+    """Return the host-visible representation of an output path when available.
+
+    Args:
+        path: Artifact path produced by the current conversion environment.
+
+    Returns:
+        Host-visible path for a Docker output when mapping context is
+        available, otherwise the original path representation.
+
+    """
+    host_output_dir = os.environ.get(HOST_OUTPUT_DIR_ENV_VAR)
+    if not in_docker() or not host_output_dir:
+        return str(path)
+
+    try:
+        relative = path.relative_to(OUTPUTS_DIR)
+    except ValueError:
+        return str(path)
+
+    if ".." in relative.parts:
+        return str(path)
+
+    return _join_display_path(host_output_dir, relative)
 
 
 def get_output_dir_name(
@@ -246,3 +274,19 @@ def extract_preprocessing(
         inp.encoding.to = Encoding.NONE
 
     return cfg, preprocessing
+
+
+def _join_display_path(root: str, relative: Path) -> str:
+    relative_display = relative.as_posix()
+    if relative_display == ".":
+        return root
+
+    use_backslash = "\\" in root and "/" not in root
+    separator = "\\" if use_backslash else "/"
+    if use_backslash:
+        relative_display = relative_display.replace("/", separator)
+
+    clean_root = root.rstrip("/\\")
+    if not clean_root:
+        return f"{separator}{relative_display}"
+    return f"{clean_root}{separator}{relative_display}"

@@ -11,7 +11,10 @@ from luxonis_ml.typing import Params, ParamValue
 
 from modelconverter.__main__ import app
 from modelconverter.utils import constants, docker_utils
-from modelconverter.utils.constants import CONTAINER_SHARED_DIR
+from modelconverter.utils.constants import (
+    CONTAINER_SHARED_DIR,
+    HOST_OUTPUT_DIR_ENV_VAR,
+)
 from tests.helpers.onnx_factory import single_io_onnx
 
 _IMAGE = "luxonis/modelconverter-rvc4:test"
@@ -170,6 +173,18 @@ def test_output_directory_is_created_by_the_host_user(
     _launch(config, monkeypatch)
 
     assert output_dir.is_dir()
+
+
+@pytest.mark.parametrize("image", [_IMAGE, f"{_IMAGE}-dev"])
+def test_host_output_display_context_reaches_the_container(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch, image: str
+):
+    config = _project(work_dir)
+
+    launch = _launch(config, monkeypatch, image=image)
+
+    environment = _mapping(launch.service["environment"])
+    assert environment[HOST_OUTPUT_DIR_ENV_VAR] == str(work_dir / "output")
 
 
 @pytest.mark.parametrize(
