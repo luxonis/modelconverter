@@ -555,13 +555,21 @@ def pull_image(client: docker.DockerClient, image: str) -> str:
         bars = {}
         for log in client.api.pull(repository, tag=tag, stream=True):
             log = json.loads(log)
-            if "error" in log:
-                raise RuntimeError(log["error"])
+            # The daemon reports a failed pull in `errorDetail`. It used
+            # to repeat the text in a top-level `error`, but that field is
+            # deprecated and its API types no longer carry it.
+            if "errorDetail" in log or "error" in log:
+                detail = log.get("errorDetail", {})
+                raise RuntimeError(detail.get("message") or log.get("error"))
             status = log.get("status")
             if status not in {"Downloading", "Extracting"}:
                 continue
             id = log["id"]
             detail = log["progressDetail"]
+            # The containerd image store -- the default since Docker 29 --
+            # times the extraction instead of counting its bytes, and sends
+            # `{"current": 3, "units": "s"}`. Such a message has no total, and
+            # its seconds must not be written into a bar that counts bytes.
             total = detail.get("total")
             completed = detail["current"] if total is not None else None
             if id not in bars:
