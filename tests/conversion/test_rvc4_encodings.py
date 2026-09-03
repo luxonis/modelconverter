@@ -10,7 +10,8 @@ so this e2e converts the toy conv net with:
     ``_generate_io_encodings`` -> ``snpe-onnx-to-dlc --quantization_overrides``
     and ``snpe-dlc-quant --override_params``;
   * ``strict_quantization_overrides`` -> ModelConverter validates custom
-    names against the effective ONNX before invoking SNPE;
+    names against their activation/parameter groups in the effective ONNX
+    before invoking SNPE;
   * ``use_per_row_quantization`` -> ``snpe-dlc-quant --use_per_row_quantization``
     (off by default, so otherwise never exercised);
   * a non-default ``htp_socs`` -> ``snpe-dlc-graph-prepare --htp_socs``.
@@ -210,7 +211,7 @@ def test_rvc4_strict_encodings_reject_unknown_before_qualcomm(
     cause = exc_info.value.__cause__
     assert isinstance(cause, ValueError)
     error = str(cause)
-    assert "Unknown RVC4 quantization override names" in error
+    assert "Invalid RVC4 quantization override names" in error
     assert "activation_encodings=['nonexistent_activation']" in error
     assert "param_encodings=[]" in error
     assert subprocess_calls == []

@@ -565,8 +565,9 @@ class RVC4Config(PlatformConfig):
             layer types.
         use_per_row_quantization: Whether to use row-wise quantization
             of the ``MatMul`` and ``FullyConnected`` operations.
-        strict_quantization_overrides: Whether to validate that configured
-            quantization override names exist in the effective ONNX model.
+        strict_quantization_overrides: Whether to validate configured
+            quantization override names against their activation/parameter
+            groups in the effective ONNX model.
         optimization_level: Optimization level of the DLC graph
             preparation. Higher levels take longer but yield a faster
             graph.

@@ -247,8 +247,8 @@ stages:
       # Enables row wise quantization of Matmul and FullyConnected ops.
       use_per_row_quantization: False
 
-      # When enabled, rejects custom quantization override names that do not
-      # exist in the effective ONNX model before invoking Qualcomm tooling.
+      # When enabled, rejects custom quantization override names that are
+      # absent from or assigned to the wrong group in the effective ONNX model.
       # Currently supported only for ONNX input models.
       strict_quantization_overrides: False
 

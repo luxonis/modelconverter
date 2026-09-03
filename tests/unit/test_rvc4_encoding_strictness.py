@@ -19,7 +19,7 @@ from modelconverter.utils.config import (
     SingleStageConfig,
 )
 from modelconverter.utils.encodings import (
-    collect_onnx_tensor_names,
+    _collect_onnx_encoding_names,
     parse_encodings,
     validate_quantization_override_names,
 )
@@ -233,14 +233,21 @@ def test_strict_true_accepts_valid_top_level_onnx_names(work_dir: Path):
     validate_quantization_override_names(encodings, model)
 
 
-def test_strict_true_accepts_initializer_under_activation_encodings(
+def test_strict_true_rejects_initializer_under_activation_encodings(
     work_dir: Path,
 ):
     model = _probe_model(work_dir / "probe.onnx")
 
-    validate_quantization_override_names(
-        _encodings(activations=["weight"]), model
-    )
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"activation_encodings=\['weight'\]; "
+            r"param_encodings=\[\]"
+        ),
+    ):
+        validate_quantization_override_names(
+            _encodings(activations=["weight"]), model
+        )
 
 
 def test_strict_true_accepts_constant_output_under_param_encodings(
@@ -253,14 +260,60 @@ def test_strict_true_accepts_constant_output_under_param_encodings(
     )
 
 
-def test_strict_true_accepts_same_name_in_both_encoding_groups(
+def test_strict_true_rejects_constant_output_under_activation_encodings(
+    work_dir: Path,
+):
+    model = _constant_output_model(work_dir / "constant.onnx")
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"activation_encodings=\['constant_output'\]; "
+            r"param_encodings=\[\]"
+        ),
+    ):
+        validate_quantization_override_names(
+            _encodings(activations=["constant_output"]), model
+        )
+
+
+@pytest.mark.parametrize(
+    "activation_name",
+    ["input0", "hidden", "output0"],
+)
+def test_strict_true_rejects_activation_under_param_encodings(
+    work_dir: Path,
+    activation_name: str,
+):
+    model = _probe_model(work_dir / "probe.onnx")
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"activation_encodings=\[\]; "
+            rf"param_encodings=\['{activation_name}'\]"
+        ),
+    ):
+        validate_quantization_override_names(
+            _encodings(params=[activation_name]), model
+        )
+
+
+def test_strict_true_rejects_same_name_in_both_encoding_groups(
     work_dir: Path,
 ):
     model = _probe_model(work_dir / "probe.onnx")
 
-    validate_quantization_override_names(
-        _encodings(activations=["weight"], params=["weight"]), model
-    )
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"activation_encodings=\['weight'\]; "
+            r"param_encodings=\[\]"
+        ),
+    ):
+        validate_quantization_override_names(
+            _encodings(activations=["weight"], params=["weight"]), model
+        )
 
 
 def test_strict_true_rejects_unknown_activation(work_dir: Path):
@@ -340,22 +393,46 @@ def test_strict_true_reports_both_groups_sorted(work_dir: Path):
         )
 
 
-def test_tensor_namespace_includes_node_outputs_without_value_info(
+def test_activation_namespace_includes_node_outputs_without_value_info(
     work_dir: Path,
 ):
     model = _probe_model(work_dir / "probe.onnx")
 
-    model_names = collect_onnx_tensor_names(model)
+    model_names = _collect_onnx_encoding_names(model)
 
-    assert "hidden" in model_names
+    assert "hidden" in model_names.activation_names
+
+
+def test_onnx_encoding_names_are_disjoint_by_category(work_dir: Path):
+    model = _probe_model(work_dir / "probe.onnx")
+
+    model_names = _collect_onnx_encoding_names(model)
+
+    assert model_names.activation_names == {
+        "input0",
+        "hidden",
+        "output0",
+    }
+    assert model_names.parameter_names == {"weight"}
+    assert model_names.activation_names.isdisjoint(model_names.parameter_names)
+
+
+def test_constant_output_is_parameter_not_activation(work_dir: Path):
+    model = _constant_output_model(work_dir / "constant.onnx")
+
+    model_names = _collect_onnx_encoding_names(model)
+
+    assert "constant_output" in model_names.parameter_names
+    assert "constant_output" not in model_names.activation_names
 
 
 def test_orphan_value_info_name_is_not_in_strict_namespace(work_dir: Path):
     model = _probe_model(work_dir / "probe.onnx")
 
-    model_names = collect_onnx_tensor_names(model)
+    model_names = _collect_onnx_encoding_names(model)
 
-    assert "value_info_only" not in model_names
+    assert "value_info_only" not in model_names.activation_names
+    assert "value_info_only" not in model_names.parameter_names
     with pytest.raises(
         ValueError,
         match=r"activation_encodings=\['value_info_only'\]",
@@ -384,9 +461,10 @@ def test_onnx_namespace_collection_does_not_load_external_data(
     model = _save_external_data_model(work_dir / "external.onnx", graph)
     (work_dir / "external.onnx_data").unlink()
 
-    model_names = collect_onnx_tensor_names(model)
+    model_names = _collect_onnx_encoding_names(model)
 
-    assert model_names == {"input0", "output0", "weight"}
+    assert model_names.activation_names == {"input0", "output0"}
+    assert model_names.parameter_names == {"weight"}
 
 
 def test_empty_optional_onnx_names_are_ignored(work_dir: Path):
@@ -402,9 +480,10 @@ def test_empty_optional_onnx_names_are_ignored(work_dir: Path):
     graph = helper.make_graph(nodes, "OptionalEmptyNames", [inp], [out])
     model = _save_model(work_dir / "optional_empty.onnx", graph)
 
-    model_names = collect_onnx_tensor_names(model)
+    model_names = _collect_onnx_encoding_names(model)
 
-    assert "" not in model_names
+    assert "" not in model_names.activation_names
+    assert "" not in model_names.parameter_names
 
 
 def test_strict_true_with_no_encodings_does_not_fail(work_dir: Path):
