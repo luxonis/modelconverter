@@ -555,8 +555,6 @@ def pull_image(client: docker.DockerClient, image: str) -> str:
         bars = {}
         for log in client.api.pull(repository, tag=tag, stream=True):
             log = json.loads(log)
-            # A failed pull arrives in `errorDetail`. An older daemon also
-            # repeats the text in `error`, a field the current API drops.
             error_detail = log.get("errorDetail", {})
             error = error_detail.get("message") or log.get("error")
             if error:
@@ -567,9 +565,6 @@ def pull_image(client: docker.DockerClient, image: str) -> str:
             id = log["id"]
             detail = log["progressDetail"]
             description = f"{id} [{status}]:"
-            # The containerd image store times an extraction rather than
-            # counting its bytes: no `total`, and `current` in seconds.
-            # `update` skips a None field, so the byte bar stays as it is.
             total = detail.get("total")
             if id not in bars:
                 bars[id] = progress.add_task(description, total=total)
