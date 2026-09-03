@@ -555,30 +555,29 @@ def pull_image(client: docker.DockerClient, image: str) -> str:
         bars = {}
         for log in client.api.pull(repository, tag=tag, stream=True):
             log = json.loads(log)
-            # The daemon reports a failed pull in `errorDetail`. It used
-            # to repeat the text in a top-level `error`, but that field is
-            # deprecated and its API types no longer carry it.
-            if "errorDetail" in log or "error" in log:
-                detail = log.get("errorDetail", {})
-                raise RuntimeError(detail.get("message") or log.get("error"))
+            # A failed pull arrives in `errorDetail`. An older daemon also
+            # repeats the text in `error`, a field the current API drops.
+            error_detail = log.get("errorDetail", {})
+            error = error_detail.get("message") or log.get("error")
+            if error:
+                raise RuntimeError(error)
             status = log.get("status")
             if status not in {"Downloading", "Extracting"}:
                 continue
             id = log["id"]
             detail = log["progressDetail"]
-            # The containerd image store -- the default since Docker 29 --
-            # times the extraction instead of counting its bytes, and sends
-            # `{"current": 3, "units": "s"}`. Such a message has no total, and
-            # its seconds must not be written into a bar that counts bytes.
+            description = f"{id} [{status}]:"
+            # The containerd image store times an extraction rather than
+            # counting its bytes: no `total`, and `current` in seconds.
+            # `update` skips a None field, so the byte bar stays as it is.
             total = detail.get("total")
-            completed = detail["current"] if total is not None else None
             if id not in bars:
-                bars[id] = progress.add_task(f"{id} [{status}]:", total=total)
+                bars[id] = progress.add_task(description, total=total)
             progress.update(
                 bars[id],
-                completed=completed,
+                completed=detail["current"] if total is not None else None,
                 total=total,
-                description=f"{id} [{status}]:",
+                description=description,
             )
     return image
 
@@ -703,15 +702,15 @@ def _get_or_build_docker_image(
 ) -> str:
     client = get_docker_client_from_active_context()
     for candidate in candidate_images:
+        remote = f"ghcr.io/{candidate}"
         logger.warning(
-            f"Image '{candidate}' not found locally, pulling "
-            f"the latest image from 'ghcr.io/{candidate}'..."
+            f"Image '{candidate}' not found locally, "
+            f"pulling the latest image from '{remote}'..."
         )
-
         try:
-            return pull_image(client, f"ghcr.io/{candidate}")
+            return pull_image(client, remote)
         except Exception as e:
-            logger.warning(f"Failed to pull 'ghcr.io/{candidate}': {e}")
+            logger.warning(f"Failed to pull '{remote}': {e}")
 
     logger.error("Failed to pull the image, building it locally...")
     return docker_build(platform, bare_tag, version, image)
