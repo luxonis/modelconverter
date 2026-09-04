@@ -32,6 +32,7 @@ from rich.prompt import Confirm
 from rich.table import Table
 
 from modelconverter.cli import (
+    display_output_path,
     extract_preprocessing,
     get_configs,
     get_output_dir_name,
@@ -313,6 +314,10 @@ def convert(
                     archive_name=archive_name,
                 )
             ]
+
+        for model_path in out_models:
+            logger.info(f"Model exported to {display_output_path(model_path)}")
+
         output_artifact_count = len(out_models)
 
         if isinstance(exporter.config, SingleStageConfig):
