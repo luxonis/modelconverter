@@ -1,0 +1,19 @@
+name: Metadata
+
+on:
+  pull_request:
+
+permissions:
+  # `actions/labeler` reads `.github/labeler.yaml` through the API, so it
+  # needs read access to the contents. It does not need a checkout.
+  contents: read
+  pull-requests: write
+
+jobs:
+  labeler:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Labeler
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13
+        with:
+          configuration-path: .github/labeler.yaml
