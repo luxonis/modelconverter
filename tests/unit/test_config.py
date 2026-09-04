@@ -428,7 +428,12 @@ def test_named_scale_values():
 
 def test_scalar_mean_value_broadcasts_over_channels():
     inp = _input_config(name="i", mean_values=127)
-    assert inp.mean_values == [127, 127, 127]
+    assert inp.mean_values == [127]
+
+
+def test_zero_scale_value_is_rejected():
+    with pytest.raises(ValueError, match="zero scale value"):
+        _input_config(name="i", scale_values=[1, 0, 2])
 
 
 def test_explicit_scale_values_pass_through():

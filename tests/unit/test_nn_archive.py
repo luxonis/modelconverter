@@ -664,9 +664,9 @@ def test_raw_input_default_type_without_orig(dummy_onnx: Path):
     assert in0.preprocessing.dai_type is None
 
 
-def test_raw_input_preprocessing_preserved_from_orig(dummy_onnx: Path):
-    # input0 as raw in the config; orig archive carries a raw input whose
-    # preprocessing block must be preserved verbatim.
+def test_embedded_raw_input_preprocessing_is_identity(dummy_onnx: Path):
+    # The original raw preprocessing has already been represented in the
+    # successfully converted model and must not be applied twice.
     config = Config.get_config(
         None,
         {
@@ -688,7 +688,71 @@ def test_raw_input_preprocessing_preserved_from_orig(dummy_onnx: Path):
     nn = _config_to_nn(config, dummy_onnx, orig=orig)
     in0 = next(i for i in nn.model.inputs if i.name == "input0")
     assert in0.input_type == InputType.RAW
+    assert in0.preprocessing.mean is None
+
+
+def test_embedded_raw_preprocessing_is_identity_in_archive(
+    dummy_onnx: Path,
+):
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(dummy_onnx),
+            "inputs.0.name": "input0",
+            "inputs.0.encoding": "NONE",
+            "inputs.0.mean_values": [9, 9, 9],
+            "inputs.1.name": "input1",
+        },
+    )
+    orig = archive_from_model(dummy_onnx)
+    orig.model.inputs[0].input_type = InputType.RAW
+    orig.model.inputs[0].preprocessing = PreprocessingBlock(
+        mean=[9, 9, 9],
+        scale=[2, 2, 2],
+        reverse_channels=None,
+        interleaved_to_planar=None,
+        dai_type=None,
+    )
+
+    nn = _config_to_nn(config, dummy_onnx, orig=orig)
+
+    in0 = next(i for i in nn.model.inputs if i.name == "input0")
+    assert in0.input_type == InputType.RAW
+    assert in0.preprocessing.mean is None
+    assert in0.preprocessing.scale is None
+
+
+def test_externalized_raw_preprocessing_is_kept_in_archive(
+    dummy_onnx: Path,
+):
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(dummy_onnx),
+            "inputs.0.name": "input0",
+            "inputs.0.encoding": "NONE",
+            "inputs.1.name": "input1",
+        },
+    )
+    orig = archive_from_model(dummy_onnx)
+    orig.model.inputs[0].input_type = InputType.RAW
+    preprocessing = {
+        "input0": PreprocessingBlock(
+            mean=[9, 9, 9],
+            scale=[2, 2, 2],
+            reverse_channels=None,
+            interleaved_to_planar=None,
+            dai_type=None,
+        )
+    }
+
+    nn = _config_to_nn(
+        config, dummy_onnx, orig=orig, preprocessing=preprocessing
+    )
+
+    in0 = next(i for i in nn.model.inputs if i.name == "input0")
     assert in0.preprocessing.mean == [9, 9, 9]
+    assert in0.preprocessing.scale == [2, 2, 2]
 
 
 def test_iop_input_and_output(dummy_onnx: Path):

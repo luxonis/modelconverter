@@ -355,13 +355,28 @@ class InputConfig(OutputConfig):
         if isinstance(value, str) and value in NAMED_VALUES:
             return NAMED_VALUES[value][values_type]
         if isinstance(value, float | int):
-            return [value, value, value]
+            # Keep the documented scalar meaning until the input's channel
+            # count is known.
+            return [value]
         return value
 
-    def requires_onnx_input_modification(
+    @model_validator(mode="after")
+    def _validate_preprocessing_values(self) -> Self:
+        """Reject invalid preprocessing values."""
+        if self.scale_values is not None and any(
+            value == 0 for value in self.scale_values
+        ):
+            raise ValueError(
+                f"Input '{self.name}' has a zero scale value; scale values "
+                "must be non-zero."
+            )
+
+        return self
+
+    def requires_input_preprocessing(
         self, *, reverse_only: bool = False
     ) -> bool:
-        """Check whether the ONNX graph must be modified for this input.
+        """Check whether preprocessing is requested for this input.
 
         Args:
             reverse_only: If ``True``, only the channel reversal is
@@ -385,6 +400,76 @@ class InputConfig(OutputConfig):
             self.scale_values is not None
             and any(v != 1 for v in self.scale_values)
         )
+
+    def requires_onnx_input_modification(
+        self, *, reverse_only: bool = False
+    ) -> bool:
+        """Check whether preprocessing requires an ONNX graph change."""
+        return self.requires_input_preprocessing(reverse_only=reverse_only)
+
+    def validate_preprocessing(self, *, reverse_only: bool = False) -> int:
+        """Validate requested preprocessing and return the channel count.
+
+        Args:
+            reverse_only: Validate only a requested encoding conversion.
+
+        Returns:
+            The resolved number of input channels.
+
+        Raises:
+            ValueError: If the input contract is insufficient or inconsistent.
+
+        """
+        if self.shape is None or self.layout is None or "C" not in self.layout:
+            raise ValueError(
+                f"Cannot apply preprocessing to input '{self.name}' without "
+                "a shape and layout containing a channel dimension."
+            )
+
+        channels = self.shape[self.layout.index("C")]
+        if channels <= 0:
+            raise ValueError(
+                f"Cannot apply preprocessing to input '{self.name}' with an "
+                "unknown channel count."
+            )
+
+        if self.encoding_mismatch:
+            if not self.is_color_input or self.encoding.to not in {
+                Encoding.RGB,
+                Encoding.BGR,
+            }:
+                raise ValueError(
+                    f"Cannot reverse channels for input '{self.name}': "
+                    "channel reversal requires RGB/BGR color encodings."
+                )
+            if channels != 3:
+                raise ValueError(
+                    f"Cannot reverse channels for input '{self.name}' with "
+                    f"{channels} channels; RGB/BGR reversal requires exactly "
+                    "3 channels."
+                )
+
+        if not reverse_only:
+            for values_name, values in (
+                ("mean_values", self.mean_values),
+                ("scale_values", self.scale_values),
+            ):
+                if values is not None and len(values) not in {1, channels}:
+                    raise ValueError(
+                        f"Input '{self.name}' has {channels} channels, but "
+                        f"'{values_name}' contains {len(values)} values; "
+                        "provide one value to broadcast or one value per "
+                        "channel."
+                    )
+            if self.scale_values is not None and any(
+                value == 0 for value in self.scale_values
+            ):
+                raise ValueError(
+                    f"Input '{self.name}' has a zero scale value; scale "
+                    "values must be non-zero."
+                )
+
+        return channels
 
 
 class PlatformConfig(BaseModelExtraForbid):

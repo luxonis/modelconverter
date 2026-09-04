@@ -280,8 +280,9 @@ def modelconverter_config_to_nn(
     Shapes and data types are taken from the converted model itself,
     layouts are guessed from the original ones, and the precision is
     derived from the platform together with its quantization settings.
-    Of the original archive config, the heads are carried over, as is
-    the type of every input and the preprocessing block of a raw one.
+    Of the original archive config, the heads and input types are carried
+    over. Archive preprocessing is identity unless it is supplied explicitly
+    through ``preprocessing`` after being externalized before conversion.
 
     Args:
         config: Config the conversion was run with.
@@ -393,12 +394,8 @@ def modelconverter_config_to_nn(
             if orig_inp is not None
             else _default_archive_input_type(is_raw_input=inp.is_raw_input)
         )
-        preprocessing_cfg = (
-            orig_inp.preprocessing.model_dump(mode="json")
-            if input_type == "raw" and orig_inp is not None
-            else _default_archive_preprocessing(
-                inp, layout, input_type=input_type
-            )
+        preprocessing_cfg = _default_archive_preprocessing(
+            inp, layout, input_type=input_type
         )
 
         archive_cfg["model"]["inputs"].append(

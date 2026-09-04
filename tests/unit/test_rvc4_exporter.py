@@ -2,10 +2,13 @@
 
 from pathlib import Path
 
+import onnx
 import pytest
 
 from modelconverter.platforms.rvc4.exporter import RVC4Exporter
+from modelconverter.utils import ONNXException
 from modelconverter.utils.config import Config
+from modelconverter.utils.types import InputFileType
 from tests.helpers.onnx_factory import single_io_onnx
 
 
@@ -135,3 +138,65 @@ def test_int16_standard_does_not_change_per_row_behavior(
 
     assert "--use_per_channel_quantization" not in command
     assert "--use_per_row_quantization" in command
+
+
+def test_non_onnx_preprocessing_request_fails(tmp_path: Path):
+    onnx_model = single_io_onnx(tmp_path / "model.onnx").resolve()
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(onnx_model),
+            "shape": [1, 3, 64, 64],
+            "encoding": "NONE",
+            "mean_values": [1, 2, 3],
+            "rvc4.disable_calibration": True,
+        },
+    )
+    model = tmp_path / "model.tflite"
+    model.write_bytes(b"TFL3")
+    stage = next(iter(config.stages.values()))
+    stage.input_model = model
+    stage.input_file_type = InputFileType.TFLITE
+    output_dir = tmp_path / "out-tflite"
+    output_dir.mkdir()
+
+    with pytest.raises(ONNXException, match=r"only embed.*ONNX"):
+        RVC4Exporter(stage, output_dir)
+
+
+def test_two_channel_normalization_is_embedded(tmp_path: Path):
+    shape = [1, 2, 8, 8]
+    model = single_io_onnx(
+        tmp_path / "two-channel.onnx",
+        shape=shape,
+        output_shape=shape,
+    ).resolve()
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": shape,
+            "encoding": "NONE",
+            "mean_values": [113.55, 113.55],
+            "scale_values": [68.646, 68.646],
+            "onnx_simplification": False,
+            "onnx_optimizations": {
+                "fuse_add_mul_to_bn": False,
+                "fuse_comb_add_mul_to_conv": False,
+                "fuse_single_add_mul_to_conv": False,
+                "fuse_split_concat_to_conv": False,
+                "substitute_sub_with_add": False,
+                "substitute_div_with_mul": False,
+            },
+            "rvc4.disable_calibration": True,
+        },
+    )
+    output_dir = tmp_path / "out-two-channel"
+    output_dir.mkdir()
+
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+
+    operations = [
+        node.op_type for node in onnx.load(exporter._input_model).graph.node
+    ]
+    assert operations[:2] == ["Sub", "Mul"]

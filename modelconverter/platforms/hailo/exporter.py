@@ -18,7 +18,7 @@ from loguru import logger
 from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
-from modelconverter.utils import exit_with, read_image
+from modelconverter.utils import ModelconverterException, exit_with, read_image
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
@@ -57,6 +57,23 @@ class HailoExporter(Exporter):
         self._disable_compilation = config.hailo.disable_compilation
         self._alls: list[str] = []
         self._hw_arch = config.hailo.hw_arch
+        requested_inputs = []
+        for inp in self._inputs.values():
+            if not inp.requires_input_preprocessing():
+                continue
+            requested_inputs.append(inp.name)
+            try:
+                inp.validate_preprocessing()
+            except ValueError as e:
+                raise ModelconverterException(str(e)) from e
+        if self._disable_calibration and requested_inputs:
+            names = ", ".join(repr(name) for name in requested_inputs)
+            raise ModelconverterException(
+                "Hailo cannot embed requested preprocessing when calibration "
+                f"is disabled; input(s) {names} still require preprocessing. "
+                "Enable calibration or use `--archive-preprocess --to "
+                "nn_archive`."
+            )
         if not tf.config.list_physical_devices("GPU"):
             logger.error(
                 "No GPU found. Setting optimization and compression level to 0."
@@ -276,14 +293,14 @@ class HailoExporter(Exporter):
             if not all(x is not None for x in inp.shape):
                 exit_with(ValueError(f"Input `{name}` has dynamic shape."))
 
-            if self._is_tflite:
-                values_len = inp.shape[-1]
-            else:
-                values_len = inp.shape[1]
-
-            assert values_len is not None
+            assert inp.layout is not None
+            values_len = inp.shape[inp.layout.index("C")]
             scale_values = inp.scale_values or [1.0] * values_len
             mean_values = inp.mean_values or [0.0] * values_len
+            if len(scale_values) == 1:
+                scale_values = scale_values * values_len
+            if len(mean_values) == 1:
+                mean_values = mean_values * values_len
             alls.append(
                 f"normalization_{safe_name} = normalization("
                 f"{mean_values},{scale_values},{hn_name})"

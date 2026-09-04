@@ -1,14 +1,23 @@
 """Host-side unit tests for the ONNX graph rewrites.
 
-Only the Split-Concat fusion is covered here. The rest of the rewrites
-need real models to say anything useful, so the conversion tests carry
-them.
+The normalization tests use tiny identity models so graph structure and
+numerical behavior can both be checked without a vendor toolchain.
 """
 
 from pathlib import Path
 
-from modelconverter.utils.onnx_tools import ONNXModifier
-from tests.helpers.onnx_factory import split_concat_onnx
+import numpy as np
+import onnx
+import onnxruntime as ort
+import pytest
+
+from modelconverter.utils.config import InputConfig
+from modelconverter.utils.exceptions import ONNXException
+from modelconverter.utils.onnx_tools import (
+    ONNXModifier,
+    onnx_attach_normalization_to_inputs,
+)
+from tests.helpers.onnx_factory import single_io_onnx, split_concat_onnx
 
 
 def test_split_concat_fusion_leaves_a_terminal_concat_alone(tmp_path: Path):
@@ -32,3 +41,157 @@ def test_split_concat_fusion_leaves_a_terminal_concat_alone(tmp_path: Path):
         "Split",
         "Concat",
     ]
+
+
+@pytest.mark.parametrize(
+    ("shape", "layout", "values_shape"),
+    [
+        ([1, 2, 3, 4], "NCHW", (1, 2, 1, 1)),
+        ([1, 3, 4, 2], "NHWC", (1, 1, 1, 2)),
+    ],
+)
+def test_two_channel_normalization_is_embedded_and_numerically_correct(
+    tmp_path: Path,
+    shape: list[int],
+    layout: str,
+    values_shape: tuple[int, ...],
+):
+    model_path = single_io_onnx(
+        tmp_path / f"{layout}.onnx",
+        shape=shape,
+        output_shape=shape,
+    )
+    config = InputConfig(
+        name="input0",
+        shape=shape,
+        layout=layout,
+        encoding="NONE",
+        mean_values=[10.0, 20.0],
+        scale_values=[2.0, 4.0],
+    )
+
+    modified = onnx_attach_normalization_to_inputs(
+        model_path,
+        tmp_path / f"{layout}-modified.onnx",
+        {"input0": config},
+    )
+
+    graph = onnx.load(modified).graph
+    assert [node.op_type for node in graph.node[:2]] == ["Sub", "Mul"]
+    x = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
+    expected = (x - np.array([10.0, 20.0]).reshape(values_shape)) / np.array(
+        [2.0, 4.0]
+    ).reshape(values_shape)
+    actual = ort.InferenceSession(str(modified)).run(None, {"input0": x})[0]
+    np.testing.assert_allclose(actual, expected)
+
+
+def test_scalar_normalization_broadcasts_to_every_channel(tmp_path: Path):
+    shape = [1, 2, 3, 4]
+    model_path = single_io_onnx(
+        tmp_path / "scalar.onnx", shape=shape, output_shape=shape
+    )
+    config = InputConfig(
+        name="input0",
+        shape=shape,
+        layout="NCHW",
+        encoding="NONE",
+        mean_values=3.0,
+        scale_values=2.0,
+    )
+
+    modified = onnx_attach_normalization_to_inputs(
+        model_path,
+        tmp_path / "scalar-modified.onnx",
+        {"input0": config},
+    )
+
+    x = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
+    actual = ort.InferenceSession(str(modified)).run(None, {"input0": x})[0]
+    np.testing.assert_allclose(actual, (x - 3.0) / 2.0)
+
+
+def test_invalid_normalization_value_count_fails(tmp_path: Path):
+    shape = [1, 2, 3, 4]
+    model_path = single_io_onnx(
+        tmp_path / "count.onnx", shape=shape, output_shape=shape
+    )
+    config = InputConfig(
+        name="input0",
+        shape=shape,
+        layout="NCHW",
+        encoding="NONE",
+        mean_values=[1.0, 2.0, 3.0],
+    )
+
+    with pytest.raises(ONNXException, match="one value per channel"):
+        onnx_attach_normalization_to_inputs(
+            model_path,
+            tmp_path / "count-modified.onnx",
+            {"input0": config},
+        )
+
+
+def test_non_three_channel_color_reversal_fails(tmp_path: Path):
+    shape = [1, 2, 3, 4]
+    model_path = single_io_onnx(
+        tmp_path / "reverse.onnx", shape=shape, output_shape=shape
+    )
+    config = InputConfig(
+        name="input0",
+        shape=shape,
+        layout="NCHW",
+        encoding={"from": "RGB", "to": "BGR"},
+    )
+
+    with pytest.raises(ONNXException, match="requires exactly 3 channels"):
+        onnx_attach_normalization_to_inputs(
+            model_path,
+            tmp_path / "reverse-modified.onnx",
+            {"input0": config},
+        )
+
+
+def test_unsupported_layout_with_preprocessing_fails(tmp_path: Path):
+    shape = [1, 2]
+    model_path = single_io_onnx(
+        tmp_path / "layout.onnx", shape=shape, output_shape=shape
+    )
+    config = InputConfig(
+        name="input0",
+        shape=shape,
+        layout="NC",
+        encoding="NONE",
+        mean_values=[1.0, 2.0],
+    )
+
+    with pytest.raises(ONNXException, match="only 'NCHW' and 'NHWC'"):
+        onnx_attach_normalization_to_inputs(
+            model_path,
+            tmp_path / "layout-modified.onnx",
+            {"input0": config},
+        )
+
+
+def test_color_reversal_does_not_mutate_input_config(tmp_path: Path):
+    shape = [1, 3, 3, 4]
+    model_path = single_io_onnx(
+        tmp_path / "color.onnx", shape=shape, output_shape=shape
+    )
+    config = InputConfig(
+        name="input0",
+        shape=shape,
+        layout="NCHW",
+        encoding={"from": "RGB", "to": "BGR"},
+        mean_values=[1.0, 2.0, 3.0],
+        scale_values=[4.0, 5.0, 6.0],
+    )
+    original = config.model_dump()
+
+    onnx_attach_normalization_to_inputs(
+        model_path,
+        tmp_path / "color-modified.onnx",
+        {"input0": config},
+    )
+
+    assert config.model_dump() == original

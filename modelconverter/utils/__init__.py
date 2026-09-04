@@ -29,6 +29,7 @@ from .docker_utils import (
 from .environ import environ
 from .exceptions import (
     ModelconverterException,
+    ONNXException,
     S3Exception,
     exit_with,
 )
@@ -65,6 +66,7 @@ __all__ = [
     "DeviceMonitor",
     "Metadata",
     "ModelconverterException",
+    "ONNXException",
     "ONNXModifier",
     "S3Exception",
     "SSHHandler",

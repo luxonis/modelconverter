@@ -25,6 +25,7 @@ from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
+    ModelconverterException,
     ONNXModifier,
     SubprocessHandle,
     get_container_memory_available,
@@ -133,6 +134,13 @@ class RVC2Exporter(Exporter):
                     inp_str += f"->{value}"
             args.extend(["--input", inp_str])
 
+        for inp in self._inputs.values():
+            if inp.requires_input_preprocessing():
+                try:
+                    inp.validate_preprocessing()
+                except ValueError as e:
+                    raise ModelconverterException(str(e)) from e
+
         if not self._check_reverse_channels():
             logger.warning(
                 "The model optimizer does not support reversing "
@@ -187,20 +195,36 @@ class RVC2Exporter(Exporter):
         mean_values_str = ""
         scale_values_str = ""
         for name, inp in self._inputs.items():
+            channels = (
+                inp.validate_preprocessing()
+                if inp.requires_input_preprocessing()
+                else None
+            )
+
             # Append mean values in a similar style
-            if inp.is_color_input and inp.mean_values is not None:
+            if inp.mean_values is not None and any(
+                value != 0 for value in inp.mean_values
+            ):
                 if mean_values_str:
                     mean_values_str += ","
+                mean_values = _broadcast_preprocessing_values(
+                    inp.mean_values, channels
+                )
                 mean_values_str += (
-                    f"{name}[{','.join(str(v) for v in inp.mean_values)}]"
+                    f"{name}[{','.join(str(v) for v in mean_values)}]"
                 )
 
             # Append scale values in a similar style
-            if inp.is_color_input and inp.scale_values is not None:
+            if inp.scale_values is not None and any(
+                value != 1 for value in inp.scale_values
+            ):
                 if scale_values_str:
                     scale_values_str += ","
+                scale_values = _broadcast_preprocessing_values(
+                    inp.scale_values, channels
+                )
                 scale_values_str += (
-                    f"{name}[{','.join(str(v) for v in inp.scale_values)}]"
+                    f"{name}[{','.join(str(v) for v in scale_values)}]"
                 )
         # Extend args with mean and scale values if they were collected
         if mean_values_str:
@@ -226,6 +250,22 @@ class RVC2Exporter(Exporter):
     def _check_reverse_channels(self) -> bool:
         reverses = [inp.encoding_mismatch for inp in self._inputs.values()]
         return all(reverses) or not any(reverses)
+
+    def _validate_ir_preprocessing_contract(self) -> None:
+        """Reject preprocessing that cannot be added to an existing IR."""
+        requested_inputs = [
+            name
+            for name, inp in self._inputs.items()
+            if inp.requires_input_preprocessing()
+        ]
+        if requested_inputs:
+            names = ", ".join(repr(name) for name in requested_inputs)
+            raise ModelconverterException(
+                "RVC2/RVC3 cannot embed requested preprocessing into an "
+                f"existing OpenVINO IR; input(s) {names} still require "
+                "preprocessing. Use an ONNX/TFLite source or "
+                "`--archive-preprocess --to nn_archive`."
+            )
 
     @staticmethod
     def _write_config(shaves: int, slices: int) -> str:
@@ -296,6 +336,7 @@ class RVC2Exporter(Exporter):
         if self._input_file_type == InputFileType.ONNX:
             xml_path = self._export_openvino_ir()
         elif self._input_file_type == InputFileType.IR:
+            self._validate_ir_preprocessing_contract()
             xml_path = self._input_model
         else:
             raise NotImplementedError
@@ -563,3 +604,12 @@ def _lst_join(args: Iterable[int | float], sep: str = ",") -> str:
 
 def _get_available_memory() -> int:
     return int(get_container_memory_available() * 0.7)
+
+
+def _broadcast_preprocessing_values(
+    values: list[float], channels: int | None
+) -> list[float]:
+    """Expand a scalar preprocessing value for OpenVINO compatibility."""
+    if len(values) == 1 and channels is not None:
+        return values * channels
+    return values

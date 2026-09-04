@@ -53,6 +53,17 @@ def get_opset_version(model: onnx.ModelProto) -> int:
     raise ONNXException("No opset version found in the ONNX model.")
 
 
+def _reorder_normalization_values(
+    values: list[float] | None,
+    *,
+    reverse: bool,
+) -> list[float] | None:
+    """Return a local, optionally reversed normalization vector."""
+    if values is None:
+        return None
+    return values[::-1] if reverse else list(values)
+
+
 def onnx_attach_normalization_to_inputs(
     model_path: Path,
     save_path: Path,
@@ -72,14 +83,9 @@ def onnx_attach_normalization_to_inputs(
         y_c = (x_c - \mathrm{mean}_c) \cdot \frac{1}{\mathrm{scale}_c}
 
     for every channel :math:`c`. The resulting model is saved and
-    validated with the ONNX checker. Inputs whose layout is neither
-    ``"NCHW"`` nor ``"NHWC"``, and inputs with a known channel count
-    other than 3, are skipped with a warning.
-
-    .. warning::
-        The mean and scale values of an input whose channels are
-        reversed are reversed in place, so the `InputConfig` objects
-        the caller passed in are modified.
+    validated with the ONNX checker. Mean and scale normalization supports
+    any known channel count; color-channel reversal requires exactly three
+    channels. A scalar mean or scale broadcasts to every channel.
 
     Args:
         model_path: Path to the source ONNX model.
@@ -93,8 +99,7 @@ def onnx_attach_normalization_to_inputs(
         unmodified ``model_path``.
 
     Raises:
-        ONNXException: If ``input_configs`` names a tensor that is not
-            an input of the graph.
+        ONNXException: If an input or requested operation cannot be applied.
 
     """
     if not any(
@@ -131,25 +136,33 @@ def onnx_attach_normalization_to_inputs(
         if not cfg.requires_onnx_input_modification(reverse_only=reverse_only):
             continue
 
-        shape = cfg.shape
-        layout = cfg.layout or "NCHW"
+        layout = cfg.layout
         if layout not in ["NCHW", "NHWC"]:
-            logger.warning(
-                f"Input '{input_name}' has layout '{layout}', "
-                "but only 'NCHW' and 'NHWC' are supported for normalization. "
-                "Skipping."
+            raise ONNXException(
+                f"Cannot embed preprocessing for input '{input_name}' with "
+                f"layout '{layout}'; only 'NCHW' and 'NHWC' are supported."
             )
-            continue
+        try:
+            n_channels = cfg.validate_preprocessing(reverse_only=reverse_only)
+        except ValueError as e:
+            raise ONNXException(str(e)) from e
 
-        if shape is not None:
-            n_channels = shape[layout.index("C")]
-            if n_channels != 3:
-                logger.warning(
-                    f"Input '{input_name}' has {n_channels} channels, "
-                    "but normalization is only supported for 3 channels. "
-                    "Skipping."
-                )
-                continue
+        mean_values = (
+            None
+            if reverse_only
+            else _reorder_normalization_values(
+                cfg.mean_values,
+                reverse=cfg.encoding_mismatch,
+            )
+        )
+        scale_values = (
+            None
+            if reverse_only
+            else _reorder_normalization_values(
+                cfg.scale_values,
+                reverse=cfg.encoding_mismatch,
+            )
+        )
 
         last_output = input_name
 
@@ -199,12 +212,9 @@ def onnx_attach_normalization_to_inputs(
         # 2. Subtract (mean) if mean_values is not None and not all 0
         if (
             not reverse_only
-            and cfg.mean_values is not None
-            and any(v != 0 for v in cfg.mean_values)
+            and mean_values is not None
+            and any(v != 0 for v in mean_values)
         ):
-            if cfg.encoding_mismatch:
-                cfg.mean_values = cfg.mean_values[::-1]
-
             sub_out = f"sub_out_{input_name}"
             sub_node = helper.make_node(
                 "Sub",
@@ -218,22 +228,19 @@ def onnx_attach_normalization_to_inputs(
             mean_tensor = helper.make_tensor(
                 f"mean_{input_name}",
                 input_dtype,
-                [1, len(cfg.mean_values), 1, 1]
+                [1, len(mean_values), 1, 1]
                 if layout == "NCHW"
-                else [1, 1, 1, len(cfg.mean_values)],
-                cfg.mean_values,
+                else [1, 1, 1, len(mean_values)],
+                mean_values,
             )
             new_initializers.append(mean_tensor)
 
         # 3. Divide (scale) if scale_values is not None and not all 1
         if (
             not reverse_only
-            and cfg.scale_values is not None
-            and any(v != 1 for v in cfg.scale_values)
+            and scale_values is not None
+            and any(v != 1 for v in scale_values)
         ):
-            if cfg.encoding_mismatch:
-                cfg.scale_values = cfg.scale_values[::-1]
-
             div_out = f"div_out_{input_name}"
             div_node = helper.make_node(
                 "Mul",
@@ -247,10 +254,10 @@ def onnx_attach_normalization_to_inputs(
             scale_tensor = helper.make_tensor(
                 f"scale_{input_name}",
                 input_dtype,
-                [1, len(cfg.scale_values), 1, 1]
+                [1, len(scale_values), 1, 1]
                 if layout == "NCHW"
-                else [1, 1, 1, len(cfg.scale_values)],
-                [1 / v for v in cfg.scale_values],
+                else [1, 1, 1, len(scale_values)],
+                [1 / v for v in scale_values],
             )
             new_initializers.append(scale_tensor)
 

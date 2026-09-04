@@ -1,7 +1,7 @@
 """Tests for final conversion artifact logging."""
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NoReturn
 
 import pytest
 from luxonis_ml.typing import Params
@@ -9,7 +9,7 @@ from luxonis_ml.typing import Params
 import modelconverter.__main__ as main_module
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils.config import Config, SingleStageConfig
-from modelconverter.utils.types import Platform
+from modelconverter.utils.types import InputFileType, Platform
 
 
 class _FakeTelemetry:
@@ -56,11 +56,12 @@ class _FakeMultiStageExporter:
 
 
 @pytest.mark.parametrize(
-    ("output_mode", "expected_names", "multistage"),
+    ("output_mode", "expected_names", "multistage", "archive_preprocess"),
     [
-        ("native", ["model.dlc"], False),
-        ("nn_archive", ["model.rvc4.tar.xz"], False),
-        ("native", ["first.dlc", "second.dlc"], True),
+        ("native", ["model.dlc"], False, False),
+        ("nn_archive", ["model.rvc4.tar.xz"], False, False),
+        ("nn_archive", ["model.rvc4.tar.xz"], False, True),
+        ("native", ["first.dlc", "second.dlc"], True, False),
     ],
 )
 def test_convert_logs_final_artifact_for_each_output_mode(
@@ -70,6 +71,7 @@ def test_convert_logs_final_artifact_for_each_output_mode(
     output_mode: Literal["native", "nn_archive"],
     expected_names: list[str],
     multistage: bool,
+    archive_preprocess: bool,
 ) -> None:
     if multistage:
         cfg = Config.get_config(
@@ -161,6 +163,7 @@ def test_convert_logs_final_artifact_for_each_output_mode(
         Platform.RVC4,
         path=str(dummy_onnx),
         to=output_mode,
+        archive_preprocess=archive_preprocess,
     )
 
     export_messages = [
@@ -172,3 +175,153 @@ def test_convert_logs_final_artifact_for_each_output_mode(
     assert export_messages == [
         f"Model exported to /host/output/{name}" for name in expected_names
     ]
+
+
+def test_archive_preprocess_is_rejected_for_native_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_was_loaded = False
+
+    def fail_if_called(*_args: object, **_kwargs: object) -> NoReturn:
+        nonlocal config_was_loaded
+        config_was_loaded = True
+        raise AssertionError("configuration must not be loaded")
+
+    monkeypatch.setattr(main_module.signal, "signal", lambda *_args: None)
+    monkeypatch.setattr(main_module, "get_configs", fail_if_called)
+    monkeypatch.setattr(
+        main_module,
+        "get_component_telemetry",
+        _FakeTelemetry,
+    )
+    monkeypatch.setattr(
+        main_module,
+        "get_conversion_run_id",
+        lambda: "test-run",
+    )
+    monkeypatch.setattr(main_module, "peak_ram_usage_bytes", lambda: 0)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main_module.convert(
+            Platform.RVC4,
+            to="native",
+            archive_preprocess=True,
+        )
+
+    assert exc_info.value.code == 1
+    assert not config_was_loaded
+
+
+@pytest.mark.parametrize(
+    ("platform", "input_file_type", "disable_calibration", "reason"),
+    [
+        (
+            Platform.RVC4,
+            InputFileType.TFLITE,
+            False,
+            "RVC4 can only bake preprocessing into ONNX source models",
+        ),
+        (
+            Platform.RVC2,
+            InputFileType.IR,
+            False,
+            "cannot add preprocessing to an existing OpenVINO IR",
+        ),
+        (
+            Platform.RVC3,
+            InputFileType.IR,
+            False,
+            "cannot add preprocessing to an existing OpenVINO IR",
+        ),
+        (
+            Platform.HAILO,
+            InputFileType.ONNX,
+            True,
+            "Hailo cannot bake preprocessing when calibration is disabled",
+        ),
+    ],
+)
+def test_nn_archive_automatically_externalizes_unembeddable_preprocessing(
+    dummy_onnx: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    platform: Platform,
+    input_file_type: InputFileType,
+    disable_calibration: bool,
+    reason: str,
+) -> None:
+    cfg = Config.get_config(
+        None,
+        {
+            "input_model": str(dummy_onnx),
+            "shape": [1, 3, 64, 64],
+            "encoding": "NONE",
+            "mean_values": [1, 2, 3],
+        },
+    )
+    stage = next(iter(cfg.stages.values()))
+    stage.input_file_type = input_file_type
+    stage.get_platform_config(
+        platform
+    ).disable_calibration = disable_calibration
+    main_stage = next(iter(cfg.stages))
+    output_dir = tmp_path / f"output-{platform.value}"
+    warnings: list[str] = []
+    exporter_configs: list[SingleStageConfig] = []
+    archive_kwargs: dict[str, object] = {}
+
+    def make_exporter(
+        _platform: Platform,
+        config: SingleStageConfig,
+        output_dir: Path,
+    ) -> _FakeExporter:
+        exporter_configs.append(config)
+        return _FakeExporter(config, output_dir)
+
+    def generate_archive(**kwargs: object) -> Path:
+        archive_kwargs.update(kwargs)
+        return output_dir / f"model.{platform.value}.tar.xz"
+
+    monkeypatch.setattr(main_module.signal, "signal", lambda *_args: None)
+    monkeypatch.setattr(main_module, "init_dirs", lambda: None)
+    monkeypatch.setattr(
+        main_module,
+        "get_configs",
+        lambda *_args, **_kwargs: (cfg, None, main_stage),
+    )
+    monkeypatch.setattr(
+        main_module,
+        "get_output_dir_name",
+        lambda *_args, **_kwargs: output_dir,
+    )
+    monkeypatch.setattr(main_module, "setup_logging", lambda **_kwargs: None)
+    monkeypatch.setattr(main_module, "get_exporter", make_exporter)
+    monkeypatch.setattr(
+        main_module,
+        "get_component_telemetry",
+        _FakeTelemetry,
+    )
+    monkeypatch.setattr(
+        main_module,
+        "get_conversion_run_id",
+        lambda: "test-run",
+    )
+    monkeypatch.setattr(main_module, "peak_ram_usage_bytes", lambda: 0)
+    monkeypatch.setattr(main_module, "is_nn_archive", lambda _path: False)
+    monkeypatch.setattr(main_module, "generate_archive", generate_archive)
+    monkeypatch.setattr(main_module.logger, "warning", warnings.append)
+
+    main_module.convert(
+        platform,
+        path=str(dummy_onnx),
+        to="nn_archive",
+    )
+
+    assert exporter_configs[0].inputs[0].mean_values is None
+    preprocessing = archive_kwargs["preprocessing"]
+    assert isinstance(preprocessing, dict)
+    assert preprocessing["input0"].mean == [1.0, 2.0, 3.0]
+    assert len(warnings) == 1
+    assert "Automatic NN Archive preprocessing fallback" in warnings[0]
+    assert reason in warnings[0]
+    assert "input0" in warnings[0]
