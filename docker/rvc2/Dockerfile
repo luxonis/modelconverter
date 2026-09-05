@@ -146,7 +146,7 @@ RUN <<EOF
     # Install the shared dependencies exactly as the lockfile pins them.
     # The platform pins and the OpenVINO downgrade then resolve on top,
     # in this order.
-    uv export --frozen --no-default-groups --no-emit-project \
+    uv export --locked --no-default-groups --no-emit-project \
         -o /tmp/requirements.txt
     uv pip install --system --no-cache --no-deps -r /tmp/requirements.txt
     uv pip install --system --no-cache -r requirements-rvc2.txt

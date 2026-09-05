@@ -32,7 +32,7 @@ RUN <<EOF
     PYTHON="$(command -v python)"
 
     # Install the shared dependencies exactly as the lockfile pins them.
-    uv export --frozen --no-default-groups --no-emit-project \
+    uv export --locked --no-default-groups --no-emit-project \
         -o /tmp/requirements.txt
     uv pip install --python "$PYTHON" --no-cache --no-deps \
         -r /tmp/requirements.txt

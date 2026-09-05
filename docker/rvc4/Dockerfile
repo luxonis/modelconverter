@@ -62,7 +62,7 @@ COPY --link modelconverter/platforms/rvc4/requirements.txt requirements-rvc4.txt
 # Install the shared dependencies exactly as the lockfile pins them. The
 # platform pins (including the NumPy downgrade for SNPE) then resolve on
 # top.
-RUN uv export --frozen --no-default-groups --no-emit-project \
+RUN uv export --locked --no-default-groups --no-emit-project \
     -o /tmp/requirements.txt
 RUN uv pip install --system --no-cache --no-deps -r /tmp/requirements.txt
 RUN uv pip install --system --no-cache -r requirements-rvc4.txt
