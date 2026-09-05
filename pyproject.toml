@@ -40,10 +40,9 @@ analysis = ["depthai>=3.8.0,<4", "plotly", "polars"]
 [dependency-groups]
 lint = ["prek~=0.4.13"]
 docs = ["pydoctor~=25.10"]
-# The Docker images install this group, and they only run the tests. They
-# never run the hooks, and they never build the docs. Keep those two tools in
-# `lint` and `docs`, so an image does not pull them in.
-test = [
+dev = [
+  { include-group = "lint" },
+  { include-group = "docs" },
   "depthai>=3.8.0,<4",
   # Lets the tests emit tiny .tflite fixtures directly (no TensorFlow needed).
   "flatbuffers~=25.12",
@@ -55,11 +54,6 @@ test = [
   "pytest-sugar~=1.1",
   "pytest-xdist~=3.5",
   "tflite2onnx~=0.1",
-]
-dev = [
-  { include-group = "lint" },
-  { include-group = "docs" },
-  { include-group = "test" },
 ]
 
 [project.scripts]
