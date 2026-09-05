@@ -15,7 +15,6 @@ import subprocess
 import sys
 import tempfile
 import zipfile
-from contextlib import suppress
 from functools import cache
 from http.client import HTTPMessage
 from pathlib import Path
@@ -542,6 +541,9 @@ def pull_image(client: docker.DockerClient, image: str) -> str:
     Returns:
         The name of the pulled image.
 
+    Raises:
+        RuntimeError: If the daemon reports an error while it pulls.
+
     """
     repository, tag = parse_repository_tag(image)
 
@@ -553,23 +555,25 @@ def pull_image(client: docker.DockerClient, image: str) -> str:
         bars = {}
         for log in client.api.pull(repository, tag=tag, stream=True):
             log = json.loads(log)
-            status = log["status"]
-            if status in {"Downloading", "Extracting"}:
-                id = log["id"]
-                detail = log["progressDetail"]
-                if id not in bars:
-                    bars[id] = progress.add_task(
-                        f"{id} [{status}]:",
-                        completed=detail["current"],
-                        total=detail["total"],
-                    )
-                else:
-                    progress.update(
-                        bars[id],
-                        completed=detail["current"],
-                        total=detail["total"],
-                        description=f"{id} [{status}]:",
-                    )
+            error_detail = log.get("errorDetail", {})
+            error = error_detail.get("message") or log.get("error")
+            if error:
+                raise RuntimeError(error)
+            status = log.get("status")
+            if status not in {"Downloading", "Extracting"}:
+                continue
+            id = log["id"]
+            detail = log["progressDetail"]
+            description = f"{id} [{status}]:"
+            total = detail.get("total")
+            if id not in bars:
+                bars[id] = progress.add_task(description, total=total)
+            progress.update(
+                bars[id],
+                completed=detail["current"] if total is not None else None,
+                total=total,
+                description=description,
+            )
     return image
 
 
@@ -693,13 +697,15 @@ def _get_or_build_docker_image(
 ) -> str:
     client = get_docker_client_from_active_context()
     for candidate in candidate_images:
+        remote = f"ghcr.io/{candidate}"
         logger.warning(
-            f"Image '{candidate}' not found locally, pulling "
-            f"the latest image from 'ghcr.io/{candidate}'..."
+            f"Image '{candidate}' not found locally, "
+            f"pulling the latest image from '{remote}'..."
         )
-
-        with suppress(Exception):
-            return pull_image(client, f"ghcr.io/{candidate}")
+        try:
+            return pull_image(client, remote)
+        except Exception as e:
+            logger.warning(f"Failed to pull '{remote}': {e}")
 
     logger.error("Failed to pull the image, building it locally...")
     return docker_build(platform, bare_tag, version, image)

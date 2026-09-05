@@ -1568,7 +1568,7 @@ dependencies = [
     { name = "cyclopts" },
     { name = "keyring" },
     { name = "loguru" },
-    { name = "luxonis-ml", extra = ["nn-archive", "telemetry"] },
+    { name = "luxonis-ml", extra = ["telemetry"] },
     { name = "onnx" },
     { name = "packaging" },
     { name = "pillow" },
@@ -1984,7 +1984,7 @@ wheels = [
 
 [[package]]
 name = "luxonis-ml"
-version = "0.9.1"
+version = "0.10.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cyclopts" },
@@ -1998,9 +1998,9 @@ dependencies = [
     { name = "semver" },
     { name = "typeguard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9b/b7/624b9834fcbea32fcde3747acb9c5102b3db36a47a287165211ffa5317f7/luxonis_ml-0.9.1.tar.gz", hash = "sha256:354b2df230d64438f79fa5184e1666be3eb2fe735da2ae11d84351f4594ee0a0", size = 312524, upload-time = "2026-07-31T11:50:54.612Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/db/a6/157620680c37193f20f5e6d0891928dc84c574e89cfc9c676fa541cfd745/luxonis_ml-0.10.0.tar.gz", hash = "sha256:72dd2f070fabf106d658b0640536ea1486fdf9f3858d3515a793834c6d584447", size = 285523, upload-time = "2026-08-25T07:22:07.413Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c1/2e/7dcbe49f0e713cb87d4eaa51a09b1670c6beb29af886f777d08e5174b94b/luxonis_ml-0.9.1-py3-none-any.whl", hash = "sha256:98095a2f8cc33e5a5e7074ca49d41b662e3dcca7d5dd1a6d27f24d5e32c9f1c7", size = 402226, upload-time = "2026-07-31T11:50:52.789Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/f8/77ff2cbbb2c6c718494e7ebc0ea90bb9b7d913496c4f925359ed3aad4ad4/luxonis_ml-0.10.0-py3-none-any.whl", hash = "sha256:8711d4de1929a67847a1f34f55414bd174facee586ce4e6212674957760f3e2c", size = 354571, upload-time = "2026-08-25T07:22:05.892Z" },
 ]
 
 [package.optional-dependencies]
@@ -2017,6 +2017,7 @@ data = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "opencv-python" },
+    { name = "pillow" },
     { name = "pillow-heif" },
     { name = "polars", extra = ["timezone"] },
     { name = "pyarrow" },
@@ -2025,10 +2026,6 @@ data = [
 ]
 gcs = [
     { name = "gcsfs" },
-]
-nn-archive = [
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
 ]
 s3 = [
     { name = "s3fs" },
@@ -2271,7 +2268,7 @@ dependencies = [
     { name = "docker" },
     { name = "hubai-sdk" },
     { name = "keyring" },
-    { name = "luxonis-ml", extra = ["data", "gcs", "nn-archive", "s3", "telemetry"] },
+    { name = "luxonis-ml", extra = ["data", "gcs", "s3", "telemetry"] },
     { name = "onnx" },
     { name = "onnx-graphsurgeon" },
     { name = "onnxruntime", version = "1.23.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -2312,6 +2309,16 @@ docs = [
 lint = [
     { name = "prek" },
 ]
+test = [
+    { name = "depthai" },
+    { name = "flatbuffers" },
+    { name = "hypothesis" },
+    { name = "pyright" },
+    { name = "pytest-cov" },
+    { name = "pytest-sugar" },
+    { name = "pytest-xdist" },
+    { name = "tflite2onnx" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -2322,7 +2329,7 @@ requires-dist = [
     { name = "docker" },
     { name = "hubai-sdk", specifier = ">=0.3.3" },
     { name = "keyring" },
-    { name = "luxonis-ml", extras = ["data", "gcs", "nn-archive", "s3", "telemetry"], specifier = "~=0.9.0" },
+    { name = "luxonis-ml", extras = ["data", "gcs", "nn-archive", "s3", "telemetry"], specifier = "~=0.10.0" },
     { name = "onnx", specifier = "==1.21.0" },
     { name = "onnx-graphsurgeon" },
     { name = "onnxruntime" },
@@ -2351,6 +2358,16 @@ dev = [
 ]
 docs = [{ name = "pydoctor", specifier = "~=25.10" }]
 lint = [{ name = "prek", specifier = "~=0.4.13" }]
+test = [
+    { name = "depthai", specifier = ">=3.8.0,<4" },
+    { name = "flatbuffers", specifier = "~=25.12" },
+    { name = "hypothesis", specifier = "~=6.163" },
+    { name = "pyright", specifier = "==1.1.411" },
+    { name = "pytest-cov", specifier = "~=7.1" },
+    { name = "pytest-sugar", specifier = "~=1.1" },
+    { name = "pytest-xdist", specifier = "~=3.5" },
+    { name = "tflite2onnx", specifier = "~=0.1" },
+]
 
 [[package]]
 name = "more-itertools"

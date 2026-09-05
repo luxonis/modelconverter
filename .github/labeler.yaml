@@ -1,0 +1,73 @@
+tests:
+  - changed-files:
+      - any-glob-to-any-file: "tests/**"
+  - head-branch:
+      - "test/*"
+      - "tests/*"
+
+DevOps:
+  - changed-files:
+      - any-glob-to-any-file: ".github/**"
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docker/**"
+          - "docker-compose.yaml"
+
+CLI:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "modelconverter/cli/**"
+          - "modelconverter/__main__.py"
+
+NN Archive:
+  - changed-files:
+      - any-glob-to-any-file: "modelconverter/utils/nn_archive.py"
+
+RVC2:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "modelconverter/platforms/rvc2/**"
+          - "docker/rvc2/**"
+
+RVC3:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "modelconverter/platforms/rvc3/**"
+          - "docker/rvc3/**"
+
+RVC4:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "modelconverter/platforms/rvc4/**"
+          - "docker/rvc4/**"
+
+Hailo:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "modelconverter/platforms/hailo/**"
+          - "docker/hailo/**"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: "**/*.md"
+
+enhancement:
+  - head-branch:
+      - "feature/*"
+      - "feat/*"
+      - "enhancement/*"
+
+release:
+  - head-branch:
+      - "release/*"
+
+fix:
+  - head-branch:
+      - "fix/*"
+      - "bug/*"
+      - "hotfix/*"
+      - "issue/*"
+      - "bugfix/*"
+      - "patch/*"
