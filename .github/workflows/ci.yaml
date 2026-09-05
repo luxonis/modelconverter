@@ -93,6 +93,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
+          version: "0.12.5"
           enable-cache: true
 
       - name: Run hooks
@@ -119,6 +120,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
+          version: "0.12.5"
           enable-cache: true
 
       # pydoctor reads the sources rather than importing them, so the package's
@@ -151,6 +153,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
+          version: "0.12.5"
           enable-cache: true
 
       - name: Install package
@@ -204,6 +207,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
+          version: "0.12.5"
           enable-cache: true
 
       - name: Install package
@@ -324,6 +328,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
+          version: "0.12.5"
           enable-cache: true
 
       - name: Install package (host CLI)
