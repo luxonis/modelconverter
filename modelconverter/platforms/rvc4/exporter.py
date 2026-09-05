@@ -30,6 +30,7 @@ from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
 )
+from modelconverter.utils.encodings import validate_quantization_override_names
 from modelconverter.utils.subprocess import subprocess_run
 from modelconverter.utils.types import (
     DataType,
@@ -74,6 +75,9 @@ class RVC4Exporter(Exporter):
             rvc4_cfg.use_per_channel_quantization
         )
         self._use_per_row_quantization = rvc4_cfg.use_per_row_quantization
+        self._strict_quantization_overrides = (
+            rvc4_cfg.strict_quantization_overrides
+        )
         self._optimization_level = rvc4_cfg.optimization_level
         self._quantization_mode = rvc4_cfg.quantization_mode
         if self._quantization_mode != QuantizationMode.CUSTOM:
@@ -442,15 +446,19 @@ class RVC4Exporter(Exporter):
 
         if self._quantization_mode == QuantizationMode.FP16_STD:
             self._add_args(args, ["--float_bitwidth", "16"])
-        elif self._encodings is not None:
-            io_encodings_file = self._generate_io_encodings(self._encodings)
-            self._add_args(
-                args,
-                [
-                    "--quantization_overrides",
-                    f"{io_encodings_file}",
-                ],
-            )
+        else:
+            self._validate_quantization_overrides()
+            if self._encodings is not None:
+                io_encodings_file = self._generate_io_encodings(
+                    self._encodings
+                )
+                self._add_args(
+                    args,
+                    [
+                        "--quantization_overrides",
+                        f"{io_encodings_file}",
+                    ],
+                )
 
         if self._is_tflite:
             command = "snpe-tflite-to-dlc"
@@ -475,3 +483,18 @@ class RVC4Exporter(Exporter):
             "snpe_version": snpe_version.stdout.decode("utf-8").strip(),
             "target_devices": self._htp_socs,
         }
+
+    def _validate_quantization_overrides(self) -> None:
+        if not self._strict_quantization_overrides or self._encodings is None:
+            return
+
+        if self.config.input_file_type != InputFileType.ONNX:
+            raise ValueError(
+                "rvc4.strict_quantization_overrides is currently supported "
+                "only for ONNX input models."
+            )
+
+        validate_quantization_override_names(
+            self._encodings,
+            self._input_model,
+        )

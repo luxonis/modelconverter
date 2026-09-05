@@ -565,6 +565,9 @@ class RVC4Config(PlatformConfig):
             layer types.
         use_per_row_quantization: Whether to use row-wise quantization
             of the ``MatMul`` and ``FullyConnected`` operations.
+        strict_quantization_overrides: Whether to validate configured
+            quantization override names against their activation/parameter
+            groups in the effective ONNX model.
         optimization_level: Optimization level of the DLC graph
             preparation. Higher levels take longer but yield a faster
             graph.
@@ -581,6 +584,7 @@ class RVC4Config(PlatformConfig):
     keep_raw_images: bool = False
     use_per_channel_quantization: bool = True
     use_per_row_quantization: bool = False
+    strict_quantization_overrides: bool = False
     optimization_level: Literal[1, 2, 3] = 2
     quantization_mode: QuantizationMode = QuantizationMode.INT8_STD
     htp_socs: list[
@@ -590,9 +594,10 @@ class RVC4Config(PlatformConfig):
 
     @model_validator(mode="after")
     def validate_quantization_overrides(self) -> Self:
-        """Move ``--quantization_overrides`` into `Encodings`.
+        """Normalize raw quantization override arguments into `Encodings`.
 
-        The flag and the path following it are removed from
+        Both ``--quantization_overrides PATH`` and
+        ``--quantization_overrides=PATH`` forms are removed from
         ``snpe_onnx_to_dlc_args`` and the referenced JSON file is parsed
         into the ``encodings`` field.
 
@@ -600,24 +605,66 @@ class RVC4Config(PlatformConfig):
             The validated model.
 
         Raises:
-            ValueError: If both ``--quantization_overrides`` and
-                ``encodings`` are specified.
+            ValueError: If a raw override path is missing, more than one raw
+                override is provided, or a raw override is combined with
+                ``encodings``.
 
         """
-        if "--quantization_overrides" in self.snpe_onnx_to_dlc_args:
-            if self.encodings:
-                raise ValueError(
-                    "Cannot specify both `--quantization_overrides`"
-                    "in `rvc4.snpe_onnx_to_dlc_args` and "
-                    "`rvc4.encodings` at the same time."
-                )
-            qo_index = self.snpe_onnx_to_dlc_args.index(
-                "--quantization_overrides"
+        flag = "--quantization_overrides"
+        prefix = f"{flag}="
+        args = self.snpe_onnx_to_dlc_args
+
+        normalized_args: list[str] = []
+        override_paths: list[str] = []
+        index = 0
+
+        while index < len(args):
+            arg = args[index]
+
+            if arg == flag:
+                if (
+                    index + 1 >= len(args)
+                    or not args[index + 1]
+                    or args[index + 1].startswith("--")
+                ):
+                    raise ValueError(
+                        "`--quantization_overrides` requires a path value."
+                    )
+                override_paths.append(args[index + 1])
+                index += 2
+                continue
+
+            if arg.startswith(prefix):
+                value = arg[len(prefix) :]
+                if not value:
+                    raise ValueError(
+                        "`--quantization_overrides` requires a path value."
+                    )
+                override_paths.append(value)
+                index += 1
+                continue
+
+            normalized_args.append(arg)
+            index += 1
+
+        if len(override_paths) > 1:
+            raise ValueError(
+                "`rvc4.snpe_onnx_to_dlc_args` accepts at most one "
+                "`--quantization_overrides` value."
             )
-            self.snpe_onnx_to_dlc_args.pop(qo_index)
-            encodings_json = self.snpe_onnx_to_dlc_args.pop(qo_index)
-            with open(encodings_json) as f:
-                self.encodings = parse_encodings(f.read())
+
+        if not override_paths:
+            return self
+
+        if self.encodings is not None:
+            raise ValueError(
+                "Cannot specify both `--quantization_overrides` "
+                "in `rvc4.snpe_onnx_to_dlc_args` and "
+                "`rvc4.encodings` at the same time."
+            )
+
+        self.snpe_onnx_to_dlc_args = normalized_args
+        self.encodings = parse_encodings(Path(override_paths[0]).read_text())
         return self
 
     @field_validator("encodings", mode="before")
