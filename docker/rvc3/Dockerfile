@@ -103,22 +103,17 @@ COPY --link --from=base /opt/intel /opt/intel
 COPY --link --from=base /usr/local/lib /usr/local/lib
 
 
-COPY --link --from=ghcr.io/astral-sh/uv:0.12.5 /uv /usr/local/bin/uv
-COPY --link pyproject.toml uv.lock /app/
+COPY --link requirements.txt requirements.txt
 COPY --link modelconverter/platforms/rvc3/requirements.txt requirements-rvc3.txt
 
 RUN <<EOF
 
     set -e
 
-    # Install the shared dependencies exactly as the lockfile pins them.
-    # The platform pins and the OpenVINO downgrade then resolve on top,
-    # in this order.
-    uv export --locked --no-default-groups --no-emit-project \
-        -o /tmp/requirements.txt
-    uv pip install --system --no-cache --no-deps -r /tmp/requirements.txt
-    uv pip install --system --no-cache -r requirements-rvc3.txt
-    uv pip install --system --no-cache openvino==2022.3.0 openvino-dev==2022.3.0
+    pip install --upgrade pip  --no-cache-dir
+    pip install -r requirements.txt --no-cache-dir
+    pip install -r requirements-rvc3.txt --no-cache-dir
+    pip install openvino==2022.3.0 openvino-dev==2022.3.0 --no-cache-dir
 
 EOF
 
@@ -129,19 +124,14 @@ COPY --link --from=base /usr/local/bin/mo \
     /usr/local/bin/
 
 ARG DEV=false
-# The DEV images run the conversion tests. Install the `test` group as the
-# lockfile pins it. The `lint` and `docs` tools stay out, and codecov-cli
-# resolves on its own, because the lockfile does not carry it.
+COPY --link requirements-dev.txt /app/requirements-dev.txt
 RUN if [ "$DEV" = "true" ]; then \
-        uv export --locked --no-default-groups --only-group test \
-            --no-emit-project -o /tmp/test-requirements.txt && \
-        uv pip install --system --no-cache --no-deps \
-            -r /tmp/test-requirements.txt && \
-        uv pip install --system --no-cache codecov-cli; \
+        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli; \
     fi
 
 COPY --link modelconverter /app/modelconverter/
-RUN uv pip install --system --no-cache --no-deps -e .
+COPY --link pyproject.toml /app/pyproject.toml
+RUN pip install -e . --no-deps
 
 # The RVC2 entrypoint is used for RVC3 as well
 COPY --link docker/rvc2/entrypoint.sh /app/entrypoint.sh

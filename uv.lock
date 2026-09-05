@@ -2309,16 +2309,6 @@ docs = [
 lint = [
     { name = "prek" },
 ]
-test = [
-    { name = "depthai" },
-    { name = "flatbuffers" },
-    { name = "hypothesis" },
-    { name = "pyright" },
-    { name = "pytest-cov" },
-    { name = "pytest-sugar" },
-    { name = "pytest-xdist" },
-    { name = "tflite2onnx" },
-]
 
 [package.metadata]
 requires-dist = [
@@ -2358,16 +2348,6 @@ dev = [
 ]
 docs = [{ name = "pydoctor", specifier = "~=25.10" }]
 lint = [{ name = "prek", specifier = "~=0.4.13" }]
-test = [
-    { name = "depthai", specifier = ">=3.8.0,<4" },
-    { name = "flatbuffers", specifier = "~=25.12" },
-    { name = "hypothesis", specifier = "~=6.163" },
-    { name = "pyright", specifier = "==1.1.411" },
-    { name = "pytest-cov", specifier = "~=7.1" },
-    { name = "pytest-sugar", specifier = "~=1.1" },
-    { name = "pytest-xdist", specifier = "~=3.5" },
-    { name = "tflite2onnx", specifier = "~=0.1" },
-]
 
 [[package]]
 name = "more-itertools"
