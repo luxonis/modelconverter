@@ -115,12 +115,19 @@ COPY --link docker/entrypoint_common.sh /app/entrypoint_common.sh
 
 ARG DEV=false
 COPY --link requirements-eval.txt /app/requirements-eval.txt
-COPY --link pyproject.toml /app/pyproject.toml
+COPY --link pyproject.toml uv.lock /app/
+# The DEV images run the conversion tests. Install the `test` group as the
+# lockfile pins it. The `lint` and `docs` tools stay out, and codecov-cli
+# resolves on its own, because the lockfile does not carry it.
 RUN if [ "$DEV" = "true" ]; then \
         apt-get update -qq && \
         apt-get install -y -qq --no-install-recommends git && \
         rm -rf /var/lib/apt/lists/* && \
-        uv pip install --system --no-cache --group dev codecov-cli && \
+        uv export --locked --no-default-groups --only-group test \
+            --no-emit-project -o /tmp/test-requirements.txt && \
+        uv pip install --system --no-cache --no-deps \
+            -r /tmp/test-requirements.txt && \
+        uv pip install --system --no-cache codecov-cli && \
         uv pip install --system --no-cache --no-deps -r /app/requirements-eval.txt; \
     fi
 

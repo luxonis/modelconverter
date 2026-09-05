@@ -75,9 +75,16 @@ PY
 EOF
 
 ARG DEV=false
+# The DEV images run the conversion tests. Install the `test` group as the
+# lockfile pins it. The `lint` and `docs` tools stay out, and codecov-cli
+# resolves on its own, because the lockfile does not carry it.
 RUN if [ "$DEV" = "true" ]; then \
+        uv export --locked --no-default-groups --only-group test \
+            --no-emit-project -o /tmp/test-requirements.txt && \
         uv pip install --python "$(command -v python)" --no-cache \
-            --group dev codecov-cli; \
+            --no-deps -r /tmp/test-requirements.txt && \
+        uv pip install --python "$(command -v python)" --no-cache \
+            codecov-cli; \
     fi
 
 COPY --link modelconverter /app/modelconverter/
