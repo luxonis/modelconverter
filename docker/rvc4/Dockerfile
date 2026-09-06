@@ -59,7 +59,7 @@ COPY --link modelconverter/platforms/rvc4/requirements.txt requirements-rvc4.txt
 
 RUN pip install --upgrade pip setuptools wheel
 # The export is the whole locked environment, so pip resolves nothing.
-RUN pip install --no-deps -r requirements-rvc4.txt
+RUN pip install --require-hashes --no-deps -r requirements-rvc4.txt
 
 FROM python:3.10-slim
 
@@ -114,7 +114,7 @@ RUN if [ "$DEV" = "true" ]; then \
         apt-get update -qq && \
         apt-get install -y -qq --no-install-recommends git && \
         rm -rf /var/lib/apt/lists/* && \
-        pip install --no-cache-dir --no-deps -r /app/requirements-dev.txt && \
+        pip install --no-cache-dir --require-hashes --no-deps -r /app/requirements-dev.txt && \
         pip install --no-cache-dir --no-deps -r /app/requirements-eval.txt; \
     fi
 

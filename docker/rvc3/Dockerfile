@@ -112,7 +112,7 @@ RUN <<EOF
     pip install --upgrade pip  --no-cache-dir
     # The export is the whole locked environment, OpenVINO included,
     # so pip resolves nothing.
-    pip install --no-deps -r requirements-rvc3.txt --no-cache-dir
+    pip install --require-hashes --no-deps -r requirements-rvc3.txt --no-cache-dir
 
 EOF
 
@@ -125,7 +125,7 @@ COPY --link --from=base /usr/local/bin/mo \
 ARG DEV=false
 COPY --link modelconverter/platforms/rvc3/requirements-dev.txt /app/requirements-dev.txt
 RUN if [ "$DEV" = "true" ]; then \
-        pip install --no-cache-dir --no-deps -r /app/requirements-dev.txt; \
+        pip install --no-cache-dir --require-hashes --no-deps -r /app/requirements-dev.txt; \
     fi
 
 COPY --link modelconverter /app/modelconverter/

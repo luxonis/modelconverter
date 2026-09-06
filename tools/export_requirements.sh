@@ -23,8 +23,9 @@ export_requirements() {
     # `modelconv` itself is installed from the source tree with `--no-deps`,
     # and `opencv-python-headless` is overridden to a marker that never
     # matches. Do not emit either.
+    # Hashes stay in, and the image builds install with `--require-hashes`.
     uv export --directory "$project" --locked --format requirements.txt \
-      --no-header --no-annotate --no-emit-project --no-hashes \
+      --no-header --no-annotate --no-emit-project \
       --no-emit-package modelconv \
       --no-emit-package opencv-python-headless "$@"
   } >"$tmp"; then

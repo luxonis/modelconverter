@@ -144,7 +144,7 @@ RUN <<EOF
     pip install --upgrade pip  --no-cache-dir
     # The export is the whole locked environment, OpenVINO included,
     # so pip resolves nothing.
-    pip install --no-deps -r requirements-rvc2.txt --no-cache-dir
+    pip install --require-hashes --no-deps -r requirements-rvc2.txt --no-cache-dir
 
 EOF
 
@@ -161,7 +161,7 @@ RUN if [ "$DEV" = "true" ]; then \
         apt-get update -qq && \
         apt-get install -y -qq --no-install-recommends git && \
         rm -rf /var/lib/apt/lists/* && \
-        pip install --no-cache-dir --no-deps -r /app/requirements-dev.txt && \
+        pip install --no-cache-dir --require-hashes --no-deps -r /app/requirements-dev.txt && \
         pip install --no-cache-dir --no-deps -r /app/requirements-eval.txt; \
     fi
 

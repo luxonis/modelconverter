@@ -24,7 +24,7 @@ RUN <<EOF
     # missing pkg_resources.
     pip install --no-cache-dir "pip==25.0.1"
     # The export is the whole locked environment, so pip resolves nothing.
-    pip install --no-deps -r requirements-hailo.txt --no-cache-dir
+    pip install --require-hashes --no-deps -r requirements-hailo.txt --no-cache-dir
 
     # The suite's TensorFlow 2.12 is compiled against the NumPy 1.x ABI and
     # fails to import under NumPy 2, which luxonis-ml requires from 0.9.1 on.
@@ -63,7 +63,7 @@ EOF
 ARG DEV=false
 COPY --link modelconverter/platforms/hailo/requirements-dev.txt /app/requirements-dev.txt
 RUN if [ "$DEV" = "true" ]; then \
-        pip install --no-cache-dir --no-deps -r /app/requirements-dev.txt; \
+        pip install --no-cache-dir --require-hashes --no-deps -r /app/requirements-dev.txt; \
     fi
 
 COPY --link modelconverter /app/modelconverter/
