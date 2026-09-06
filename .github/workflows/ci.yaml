@@ -373,23 +373,20 @@ jobs:
             # and corrupts the conversion.
             #
             # luxonis-ml requires the newer versions, so pip cannot satisfy
-            # the pins and that requirement at the same time. The image build
-            # has the same conflict. It installs the packages first, then it
-            # puts the pins back. The commands below do the same, from the
-            # same file the image builds from. A wheel that is built against
-            # the newer version also runs with the pinned one, so the
-            # downgrade keeps the environment usable.
+            # the pins and that requirement at the same time. A wheel built
+            # against the newer version still runs with the pinned one, so the
+            # commands below read the pins out of the image, upgrade
+            # luxonis-ml, and then put the pins back.
             #
-            # The NumPy pin is taken from the image itself, because only RVC4
-            # states it in a requirements file. The other images inherit it
-            # from a vendor package.
-            ML_INSTALL_COMMAND="python -c \"import numpy; open('/tmp/numpy-pin.txt', 'w').write('numpy==' + numpy.__version__)\" && \
+            # The pins are read from the image rather than from a file. The
+            # image installs one locked export, so the image is the record of
+            # what its vendor tools were built against.
+            ML_INSTALL_COMMAND="pip freeze | grep -E '^(numpy|onnx|protobuf|pyparsing)==' > /tmp/pins.txt && \
               pip uninstall luxonis-ml -y && \
               pip install \
               \"luxonis-ml[data,nn-archive] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}\" \
               --upgrade --force-reinstall && \
-              pip install -r /app/modelconverter/platforms/${PACKAGE}/requirements.txt && \
-              pip install -r /tmp/numpy-pin.txt &&"
+              pip install -r /tmp/pins.txt &&"
           else
             ML_INSTALL_COMMAND=""
           fi
