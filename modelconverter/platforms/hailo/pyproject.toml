@@ -1,0 +1,39 @@
+# The part of the Hailo image environment that pip resolves. The suite base
+# image ships its own Python environment, and the DALI archives install with
+# `--no-deps` from NVIDIA's redist, so neither appears here. `uv.lock` next to
+# this file pins the rest, and `requirements.txt` is the export the image
+# build installs.
+#
+# The suite's TensorFlow 2.12 is built against the NumPy 1.x ABI and fails to
+# import under 2.x. The Dataflow Compiler still imports `onnx.mapping` and
+# still pins protobuf 3.20.3, and it parses its model scripts with a grammar
+# that pyparsing 3.x rejects. luxonis-ml[data] requires numpy>=2.2, so the
+# NumPy cap is an override.
+[project]
+name = "modelconverter-hailo-image"
+version = "0"
+requires-python = ">=3.10"
+dependencies = [
+  "modelconv",
+  "matplotlib==3.10.6",
+  # ml-dtypes 0.6 requires NumPy 2, which this image cannot use.
+  "ml-dtypes<0.6",
+  "onnx==1.17.0",
+  "protobuf==3.20.3",
+  "pyparsing==2.4.7",
+]
+
+[project.optional-dependencies]
+test = ["modelconv[test]", "codecov-cli"]
+
+[tool.uv.sources]
+modelconv = { path = "../../..", editable = false }
+
+[tool.uv]
+override-dependencies = [
+  "numpy<2",
+  "onnx==1.17.0",
+  "protobuf==3.20.3",
+  "pyparsing==2.4.7",
+  "opencv-python-headless; sys_platform == 'never'",
+]

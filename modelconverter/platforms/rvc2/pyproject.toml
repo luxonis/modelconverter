@@ -1,0 +1,34 @@
+# The environment of the RVC2 image. `uv.lock` next to this file pins it, and
+# `requirements.txt` is the export the image build installs.
+#
+# OpenVINO 2022.3.0 is the last release that still ships
+# `openvino.inference_engine`, the API this image uses, and it caps NumPy at
+# 1.23.4. luxonis-ml[data] requires numpy>=2.2, so the cap is an override here.
+[project]
+name = "modelconverter-rvc2-image"
+version = "0"
+requires-python = "==3.10.*"
+dependencies = [
+  "modelconv",
+  # ml-dtypes 0.6 requires NumPy 2. The numpy override below would otherwise
+  # hide that and resolve an ml-dtypes this image cannot import.
+  "ml-dtypes<0.6",
+  "openvino==2022.3.0",
+  "openvino-dev==2022.3.0",
+  # `rvc2/exporter.py` compiles superblobs with these two.
+  "bsdiff4~=1.2",
+  "pebble~=5.2",
+  "tflite2onnx~=0.1",
+]
+
+[project.optional-dependencies]
+test = ["modelconv[test]", "codecov-cli"]
+
+[tool.uv.sources]
+modelconv = { path = "../../..", editable = false }
+
+[tool.uv]
+override-dependencies = [
+  "numpy<=1.23.4",
+  "opencv-python-headless; sys_platform == 'never'",
+]

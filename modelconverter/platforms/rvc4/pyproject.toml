@@ -1,0 +1,34 @@
+# The environment of the RVC4 image. `uv.lock` next to this file pins it, and
+# `requirements.txt` is the export the image build installs.
+#
+# `snpe-onnx-to-dlc` is a C extension built against the NumPy 1.x ABI, and it
+# reads garbage under 2.x. Its ONNX importer also fails on onnx 1.21.0. Neither
+# pin can go in the root project, because luxonis-ml[data] requires numpy>=2.2,
+# so both are overrides here. A wheel built against NumPy 2 still runs on 1.x;
+# only the reverse breaks.
+[project]
+name = "modelconverter-rvc4-image"
+version = "0"
+requires-python = "==3.10.*"
+dependencies = [
+  "modelconv",
+  # ml-dtypes 0.6 requires NumPy 2. The numpy override below would otherwise
+  # hide that and resolve an ml-dtypes this image cannot import.
+  "ml-dtypes<0.6",
+  "polars",
+  "tflite",
+]
+
+[project.optional-dependencies]
+# `pytest` is a runtime requirement of the SNPE packages, not only a test tool.
+test = ["modelconv[test]", "codecov-cli", "pytest"]
+
+[tool.uv.sources]
+modelconv = { path = "../../..", editable = false }
+
+[tool.uv]
+override-dependencies = [
+  "numpy<2",
+  "onnx==1.18.0",
+  "opencv-python-headless; sys_platform == 'never'",
+]

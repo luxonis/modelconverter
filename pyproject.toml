@@ -36,6 +36,19 @@ dependencies = [
 [project.optional-dependencies]
 bench = ["depthai>=3.8.0,<4"]
 analysis = ["depthai>=3.8.0,<4", "plotly", "polars"]
+# What `tests/conversion` needs, and nothing else. Each platform image locks
+# this extra through its own pyproject.toml, so the images and the host agree
+# on the test tools.
+test = [
+  "depthai>=3.8.0,<4",
+  # Lets the tests emit tiny .tflite fixtures directly (no TensorFlow needed).
+  "flatbuffers~=25.12",
+  "hypothesis~=6.163",
+  "pytest-cov~=7.1",
+  "pytest-sugar~=1.1",
+  "pytest-xdist~=3.5",
+  "tflite2onnx~=0.1",
+]
 
 [dependency-groups]
 lint = ["prek~=0.4.13"]
@@ -43,17 +56,10 @@ docs = ["pydoctor~=25.10"]
 dev = [
   { include-group = "lint" },
   { include-group = "docs" },
-  "depthai>=3.8.0,<4",
-  # Lets the tests emit tiny .tflite fixtures directly (no TensorFlow needed).
-  "flatbuffers~=25.12",
-  "hypothesis~=6.163",
+  "modelconv[test]",
   # The type gate runs this exact release, so a new pyright cannot turn CI red
   # on its own. Raise it deliberately.
   "pyright==1.1.411",
-  "pytest-cov~=7.1",
-  "pytest-sugar~=1.1",
-  "pytest-xdist~=3.5",
-  "tflite2onnx~=0.1",
 ]
 
 [project.scripts]

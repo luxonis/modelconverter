@@ -1,6 +1,18 @@
 default_language_version:
   python: python3
 repos:
+  - repo: local
+    hooks:
+      - id: export-requirements
+        name: Export pip compatibility requirements
+        entry: tools/export_requirements.sh
+        language: system
+        pass_filenames: false
+        # The generated exports are listed too, so a hand edit gets reverted.
+        # requirements-eval.txt and requirements-typecheck.txt stay hand-written:
+        # both install with `--no-deps` and hold pins no resolver accepts.
+        files: ^(pyproject\.toml|uv\.lock|modelconverter/__init__\.py|tools/export_requirements\.sh|modelconverter/platforms/[a-z0-9]+/(pyproject\.toml|uv\.lock|requirements(-dev)?\.txt))$
+
   - repo: https://github.com/crate-ci/typos
     rev: v1.47.2
     hooks:
