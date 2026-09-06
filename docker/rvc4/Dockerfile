@@ -55,12 +55,11 @@ RUN <<EOF
 
 EOF
 
-COPY --link requirements.txt requirements.txt
 COPY --link modelconverter/platforms/rvc4/requirements.txt requirements-rvc4.txt
 
 RUN pip install --upgrade pip setuptools wheel
-RUN pip install -r requirements.txt
-RUN pip install --upgrade -r requirements-rvc4.txt
+# The export is the whole locked environment, so pip resolves nothing.
+RUN pip install --no-deps -r requirements-rvc4.txt
 
 FROM python:3.10-slim
 
@@ -109,13 +108,13 @@ COPY --link docker/rvc4/entrypoint.sh /app/entrypoint.sh
 COPY --link docker/entrypoint_common.sh /app/entrypoint_common.sh
 
 ARG DEV=false
-COPY --link requirements-dev.txt /app/requirements-dev.txt
+COPY --link modelconverter/platforms/rvc4/requirements-dev.txt /app/requirements-dev.txt
 COPY --link requirements-eval.txt /app/requirements-eval.txt
 RUN if [ "$DEV" = "true" ]; then \
         apt-get update -qq && \
         apt-get install -y -qq --no-install-recommends git && \
         rm -rf /var/lib/apt/lists/* && \
-        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli && \
+        pip install --no-cache-dir --no-deps -r /app/requirements-dev.txt && \
         pip install --no-cache-dir --no-deps -r /app/requirements-eval.txt; \
     fi
 

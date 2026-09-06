@@ -135,7 +135,6 @@ COPY --link --from=base /opt/intel /opt/intel
 
 COPY --link --from=base /usr/local/lib /usr/local/lib
 
-COPY --link requirements.txt /app/requirements.txt
 COPY --link modelconverter/platforms/rvc2/requirements.txt requirements-rvc2.txt
 
 RUN <<EOF
@@ -143,9 +142,9 @@ RUN <<EOF
     set -e
 
     pip install --upgrade pip  --no-cache-dir
-    pip install -r requirements.txt --no-cache-dir
-    pip install -r requirements-rvc2.txt --no-cache-dir
-    pip install openvino==2022.3.0 openvino-dev==2022.3.0 --no-cache-dir
+    # The export is the whole locked environment, OpenVINO included,
+    # so pip resolves nothing.
+    pip install --no-deps -r requirements-rvc2.txt --no-cache-dir
 
 EOF
 
@@ -156,13 +155,13 @@ COPY --link --from=base /usr/local/bin/mo \
 
 
 ARG DEV=false
-COPY --link requirements-dev.txt /app/requirements-dev.txt
+COPY --link modelconverter/platforms/rvc2/requirements-dev.txt /app/requirements-dev.txt
 COPY --link requirements-eval.txt /app/requirements-eval.txt
 RUN if [ "$DEV" = "true" ]; then \
         apt-get update -qq && \
         apt-get install -y -qq --no-install-recommends git && \
         rm -rf /var/lib/apt/lists/* && \
-        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli && \
+        pip install --no-cache-dir --no-deps -r /app/requirements-dev.txt && \
         pip install --no-cache-dir --no-deps -r /app/requirements-eval.txt; \
     fi
 
