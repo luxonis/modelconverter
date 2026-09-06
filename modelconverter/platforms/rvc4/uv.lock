@@ -3,6 +3,7 @@ revision = 3
 requires-python = "==3.10.*"
 
 [manifest]
+constraints = [{ name = "onnxruntime", marker = "python_full_version < '3.11'", specifier = "<1.24" }]
 overrides = [
     { name = "numpy", specifier = "<2" },
     { name = "onnx", specifier = "==1.18.0" },

@@ -7,6 +7,7 @@ resolution-markers = [
 ]
 
 [manifest]
+constraints = [{ name = "onnxruntime", marker = "python_full_version < '3.11'", specifier = "<1.24" }]
 overrides = [
     { name = "numpy", specifier = "<=1.23.4" },
     { name = "opencv-python-headless", marker = "sys_platform == 'never'" },
