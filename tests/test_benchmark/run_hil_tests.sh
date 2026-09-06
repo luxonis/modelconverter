@@ -24,10 +24,11 @@ python3 -m venv venv
 # Activate virtual environment
 source venv/bin/activate
 
-# Install dependencies. uv resolves the `dev` dependency group; pip only
-# learned to read dependency groups in 25.1, and the venv's pip can be older.
-pip install uv
-uv pip install . --group dev
+# Install dependencies from the lockfile. `uv pip install` would resolve from
+# the indexes and ignore uv.lock, so the testbed could run versions no CI job
+# tested. `--active` targets the virtual environment activated above.
+pip install "uv==0.12.5"
+uv sync --locked --active
 
 pip install hil-framework --upgrade \
   --index-url "https://__token__:$PAT_TOKEN@gitlab.luxonis.com/api/v4/projects/213/packages/pypi/simple" \
