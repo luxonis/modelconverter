@@ -293,7 +293,12 @@ class InputConfig(OutputConfig):
         assert self.shape is not None
 
         channels = self.shape[self.layout.index("C")]
-        if channels == 1:
+        encodings = {self.encoding.from_, self.encoding.to}
+        if channels == 1 and encodings <= {
+            Encoding.RGB,
+            Encoding.BGR,
+            Encoding.GRAY,
+        }:
             logger.info("Detected grayscale input. Setting encoding to GRAY.")
             self.encoding.from_ = self.encoding.to = Encoding.GRAY
 

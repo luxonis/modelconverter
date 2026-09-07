@@ -143,10 +143,6 @@ class Exporter(ABC):
                     / sanitize_net_name(self.config.input_bin.stem)
                 ).with_suffix(".bin"),
             )
-            self.config.input_bin = (
-                self.config.input_bin.parent
-                / sanitize_net_name(self.config.input_bin.stem)
-            ).with_suffix(".bin")
         self._input_model = (
             self.intermediate_outputs_dir / sanitized_model_name
         )

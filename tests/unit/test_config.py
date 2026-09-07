@@ -389,6 +389,18 @@ def test_grayscale_input_sets_gray_encoding():
     assert inp.encoding.from_ == inp.encoding.to == Encoding.GRAY
 
 
+def test_explicit_raw_one_channel_input_stays_raw():
+    inp = InputConfig(
+        name="i",
+        shape=[1, 1, 64, 64],
+        layout="NCHW",
+        encoding="NONE",
+    )
+
+    assert inp.encoding.from_ == inp.encoding.to == Encoding.NONE
+    assert inp.is_raw_input
+
+
 def test_non_grayscale_channel_kept():
     inp = InputConfig(name="i", shape=[1, 3, 64, 64], layout="NCHW")
     assert inp.encoding.from_ == Encoding.RGB

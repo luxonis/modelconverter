@@ -10,7 +10,7 @@ import numpy as np
 import onnx
 import onnxruntime as ort
 import pytest
-from onnx import TensorProto
+from onnx import TensorProto, helper
 
 from modelconverter.utils.config import InputConfig
 from modelconverter.utils.exceptions import (
@@ -175,6 +175,41 @@ def test_unsupported_layout_with_preprocessing_fails(tmp_path: Path):
         onnx_attach_normalization_to_inputs(
             model_path,
             tmp_path / "layout-modified.onnx",
+            {"input0": config},
+        )
+
+
+def test_input_exposed_directly_as_output_is_unembeddable(tmp_path: Path):
+    shape = [1, 2, 1, 1]
+    input_tensor = helper.make_tensor_value_info(
+        "input0", TensorProto.FLOAT, shape
+    )
+    output_tensor = helper.make_tensor_value_info(
+        "input0", TensorProto.FLOAT, shape
+    )
+    model = helper.make_model(
+        helper.make_graph(
+            [], "direct-output", [input_tensor], [output_tensor]
+        ),
+        opset_imports=[helper.make_opsetid("", 13)],
+        ir_version=8,
+    )
+    model_path = tmp_path / "direct-output.onnx"
+    onnx.save(model, model_path)
+    config = InputConfig(
+        name="input0",
+        shape=shape,
+        layout="NCHW",
+        encoding="NONE",
+        mean_values=[1.0, 2.0],
+    )
+
+    with pytest.raises(
+        PreprocessingEmbeddingError, match="exposed directly as a graph output"
+    ):
+        onnx_attach_normalization_to_inputs(
+            model_path,
+            tmp_path / "direct-output-modified.onnx",
             {"input0": config},
         )
 

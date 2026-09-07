@@ -10,7 +10,12 @@ from modelconverter.platforms.rvc2.exporter import (
 )
 from modelconverter.platforms.rvc3.exporter import RVC3Exporter
 from modelconverter.utils import PreprocessingEmbeddingError
-from modelconverter.utils.config import Config
+from modelconverter.utils.config import (
+    Config,
+    InputConfig,
+    OutputConfig,
+    SingleStageConfig,
+)
 from modelconverter.utils.types import InputFileType
 from tests.helpers.onnx_factory import single_io_onnx
 
@@ -109,3 +114,44 @@ def test_existing_ir_with_requested_preprocessing_fails(
         PreprocessingEmbeddingError, match="existing OpenVINO IR"
     ):
         exporter.export()
+
+
+def test_ir_preprocessing_retry_preserves_unsanitized_bin_source(
+    tmp_path: Path,
+):
+    xml_path = tmp_path / "model with spaces.xml"
+    bin_path = tmp_path / "model with spaces.bin"
+    xml_path.write_text("<net/>")
+    bin_path.write_bytes(b"weights")
+    config = SingleStageConfig.model_construct(
+        input_model=xml_path,
+        input_bin=bin_path,
+        input_file_type=InputFileType.IR,
+        inputs=[
+            InputConfig(
+                name="input0",
+                shape=[1, 2, 8, 8],
+                layout="NCHW",
+                encoding="NONE",
+                mean_values=[10, 20],
+            )
+        ],
+        outputs=[OutputConfig(name="output0", shape=[1], layout="N")],
+    )
+    output_dir = tmp_path / "out-ir-retry"
+    output_dir.mkdir()
+
+    first_exporter = RVC2Exporter(config, output_dir)
+    with pytest.raises(
+        PreprocessingEmbeddingError, match="existing OpenVINO IR"
+    ):
+        first_exporter.export()
+
+    assert config.input_bin == bin_path
+    config.inputs[0].mean_values = None
+
+    RVC2Exporter(config, output_dir)
+
+    assert (
+        output_dir / "intermediate_outputs" / "model_with_spaces.bin"
+    ).read_bytes() == b"weights"

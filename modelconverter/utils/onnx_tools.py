@@ -110,6 +110,7 @@ def onnx_attach_normalization_to_inputs(
     new_nodes = []
     new_initializers = []
     input_names = [input_tensor.name for input_tensor in graph.input]
+    output_names = {output_tensor.name for output_tensor in graph.output}
     if not all(name in input_names for name in input_configs):
         raise ONNXException(
             "You either used an invalid input name, or you're attempting "
@@ -126,6 +127,12 @@ def onnx_attach_normalization_to_inputs(
         cfg = input_configs[input_name]
         if not cfg.requires_onnx_input_modification(reverse_only=reverse_only):
             continue
+
+        if input_name in output_names:
+            raise PreprocessingEmbeddingError(
+                f"Cannot embed preprocessing for input '{input_name}' because "
+                "the same tensor is exposed directly as a graph output."
+            )
 
         try:
             n_channels = cfg.validate_preprocessing(reverse_only=reverse_only)
