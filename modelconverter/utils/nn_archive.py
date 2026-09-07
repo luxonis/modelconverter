@@ -513,6 +513,7 @@ def _default_archive_preprocessing(
     *,
     input_type: Literal["raw", "image"],
 ) -> Params:
+    inp.validate_input_contract()
     if input_type == "raw":
         return {
             "mean": None,

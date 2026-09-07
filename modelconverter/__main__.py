@@ -246,10 +246,11 @@ def convert(
 
         for stage in cfg.stages.values():
             for inp in stage.inputs:
-                if not inp.requires_input_preprocessing():
-                    continue
                 try:
-                    inp.validate_preprocessing()
+                    if inp.requires_input_preprocessing():
+                        inp.validate_preprocessing()
+                    else:
+                        inp.validate_input_contract()
                 except ValueError as error:
                     raise ModelconverterException(str(error)) from error
 

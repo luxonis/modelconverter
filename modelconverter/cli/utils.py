@@ -237,6 +237,7 @@ def extract_preprocessing(
     stage_cfg = next(iter(cfg.stages.values()))
     preprocessing = {}
     for inp in stage_cfg.inputs:
+        inp.validate_input_contract()
         mean = inp.mean_values
         scale = inp.scale_values
         encoding = inp.encoding

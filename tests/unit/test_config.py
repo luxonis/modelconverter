@@ -394,10 +394,29 @@ def test_non_grayscale_channel_kept():
     assert inp.encoding.from_ == Encoding.RGB
 
 
-def test_multichannel_with_channel_dim_keeps_rgb():
-    # "C" present but the channel dim is not 1 -> not grayscale, stays RGB.
-    inp = InputConfig(name="i", shape=[1, 10], layout="NC")
-    assert inp.encoding.from_ == Encoding.RGB
+@pytest.mark.parametrize("encoding", ["RGB", "BGR"])
+def test_non_three_channel_input_rejects_color_encoding(encoding: str):
+    inp = InputConfig(
+        name="i",
+        shape=[1, 10],
+        layout="NC",
+        encoding=encoding,
+    )
+    with pytest.raises(ValueError, match="cannot use RGB/BGR encoding"):
+        inp.validate_input_contract()
+
+
+def test_nonstandard_channel_input_accepts_raw_encoding():
+    inp = InputConfig(name="i", shape=[1, 10], layout="NC", encoding="NONE")
+    assert inp.is_raw_input
+
+
+def test_multichannel_input_rejects_gray_encoding():
+    inp = InputConfig(
+        name="i", shape=[1, 3, 64, 64], layout="NCHW", encoding="GRAY"
+    )
+    with pytest.raises(ValueError, match="cannot use GRAY encoding"):
+        inp.validate_input_contract()
 
 
 def test_layout_without_channel_dim_keeps_rgb():
@@ -434,6 +453,24 @@ def test_scalar_mean_value_broadcasts_over_channels():
 def test_zero_scale_value_is_rejected():
     with pytest.raises(ValueError, match="zero scale value"):
         _input_config(name="i", scale_values=[1, 0, 2])
+
+
+@pytest.mark.parametrize(
+    ("field", "values"),
+    [("mean_values", [0, 0]), ("scale_values", [1, 1])],
+)
+def test_neutral_preprocessing_value_count_is_validated(
+    field: str, values: list[int]
+):
+    inp = InputConfig(
+        name="i",
+        shape=[1, 3, 64, 64],
+        layout="NCHW",
+        encoding="BGR",
+        **{field: values},
+    )
+    with pytest.raises(ValueError, match="one value per channel"):
+        inp.validate_input_contract()
 
 
 def test_explicit_scale_values_pass_through():

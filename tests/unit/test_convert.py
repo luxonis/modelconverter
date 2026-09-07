@@ -391,18 +391,37 @@ def test_conversion_does_not_fallback_for_nonrecoverable_errors(
     assert stage.inputs[0].mean_values == [1.0, 2.0, 3.0]
 
 
+@pytest.mark.parametrize(
+    "input_options",
+    [
+        {
+            "shape": [1, 3, 64, 64],
+            "encoding": "NONE",
+            "mean_values": [1, 2],
+        },
+        {
+            "shape": [1, 3, 64, 64],
+            "encoding": "BGR",
+            "mean_values": [0, 0],
+        },
+        {
+            "shape": [1, 2, 64, 64],
+            "encoding": "RGB",
+            "mean_values": [1, 2],
+        },
+    ],
+)
 def test_invalid_preprocessing_is_rejected_before_fallback(
     dummy_onnx: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    input_options: dict[str, object],
 ) -> None:
     cfg = Config.get_config(
         None,
         {
             "input_model": str(dummy_onnx),
-            "shape": [1, 3, 64, 64],
-            "encoding": "NONE",
-            "mean_values": [1, 2],
+            **input_options,
         },
     )
     exporter_was_created = False

@@ -148,7 +148,7 @@ def test_non_three_channel_color_reversal_fails(tmp_path: Path):
         encoding={"from": "RGB", "to": "BGR"},
     )
 
-    with pytest.raises(ONNXException, match="requires exactly 3 channels"):
+    with pytest.raises(ONNXException, match="cannot use RGB/BGR encoding"):
         onnx_attach_normalization_to_inputs(
             model_path,
             tmp_path / "reverse-modified.onnx",

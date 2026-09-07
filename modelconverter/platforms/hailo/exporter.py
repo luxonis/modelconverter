@@ -287,6 +287,9 @@ class HailoExporter(Exporter):
             f"batch_size={self._batch_size})"
         )
         for name, inp in self._inputs.items():
+            if not inp.requires_input_preprocessing():
+                continue
+
             safe_name = name.replace(".", "")
 
             hn_name, _ = self._get_hn_layer_info(runner, name)

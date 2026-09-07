@@ -373,6 +373,52 @@ class InputConfig(OutputConfig):
 
         return self
 
+    def validate_input_contract(self, *, validate_values: bool = True) -> None:
+        """Validate encoding and preprocessing against a known channel axis."""
+        if (
+            validate_values
+            and self.scale_values is not None
+            and any(value == 0 for value in self.scale_values)
+        ):
+            raise ValueError(
+                f"Input '{self.name}' has a zero scale value; scale values "
+                "must be non-zero."
+            )
+
+        if self.shape is None or self.layout is None or "C" not in self.layout:
+            return
+
+        channels = self.shape[self.layout.index("C")]
+        if channels <= 0:
+            return
+
+        encodings = {self.encoding.from_, self.encoding.to}
+        if encodings & {Encoding.RGB, Encoding.BGR} and channels != 3:
+            raise ValueError(
+                f"Input '{self.name}' has {channels} channels and cannot use "
+                "RGB/BGR encoding; use `encoding: NONE` for a packed or "
+                "non-image tensor input."
+            )
+        if Encoding.GRAY in encodings and channels != 1:
+            raise ValueError(
+                f"Input '{self.name}' has {channels} channels and cannot use "
+                "GRAY encoding; grayscale image inputs require exactly one "
+                "channel."
+            )
+
+        if validate_values:
+            for values_name, values in (
+                ("mean_values", self.mean_values),
+                ("scale_values", self.scale_values),
+            ):
+                if values is not None and len(values) not in {1, channels}:
+                    raise ValueError(
+                        f"Input '{self.name}' has {channels} channels, but "
+                        f"'{values_name}' contains {len(values)} values; "
+                        "provide one value to broadcast or one value per "
+                        "channel."
+                    )
+
     def requires_input_preprocessing(
         self, *, reverse_only: bool = False
     ) -> bool:
@@ -420,6 +466,8 @@ class InputConfig(OutputConfig):
             ValueError: If the input contract is insufficient or inconsistent.
 
         """
+        self.validate_input_contract(validate_values=not reverse_only)
+
         if self.shape is None or self.layout is None or "C" not in self.layout:
             raise ValueError(
                 f"Cannot apply preprocessing to input '{self.name}' without "
@@ -447,26 +495,6 @@ class InputConfig(OutputConfig):
                     f"Cannot reverse channels for input '{self.name}' with "
                     f"{channels} channels; RGB/BGR reversal requires exactly "
                     "3 channels."
-                )
-
-        if not reverse_only:
-            for values_name, values in (
-                ("mean_values", self.mean_values),
-                ("scale_values", self.scale_values),
-            ):
-                if values is not None and len(values) not in {1, channels}:
-                    raise ValueError(
-                        f"Input '{self.name}' has {channels} channels, but "
-                        f"'{values_name}' contains {len(values)} values; "
-                        "provide one value to broadcast or one value per "
-                        "channel."
-                    )
-            if self.scale_values is not None and any(
-                value == 0 for value in self.scale_values
-            ):
-                raise ValueError(
-                    f"Input '{self.name}' has a zero scale value; scale "
-                    "values must be non-zero."
                 )
 
         return channels

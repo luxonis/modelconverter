@@ -887,7 +887,7 @@ def test_raw_input_preprocessing_is_all_none():
 def test_image_float16_interleaved_with_mean_scale():
     inp = _input_config(
         name="x",
-        shape=[1, 3, 64, 64],
+        shape=[1, 64, 64, 3],
         layout="NHWC",
         data_type="float16",
         encoding={"from": "RGB", "to": "RGB"},
@@ -900,6 +900,18 @@ def test_image_float16_interleaved_with_mean_scale():
     assert block["interleaved_to_planar"] is True
     assert block["mean"] == [0, 0, 0]
     assert block["scale"] == [1, 1, 1]
+
+
+def test_image_preprocessing_rejects_nonstandard_channel_count():
+    inp = _input_config(
+        name="x",
+        shape=[1, 2, 64, 64],
+        layout="NCHW",
+        encoding="RGB",
+    )
+
+    with pytest.raises(ValueError, match="cannot use RGB/BGR encoding"):
+        _default_archive_preprocessing(inp, "NCHW", input_type="image")
 
 
 def test_image_uint8_planar_without_mean_scale():
