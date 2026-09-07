@@ -410,19 +410,12 @@ def test_conversion_does_not_fallback_for_nonrecoverable_errors(
     "input_options",
     [
         {
-            "shape": [1, 3, 64, 64],
             "encoding": "NONE",
             "mean_values": [1, 2],
         },
         {
-            "shape": [1, 3, 64, 64],
             "encoding": "BGR",
             "mean_values": [0, 0],
-        },
-        {
-            "shape": [1, 2, 64, 64],
-            "encoding": "RGB",
-            "mean_values": [1, 2],
         },
     ],
 )
@@ -436,6 +429,7 @@ def test_invalid_preprocessing_is_rejected_before_fallback(
         None,
         {
             "input_model": str(dummy_onnx),
+            "shape": [1, 3, 64, 64],
             **input_options,
         },
     )

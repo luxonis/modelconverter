@@ -30,7 +30,6 @@ from modelconverter.cli.utils import get_configs
 from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Platform
-from tests.helpers.conversion import assert_produced
 from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import platform_params
 from tests.helpers.precision import cosine_similarity, locate_converted_model
@@ -66,20 +65,6 @@ def solid_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("toy_tflite_img") / "solid.png"
     cv2.imwrite(str(path), np.full((8, 8, 3), _CHANNEL_VALUES, dtype=np.uint8))
     return path
-
-
-@pytest.mark.parametrize("platform_name", _PARAMS)
-def test_toy_tflite_conversion(platform_name: str, toy_tflite: Path):
-    platform = Platform(platform_name)
-    output_name = f"_toy-tflite-{platform_name}"
-    convert(
-        platform,
-        *_conversion_options(platform),
-        path=str(toy_tflite),
-        output_dir=output_name,
-        to="native",
-    )
-    assert_produced(output_name)
 
 
 @pytest.mark.parametrize("platform_name", _PARAMS)

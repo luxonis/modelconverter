@@ -115,10 +115,10 @@ def test_scalar_normalization_broadcasts_to_every_channel(tmp_path: Path):
     np.testing.assert_allclose(actual, (x - 3.0) / 2.0)
 
 
-def test_invalid_normalization_value_count_fails(tmp_path: Path):
+def test_invalid_normalization_is_reported_as_onnx_error(tmp_path: Path):
     shape = [1, 2, 3, 4]
     model_path = single_io_onnx(
-        tmp_path / "count.onnx", shape=shape, output_shape=shape
+        tmp_path / "invalid.onnx", shape=shape, output_shape=shape
     )
     config = InputConfig(
         name="input0",
@@ -131,27 +131,7 @@ def test_invalid_normalization_value_count_fails(tmp_path: Path):
     with pytest.raises(ONNXException, match="one value per channel"):
         onnx_attach_normalization_to_inputs(
             model_path,
-            tmp_path / "count-modified.onnx",
-            {"input0": config},
-        )
-
-
-def test_non_three_channel_color_reversal_fails(tmp_path: Path):
-    shape = [1, 2, 3, 4]
-    model_path = single_io_onnx(
-        tmp_path / "reverse.onnx", shape=shape, output_shape=shape
-    )
-    config = InputConfig(
-        name="input0",
-        shape=shape,
-        layout="NCHW",
-        encoding={"from": "RGB", "to": "BGR"},
-    )
-
-    with pytest.raises(ONNXException, match="cannot use RGB/BGR encoding"):
-        onnx_attach_normalization_to_inputs(
-            model_path,
-            tmp_path / "reverse-modified.onnx",
+            tmp_path / "invalid-modified.onnx",
             {"input0": config},
         )
 

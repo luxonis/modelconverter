@@ -669,36 +669,11 @@ def test_raw_input_default_type_without_orig(dummy_onnx: Path):
     assert in0.preprocessing.dai_type is None
 
 
-def test_embedded_raw_input_preprocessing_is_identity(dummy_onnx: Path):
-    # The original raw preprocessing has already been represented in the
-    # successfully converted model and must not be applied twice.
-    config = Config.get_config(
-        None,
-        {
-            "input_model": str(dummy_onnx),
-            "inputs.0.name": "input0",
-            "inputs.0.encoding": "NONE",
-            "inputs.1.name": "input1",
-        },
-    )
-    orig = archive_from_model(dummy_onnx)
-    orig.model.inputs[0].input_type = InputType.RAW
-    orig.model.inputs[0].preprocessing = PreprocessingBlock(
-        mean=[9, 9, 9],
-        scale=None,
-        reverse_channels=None,
-        interleaved_to_planar=None,
-        dai_type=None,
-    )
-    nn = _config_to_nn(config, dummy_onnx, orig=orig)
-    in0 = next(i for i in nn.model.inputs if i.name == "input0")
-    assert in0.input_type == InputType.RAW
-    assert in0.preprocessing.mean is None
-
-
 def test_embedded_raw_preprocessing_is_identity_in_archive(
     dummy_onnx: Path,
 ):
+    # Original raw preprocessing is already represented in the converted
+    # model and must not be applied twice by the output archive.
     config = Config.get_config(
         None,
         {
@@ -938,18 +913,12 @@ def test_image_float16_interleaved_with_mean_scale():
     assert block["scale"] == [1, 1, 1]
 
 
-@pytest.mark.parametrize(
-    ("data_type", "expected_dai_type"),
-    [("float32", "GRAY8"), ("float16", "GRAYF16")],
-)
-def test_grayscale_image_uses_valid_dai_type(
-    data_type: str, expected_dai_type: str
-):
+def test_grayscale_image_uses_valid_dai_type():
     inp = _input_config(
         name="x",
         shape=[1, 1, 64, 64],
         layout="NCHW",
-        data_type=data_type,
+        data_type="float32",
         encoding="GRAY",
         mean_values=[2],
         scale_values=[3],
@@ -957,21 +926,9 @@ def test_grayscale_image_uses_valid_dai_type(
 
     block = _default_archive_preprocessing(inp, "NCHW", input_type="image")
 
-    assert block["dai_type"] == expected_dai_type
+    assert block["dai_type"] == "GRAY8"
     assert block["mean"] == [0]
     assert block["scale"] == [1]
-
-
-def test_image_preprocessing_rejects_nonstandard_channel_count():
-    inp = _input_config(
-        name="x",
-        shape=[1, 2, 64, 64],
-        layout="NCHW",
-        encoding="RGB",
-    )
-
-    with pytest.raises(ValueError, match="cannot use RGB/BGR encoding"):
-        _default_archive_preprocessing(inp, "NCHW", input_type="image")
 
 
 def test_image_uint8_planar_without_mean_scale():

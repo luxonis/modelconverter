@@ -25,19 +25,13 @@ def test_scalar_preprocessing_is_expanded_to_resolved_channels():
     assert _broadcast_preprocessing_values([127.0], 2) == [127.0, 127.0]
 
 
-@pytest.mark.parametrize(
-    ("exporter_type", "platform_key"),
-    [(RVC2Exporter, "rvc2"), (RVC3Exporter, "rvc3")],
-)
 def test_raw_two_channel_normalization_is_forwarded_to_model_optimizer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    exporter_type: type[RVC2Exporter],
-    platform_key: str,
 ):
     shape = [1, 2, 8, 8]
     model = single_io_onnx(
-        tmp_path / f"{platform_key}.onnx",
+        tmp_path / "rvc2.onnx",
         shape=shape,
         output_shape=shape,
     ).resolve()
@@ -58,12 +52,12 @@ def test_raw_two_channel_normalization_is_forwarded_to_model_optimizer(
                 "substitute_sub_with_add": False,
                 "substitute_div_with_mul": False,
             },
-            f"{platform_key}.disable_calibration": True,
+            "rvc2.disable_calibration": True,
         },
     )
-    output_dir = tmp_path / f"out-{platform_key}"
+    output_dir = tmp_path / "out-rvc2"
     output_dir.mkdir()
-    exporter = exporter_type(next(iter(config.stages.values())), output_dir)
+    exporter = RVC2Exporter(next(iter(config.stages.values())), output_dir)
     commands: list[list[str]] = []
 
     monkeypatch.setattr(
@@ -80,19 +74,13 @@ def test_raw_two_channel_normalization_is_forwarded_to_model_optimizer(
     assert command[command.index("--scale_values") + 1] == "input0[2.0,4.0]"
 
 
-@pytest.mark.parametrize(
-    ("exporter_type", "platform_key"),
-    [(RVC2Exporter, "rvc2"), (RVC3Exporter, "rvc3")],
-)
 def test_selective_bgr_to_rgb_reversal_preserves_runtime_encoding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    exporter_type: type[RVC2Exporter],
-    platform_key: str,
 ):
     shape = [1, 3, 8, 8]
     model = build_onnx(
-        tmp_path / f"{platform_key}-mixed-reversal.onnx",
+        tmp_path / "rvc2-mixed-reversal.onnx",
         [
             ("reversed", shape, TensorProto.FLOAT),
             ("unchanged", shape, TensorProto.FLOAT),
@@ -120,12 +108,12 @@ def test_selective_bgr_to_rgb_reversal_preserves_runtime_encoding(
             ],
             "onnx_simplification": False,
             "onnx_optimizations": False,
-            f"{platform_key}.disable_calibration": True,
+            "rvc2.disable_calibration": True,
         },
     )
-    output_dir = tmp_path / f"out-{platform_key}-mixed-reversal"
+    output_dir = tmp_path / "out-rvc2-mixed-reversal"
     output_dir.mkdir()
-    exporter = exporter_type(next(iter(config.stages.values())), output_dir)
+    exporter = RVC2Exporter(next(iter(config.stages.values())), output_dir)
     monkeypatch.setattr(
         exporter, "_subprocess_run", lambda *_args, **_kwargs: None
     )

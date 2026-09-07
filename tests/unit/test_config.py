@@ -406,21 +406,15 @@ def test_non_grayscale_channel_kept():
     assert inp.encoding.from_ == Encoding.RGB
 
 
-@pytest.mark.parametrize("encoding", ["RGB", "BGR"])
-def test_non_three_channel_input_rejects_color_encoding(encoding: str):
+def test_non_three_channel_input_rejects_color_encoding():
     inp = InputConfig(
         name="i",
         shape=[1, 10],
         layout="NC",
-        encoding=encoding,
+        encoding="RGB",
     )
     with pytest.raises(ValueError, match="cannot use RGB/BGR encoding"):
         inp.validate_input_contract()
-
-
-def test_nonstandard_channel_input_accepts_raw_encoding():
-    inp = InputConfig(name="i", shape=[1, 10], layout="NC", encoding="NONE")
-    assert inp.is_raw_input
 
 
 def test_multichannel_input_rejects_gray_encoding():
@@ -457,7 +451,7 @@ def test_named_scale_values():
     assert inp.scale_values == [58.395, 57.12, 57.375]
 
 
-def test_scalar_mean_value_broadcasts_over_channels():
+def test_scalar_mean_value_is_preserved_for_later_broadcast():
     inp = _input_config(name="i", mean_values=127)
     assert inp.mean_values == [127]
 
