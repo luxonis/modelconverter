@@ -8,6 +8,7 @@ No network, cloud, Docker or vendor tooling: the dummy ONNX models and NN-archiv
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
@@ -19,6 +20,7 @@ from luxonis_ml.nn_archive.config_building_blocks import (
 )
 from luxonis_ml.typing import Params, ParamValue
 
+from modelconverter.cli.utils import extract_preprocessing
 from modelconverter.utils.config import (
     Config,
     InputConfig,
@@ -418,6 +420,8 @@ def _config_to_nn(
     preprocessing: dict[str, PreprocessingBlock] | None = None,
     main_stage: str | None = None,
     platform: Platform = Platform.RVC4,
+    preprocessing_input_types: dict[str, Literal["raw", "image"]]
+    | None = None,
 ) -> NNArchiveConfig:
     """``modelconverter_config_to_nn`` with the fixed test boilerplate (output
     name + model path) filled in, exposing only what tests vary.
@@ -430,6 +434,7 @@ def _config_to_nn(
         main_stage if main_stage is not None else next(iter(config.stages)),
         dummy_onnx,
         platform,
+        preprocessing_input_types=preprocessing_input_types,
     )
 
 
@@ -753,6 +758,41 @@ def test_externalized_raw_preprocessing_is_kept_in_archive(
     in0 = next(i for i in nn.model.inputs if i.name == "input0")
     assert in0.preprocessing.mean == [9, 9, 9]
     assert in0.preprocessing.scale == [2, 2, 2]
+
+
+def test_externalized_image_preprocessing_keeps_image_input_type(
+    dummy_onnx: Path,
+):
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(dummy_onnx),
+            "inputs.0.name": "input0",
+            "inputs.0.encoding": "BGR",
+            "inputs.0.mean_values": [1, 2, 3],
+            "inputs.0.scale_values": [4, 5, 6],
+            "inputs.1.name": "input1",
+        },
+    )
+    stage = next(iter(config.stages.values()))
+    input_types = {
+        inp.name: "raw" if inp.is_raw_input else "image"
+        for inp in stage.inputs
+    }
+    config, preprocessing = extract_preprocessing(config)
+
+    nn = _config_to_nn(
+        config,
+        dummy_onnx,
+        preprocessing=preprocessing,
+        preprocessing_input_types=input_types,
+    )
+
+    in0 = next(i for i in nn.model.inputs if i.name == "input0")
+    assert in0.input_type == InputType.IMAGE
+    assert in0.preprocessing.mean == [1, 2, 3]
+    assert in0.preprocessing.scale == [4, 5, 6]
+    assert in0.preprocessing.dai_type == "BGR888p"
 
 
 def test_iop_input_and_output(dummy_onnx: Path):

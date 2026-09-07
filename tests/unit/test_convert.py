@@ -241,7 +241,7 @@ def test_nn_archive_retries_after_preprocessing_embedding_failure(
         {
             "input_model": str(dummy_onnx),
             "shape": [1, 3, 64, 64],
-            "encoding": "NONE",
+            "encoding": "BGR",
             "mean_values": [1, 2, 3],
         },
     )
@@ -312,6 +312,9 @@ def test_nn_archive_retries_after_preprocessing_embedding_failure(
     preprocessing = archive_kwargs["preprocessing"]
     assert isinstance(preprocessing, dict)
     assert preprocessing["input0"].mean == [1.0, 2.0, 3.0]
+    preprocessing_input_types = archive_kwargs["preprocessing_input_types"]
+    assert isinstance(preprocessing_input_types, dict)
+    assert preprocessing_input_types["input0"] == "image"
     assert len(warnings) == 1
     assert "test embedding failure" in warnings[0]
     assert "Falling back to NN Archive preprocessing" in warnings[0]

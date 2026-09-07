@@ -53,17 +53,6 @@ def get_opset_version(model: onnx.ModelProto) -> int:
     raise ONNXException("No opset version found in the ONNX model.")
 
 
-def _reorder_normalization_values(
-    values: list[float] | None,
-    *,
-    reverse: bool,
-) -> list[float] | None:
-    """Return a local, optionally reversed normalization vector."""
-    if values is None:
-        return None
-    return values[::-1] if reverse else list(values)
-
-
 def onnx_attach_normalization_to_inputs(
     model_path: Path,
     save_path: Path,
@@ -152,20 +141,31 @@ def onnx_attach_normalization_to_inputs(
 
         mean_values = (
             None
-            if reverse_only
-            else _reorder_normalization_values(
-                cfg.mean_values,
-                reverse=cfg.encoding_mismatch,
-            )
+            if reverse_only or cfg.mean_values is None
+            else list(cfg.mean_values)
         )
         scale_values = (
             None
-            if reverse_only
-            else _reorder_normalization_values(
-                cfg.scale_values,
-                reverse=cfg.encoding_mismatch,
-            )
+            if reverse_only or cfg.scale_values is None
+            else list(cfg.scale_values)
         )
+
+        normalization_requested = (
+            mean_values is not None and any(v != 0 for v in mean_values)
+        ) or (scale_values is not None and any(v != 1 for v in scale_values))
+        floating_types = {
+            TensorProto.FLOAT16,
+            TensorProto.FLOAT,
+            TensorProto.DOUBLE,
+            TensorProto.BFLOAT16,
+        }
+        if normalization_requested and input_dtype not in floating_types:
+            dtype_name = TensorProto.DataType.Name(input_dtype)
+            raise PreprocessingEmbeddingError(
+                f"Cannot embed mean/scale preprocessing for input "
+                f"'{input_name}' with ONNX data type '{dtype_name}'; "
+                "normalization requires a floating-point input."
+            )
 
         last_output = input_name
 

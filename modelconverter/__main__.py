@@ -254,8 +254,14 @@ def convert(
                     raise ModelconverterException(str(error)) from error
 
         preprocessing = {}
+        preprocessing_input_types: dict[str, Literal["raw", "image"]] = {}
         preprocessing_externalized = archive_preprocess
         if archive_preprocess:
+            stage = next(iter(cfg.stages.values()))
+            preprocessing_input_types = {
+                inp.name: "raw" if inp.is_raw_input else "image"
+                for inp in stage.inputs
+            }
             cfg, preprocessing = extract_preprocessing(cfg)
 
         output_path = get_output_dir_name(platform, cfg.name, output_dir)
@@ -277,6 +283,7 @@ def convert(
         ) -> bool:
             """Move preprocessing to the archive when retrying is safe."""
             nonlocal cfg, preprocessing, preprocessing_externalized
+            nonlocal preprocessing_input_types
             if (
                 to != "nn_archive"
                 or preprocessing_externalized
@@ -285,6 +292,10 @@ def convert(
                 return False
 
             stage = next(iter(cfg.stages.values()))
+            preprocessing_input_types = {
+                inp.name: "raw" if inp.is_raw_input else "image"
+                for inp in stage.inputs
+            }
             input_names = [
                 inp.name
                 for inp in stage.inputs
@@ -374,6 +385,7 @@ def convert(
                     output_path=output_path,
                     archive_cfg=archive_cfg,
                     preprocessing=preprocessing,
+                    preprocessing_input_types=preprocessing_input_types,
                     inference_model_path=(
                         exporter.inference_model_path
                         if isinstance(exporter, Exporter)

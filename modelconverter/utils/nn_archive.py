@@ -274,6 +274,8 @@ def modelconverter_config_to_nn(
     main_stage_key: str,
     model_path: Path,
     platform: Platform,
+    preprocessing_input_types: dict[str, Literal["raw", "image"]]
+    | None = None,
 ) -> NNArchiveConfig:
     """Build the archive config describing a converted model.
 
@@ -296,6 +298,10 @@ def modelconverter_config_to_nn(
         model_path: Path to the model whose metadata the shapes and
             data types are read from.
         platform: Platform the model was built for.
+        preprocessing_input_types: Original input types captured before
+            externalized preprocessing cleared the conversion config's
+            encodings. Only used when there is no original archive input to
+            preserve.
 
     Returns:
         The archive config for the converted model.
@@ -392,7 +398,12 @@ def modelconverter_config_to_nn(
         input_type = (
             orig_inp.input_type.value
             if orig_inp is not None
-            else _default_archive_input_type(is_raw_input=inp.is_raw_input)
+            else (
+                preprocessing_input_types[inp.name]
+                if preprocessing_input_types is not None
+                and inp.name in preprocessing_input_types
+                else _default_archive_input_type(is_raw_input=inp.is_raw_input)
+            )
         )
         preprocessing_cfg = _default_archive_preprocessing(
             inp, layout, input_type=input_type
@@ -599,6 +610,8 @@ def generate_archive(
     preprocessing: dict[str, PreprocessingBlock],
     inference_model_path: Path,
     archive_name: str | None,
+    preprocessing_input_types: dict[str, Literal["raw", "image"]]
+    | None = None,
 ) -> Path:
     """Pack the converted models into an NN Archive.
 
@@ -621,6 +634,8 @@ def generate_archive(
             shapes and data types are read from.
         archive_name: Base name for the archive. If ``None``, the
             config's name is used.
+        preprocessing_input_types: Original input types captured before
+            externalizing preprocessing from the conversion config.
 
     Returns:
         Path to the created archive.
@@ -639,6 +654,7 @@ def generate_archive(
         main_stage,
         inference_model_path,
         platform,
+        preprocessing_input_types=preprocessing_input_types,
     )
     generator = ArchiveGenerator(
         archive_name=f"{archive_name or cfg.name}.{platform.value.lower()}",

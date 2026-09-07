@@ -94,6 +94,9 @@ The `encoding` flag in the YAML configuration file specifies the format that the
 > [!NOTE]
 > A single `mean_values` or `scale_values` value is broadcast to every channel. A list must contain one value per channel, and scale values must be non-zero. ONNX preprocessing embedding currently supports `NCHW` and `NHWC` inputs.
 
+> [!IMPORTANT]
+> Use RGB, BGR, or GRAY encoding only when the input channels represent an image. Packed tensors, feature maps, and other non-image inputs—including tensors with nonstandard channel counts—must use `encoding: NONE`, which makes them raw tensor inputs rather than DepthAI image inputs.
+
 ### NN Archive Configuration File
 
 In the NN Archive configuration, there are two flags related to color encoding control:
