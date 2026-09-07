@@ -164,6 +164,30 @@ def test_non_onnx_preprocessing_request_fails(tmp_path: Path):
         RVC4Exporter(stage, output_dir)
 
 
+def test_non_onnx_without_preprocessing_is_accepted(tmp_path: Path):
+    onnx_model = single_io_onnx(tmp_path / "source.onnx").resolve()
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(onnx_model),
+            "shape": [1, 3, 64, 64],
+            "encoding": "RGB",
+            "rvc4.disable_calibration": True,
+        },
+    )
+    model = tmp_path / "model.tflite"
+    model.write_bytes(b"TFL3")
+    stage = next(iter(config.stages.values()))
+    stage.input_model = model
+    stage.input_file_type = InputFileType.TFLITE
+    output_dir = tmp_path / "out-tflite-no-preprocessing"
+    output_dir.mkdir()
+
+    exporter = RVC4Exporter(stage, output_dir)
+
+    assert exporter.inputs["input0"].requires_input_preprocessing() is False
+
+
 def test_two_channel_normalization_is_embedded(tmp_path: Path):
     shape = [1, 2, 8, 8]
     model = single_io_onnx(

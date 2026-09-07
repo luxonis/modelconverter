@@ -46,6 +46,14 @@ _CHANNEL_VALUES = (90, 130, 170)
 _PARAMS = platform_params(PLATFORMS)
 
 
+def _conversion_options(platform: Platform) -> tuple[str, ...]:
+    """Use the source TFLite model's RGB contract on RVC4."""
+    options = platform_options(platform)
+    if platform is Platform.RVC4:
+        return (*options, "encoding", "RGB")
+    return options
+
+
 @pytest.fixture(scope="module")
 def toy_tflite(tmp_path_factory: pytest.TempPathFactory) -> Path:
     workdir = tmp_path_factory.mktemp("toy_tflite")
@@ -66,7 +74,7 @@ def test_toy_tflite_conversion(platform_name: str, toy_tflite: Path):
     output_name = f"_toy-tflite-{platform_name}"
     convert(
         platform,
-        *platform_options(platform),
+        *_conversion_options(platform),
         path=str(toy_tflite),
         output_dir=output_name,
         to="native",
@@ -79,7 +87,7 @@ def test_toy_tflite_precision(
     platform_name: str, toy_tflite: Path, solid_image: Path
 ):
     platform = Platform(platform_name)
-    options = platform_options(platform)
+    options = _conversion_options(platform)
     output_name = f"_toy-tflite-prec-{platform_name}"
     convert(
         platform,

@@ -507,6 +507,19 @@ def _default_archive_input_type(
     return "image"
 
 
+def make_dai_type(
+    encoding: Encoding, data_type: DataType, layout: str | None
+) -> str:
+    """Build a DepthAI image type for an archive preprocessing block."""
+    if encoding == Encoding.GRAY:
+        channel_format = "F16" if data_type == DataType.FLOAT16 else "8"
+        return f"{encoding.value}{channel_format}"
+
+    channel_format = "F16F16F16" if data_type == DataType.FLOAT16 else "888"
+    storage = "i" if layout == "NHWC" else "p"
+    return f"{encoding.value}{channel_format}{storage}"
+
+
 def _default_archive_preprocessing(
     inp: InputConfig,
     layout: str,
@@ -523,13 +536,7 @@ def _default_archive_preprocessing(
             "dai_type": None,
         }
 
-    dai_type = inp.encoding.to.value
-    if inp.data_type == DataType.FLOAT16:
-        channel_format = "F16F16F16"
-    else:
-        channel_format = "888"
-    dai_type += channel_format
-    dai_type += "i" if layout == "NHWC" else "p"
+    dai_type = make_dai_type(inp.encoding.to, inp.data_type, layout)
 
     return {
         "mean": [0 for _ in inp.mean_values] if inp.mean_values else None,

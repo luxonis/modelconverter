@@ -902,6 +902,30 @@ def test_image_float16_interleaved_with_mean_scale():
     assert block["scale"] == [1, 1, 1]
 
 
+@pytest.mark.parametrize(
+    ("data_type", "expected_dai_type"),
+    [("float32", "GRAY8"), ("float16", "GRAYF16")],
+)
+def test_grayscale_image_uses_valid_dai_type(
+    data_type: str, expected_dai_type: str
+):
+    inp = _input_config(
+        name="x",
+        shape=[1, 1, 64, 64],
+        layout="NCHW",
+        data_type=data_type,
+        encoding="GRAY",
+        mean_values=[2],
+        scale_values=[3],
+    )
+
+    block = _default_archive_preprocessing(inp, "NCHW", input_type="image")
+
+    assert block["dai_type"] == expected_dai_type
+    assert block["mean"] == [0]
+    assert block["scale"] == [1]
+
+
 def test_image_preprocessing_rejects_nonstandard_channel_count():
     inp = _input_config(
         name="x",

@@ -20,6 +20,7 @@ from luxonis_ml.typing import Params
 
 from modelconverter.utils import (
     ModelconverterException,
+    make_dai_type,
     process_nn_archive,
     resolve_path,
     sanitize_net_name,
@@ -36,7 +37,7 @@ from modelconverter.utils.constants import (
     in_docker,
 )
 from modelconverter.utils.filesystem_utils import set_input_base
-from modelconverter.utils.types import DataType, Encoding, Platform
+from modelconverter.utils.types import Encoding, Platform
 
 
 def resolve_output_dir(output_dir: str) -> Path:
@@ -255,17 +256,16 @@ def extract_preprocessing(
         else:
             # Once preprocessing is externalized, the converted model is fed
             # directly in the format expected by the source graph.
-            dai_type = encoding.from_.value
-            if inp.data_type == DataType.FLOAT16:
-                channel_type = "F16F16F16"
-            else:
-                channel_type = "888"
-            dai_type += channel_type
-            dai_type += "i" if layout == "NHWC" else "p"
+            dai_type = make_dai_type(encoding.from_, inp.data_type, layout)
+            identity_value_count = 1 if encoding.from_ == Encoding.GRAY else 3
 
             preprocessing[inp.name] = PreprocessingBlock(
-                mean=mean or [0, 0, 0],
-                scale=scale or [1, 1, 1],
+                mean=(
+                    mean if mean is not None else [0] * identity_value_count
+                ),
+                scale=(
+                    scale if scale is not None else [1] * identity_value_count
+                ),
                 reverse_channels=encoding.from_ == Encoding.RGB,
                 interleaved_to_planar=layout == "NHWC",
                 dai_type=dai_type,

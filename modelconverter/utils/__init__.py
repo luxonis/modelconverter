@@ -48,6 +48,7 @@ from .metadata import Metadata, get_metadata
 from .nn_archive import (
     archive_from_model,
     get_archive_input,
+    make_dai_type,
     modelconverter_config_to_nn,
     process_nn_archive,
 )
@@ -94,6 +95,7 @@ __all__ = [
     "guess_new_layout",
     "in_docker",
     "is_hubai_model_variant_available",
+    "make_dai_type",
     "make_default_layout",
     "modelconverter_config_to_nn",
     "onnx_attach_normalization_to_inputs",

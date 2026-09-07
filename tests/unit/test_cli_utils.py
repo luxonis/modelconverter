@@ -27,7 +27,7 @@ from tests.helpers.archive_factory import (
     default_archive_config,
     pack_archive,
 )
-from tests.helpers.onnx_factory import standard_dummy_onnx
+from tests.helpers.onnx_factory import grayscale_onnx, standard_dummy_onnx
 
 
 def _single_stage_config(dummy_onnx: Path, **overrides) -> Config:
@@ -365,3 +365,28 @@ def test_image_input_float16_channel_type(dummy_onnx: Path):
     dai_type = preprocessing["input0"].dai_type
     assert dai_type is not None
     assert dai_type.startswith("RGBF16F16F16")
+
+
+@pytest.mark.parametrize(
+    ("data_type", "expected_dai_type"),
+    [("float32", "GRAY8"), ("float16", "GRAYF16")],
+)
+def test_externalized_grayscale_uses_valid_dai_type(
+    tmp_path: Path, data_type: str, expected_dai_type: str
+):
+    model = grayscale_onnx(tmp_path / "gray.onnx")
+    cfg = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "encoding": "GRAY",
+            "data_type": data_type,
+        },
+    )
+
+    _cfg, preprocessing = extract_preprocessing(cfg)
+
+    block = next(iter(preprocessing.values()))
+    assert block.dai_type == expected_dai_type
+    assert block.mean == [0]
+    assert block.scale == [1]
