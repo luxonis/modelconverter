@@ -9,8 +9,10 @@ the ``Encodings`` model used by the conversion configuration.
 
 import json
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, NamedTuple
 
+import onnx
 from luxonis_ml.typing import ParamValue
 
 if TYPE_CHECKING:
@@ -175,3 +177,67 @@ def parse_encodings(value: "ParamValue | Encodings") -> "Encodings":
             ),
         }
     )
+
+
+class _ONNXEncodingNames(NamedTuple):
+    """Top-level ONNX tensor names classified for strict override validation."""
+
+    activation_names: set[str]
+    parameter_names: set[str]
+
+
+def validate_quantization_override_names(
+    encodings: "Encodings", model_path: str | Path
+) -> None:
+    """Reject override names that are absent or in the wrong encoding group."""
+    model_names = _collect_onnx_encoding_names(model_path)
+    invalid_activation_names = sorted(
+        set(encodings.activation_encodings) - model_names.activation_names
+    )
+    invalid_parameter_names = sorted(
+        set(encodings.param_encodings) - model_names.parameter_names
+    )
+
+    if invalid_activation_names or invalid_parameter_names:
+        raise ValueError(
+            "Invalid RVC4 quantization override names for model "
+            f"'{model_path}': "
+            f"activation_encodings={invalid_activation_names}; "
+            f"param_encodings={invalid_parameter_names}"
+        )
+
+
+def _collect_onnx_encoding_names(
+    model_path: str | Path,
+) -> _ONNXEncodingNames:
+    """Return disjoint ONNX activation and parameter names for strict checks."""
+    graph = onnx.load(str(model_path), load_external_data=False).graph
+
+    parameter_names: set[str] = set()
+    parameter_names.update(_non_empty_names(graph.initializer))
+    parameter_names.update(
+        sparse.values.name
+        for sparse in graph.sparse_initializer
+        if sparse.values.name
+    )
+
+    activation_names: set[str] = set()
+    activation_names.update(_non_empty_names(graph.input))
+    activation_names.update(_non_empty_names(graph.output))
+    for node in graph.node:
+        node_outputs = {name for name in node.output if name}
+        if node.op_type == "Constant":
+            parameter_names.update(node_outputs)
+        activation_names.update(name for name in node.input if name)
+        activation_names.update(node_outputs)
+
+    activation_names -= parameter_names
+
+    return _ONNXEncodingNames(
+        activation_names=activation_names,
+        parameter_names=parameter_names,
+    )
+
+
+def _non_empty_names(values: Any) -> set[str]:
+    return {value.name for value in values if value.name}
