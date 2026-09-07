@@ -6,7 +6,7 @@ import onnx
 import pytest
 
 from modelconverter.platforms.rvc4.exporter import RVC4Exporter
-from modelconverter.utils import ONNXException
+from modelconverter.utils import PreprocessingEmbeddingError
 from modelconverter.utils.config import Config
 from modelconverter.utils.types import InputFileType
 from tests.helpers.onnx_factory import single_io_onnx
@@ -160,7 +160,7 @@ def test_non_onnx_preprocessing_request_fails(tmp_path: Path):
     output_dir = tmp_path / "out-tflite"
     output_dir.mkdir()
 
-    with pytest.raises(ONNXException, match=r"only embed.*ONNX"):
+    with pytest.raises(PreprocessingEmbeddingError, match=r"only embed.*ONNX"):
         RVC4Exporter(stage, output_dir)
 
 

@@ -12,7 +12,10 @@ import onnxruntime as ort
 import pytest
 
 from modelconverter.utils.config import InputConfig
-from modelconverter.utils.exceptions import ONNXException
+from modelconverter.utils.exceptions import (
+    ONNXException,
+    PreprocessingEmbeddingError,
+)
 from modelconverter.utils.onnx_tools import (
     ONNXModifier,
     onnx_attach_normalization_to_inputs,
@@ -165,7 +168,9 @@ def test_unsupported_layout_with_preprocessing_fails(tmp_path: Path):
         mean_values=[1.0, 2.0],
     )
 
-    with pytest.raises(ONNXException, match="only 'NCHW' and 'NHWC'"):
+    with pytest.raises(
+        PreprocessingEmbeddingError, match="only 'NCHW' and 'NHWC'"
+    ):
         onnx_attach_normalization_to_inputs(
             model_path,
             tmp_path / "layout-modified.onnx",

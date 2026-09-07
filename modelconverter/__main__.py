@@ -51,6 +51,7 @@ from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.platforms.multistage_exporter import MultiStageExporter
 from modelconverter.utils import (
     ModelconverterException,
+    PreprocessingEmbeddingError,
     archive_from_model,
     docker_build,
     docker_exec,
@@ -60,7 +61,7 @@ from modelconverter.utils import (
     resolve_path,
     upload_to_remote,
 )
-from modelconverter.utils.config import Config, SingleStageConfig
+from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.constants import (
     CONVERSION_MARKER,
     MODELS_DIR,
@@ -102,7 +103,7 @@ from modelconverter.utils.telemetry import (
     resolve_tool_version,
     runtime_failure_reason_from_exception,
 )
-from modelconverter.utils.types import InputFileType, Platform
+from modelconverter.utils.types import Platform
 
 app = App(
     name="Modelconverter",
@@ -120,55 +121,6 @@ docker_parameters = Group.create_ordered(
 )
 docker_commands = Group.create_ordered("Docker Commands")
 device_commands = Group.create_ordered("Device Commands")
-
-
-def _archive_preprocessing_fallback(
-    platform: Platform, cfg: Config
-) -> tuple[list[str], str] | None:
-    """Describe preprocessing that can only be preserved in an archive.
-
-    Exporters do not know whether their output will be packaged in an NN
-    Archive, so they retain their hard failures for preprocessing they cannot
-    embed. The CLI uses this helper before constructing an exporter to recover
-    when an archive can carry that preprocessing instead.
-    """
-    if len(cfg.stages) != 1:
-        return None
-
-    stage = next(iter(cfg.stages.values()))
-    input_names = [
-        inp.name for inp in stage.inputs if inp.requires_input_preprocessing()
-    ]
-    if not input_names:
-        return None
-
-    if (
-        platform == Platform.RVC4
-        and stage.input_file_type != InputFileType.ONNX
-    ):
-        return (
-            input_names,
-            (
-                "RVC4 can only bake preprocessing into ONNX source models "
-                f"(the source is {stage.input_file_type.value})"
-            ),
-        )
-
-    if platform in {Platform.RVC2, Platform.RVC3} and (
-        stage.input_file_type == InputFileType.IR
-    ):
-        return (
-            input_names,
-            "RVC2/RVC3 cannot add preprocessing to an existing OpenVINO IR",
-        )
-
-    if platform == Platform.HAILO and stage.hailo.disable_calibration:
-        return (
-            input_names,
-            "Hailo cannot bake preprocessing when calibration is disabled",
-        )
-
-    return None
 
 
 @contextmanager
@@ -215,9 +167,11 @@ def convert(
             Only needed for multistage configs and when converting to
             NN Archive. When converting from NN Archive, the stage names
             are named the same as the model files without the suffix.
-        archive_preprocess: Add the pre-processing to the NN archive
-            instead of the model. In case of conversion from archive to
-            archive, it moves the preprocessing to the new archive.
+        archive_preprocess: Force preprocessing into NN Archive metadata
+            instead of embedding it in the model. Only valid with
+            ``to="nn_archive"``. Without this option, preprocessing is first
+            embedded when possible and otherwise falls back to archive
+            metadata for NN Archive output.
 
     """
 
@@ -290,22 +244,19 @@ def convert(
                 "Main stage name must be provided for multistage models."
             )
 
+        for stage in cfg.stages.values():
+            for inp in stage.inputs:
+                if not inp.requires_input_preprocessing():
+                    continue
+                try:
+                    inp.validate_preprocessing()
+                except ValueError as error:
+                    raise ModelconverterException(str(error)) from error
+
         preprocessing = {}
-        fallback_log: str | None = None
+        preprocessing_externalized = archive_preprocess
         if archive_preprocess:
             cfg, preprocessing = extract_preprocessing(cfg)
-        elif to == "nn_archive":
-            fallback = _archive_preprocessing_fallback(platform, cfg)
-            if fallback is not None:
-                input_names, reason = fallback
-                cfg, preprocessing = extract_preprocessing(cfg)
-                names = ", ".join(repr(name) for name in input_names)
-                fallback_log = (
-                    f"Automatic NN Archive preprocessing fallback: {reason}. "
-                    f"Moving preprocessing for input(s) {names} into the NN "
-                    "Archive; the converted model will not contain these "
-                    "preprocessing operations."
-                )
 
         output_path = get_output_dir_name(platform, cfg.name, output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -320,19 +271,56 @@ def convert(
                 "preprocessing in the NN Archive instead of baking it into "
                 "the converted model."
             )
-        elif fallback_log is not None:
-            logger.warning(fallback_log)
 
-        if is_multistage:
-            exporter = MultiStageExporter(
-                platform=platform, config=cfg, output_dir=output_path
+        def externalize_after_embedding_failure(
+            error: PreprocessingEmbeddingError,
+        ) -> bool:
+            """Move preprocessing to the archive when retrying is safe."""
+            nonlocal cfg, preprocessing, preprocessing_externalized
+            if (
+                to != "nn_archive"
+                or preprocessing_externalized
+                or is_multistage
+            ):
+                return False
+
+            stage = next(iter(cfg.stages.values()))
+            input_names = [
+                inp.name
+                for inp in stage.inputs
+                if inp.requires_input_preprocessing()
+            ]
+            if not input_names:
+                return False
+
+            cfg, preprocessing = extract_preprocessing(cfg)
+            preprocessing_externalized = True
+            names = ", ".join(repr(name) for name in input_names)
+            logger.warning(
+                f"Could not embed preprocessing for input(s) {names}: "
+                f"{error}. Falling back to NN Archive preprocessing; the "
+                "converted model will not contain these preprocessing "
+                "operations."
             )
-        else:
-            exporter = get_exporter(
+            return True
+
+        def make_exporter() -> Exporter | MultiStageExporter:
+            if is_multistage:
+                return MultiStageExporter(
+                    platform=platform, config=cfg, output_dir=output_path
+                )
+            return get_exporter(
                 platform,
                 config=next(iter(cfg.stages.values())),
                 output_dir=output_path,
             )
+
+        try:
+            exporter = make_exporter()
+        except PreprocessingEmbeddingError as error:
+            if not externalize_after_embedding_failure(error):
+                raise
+            exporter = make_exporter()
         conversion_summary = build_flow_properties(
             conversion_run_id,
             TelemetryFlowStep.CONFIGURATION_RESOLVED,
@@ -356,7 +344,13 @@ def convert(
 
         conversion_start = time.monotonic()
         phase = ConversionPhase.CONVERSION
-        out_models = exporter.run()
+        try:
+            out_models = exporter.run()
+        except PreprocessingEmbeddingError as error:
+            if not externalize_after_embedding_failure(error):
+                raise
+            exporter = make_exporter()
+            out_models = exporter.run()
         if not isinstance(out_models, list):
             out_models = [out_models]
         if to == "nn_archive":

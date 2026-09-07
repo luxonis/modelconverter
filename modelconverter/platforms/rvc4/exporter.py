@@ -20,8 +20,9 @@ from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
-    ONNXException,
+    ModelconverterException,
     ONNXModifier,
+    PreprocessingEmbeddingError,
     exit_with,
     onnx_attach_normalization_to_inputs,
     read_image,
@@ -91,6 +92,16 @@ class RVC4Exporter(Exporter):
         else:
             self._htp_socs = rvc4_cfg.htp_socs
 
+        requested_inputs = []
+        for inp in self._inputs.values():
+            if not inp.requires_input_preprocessing():
+                continue
+            requested_inputs.append(inp.name)
+            try:
+                inp.validate_preprocessing()
+            except ValueError as e:
+                raise ModelconverterException(str(e)) from e
+
         if self.config.input_file_type == InputFileType.ONNX:
             self._input_model = onnx_attach_normalization_to_inputs(
                 self._input_model,
@@ -126,14 +137,9 @@ class RVC4Exporter(Exporter):
                     if onnx_modifier.output_path.exists():  # pragma: no cover
                         onnx_modifier.output_path.unlink()
         else:
-            requested_inputs = [
-                name
-                for name, inp in self._inputs.items()
-                if inp.requires_input_preprocessing()
-            ]
             if requested_inputs:
                 names = ", ".join(repr(name) for name in requested_inputs)
-                raise ONNXException(
+                raise PreprocessingEmbeddingError(
                     "RVC4 can only embed requested preprocessing into ONNX "
                     f"models; input(s) {names} still require preprocessing. "
                     "Use an ONNX source or `--archive-preprocess --to "

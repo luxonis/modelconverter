@@ -30,6 +30,7 @@ from .environ import environ
 from .exceptions import (
     ModelconverterException,
     ONNXException,
+    PreprocessingEmbeddingError,
     S3Exception,
     exit_with,
 )
@@ -68,6 +69,7 @@ __all__ = [
     "ModelconverterException",
     "ONNXException",
     "ONNXModifier",
+    "PreprocessingEmbeddingError",
     "S3Exception",
     "SSHHandler",
     "SubprocessHandle",

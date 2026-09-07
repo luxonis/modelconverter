@@ -25,7 +25,7 @@ from modelconverter.utils.onnx_compatibility import (
     save_onnx_model,
 )
 
-from .exceptions import ONNXException
+from .exceptions import ONNXException, PreprocessingEmbeddingError
 
 ensure_onnx_helper_compatibility()
 
@@ -99,7 +99,9 @@ def onnx_attach_normalization_to_inputs(
         unmodified ``model_path``.
 
     Raises:
-        ONNXException: If an input or requested operation cannot be applied.
+        ONNXException: If the preprocessing request or source model is invalid.
+        PreprocessingEmbeddingError: If valid preprocessing cannot be embedded
+            into this ONNX graph.
 
     """
     if not any(
@@ -136,16 +138,17 @@ def onnx_attach_normalization_to_inputs(
         if not cfg.requires_onnx_input_modification(reverse_only=reverse_only):
             continue
 
-        layout = cfg.layout
-        if layout not in ["NCHW", "NHWC"]:
-            raise ONNXException(
-                f"Cannot embed preprocessing for input '{input_name}' with "
-                f"layout '{layout}'; only 'NCHW' and 'NHWC' are supported."
-            )
         try:
             n_channels = cfg.validate_preprocessing(reverse_only=reverse_only)
         except ValueError as e:
             raise ONNXException(str(e)) from e
+
+        layout = cfg.layout
+        if layout not in ["NCHW", "NHWC"]:
+            raise PreprocessingEmbeddingError(
+                f"Cannot embed preprocessing for input '{input_name}' with "
+                f"layout '{layout}'; only 'NCHW' and 'NHWC' are supported."
+            )
 
         mean_values = (
             None
@@ -168,7 +171,13 @@ def onnx_attach_normalization_to_inputs(
 
         # 1. Reverse channels if needed
         if cfg.encoding_mismatch:
-            opset = get_opset_version(model)
+            try:
+                opset = get_opset_version(model)
+            except ONNXException as e:
+                raise PreprocessingEmbeddingError(
+                    f"Cannot embed channel reversal for input '{input_name}': "
+                    f"{e}"
+                ) from e
             split_names = [f"split_{i}_{input_name}" for i in range(3)]
             axis = 1 if layout == "NCHW" else 3
 
@@ -295,7 +304,13 @@ def onnx_attach_normalization_to_inputs(
         location=f"{save_path.name}_data",
     )
 
-    checker.check_model(str(save_path))
+    try:
+        checker.check_model(str(save_path))
+    except checker.ValidationError as e:
+        raise PreprocessingEmbeddingError(
+            "The ONNX graph produced while embedding preprocessing failed "
+            f"validation: {e}"
+        ) from e
 
     return save_path
 

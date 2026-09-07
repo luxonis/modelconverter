@@ -8,8 +8,9 @@ from luxonis_ml.typing import Params
 
 import modelconverter.__main__ as main_module
 from modelconverter.platforms.base_exporter import Exporter
+from modelconverter.utils import ONNXException, PreprocessingEmbeddingError
 from modelconverter.utils.config import Config, SingleStageConfig
-from modelconverter.utils.types import InputFileType, Platform
+from modelconverter.utils.types import Platform
 
 
 class _FakeTelemetry:
@@ -35,6 +36,15 @@ class _FakeExporter(Exporter):
 
     def run(self) -> Path:
         return self.inference_model_path
+
+
+class _FakeRunEmbeddingFailureExporter(_FakeExporter):
+    def run(self) -> Path:
+        if any(
+            inp.requires_input_preprocessing() for inp in self.config.inputs
+        ):
+            raise PreprocessingEmbeddingError("test embedding failure")
+        return super().run()
 
 
 class _FakeMultiStageExporter:
@@ -213,42 +223,18 @@ def test_archive_preprocess_is_rejected_for_native_output(
 
 
 @pytest.mark.parametrize(
-    ("platform", "input_file_type", "disable_calibration", "reason"),
+    ("platform", "failure_phase"),
     [
-        (
-            Platform.RVC4,
-            InputFileType.TFLITE,
-            False,
-            "RVC4 can only bake preprocessing into ONNX source models",
-        ),
-        (
-            Platform.RVC2,
-            InputFileType.IR,
-            False,
-            "cannot add preprocessing to an existing OpenVINO IR",
-        ),
-        (
-            Platform.RVC3,
-            InputFileType.IR,
-            False,
-            "cannot add preprocessing to an existing OpenVINO IR",
-        ),
-        (
-            Platform.HAILO,
-            InputFileType.ONNX,
-            True,
-            "Hailo cannot bake preprocessing when calibration is disabled",
-        ),
+        (Platform.RVC4, "construction"),
+        (Platform.RVC3, "run"),
     ],
 )
-def test_nn_archive_automatically_externalizes_unembeddable_preprocessing(
+def test_nn_archive_retries_after_preprocessing_embedding_failure(
     dummy_onnx: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     platform: Platform,
-    input_file_type: InputFileType,
-    disable_calibration: bool,
-    reason: str,
+    failure_phase: Literal["construction", "run"],
 ) -> None:
     cfg = Config.get_config(
         None,
@@ -259,11 +245,6 @@ def test_nn_archive_automatically_externalizes_unembeddable_preprocessing(
             "mean_values": [1, 2, 3],
         },
     )
-    stage = next(iter(cfg.stages.values()))
-    stage.input_file_type = input_file_type
-    stage.get_platform_config(
-        platform
-    ).disable_calibration = disable_calibration
     main_stage = next(iter(cfg.stages))
     output_dir = tmp_path / f"output-{platform.value}"
     warnings: list[str] = []
@@ -276,7 +257,16 @@ def test_nn_archive_automatically_externalizes_unembeddable_preprocessing(
         output_dir: Path,
     ) -> _FakeExporter:
         exporter_configs.append(config)
-        return _FakeExporter(config, output_dir)
+        if failure_phase == "construction" and any(
+            inp.requires_input_preprocessing() for inp in config.inputs
+        ):
+            raise PreprocessingEmbeddingError("test embedding failure")
+        exporter_type = (
+            _FakeRunEmbeddingFailureExporter
+            if failure_phase == "run"
+            else _FakeExporter
+        )
+        return exporter_type(config, output_dir)
 
     def generate_archive(**kwargs: object) -> Path:
         archive_kwargs.update(kwargs)
@@ -317,11 +307,135 @@ def test_nn_archive_automatically_externalizes_unembeddable_preprocessing(
         to="nn_archive",
     )
 
-    assert exporter_configs[0].inputs[0].mean_values is None
+    assert len(exporter_configs) == 2
+    assert exporter_configs[-1].inputs[0].mean_values is None
     preprocessing = archive_kwargs["preprocessing"]
     assert isinstance(preprocessing, dict)
     assert preprocessing["input0"].mean == [1.0, 2.0, 3.0]
     assert len(warnings) == 1
-    assert "Automatic NN Archive preprocessing fallback" in warnings[0]
-    assert reason in warnings[0]
+    assert "test embedding failure" in warnings[0]
+    assert "Falling back to NN Archive preprocessing" in warnings[0]
     assert "input0" in warnings[0]
+
+
+@pytest.mark.parametrize(
+    ("output_mode", "error_type"),
+    [
+        ("native", PreprocessingEmbeddingError),
+        ("nn_archive", ONNXException),
+    ],
+)
+def test_conversion_does_not_fallback_for_nonrecoverable_errors(
+    dummy_onnx: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    output_mode: Literal["native", "nn_archive"],
+    error_type: type[BaseException],
+) -> None:
+    cfg = Config.get_config(
+        None,
+        {
+            "input_model": str(dummy_onnx),
+            "shape": [1, 3, 64, 64],
+            "encoding": "NONE",
+            "mean_values": [1, 2, 3],
+        },
+    )
+    output_dir = tmp_path / "output-no-fallback"
+    attempts = 0
+
+    def fail_exporter(*_args: object, **_kwargs: object) -> NoReturn:
+        nonlocal attempts
+        attempts += 1
+        raise error_type("not recoverable")
+
+    monkeypatch.setattr(main_module.signal, "signal", lambda *_args: None)
+    monkeypatch.setattr(main_module, "init_dirs", lambda: None)
+    monkeypatch.setattr(
+        main_module,
+        "get_configs",
+        lambda *_args, **_kwargs: (cfg, None, next(iter(cfg.stages))),
+    )
+    monkeypatch.setattr(
+        main_module,
+        "get_output_dir_name",
+        lambda *_args, **_kwargs: output_dir,
+    )
+    monkeypatch.setattr(main_module, "setup_logging", lambda **_kwargs: None)
+    monkeypatch.setattr(main_module, "get_exporter", fail_exporter)
+    monkeypatch.setattr(
+        main_module,
+        "get_component_telemetry",
+        _FakeTelemetry,
+    )
+    monkeypatch.setattr(
+        main_module,
+        "get_conversion_run_id",
+        lambda: "test-run",
+    )
+    monkeypatch.setattr(main_module, "peak_ram_usage_bytes", lambda: 0)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main_module.convert(
+            Platform.RVC4,
+            path=str(dummy_onnx),
+            to=output_mode,
+        )
+
+    assert exc_info.value.code == 1
+    assert attempts == 1
+    stage = next(iter(cfg.stages.values()))
+    assert stage.inputs[0].mean_values == [1.0, 2.0, 3.0]
+
+
+def test_invalid_preprocessing_is_rejected_before_fallback(
+    dummy_onnx: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = Config.get_config(
+        None,
+        {
+            "input_model": str(dummy_onnx),
+            "shape": [1, 3, 64, 64],
+            "encoding": "NONE",
+            "mean_values": [1, 2],
+        },
+    )
+    exporter_was_created = False
+
+    def fail_if_called(*_args: object, **_kwargs: object) -> NoReturn:
+        nonlocal exporter_was_created
+        exporter_was_created = True
+        raise AssertionError("invalid preprocessing must fail first")
+
+    monkeypatch.setattr(main_module.signal, "signal", lambda *_args: None)
+    monkeypatch.setattr(main_module, "init_dirs", lambda: None)
+    monkeypatch.setattr(
+        main_module,
+        "get_configs",
+        lambda *_args, **_kwargs: (cfg, None, next(iter(cfg.stages))),
+    )
+    monkeypatch.setattr(main_module, "get_exporter", fail_if_called)
+    monkeypatch.setattr(
+        main_module,
+        "get_component_telemetry",
+        _FakeTelemetry,
+    )
+    monkeypatch.setattr(
+        main_module,
+        "get_conversion_run_id",
+        lambda: "test-run",
+    )
+    monkeypatch.setattr(main_module, "peak_ram_usage_bytes", lambda: 0)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main_module.convert(
+            Platform.RVC4,
+            path=str(dummy_onnx),
+            output_dir=str(tmp_path / "invalid-preprocessing"),
+            to="nn_archive",
+        )
+
+    assert exc_info.value.code == 1
+    assert not exporter_was_created

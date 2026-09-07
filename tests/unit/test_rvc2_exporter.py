@@ -9,7 +9,7 @@ from modelconverter.platforms.rvc2.exporter import (
     _broadcast_preprocessing_values,
 )
 from modelconverter.platforms.rvc3.exporter import RVC3Exporter
-from modelconverter.utils import ModelconverterException
+from modelconverter.utils import PreprocessingEmbeddingError
 from modelconverter.utils.config import Config
 from modelconverter.utils.types import InputFileType
 from tests.helpers.onnx_factory import single_io_onnx
@@ -105,5 +105,7 @@ def test_existing_ir_with_requested_preprocessing_fails(
     exporter = exporter_type(next(iter(config.stages.values())), output_dir)
     exporter._input_file_type = InputFileType.IR
 
-    with pytest.raises(ModelconverterException, match="existing OpenVINO IR"):
+    with pytest.raises(
+        PreprocessingEmbeddingError, match="existing OpenVINO IR"
+    ):
         exporter.export()

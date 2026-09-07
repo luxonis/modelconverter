@@ -18,7 +18,12 @@ from loguru import logger
 from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
-from modelconverter.utils import ModelconverterException, exit_with, read_image
+from modelconverter.utils import (
+    ModelconverterException,
+    PreprocessingEmbeddingError,
+    exit_with,
+    read_image,
+)
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
@@ -68,7 +73,7 @@ class HailoExporter(Exporter):
                 raise ModelconverterException(str(e)) from e
         if self._disable_calibration and requested_inputs:
             names = ", ".join(repr(name) for name in requested_inputs)
-            raise ModelconverterException(
+            raise PreprocessingEmbeddingError(
                 "Hailo cannot embed requested preprocessing when calibration "
                 f"is disabled; input(s) {names} still require preprocessing. "
                 "Enable calibration or use `--archive-preprocess --to "

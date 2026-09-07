@@ -27,6 +27,7 @@ from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
     ModelconverterException,
     ONNXModifier,
+    PreprocessingEmbeddingError,
     SubprocessHandle,
     get_container_memory_available,
     onnx_attach_normalization_to_inputs,
@@ -253,14 +254,18 @@ class RVC2Exporter(Exporter):
 
     def _validate_ir_preprocessing_contract(self) -> None:
         """Reject preprocessing that cannot be added to an existing IR."""
-        requested_inputs = [
-            name
-            for name, inp in self._inputs.items()
-            if inp.requires_input_preprocessing()
-        ]
+        requested_inputs = []
+        for inp in self._inputs.values():
+            if not inp.requires_input_preprocessing():
+                continue
+            requested_inputs.append(inp.name)
+            try:
+                inp.validate_preprocessing()
+            except ValueError as e:
+                raise ModelconverterException(str(e)) from e
         if requested_inputs:
             names = ", ".join(repr(name) for name in requested_inputs)
-            raise ModelconverterException(
+            raise PreprocessingEmbeddingError(
                 "RVC2/RVC3 cannot embed requested preprocessing into an "
                 f"existing OpenVINO IR; input(s) {names} still require "
                 "preprocessing. Use an ONNX/TFLite source or "
