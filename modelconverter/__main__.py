@@ -191,6 +191,7 @@ def convert(
     overrides: list[str] = list(opts)
     conversion_start: float | None = None
     conversion_summary: dict[str, ParamValue] | None = None
+    configuration_captured = False
     output_artifact_count: int | None = None
     uploaded_output = False
     uploaded_intermediate_outputs = False
@@ -327,32 +328,31 @@ def convert(
                 output_dir=output_path,
             )
 
+        def resolved_conversion_summary() -> dict[str, ParamValue]:
+            """Build telemetry from the effective preprocessing placement."""
+            return build_flow_properties(
+                conversion_run_id,
+                TelemetryFlowStep.CONFIGURATION_RESOLVED,
+                build_conversion_summary(
+                    cfg,
+                    platform=platform,
+                    config_source=detect_config_source(
+                        original_path, overrides, archive_cfg
+                    ),
+                    archive_output_mode=ArchiveOutputMode(to),
+                    archive_preprocess=preprocessing_externalized,
+                    main_stage_provided=main_stage_provided,
+                ),
+            )
+
         try:
             exporter = make_exporter()
         except PreprocessingEmbeddingError as error:
             if not externalize_after_embedding_failure(error):
                 raise
+            conversion_summary = resolved_conversion_summary()
             exporter = make_exporter()
-        conversion_summary = build_flow_properties(
-            conversion_run_id,
-            TelemetryFlowStep.CONFIGURATION_RESOLVED,
-            build_conversion_summary(
-                cfg,
-                platform=platform,
-                config_source=detect_config_source(
-                    original_path, overrides, archive_cfg
-                ),
-                archive_output_mode=ArchiveOutputMode(to),
-                archive_preprocess=archive_preprocess,
-                main_stage_provided=main_stage_provided,
-            ),
-        )
-        runtime_telemetry.capture(
-            CONFIGURED_EVENT,
-            conversion_summary,
-            include_system_metadata=True,
-            distinct_id=conversion_run_id,
-        )
+        conversion_summary = resolved_conversion_summary()
 
         conversion_start = time.monotonic()
         phase = ConversionPhase.CONVERSION
@@ -361,8 +361,17 @@ def convert(
         except PreprocessingEmbeddingError as error:
             if not externalize_after_embedding_failure(error):
                 raise
+            conversion_summary = resolved_conversion_summary()
             exporter = make_exporter()
             out_models = exporter.run()
+
+        runtime_telemetry.capture(
+            CONFIGURED_EVENT,
+            conversion_summary,
+            include_system_metadata=True,
+            distinct_id=conversion_run_id,
+        )
+        configuration_captured = True
         if not isinstance(out_models, list):
             out_models = [out_models]
         if to == "nn_archive":
@@ -457,6 +466,13 @@ def convert(
         logger.exception("Encountered an unexpected error!")
         raise SystemExit(2) from exc
     finally:
+        if conversion_summary is not None and not configuration_captured:
+            runtime_telemetry.capture(
+                CONFIGURED_EVENT,
+                conversion_summary,
+                include_system_metadata=True,
+                distinct_id=conversion_run_id,
+            )
         peak_ram_bytes = peak_ram_usage_bytes()
         logger.info(f"Peak RAM usage: {peak_ram_bytes / (1024 * 1024):.2f} MB")
         logger.info(

@@ -253,7 +253,9 @@ def extract_preprocessing(
                     dai_type=None,
                 )
         else:
-            dai_type = encoding.to.value
+            # Once preprocessing is externalized, the converted model is fed
+            # directly in the format expected by the source graph.
+            dai_type = encoding.from_.value
             if inp.data_type == DataType.FLOAT16:
                 channel_type = "F16F16F16"
             else:
@@ -264,7 +266,7 @@ def extract_preprocessing(
             preprocessing[inp.name] = PreprocessingBlock(
                 mean=mean or [0, 0, 0],
                 scale=scale or [1, 1, 1],
-                reverse_channels=encoding.to == Encoding.RGB,
+                reverse_channels=encoding.from_ == Encoding.RGB,
                 interleaved_to_planar=layout == "NHWC",
                 dai_type=dai_type,
             )

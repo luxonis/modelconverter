@@ -314,6 +314,28 @@ def test_image_input_rgb_planar(dummy_onnx: Path):
     assert stage.inputs[0].encoding.from_ == Encoding.NONE
 
 
+@pytest.mark.parametrize(
+    ("encoding", "expected_dai_type", "expected_reverse_channels"),
+    [
+        ({"from": "RGB", "to": "BGR"}, "RGB888p", True),
+        ({"from": "BGR", "to": "RGB"}, "BGR888p", False),
+    ],
+)
+def test_externalized_preprocessing_uses_model_side_encoding(
+    dummy_onnx: Path,
+    encoding: dict[str, str],
+    expected_dai_type: str,
+    expected_reverse_channels: bool,
+):
+    cfg = _single_stage_config(dummy_onnx, encoding=encoding)
+
+    _cfg, preprocessing = extract_preprocessing(cfg)
+
+    block = preprocessing["input0"]
+    assert block.dai_type == expected_dai_type
+    assert block.reverse_channels is expected_reverse_channels
+
+
 def test_raw_input_with_mean_scale(dummy_onnx: Path):
     cfg = _single_stage_config(
         dummy_onnx,

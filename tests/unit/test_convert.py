@@ -14,8 +14,15 @@ from modelconverter.utils.types import Platform
 
 
 class _FakeTelemetry:
+    def __init__(self) -> None:
+        self.captures: list[tuple[str, dict[str, object]]] = []
+
     def capture(self, *_args: object, **_kwargs: object) -> None:
-        pass
+        event = _args[0]
+        properties = _args[1]
+        assert isinstance(event, str)
+        assert isinstance(properties, dict)
+        self.captures.append((event, properties))
 
 
 class _FakeExporter(Exporter):
@@ -250,6 +257,7 @@ def test_nn_archive_retries_after_preprocessing_embedding_failure(
     warnings: list[str] = []
     exporter_configs: list[SingleStageConfig] = []
     archive_kwargs: dict[str, object] = {}
+    telemetry = _FakeTelemetry()
 
     def make_exporter(
         _platform: Platform,
@@ -289,7 +297,7 @@ def test_nn_archive_retries_after_preprocessing_embedding_failure(
     monkeypatch.setattr(
         main_module,
         "get_component_telemetry",
-        _FakeTelemetry,
+        lambda: telemetry,
     )
     monkeypatch.setattr(
         main_module,
@@ -319,6 +327,13 @@ def test_nn_archive_retries_after_preprocessing_embedding_failure(
     assert "test embedding failure" in warnings[0]
     assert "Falling back to NN Archive preprocessing" in warnings[0]
     assert "input0" in warnings[0]
+    configured_properties = [
+        properties
+        for event, properties in telemetry.captures
+        if event == main_module.CONFIGURED_EVENT
+    ]
+    assert len(configured_properties) == 1
+    assert configured_properties[0]["archive_preprocess"] is True
 
 
 @pytest.mark.parametrize(
