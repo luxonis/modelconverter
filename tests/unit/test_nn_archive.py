@@ -795,6 +795,42 @@ def test_externalized_image_preprocessing_keeps_image_input_type(
     assert in0.preprocessing.dai_type == "BGR888p"
 
 
+def test_externalized_image_preprocessing_uses_converted_layout(
+    tmp_path: Path,
+):
+    source = single_io_onnx(tmp_path / "source.onnx", shape=[1, 3, 8, 8])
+    converted = single_io_onnx(tmp_path / "converted.onnx", shape=[1, 8, 8, 3])
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(source),
+            "encoding": {"from": "RGB", "to": "BGR"},
+            "mean_values": [1, 2, 3],
+            "scale_values": [4, 5, 6],
+        },
+    )
+    stage = next(iter(config.stages.values()))
+    input_types = {
+        inp.name: "raw" if inp.is_raw_input else "image"
+        for inp in stage.inputs
+    }
+    config, preprocessing = extract_preprocessing(config)
+
+    nn = _config_to_nn(
+        config,
+        converted,
+        preprocessing=preprocessing,
+        preprocessing_input_types=input_types,
+    )
+
+    inp = nn.model.inputs[0]
+    assert inp.layout == "NHWC"
+    assert inp.preprocessing.mean == [1, 2, 3]
+    assert inp.preprocessing.scale == [4, 5, 6]
+    assert inp.preprocessing.dai_type == "RGB888i"
+    assert inp.preprocessing.model_dump()["interleaved_to_planar"] is True
+
+
 def test_iop_input_and_output(dummy_onnx: Path):
     metadata = get_metadata(dummy_onnx)
     cfg = RVC2Config(

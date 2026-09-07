@@ -456,6 +456,8 @@ def modelconverter_config_to_nn(
 
     for name, block in preprocessing.items():
         nn_inp = get_archive_input(archive, name)
+        if nn_inp.input_type == InputType.IMAGE:
+            block = _adapt_preprocessing_to_layout(block, nn_inp.layout)
         nn_inp.preprocessing = block
 
     if is_multistage:
@@ -518,6 +520,24 @@ def make_dai_type(
     channel_format = "F16F16F16" if data_type == DataType.FLOAT16 else "888"
     storage = "i" if layout == "NHWC" else "p"
     return f"{encoding.value}{channel_format}{storage}"
+
+
+def _adapt_preprocessing_to_layout(
+    block: PreprocessingBlock, layout: str
+) -> PreprocessingBlock:
+    """Return externalized image preprocessing for the converted layout."""
+    dai_type = block.dai_type
+    if dai_type is not None and dai_type.startswith(("RGB", "BGR")):
+        if dai_type.endswith(("i", "p")):
+            dai_type = dai_type[:-1]
+        dai_type += "i" if layout == "NHWC" else "p"
+
+    return block.model_copy(
+        update={
+            "interleaved_to_planar": layout == "NHWC",
+            "dai_type": dai_type,
+        }
+    )
 
 
 def _default_archive_preprocessing(
