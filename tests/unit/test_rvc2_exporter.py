@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from onnx import TensorProto
 
 from modelconverter.platforms.rvc2.exporter import (
     RVC2Exporter,
@@ -16,8 +17,8 @@ from modelconverter.utils.config import (
     OutputConfig,
     SingleStageConfig,
 )
-from modelconverter.utils.types import InputFileType
-from tests.helpers.onnx_factory import single_io_onnx
+from modelconverter.utils.types import Encoding, InputFileType
+from tests.helpers.onnx_factory import build_onnx, single_io_onnx
 
 
 def test_scalar_preprocessing_is_expanded_to_resolved_channels():
@@ -77,6 +78,63 @@ def test_raw_two_channel_normalization_is_forwarded_to_model_optimizer(
     assert command[0] == "mo"
     assert command[command.index("--mean_values") + 1] == "input0[10.0,20.0]"
     assert command[command.index("--scale_values") + 1] == "input0[2.0,4.0]"
+
+
+@pytest.mark.parametrize(
+    ("exporter_type", "platform_key"),
+    [(RVC2Exporter, "rvc2"), (RVC3Exporter, "rvc3")],
+)
+def test_selective_bgr_to_rgb_reversal_preserves_runtime_encoding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    exporter_type: type[RVC2Exporter],
+    platform_key: str,
+):
+    shape = [1, 3, 8, 8]
+    model = build_onnx(
+        tmp_path / f"{platform_key}-mixed-reversal.onnx",
+        [
+            ("reversed", shape, TensorProto.FLOAT),
+            ("unchanged", shape, TensorProto.FLOAT),
+        ],
+        [
+            ("reversed_out", shape, TensorProto.FLOAT),
+            ("unchanged_out", shape, TensorProto.FLOAT),
+        ],
+    ).resolve()
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "inputs": [
+                {
+                    "name": "reversed",
+                    "layout": "NCHW",
+                    "encoding": {"from": "BGR", "to": "RGB"},
+                },
+                {
+                    "name": "unchanged",
+                    "layout": "NCHW",
+                    "encoding": "BGR",
+                },
+            ],
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            f"{platform_key}.disable_calibration": True,
+        },
+    )
+    output_dir = tmp_path / f"out-{platform_key}-mixed-reversal"
+    output_dir.mkdir()
+    exporter = exporter_type(next(iter(config.stages.values())), output_dir)
+    monkeypatch.setattr(
+        exporter, "_subprocess_run", lambda *_args, **_kwargs: None
+    )
+
+    exporter._export_openvino_ir()
+
+    reversed_input = exporter.inputs["reversed"]
+    assert reversed_input.encoding.from_ == Encoding.RGB
+    assert reversed_input.encoding.to == Encoding.RGB
 
 
 @pytest.mark.parametrize(

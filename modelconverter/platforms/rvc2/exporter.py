@@ -160,11 +160,13 @@ class RVC2Exporter(Exporter):
                 if inp.scale_values is not None and inp.encoding_mismatch:
                     inp.scale_values = inp.scale_values[::-1]
                 # Only colour inputs get their channels reversed in the ONNX;
-                # marking non-colour inputs (e.g. grayscale) as BGR is wrong and
-                # later makes their inferer read a 1-channel input as 3-channel.
+                # after that, the exposed input still expects the configured
+                # runtime encoding (`to`). Preserve it for archive metadata and
+                # calibration instead of assuming the runtime side is BGR.
                 if inp.is_color_input and inp.encoding_mismatch:
-                    inp.encoding.from_ = Encoding.BGR
-                    inp.encoding.to = Encoding.BGR
+                    runtime_encoding = inp.encoding.to
+                    inp.encoding.from_ = runtime_encoding
+                    inp.encoding.to = runtime_encoding
 
         if not self._onnx_optimizations.all_disabled():
             onnx_modifier = ONNXModifier(
