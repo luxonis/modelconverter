@@ -16,10 +16,12 @@ so this e2e converts the toy conv net with:
     (off by default, so otherwise never exercised);
   * a non-default ``htp_socs`` -> ``snpe-dlc-graph-prepare --htp_socs``.
 
-``_generate_io_encodings`` normalizes the *exposed* input/output activation
-encodings to default int8 IO whatever we pass, so the custom values mainly
-exercise the internal-tensor / param path. The point is the exporter code, not
-numeric fidelity, so asserting a quantized ``.dlc`` is produced is enough.
+By default, ``_generate_io_encodings`` normalizes the *exposed*
+input/output activation encodings to default int8 IO, so the custom values
+mainly exercise the internal-tensor / param path. Setting
+``rvc4.normalize_io_encodings`` to false opts out of that rewrite. The point is
+the exporter code, not numeric fidelity, so asserting a quantized ``.dlc`` is
+produced is enough. Unit tests cover the normalization switch directly.
 
 Run inside the RVC4 Docker image::
 
@@ -95,15 +97,27 @@ def encodings_config(
 
 
 @pytest.mark.rvc4
-def test_rvc4_encodings(encodings_config: tuple[Path, Path]):
+@pytest.mark.parametrize(
+    "normalize_io_encodings",
+    [True, False],
+    ids=["normalize-io", "preserve-io"],
+)
+def test_rvc4_encodings(
+    encodings_config: tuple[Path, Path],
+    normalize_io_encodings: bool,
+):
     config_path, encodings_path = encodings_config
-    output_name = "_rvc4-encodings"
+    output_name = (
+        f"_rvc4-encodings-normalize-{str(normalize_io_encodings).lower()}"
+    )
     # `ast.literal_eval` parses the list/bool opts; the path string for
     # `rvc4.encodings` falls through as-is.
     convert(
         Platform.RVC4,
         "rvc4.encodings",
         str(encodings_path),
+        "rvc4.normalize_io_encodings",
+        str(normalize_io_encodings),
         "rvc4.use_per_row_quantization",
         "True",
         "rvc4.use_per_channel_quantization",

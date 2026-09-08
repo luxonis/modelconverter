@@ -1,11 +1,12 @@
 """Tests for the RVC4 exporter."""
 
+import json
 from pathlib import Path
 
 import pytest
 
 from modelconverter.platforms.rvc4.exporter import RVC4Exporter
-from modelconverter.utils.config import Config
+from modelconverter.utils.config import Config, Encodings, RVC4Config
 from tests.helpers.onnx_factory import single_io_onnx
 
 
@@ -14,6 +15,7 @@ def _make_exporter(
     mode: str,
     *,
     use_per_row_quantization: bool = False,
+    normalize_io_encodings: bool = True,
 ) -> RVC4Exporter:
     model = single_io_onnx(work_dir / f"{mode.lower()}.onnx").resolve()
 
@@ -24,6 +26,7 @@ def _make_exporter(
             "shape": [1, 3, 64, 64],
             "rvc4.quantization_mode": mode,
             "rvc4.use_per_row_quantization": use_per_row_quantization,
+            "rvc4.normalize_io_encodings": normalize_io_encodings,
         },
     )
     stage = next(iter(config.stages.values()))
@@ -91,6 +94,51 @@ def _capture_quant_command(
 def _flag_value(command: list[str], flag: str) -> str:
     index = command.index(flag)
     return command[index + 1]
+
+
+def test_normalize_io_encodings_default_true():
+    assert RVC4Config().normalize_io_encodings is True
+
+
+@pytest.mark.parametrize("normalize_io_encodings", [True, False])
+def test_normalize_io_encodings_controls_exposed_tensor_rewrite(
+    work_dir: Path,
+    normalize_io_encodings: bool,
+):
+    exporter = _make_exporter(
+        work_dir,
+        "CUSTOM",
+        normalize_io_encodings=normalize_io_encodings,
+    )
+    assert exporter._normalize_io_encodings is normalize_io_encodings
+
+    custom_encoding = {"bitwidth": 16, "dtype": "int"}
+    encodings = Encodings.model_validate(
+        {
+            "activation_encodings": {
+                "input0": [custom_encoding],
+                "hidden": [custom_encoding],
+                "output0": [custom_encoding],
+            },
+            "param_encodings": {
+                "weight": [custom_encoding],
+            },
+        }
+    )
+
+    encodings_path = exporter._generate_io_encodings(encodings)
+    generated = json.loads(encodings_path.read_text())
+
+    expected_io_encoding = (
+        [{"bitwidth": 8, "dtype": "int"}]
+        if normalize_io_encodings
+        else [custom_encoding]
+    )
+
+    assert generated["activation_encodings"]["input0"] == expected_io_encoding
+    assert generated["activation_encodings"]["output0"] == expected_io_encoding
+    assert generated["activation_encodings"]["hidden"] == [custom_encoding]
+    assert generated["param_encodings"]["weight"] == [custom_encoding]
 
 
 def test_int16_standard_native_quantizer_contract(

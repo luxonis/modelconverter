@@ -252,6 +252,11 @@ stages:
       # Currently supported only for ONNX input models.
       strict_quantization_overrides: False
 
+      # Normalize exposed input/output activation encodings to default int8
+      # values for DepthAI compatibility. Disable to preserve configured IO
+      # encodings.
+      normalize_io_encodings: True
+
       # List of platforms to pre-compute the DLC graph for.
       htp_socs: ["sm8550"]
 

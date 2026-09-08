@@ -568,6 +568,8 @@ class RVC4Config(PlatformConfig):
         strict_quantization_overrides: Whether to validate configured
             quantization override names against their activation/parameter
             groups in the effective ONNX model.
+        normalize_io_encodings: Whether to replace exposed input/output
+            activation encodings with the default 8-bit integer encoding.
         optimization_level: Optimization level of the DLC graph
             preparation. Higher levels take longer but yield a faster
             graph.
@@ -585,6 +587,7 @@ class RVC4Config(PlatformConfig):
     use_per_channel_quantization: bool = True
     use_per_row_quantization: bool = False
     strict_quantization_overrides: bool = False
+    normalize_io_encodings: bool = True
     optimization_level: Literal[1, 2, 3] = 2
     quantization_mode: QuantizationMode = QuantizationMode.INT8_STD
     htp_socs: list[

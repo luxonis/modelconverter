@@ -78,6 +78,7 @@ class RVC4Exporter(Exporter):
         self._strict_quantization_overrides = (
             rvc4_cfg.strict_quantization_overrides
         )
+        self._normalize_io_encodings = rvc4_cfg.normalize_io_encodings
         self._optimization_level = rvc4_cfg.optimization_level
         self._quantization_mode = rvc4_cfg.quantization_mode
         if self._quantization_mode != QuantizationMode.CUSTOM:
@@ -350,14 +351,15 @@ class RVC4Exporter(Exporter):
     def _generate_io_encodings(self, encodings: Encodings) -> Path:
         """Write the quantization overrides to a JSON file.
 
-        The encodings of the model's own inputs and outputs are replaced
-        by the default 8-bit integer encoding, as DAI does not support
-        custom TF8 encodings on exposed tensors. The encodings of the
-        internal tensors are written out unchanged.
+        When IO normalization is enabled, the encodings of the model's
+        own inputs and outputs are replaced by the default 8-bit integer
+        encoding for DAI compatibility. Otherwise, their configured
+        encodings are preserved. Internal tensor encodings are preserved
+        in either case.
 
         Args:
             encodings: Encodings as resolved from the configuration,
-                before the exposed tensors are normalized.
+                before any optional exposed-tensor normalization.
 
         Returns:
             Path to the written ``encodings.json``.
@@ -366,11 +368,12 @@ class RVC4Exporter(Exporter):
         encodings_dict = encodings.model_dump(mode="json", exclude_none=True)
         # DAI does not support custom TF8 encodings on exposed tensors.
         # Keep AIMET's internal tensor encodings, but normalize exposed
-        # inputs and outputs to default int8 IO.
-        for name in list(self._inputs.keys()) + list(self._outputs.keys()):
-            encodings_dict["activation_encodings"][name] = [
-                {"bitwidth": 8, "dtype": "int"}
-            ]
+        # inputs and outputs to default int8 IO when requested.
+        if self._normalize_io_encodings:
+            for name in list(self._inputs.keys()) + list(self._outputs.keys()):
+                encodings_dict["activation_encodings"][name] = [
+                    {"bitwidth": 8, "dtype": "int"}
+                ]
         encodings_path = self.intermediate_outputs_dir / "encodings.json"
         with open(encodings_path, "w") as encodings_file:
             json.dump(encodings_dict, encodings_file, indent=4)
