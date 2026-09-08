@@ -13,7 +13,6 @@ ENV IN_DOCKER=
 
 WORKDIR /app
 
-COPY --link requirements.txt requirements.txt
 COPY --link modelconverter/platforms/hailo/requirements.txt requirements-hailo.txt
 
 RUN <<EOF
@@ -24,7 +23,8 @@ RUN <<EOF
     # plugin archive and falls back to an isolated build that crashes on
     # missing pkg_resources.
     pip install --no-cache-dir "pip==25.0.1"
-    pip install -r requirements.txt --no-cache-dir
+    # The export is the whole locked environment, so pip resolves nothing.
+    pip install --require-hashes --no-deps -r requirements-hailo.txt --no-cache-dir
 
     # The suite's TensorFlow 2.12 is compiled against the NumPy 1.x ABI and
     # fails to import under NumPy 2, which luxonis-ml requires from 0.9.1 on.
@@ -32,7 +32,6 @@ RUN <<EOF
     # step NumPy back down before anything imports TensorFlow: extensions built
     # against NumPy 2 keep working on 1.x, only the reverse breaks. pip reports
     # the deliberate mismatch with luxonis-ml's pin as a warning and carries on.
-    pip install --no-cache-dir "numpy<2"
     python - <<PY
 from urllib.request import urlretrieve
 
@@ -58,14 +57,13 @@ PY
         "/tmp/nvidia_dali_cuda120-${DALI_VERSION}-py3-none-manylinux2014_x86_64.whl"
     PIP_USE_PEP517=0 pip install --no-cache-dir --no-deps \
         "/tmp/nvidia_dali_tf_plugin_cuda120-${DALI_VERSION}.tar.gz"
-    pip install --no-cache-dir -r requirements-hailo.txt
 
 EOF
 
 ARG DEV=false
-COPY --link requirements-dev.txt /app/requirements-dev.txt
+COPY --link modelconverter/platforms/hailo/requirements-dev.txt /app/requirements-dev.txt
 RUN if [ "$DEV" = "true" ]; then \
-        pip install --no-cache-dir -r /app/requirements-dev.txt codecov-cli; \
+        pip install --no-cache-dir --require-hashes --no-deps -r /app/requirements-dev.txt; \
     fi
 
 COPY --link modelconverter /app/modelconverter/
