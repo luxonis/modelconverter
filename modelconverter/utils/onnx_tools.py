@@ -94,7 +94,7 @@ def onnx_attach_normalization_to_inputs(
 
     """
     if not any(
-        cfg.requires_onnx_input_modification(reverse_only=reverse_only)
+        cfg.requires_input_preprocessing(reverse_only=reverse_only)
         for cfg in input_configs.values()
     ):
         logger.info(
@@ -125,7 +125,7 @@ def onnx_attach_normalization_to_inputs(
         if input_name not in input_configs:
             continue
         cfg = input_configs[input_name]
-        if not cfg.requires_onnx_input_modification(reverse_only=reverse_only):
+        if not cfg.requires_input_preprocessing(reverse_only=reverse_only):
             continue
 
         if input_name in output_names:

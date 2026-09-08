@@ -140,16 +140,14 @@ class RVC4Exporter(Exporter):
                 finally:
                     if onnx_modifier.output_path.exists():  # pragma: no cover
                         onnx_modifier.output_path.unlink()
-        else:
-            if requested_inputs:
-                names = ", ".join(repr(name) for name in requested_inputs)
-                raise PreprocessingEmbeddingError(
-                    "RVC4 can only embed requested preprocessing into ONNX "
-                    f"models; input(s) {names} still require preprocessing. "
-                    "Use an ONNX source or `--archive-preprocess --to "
-                    "nn_archive`."
-                )
-            logger.info("No RVC4 input preprocessing requested.")
+        elif requested_inputs:
+            names = ", ".join(repr(name) for name in requested_inputs)
+            raise PreprocessingEmbeddingError(
+                "RVC4 can only embed requested preprocessing into ONNX "
+                f"models; input(s) {names} still require preprocessing. "
+                "Use an ONNX source or `--archive-preprocess --to "
+                "nn_archive`."
+            )
         self._raw_img_dir = self.intermediate_outputs_dir / "raw_files"
         self._input_list_path = self.intermediate_outputs_dir / "img_list.txt"
 

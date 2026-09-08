@@ -489,24 +489,24 @@ def test_unset_mean_values_stay_none():
     assert inp.mean_values is None
 
 
-def test_encoding_mismatch_requires_onnx_modification():
+def test_encoding_mismatch_requires_preprocessing():
     inp = _input_config(name="i", encoding={"from": "RGB", "to": "BGR"})
-    assert inp.requires_onnx_input_modification()
+    assert inp.requires_input_preprocessing()
 
 
 def test_reverse_only_ignores_mean_and_scale():
     inp = _input_config(name="i", encoding="RGB", mean_values=[1, 2, 3])
-    assert not inp.requires_onnx_input_modification(reverse_only=True)
+    assert not inp.requires_input_preprocessing(reverse_only=True)
 
 
-def test_normalization_requires_onnx_modification():
+def test_normalization_requires_preprocessing():
     inp = _input_config(name="i", encoding="RGB", scale_values=[2, 2, 2])
-    assert inp.requires_onnx_input_modification()
+    assert inp.requires_input_preprocessing()
 
 
-def test_plain_input_needs_no_onnx_modification():
+def test_plain_input_needs_no_preprocessing():
     inp = _input_config(name="i", encoding="RGB")
-    assert not inp.requires_onnx_input_modification()
+    assert not inp.requires_input_preprocessing()
 
 
 def test_raw_and_colour_input_properties():

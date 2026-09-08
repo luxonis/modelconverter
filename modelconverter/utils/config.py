@@ -452,12 +452,6 @@ class InputConfig(OutputConfig):
             and any(v != 1 for v in self.scale_values)
         )
 
-    def requires_onnx_input_modification(
-        self, *, reverse_only: bool = False
-    ) -> bool:
-        """Check whether preprocessing requires an ONNX graph change."""
-        return self.requires_input_preprocessing(reverse_only=reverse_only)
-
     def validate_preprocessing(self, *, reverse_only: bool = False) -> int:
         """Validate requested preprocessing and return the channel count.
 

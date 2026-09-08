@@ -161,8 +161,7 @@ class RVC2Exporter(Exporter):
                     inp.scale_values = inp.scale_values[::-1]
                 # Only colour inputs get their channels reversed in the ONNX;
                 # after that, the exposed input still expects the configured
-                # runtime encoding (`to`). Preserve it for archive metadata and
-                # calibration instead of assuming the runtime side is BGR.
+                # runtime encoding (`to`).
                 if inp.is_color_input and inp.encoding_mismatch:
                     runtime_encoding = inp.encoding.to
                     inp.encoding.from_ = runtime_encoding
