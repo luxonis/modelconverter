@@ -390,7 +390,7 @@ def test_grayscale_input_sets_gray_encoding():
 
 
 def test_explicit_raw_one_channel_input_stays_raw():
-    inp = InputConfig(
+    inp = _input_config(
         name="i",
         shape=[1, 1, 64, 64],
         layout="NCHW",
@@ -407,7 +407,7 @@ def test_non_grayscale_channel_kept():
 
 
 def test_non_three_channel_input_rejects_color_encoding():
-    inp = InputConfig(
+    inp = _input_config(
         name="i",
         shape=[1, 10],
         layout="NC",
@@ -418,7 +418,7 @@ def test_non_three_channel_input_rejects_color_encoding():
 
 
 def test_multichannel_input_rejects_gray_encoding():
-    inp = InputConfig(
+    inp = _input_config(
         name="i", shape=[1, 3, 64, 64], layout="NCHW", encoding="GRAY"
     )
     with pytest.raises(ValueError, match="cannot use GRAY encoding"):
@@ -468,7 +468,7 @@ def test_zero_scale_value_is_rejected():
 def test_neutral_preprocessing_value_count_is_validated(
     field: str, values: list[int]
 ):
-    inp = InputConfig(
+    inp = _input_config(
         name="i",
         shape=[1, 3, 64, 64],
         layout="NCHW",

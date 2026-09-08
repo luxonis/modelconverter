@@ -13,6 +13,7 @@ from modelconverter.platforms.rvc3.exporter import RVC3Exporter
 from modelconverter.utils import PreprocessingEmbeddingError
 from modelconverter.utils.config import (
     Config,
+    EncodingConfig,
     InputConfig,
     OutputConfig,
     SingleStageConfig,
@@ -178,8 +179,10 @@ def test_ir_preprocessing_retry_preserves_unsanitized_bin_source(
                 name="input0",
                 shape=[1, 2, 8, 8],
                 layout="NCHW",
-                encoding="NONE",
-                mean_values=[10, 20],
+                encoding=EncodingConfig.model_validate(
+                    {"from": Encoding.NONE, "to": Encoding.NONE}
+                ),
+                mean_values=[10.0, 20.0],
             )
         ],
         outputs=[OutputConfig(name="output0", shape=[1], layout="N")],

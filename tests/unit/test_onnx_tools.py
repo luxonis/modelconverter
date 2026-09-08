@@ -12,7 +12,7 @@ import onnxruntime as ort
 import pytest
 from onnx import TensorProto, helper
 
-from modelconverter.utils.config import InputConfig
+from modelconverter.utils.config import EncodingConfig, InputConfig
 from modelconverter.utils.exceptions import (
     ONNXException,
     PreprocessingEmbeddingError,
@@ -21,6 +21,7 @@ from modelconverter.utils.onnx_tools import (
     ONNXModifier,
     onnx_attach_normalization_to_inputs,
 )
+from modelconverter.utils.types import Encoding
 from tests.helpers.onnx_factory import single_io_onnx, split_concat_onnx
 
 
@@ -69,7 +70,9 @@ def test_two_channel_normalization_is_embedded_and_numerically_correct(
         name="input0",
         shape=shape,
         layout=layout,
-        encoding="NONE",
+        encoding=EncodingConfig.model_validate(
+            {"from": Encoding.NONE, "to": Encoding.NONE}
+        ),
         mean_values=[10.0, 20.0],
         scale_values=[2.0, 4.0],
     )
@@ -87,7 +90,7 @@ def test_two_channel_normalization_is_embedded_and_numerically_correct(
         [2.0, 4.0]
     ).reshape(values_shape)
     actual = ort.InferenceSession(str(modified)).run(None, {"input0": x})[0]
-    np.testing.assert_allclose(actual, expected)
+    np.testing.assert_allclose(np.asarray(actual), expected)
 
 
 def test_scalar_normalization_broadcasts_to_every_channel(tmp_path: Path):
@@ -99,9 +102,11 @@ def test_scalar_normalization_broadcasts_to_every_channel(tmp_path: Path):
         name="input0",
         shape=shape,
         layout="NCHW",
-        encoding="NONE",
-        mean_values=3.0,
-        scale_values=2.0,
+        encoding=EncodingConfig.model_validate(
+            {"from": Encoding.NONE, "to": Encoding.NONE}
+        ),
+        mean_values=[3.0],
+        scale_values=[2.0],
     )
 
     modified = onnx_attach_normalization_to_inputs(
@@ -112,7 +117,7 @@ def test_scalar_normalization_broadcasts_to_every_channel(tmp_path: Path):
 
     x = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
     actual = ort.InferenceSession(str(modified)).run(None, {"input0": x})[0]
-    np.testing.assert_allclose(actual, (x - 3.0) / 2.0)
+    np.testing.assert_allclose(np.asarray(actual), (x - 3.0) / 2.0)
 
 
 def test_invalid_normalization_is_reported_as_onnx_error(tmp_path: Path):
@@ -124,7 +129,9 @@ def test_invalid_normalization_is_reported_as_onnx_error(tmp_path: Path):
         name="input0",
         shape=shape,
         layout="NCHW",
-        encoding="NONE",
+        encoding=EncodingConfig.model_validate(
+            {"from": Encoding.NONE, "to": Encoding.NONE}
+        ),
         mean_values=[1.0, 2.0, 3.0],
     )
 
@@ -145,7 +152,9 @@ def test_unsupported_layout_with_preprocessing_fails(tmp_path: Path):
         name="input0",
         shape=shape,
         layout="NC",
-        encoding="NONE",
+        encoding=EncodingConfig.model_validate(
+            {"from": Encoding.NONE, "to": Encoding.NONE}
+        ),
         mean_values=[1.0, 2.0],
     )
 
@@ -180,7 +189,9 @@ def test_input_exposed_directly_as_output_is_unembeddable(tmp_path: Path):
         name="input0",
         shape=shape,
         layout="NCHW",
-        encoding="NONE",
+        encoding=EncodingConfig.model_validate(
+            {"from": Encoding.NONE, "to": Encoding.NONE}
+        ),
         mean_values=[1.0, 2.0],
     )
 
@@ -205,7 +216,9 @@ def test_color_normalization_is_correct_without_mutating_config(
         name="input0",
         shape=shape,
         layout="NCHW",
-        encoding={"from": "RGB", "to": "BGR"},
+        encoding=EncodingConfig.model_validate(
+            {"from": Encoding.RGB, "to": Encoding.BGR}
+        ),
         mean_values=[1.0, 2.0, 3.0],
         scale_values=[4.0, 5.0, 6.0],
     )
@@ -226,7 +239,7 @@ def test_color_normalization_is_correct_without_mutating_config(
         rgb - np.array([1.0, 2.0, 3.0]).reshape(1, 3, 1, 1)
     ) / np.array([4.0, 5.0, 6.0]).reshape(1, 3, 1, 1)
     actual = ort.InferenceSession(str(modified)).run(None, {"input0": bgr})[0]
-    np.testing.assert_allclose(actual, expected)
+    np.testing.assert_allclose(np.asarray(actual), expected)
 
 
 def test_integer_mean_scale_normalization_is_unembeddable(tmp_path: Path):
@@ -241,7 +254,9 @@ def test_integer_mean_scale_normalization_is_unembeddable(tmp_path: Path):
         name="input0",
         shape=shape,
         layout="NCHW",
-        encoding="NONE",
+        encoding=EncodingConfig.model_validate(
+            {"from": Encoding.NONE, "to": Encoding.NONE}
+        ),
         mean_values=[10.0, 20.0],
         scale_values=[2.0, 4.0],
     )
@@ -269,7 +284,9 @@ def test_integer_channel_reversal_remains_supported(tmp_path: Path):
         name="input0",
         shape=shape,
         layout="NCHW",
-        encoding={"from": "RGB", "to": "BGR"},
+        encoding=EncodingConfig.model_validate(
+            {"from": Encoding.RGB, "to": Encoding.BGR}
+        ),
     )
 
     modified = onnx_attach_normalization_to_inputs(
@@ -280,4 +297,4 @@ def test_integer_channel_reversal_remains_supported(tmp_path: Path):
 
     bgr = np.arange(np.prod(shape), dtype=np.uint8).reshape(shape)
     actual = ort.InferenceSession(str(modified)).run(None, {"input0": bgr})[0]
-    np.testing.assert_array_equal(actual, bgr[:, ::-1, :, :])
+    np.testing.assert_array_equal(np.asarray(actual), bgr[:, ::-1, :, :])

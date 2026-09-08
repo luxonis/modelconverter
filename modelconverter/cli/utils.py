@@ -261,10 +261,12 @@ def extract_preprocessing(
 
             preprocessing[inp.name] = PreprocessingBlock(
                 mean=(
-                    mean if mean is not None else [0] * identity_value_count
+                    mean if mean is not None else [0.0] * identity_value_count
                 ),
                 scale=(
-                    scale if scale is not None else [1] * identity_value_count
+                    scale
+                    if scale is not None
+                    else [1.0] * identity_value_count
                 ),
                 reverse_channels=encoding.from_ == Encoding.RGB,
                 interleaved_to_planar=layout == "NHWC",

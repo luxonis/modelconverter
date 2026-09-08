@@ -750,7 +750,7 @@ def test_externalized_image_preprocessing_keeps_image_input_type(
         },
     )
     stage = next(iter(config.stages.values()))
-    input_types = {
+    input_types: dict[str, Literal["raw", "image"]] = {
         inp.name: "raw" if inp.is_raw_input else "image"
         for inp in stage.inputs
     }
@@ -785,7 +785,7 @@ def test_externalized_image_preprocessing_uses_converted_layout(
         },
     )
     stage = next(iter(config.stages.values()))
-    input_types = {
+    input_types: dict[str, Literal["raw", "image"]] = {
         inp.name: "raw" if inp.is_raw_input else "image"
         for inp in stage.inputs
     }
