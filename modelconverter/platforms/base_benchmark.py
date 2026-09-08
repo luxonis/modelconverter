@@ -10,6 +10,7 @@ which the per-platform benchmarks subclass.
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from math import isfinite
 from pathlib import Path
 from typing import TypeAlias, TypeVar
 
@@ -19,12 +20,12 @@ from luxonis_ml.typing import PathType
 
 from modelconverter.utils import is_hubai_model_variant_available, resolve_path
 
-ConfigValue: TypeAlias = str | int | bool | None
+ConfigValue: TypeAlias = str | int | float | bool | None
 Configuration: TypeAlias = dict[str, ConfigValue]
 
 Result: TypeAlias = dict[str, float | str | None]
 
-OptionT = TypeVar("OptionT", bound=str | int | bool)
+OptionT = TypeVar("OptionT", bound=str | int | float | bool)
 
 
 def get_option(
@@ -73,6 +74,27 @@ def get_optional_option(
     if configuration.get(key) is None:
         return None
     return get_option(configuration, key, option_type)
+
+
+def get_max_fps(configuration: Configuration) -> float:
+    """Read and validate the maximum input rate for a DAI benchmark.
+
+    ``-1`` lets the benchmark run without a rate limit. Otherwise the
+    value must be a positive, finite number.
+    """
+    value = configuration.get("max_fps")
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise TypeError(
+            "The benchmark option 'max_fps' must be of type 'float', "
+            f"got {value!r}."
+        )
+    max_fps = float(value)
+    if not isfinite(max_fps) or (max_fps != -1 and max_fps <= 0):
+        raise ValueError(
+            "The benchmark option 'max_fps' must be -1 or a positive "
+            f"float, got {value!r}."
+        )
+    return max_fps
 
 
 class Benchmark(ABC):

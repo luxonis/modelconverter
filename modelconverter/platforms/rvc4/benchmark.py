@@ -31,6 +31,7 @@ from modelconverter.platforms.base_benchmark import (
     Benchmark,
     Configuration,
     Result,
+    get_max_fps,
     get_option,
     get_optional_option,
 )
@@ -116,6 +117,8 @@ class RVC4Benchmark(Benchmark):
             dai_benchmark: Whether to use the DepthAI for benchmarking.
             repetitions: The number of repetitions to perform (dai-benchmark only, ignored if benchmark_time is set).
             benchmark_time: Duration in seconds for time-based benchmarking (overrides repetitions).
+            max_fps: Maximum rate at which inputs are sent by the DAI
+                benchmark. ``-1`` removes the limit.
             num_threads: The number of threads to use for inference (dai-benchmark only).
             num_messages: The number of messages to use for inference (dai-benchmark only).
             device_ip: Address of the device to benchmark on, or None to use the first one found.
@@ -130,6 +133,7 @@ class RVC4Benchmark(Benchmark):
             "dai_benchmark": True,
             "repetitions": 10,
             "benchmark_time": 20,
+            "max_fps": -1.0,
             "num_threads": 2,
             "num_messages": 50,
             "device_ip": None,
@@ -365,6 +369,7 @@ class RVC4Benchmark(Benchmark):
         """
         dai_benchmark = get_option(configuration, "dai_benchmark", bool)
         device_monitor = get_option(configuration, "device_monitor", bool)
+        max_fps = get_max_fps(configuration)
 
         device_ip, device_adb_id = get_device_info(
             get_optional_option(configuration, "device_ip", str),
@@ -405,6 +410,7 @@ class RVC4Benchmark(Benchmark):
                     benchmark_time=get_option(
                         configuration, "benchmark_time", int
                     ),
+                    max_fps=max_fps,
                     device_ip=device_ip,
                 )
             else:
@@ -414,6 +420,7 @@ class RVC4Benchmark(Benchmark):
                     "num_threads",
                     "num_messages",
                     "benchmark_time",
+                    "max_fps",
                     "device_ip",
                     "device_id",
                     "device_monitor",
@@ -554,6 +561,7 @@ class RVC4Benchmark(Benchmark):
         num_threads: int,
         num_messages: int,
         benchmark_time: int,
+        max_fps: float,
         device_ip: str | None = None,
     ) -> Result:
         if isinstance(model_path, str):
@@ -639,7 +647,7 @@ class RVC4Benchmark(Benchmark):
             with dai.Pipeline(device) as pipeline:
                 benchmark_out = pipeline.create(dai.node.BenchmarkOut)
                 benchmark_out.setRunOnHost(False)
-                benchmark_out.setFps(-1)
+                benchmark_out.setFps(max_fps)
 
                 neural_network = pipeline.create(dai.node.NeuralNetwork)
                 neural_network.setNNArchive(model_archive)
