@@ -37,10 +37,11 @@ from modelconverter.utils.nn_archive import (
     find_archive_input,
     generate_archive,
     get_archive_input,
+    make_dai_type,
     modelconverter_config_to_nn,
     process_nn_archive,
 )
-from modelconverter.utils.types import DataType, Platform
+from modelconverter.utils.types import DataType, Encoding, Platform
 from tests.helpers.archive_factory import (
     default_archive_config,
     pack_archive,
@@ -804,6 +805,32 @@ def test_externalized_image_preprocessing_uses_converted_layout(
     assert inp.preprocessing.scale == [4, 5, 6]
     assert inp.preprocessing.dai_type == "RGB888i"
     assert inp.preprocessing.model_dump()["interleaved_to_planar"] is True
+
+
+def test_archive_image_overridden_with_none_encoding_becomes_raw(
+    dummy_onnx: Path,
+):
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(dummy_onnx),
+            "inputs.0.name": "input0",
+            "inputs.0.encoding": "NONE",
+            "inputs.1.name": "input1",
+        },
+    )
+    orig = archive_from_model(dummy_onnx)
+
+    nn = _config_to_nn(config, dummy_onnx, orig=orig)
+
+    inp = next(inp for inp in nn.model.inputs if inp.name == "input0")
+    assert inp.input_type == InputType.RAW
+    assert inp.preprocessing.dai_type is None
+
+
+def test_make_dai_type_rejects_none_encoding():
+    with pytest.raises(ValueError, match=r"Encoding\.NONE"):
+        make_dai_type(Encoding.NONE, DataType.FLOAT32, "NCHW")
 
 
 def test_iop_input_and_output(dummy_onnx: Path):

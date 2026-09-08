@@ -101,7 +101,23 @@ def test_toy_tflite_precision(
     converted = inferer.infer({stage.inputs[0].name: solid_image})
 
     (output,) = converted.values()
-    values = np.sort(np.asarray(output, dtype=np.float32).ravel())
+    output_array = np.asarray(output, dtype=np.float32)
+    if platform is Platform.RVC4:
+        # RVC4Inferer exposes four-dimensional outputs as NCHW. OpenCV writes
+        # the fixture as BGR, while the RVC4 input contract reads it as RGB,
+        # so the identity model must preserve the reversed channel order.
+        assert output_array.ndim == 4
+        assert output_array.shape[1] == 3
+        channel_means = output_array.mean(axis=(0, 2, 3))
+        expected_rgb = np.asarray(_CHANNEL_VALUES[::-1], dtype=np.float32)
+        assert np.array_equal(
+            np.argsort(channel_means), np.argsort(expected_rgb)
+        ), (
+            "rvc4 tflite changed RGB channel order: "
+            f"expected {expected_rgb.tolist()}, got {channel_means.tolist()}"
+        )
+
+    values = np.sort(output_array.ravel())
     per_channel = values.size // len(_CHANNEL_VALUES)
     reference = np.sort(
         np.repeat(np.array(_CHANNEL_VALUES, dtype=np.float32), per_channel)

@@ -136,7 +136,7 @@ In the NN Archive configuration, there are two flags related to color encoding c
 
   This can affect the input layout of the converted model. The exact conversion is platform-specific and does not necessarily involve inserting ONNX transpose nodes.
 
-This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
+  This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
 
 > [!NOTE]
 > If neither `dai_type` nor `reverse_channels` are provided, the input to the model is considered to be *"RGB"*.
