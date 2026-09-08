@@ -92,7 +92,7 @@ The `encoding` flag in the YAML configuration file specifies the format that the
 > Certain options can be set **globally**, applying to all inputs of the model, or **per input**. If specified per input, these settings will override the global configuration for that input alone. The options that support this flexibility include `scale_values`, `mean_values`, `encoding`, `data_type`, `shape`, and `layout`.
 
 > [!NOTE]
-> A single `mean_values` or `scale_values` value is broadcast to every channel. A list must contain one value per channel, and scale values must be non-zero. ONNX preprocessing embedding currently supports `NCHW` and `NHWC` inputs.
+> A single `mean_values` or `scale_values` value is broadcast to every channel. A list must contain either one value to broadcast or one value per channel, and scale values must be non-zero. ONNX preprocessing embedding currently supports `NCHW` and `NHWC` inputs.
 
 > [!IMPORTANT]
 > Use RGB, BGR, or GRAY encoding only when the input channels represent an image. Packed tensors, feature maps, and other non-image inputs—including tensors with nonstandard channel counts—must use `encoding: NONE`, which makes them raw tensor inputs rather than DepthAI image inputs.
@@ -493,13 +493,13 @@ Below is a table of common command-line options available when using the `modelc
 | `--main-stage`                                     |       | TEXT   | Name of the stage with the main model                                                                                                                      |
 | `--tool-version`                                   |       | TEXT   | Version of the underlying conversion tools to use. Available options differ based on the platform (RVC2, RVC3, RVC4, HAILO)                                |
 | `--image/docker-image`                             |       | TEXT   | Full Docker image name to use. If a tag is included, it is used as-is and overrides `--tool-version`, otherwise, the tag is derived from `--tool-version`. |
-| `--archive-preprocess` / `--no-archive-preprocess` |       | FLAG   | Force preprocessing into NN Archive metadata instead of embedding it in the model; requires `--to nn_archive`                                              |
+| `--archive-preprocess` / `--no-archive-preprocess` |       | FLAG   | For single-stage conversion, force preprocessing into NN Archive metadata instead of embedding it in the model; requires `--to nn_archive`                 |
 
 > [!NOTE]
 > This table is not exhaustive. For more detailed information about available options, run `modelconverter convert --help` in your command line interface. You can also check all the `[ config overrides ]` available at [defaults.yaml](configs/defaults.yaml).
 
 > [!NOTE]
-> By default, ModelConverter first tries to embed preprocessing in the model. For NN Archive output, valid preprocessing that cannot be embedded is moved to archive metadata and conversion is retried with a warning. Native output fails instead because it has nowhere to preserve that preprocessing.
+> By default, ModelConverter first tries to embed preprocessing in the model. For single-stage NN Archive output, valid preprocessing that cannot be embedded is moved to archive metadata and conversion is retried with a warning. This fallback is not supported for multi-stage conversions. Native output fails instead because it has nowhere to preserve that preprocessing.
 
 **RVC4 Quantization Mode**
 
