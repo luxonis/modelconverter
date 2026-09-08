@@ -33,16 +33,20 @@ class RVC2Benchmark(Benchmark):
     def default_configuration(self) -> Configuration:
         """Default configuration for RVC2 benchmarking.
 
-        Options:
-            repetitions: The number of repetitions to perform (ignored if
-            benchmark_time is set).
-
-            benchmark_time: Duration in seconds for time-based
-            benchmarking (overrides repetitions).
-            max_fps: Maximum rate at which inputs are sent. ``-1`` removes
-                the limit.
-            num_messages: The number of messages measured for each report.
-            num_threads: The number of threads to use for inference.
+        Configuration options:
+            ``repetitions``
+                The number of repetitions to perform (ignored if
+                ``benchmark_time`` is set).
+            ``benchmark_time``
+                Duration in seconds for time-based benchmarking (overrides
+                ``repetitions``).
+            ``max_fps``
+                Maximum rate at which inputs are sent. ``-1`` removes the
+                limit.
+            ``num_messages``
+                The number of messages measured for each report.
+            ``num_threads``
+                The number of threads to use for inference.
         """
         return {
             "repetitions": 10,

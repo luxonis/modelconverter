@@ -110,20 +110,37 @@ class RVC4Benchmark(Benchmark):
     def default_configuration(self) -> Configuration:
         """Default configuration for RVC4 benchmarking.
 
-        Options:
-            profile: The SNPE profile to use for inference.
-            runtime: The SNPE runtime to use for inference.
-            num_images: The number of images to use for inference.
-            dai_benchmark: Whether to use the DepthAI for benchmarking.
-            repetitions: The number of repetitions to perform (dai-benchmark only, ignored if benchmark_time is set).
-            benchmark_time: Duration in seconds for time-based benchmarking (overrides repetitions).
-            max_fps: Maximum rate at which inputs are sent by the DAI
+        Configuration options:
+            ``profile``
+                The SNPE profile to use for inference.
+            ``runtime``
+                The SNPE runtime to use for inference.
+            ``num_images``
+                The number of images to use for inference.
+            ``dai_benchmark``
+                Whether to use DepthAI for benchmarking.
+            ``repetitions``
+                The number of repetitions to perform (DepthAI only, ignored
+                if ``benchmark_time`` is set).
+            ``benchmark_time``
+                Duration in seconds for time-based benchmarking (overrides
+                ``repetitions``).
+            ``max_fps``
+                Maximum rate at which inputs are sent by the DepthAI
                 benchmark. ``-1`` removes the limit.
-            num_threads: The number of threads to use for inference (dai-benchmark only).
-            num_messages: The number of messages to use for inference (dai-benchmark only).
-            device_ip: Address of the device to benchmark on, or None to use the first one found.
-            device_id: Device ID or ADB serial of the device to benchmark on, or None to use the first one found.
-            device_monitor: Whether to sample power, DSP, memory and CPU usage alongside the benchmark.
+            ``num_threads``
+                The number of inference threads (DepthAI only).
+            ``num_messages``
+                The number of messages measured for each report (DepthAI
+                only).
+            ``device_ip``
+                Address of the device, or ``None`` to use the first one found.
+            ``device_id``
+                Device ID or ADB serial, or ``None`` to use the first one
+                found.
+            ``device_monitor``
+                Whether to sample power, DSP, memory, and CPU usage alongside
+                the benchmark.
 
         """
         return {
