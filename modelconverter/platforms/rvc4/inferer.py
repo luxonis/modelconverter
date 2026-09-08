@@ -35,8 +35,9 @@ class RVC4Inferer(Inferer):
         referenced from the SNPE input list, ``snpe-net-run`` is then
         invoked on the DLC model, and the raw files it produces are
         read back and reshaped to the configured output shapes.
-        Four-dimensional outputs are assumed to be channels-last and
-        are transposed to ``NCHW``.
+        SNPE's four-dimensional output data is channels-last. Its
+        dimensions are recovered from the configured output layout and
+        exposed as ``NCHW``.
 
         Args:
             inputs: Path to the image for every model input, keyed by
@@ -86,16 +87,31 @@ class RVC4Inferer(Inferer):
         )
         out_paths = outputs_path.rglob("*.raw")
         outputs = {}
+        output_layouts = (
+            {out.name: out.layout for out in self.config.outputs}
+            if self.config is not None
+            else {}
+        )
         for p in out_paths:
             arr = np.fromfile(
                 p, dtype=self.out_dtypes[p.stem].as_numpy_dtype()
             )
             out_shape = self.out_shapes[p.stem]
-
-            # TODO: detect layout
-            if len(out_shape) == 4:
-                N, C, H, W = out_shape
-                outputs[p.stem] = arr.reshape(N, H, W, C).transpose(0, 3, 1, 2)
-            else:
-                outputs[p.stem] = arr.reshape(out_shape)
+            outputs[p.stem] = _reshape_output(
+                arr, out_shape, output_layouts.get(p.stem)
+            )
         return outputs
+
+
+def _reshape_output(
+    arr: np.ndarray, shape: list[int], layout: str | None
+) -> np.ndarray:
+    """Reshape an SNPE output, exposing four-dimensional tensors as NCHW."""
+    if len(shape) != 4:
+        return arr.reshape(shape)
+
+    if layout == "NHWC":
+        n, h, w, c = shape
+    else:
+        n, c, h, w = shape
+    return arr.reshape(n, h, w, c).transpose(0, 3, 1, 2)
