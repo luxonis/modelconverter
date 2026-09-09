@@ -484,28 +484,6 @@ def modelconverter_config_to_nn(
     return archive
 
 
-def find_archive_input(
-    cfg: NNArchiveConfig | None, name: str
-) -> NNArchiveInput | None:
-    """Look up an input of an archive config, tolerating its absence.
-
-    Args:
-        cfg: Archive config to search, or ``None`` if there is none.
-        name: Name of the input to look for.
-
-    Returns:
-        The matching archive input, or ``None`` if there is no config or
-        it declares no input of that name.
-
-    """
-    if cfg is None:
-        return None
-    for inp in cfg.model.inputs:
-        if inp.name == name:
-            return inp
-    return None
-
-
 def _default_archive_input_type(
     *, is_raw_input: bool
 ) -> Literal["raw", "image"]:

@@ -34,7 +34,6 @@ from modelconverter.utils.nn_archive import (
     _default_archive_preprocessing,
     _get_io_dtype,
     archive_from_model,
-    find_archive_input,
     generate_archive,
     get_archive_input,
     make_dai_type,
@@ -1010,18 +1009,6 @@ def test_get_archive_input_missing_raises(dummy_onnx: Path):
     archive = archive_from_model(dummy_onnx)
     with pytest.raises(ValueError, match="not found"):
         get_archive_input(archive, "nope")
-
-
-def test_find_archive_input_none_cfg():
-    assert find_archive_input(None, "input0") is None
-
-
-def test_find_archive_input_found_and_missing(dummy_onnx: Path):
-    archive = archive_from_model(dummy_onnx)
-    found_input = find_archive_input(archive, "input0")
-    assert found_input is not None
-    assert found_input.name == "input0"
-    assert find_archive_input(archive, "nope") is None
 
 
 def _prepare_output(name: str) -> Path:
