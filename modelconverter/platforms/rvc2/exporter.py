@@ -265,7 +265,7 @@ class RVC2Exporter(Exporter):
             except ValueError as e:
                 raise ModelconverterException(str(e)) from e
         if requested_inputs:
-            names = ", ".join(repr(name) for name in requested_inputs)
+            names = ", ".join(requested_inputs)
             raise PreprocessingEmbeddingError(
                 "RVC2/RVC3 cannot embed requested preprocessing into an "
                 f"existing OpenVINO IR; input(s) {names} still require "

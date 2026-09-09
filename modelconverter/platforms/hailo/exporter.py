@@ -72,7 +72,7 @@ class HailoExporter(Exporter):
             except ValueError as e:
                 raise ModelconverterException(str(e)) from e
         if self._disable_calibration and requested_inputs:
-            names = ", ".join(repr(name) for name in requested_inputs)
+            names = ", ".join(requested_inputs)
             raise PreprocessingEmbeddingError(
                 "Hailo cannot embed requested preprocessing when calibration "
                 f"is disabled; input(s) {names} still require preprocessing. "

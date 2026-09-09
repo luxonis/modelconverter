@@ -142,7 +142,7 @@ class RVC4Exporter(Exporter):
                     if onnx_modifier.output_path.exists():  # pragma: no cover
                         onnx_modifier.output_path.unlink()
         elif requested_inputs:
-            names = ", ".join(repr(name) for name in requested_inputs)
+            names = ", ".join(requested_inputs)
             raise PreprocessingEmbeddingError(
                 "RVC4 can only embed requested preprocessing into ONNX "
                 f"models; input(s) {names} still require preprocessing. "

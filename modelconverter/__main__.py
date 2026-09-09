@@ -308,7 +308,7 @@ def convert(
 
             cfg, preprocessing = extract_preprocessing(cfg)
             preprocessing_externalized = True
-            names = ", ".join(repr(name) for name in input_names)
+            names = ", ".join(input_names)
             logger.warning(
                 f"Could not embed preprocessing for input(s) {names}: "
                 f"{error}. Falling back to NN Archive preprocessing; the "
