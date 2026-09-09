@@ -482,6 +482,14 @@ def test_zero_scale_value_is_rejected():
         _input_config(name="i", scale_values=[1, 0, 2])
 
 
+def test_zero_scale_value_is_rejected_after_assignment():
+    inp = _input_config(name="i", scale_values=[1, 2, 3])
+    inp.scale_values = [1, 0, 3]
+
+    with pytest.raises(ValueError, match="zero scale value"):
+        inp.validate_input_contract()
+
+
 @pytest.mark.parametrize(
     ("field", "values"),
     [("mean_values", [0, 0]), ("scale_values", [1, 1])],
