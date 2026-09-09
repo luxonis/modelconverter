@@ -5,10 +5,7 @@ from pathlib import Path
 import pytest
 from onnx import TensorProto
 
-from modelconverter.platforms.rvc2.exporter import (
-    RVC2Exporter,
-    _broadcast_preprocessing_values,
-)
+from modelconverter.platforms.rvc2.exporter import RVC2Exporter
 from modelconverter.platforms.rvc3.exporter import RVC3Exporter
 from modelconverter.utils import PreprocessingEmbeddingError
 from modelconverter.utils.config import (
@@ -17,13 +14,14 @@ from modelconverter.utils.config import (
     InputConfig,
     OutputConfig,
     SingleStageConfig,
+    broadcast_preprocessing_values,
 )
 from modelconverter.utils.types import Encoding, InputFileType
 from tests.helpers.onnx_factory import build_onnx, single_io_onnx
 
 
 def test_scalar_preprocessing_is_expanded_to_resolved_channels():
-    assert _broadcast_preprocessing_values([127.0], 2) == [127.0, 127.0]
+    assert broadcast_preprocessing_values([127.0], 2) == [127.0, 127.0]
 
 
 def test_raw_two_channel_normalization_is_forwarded_to_model_optimizer(

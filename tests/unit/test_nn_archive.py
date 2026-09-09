@@ -940,6 +940,22 @@ def test_image_float16_interleaved_with_mean_scale():
     assert block["scale"] == [1, 1, 1]
 
 
+def test_scalar_preprocessing_produces_per_channel_identity_values():
+    inp = _input_config(
+        name="x",
+        shape=[1, 3, 64, 64],
+        layout="NCHW",
+        encoding="RGB",
+        mean_values=[2],
+        scale_values=[3],
+    )
+
+    block = _default_archive_preprocessing(inp, "NCHW", input_type="image")
+
+    assert block["mean"] == [0, 0, 0]
+    assert block["scale"] == [1, 1, 1]
+
+
 def test_grayscale_image_uses_valid_dai_type():
     inp = _input_config(
         name="x",

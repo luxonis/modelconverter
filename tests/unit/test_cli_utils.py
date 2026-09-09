@@ -328,6 +328,23 @@ def test_externalized_preprocessing_uses_model_side_encoding(
     assert block.reverse_channels is True
 
 
+def test_externalized_scalar_preprocessing_expands_per_channel(
+    dummy_onnx: Path,
+):
+    cfg = _single_stage_config(
+        dummy_onnx,
+        encoding="RGB",
+        mean_values=127.5,
+        scale_values=255.0,
+    )
+
+    _cfg, preprocessing = extract_preprocessing(cfg)
+
+    block = preprocessing["input0"]
+    assert block.mean == [127.5, 127.5, 127.5]
+    assert block.scale == [255.0, 255.0, 255.0]
+
+
 def test_raw_input_with_mean_scale(dummy_onnx: Path):
     cfg = _single_stage_config(
         dummy_onnx,

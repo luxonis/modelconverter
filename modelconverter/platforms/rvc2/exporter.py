@@ -31,7 +31,10 @@ from modelconverter.utils import (
     get_container_memory_available,
     onnx_attach_normalization_to_inputs,
 )
-from modelconverter.utils.config import SingleStageConfig
+from modelconverter.utils.config import (
+    SingleStageConfig,
+    broadcast_preprocessing_values,
+)
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import (
     DataType,
@@ -203,7 +206,7 @@ class RVC2Exporter(Exporter):
             ):
                 if mean_values_str:
                     mean_values_str += ","
-                mean_values = _broadcast_preprocessing_values(
+                mean_values = broadcast_preprocessing_values(
                     inp.mean_values, channels
                 )
                 mean_values_str += (
@@ -216,7 +219,7 @@ class RVC2Exporter(Exporter):
             ):
                 if scale_values_str:
                     scale_values_str += ","
-                scale_values = _broadcast_preprocessing_values(
+                scale_values = broadcast_preprocessing_values(
                     inp.scale_values, channels
                 )
                 scale_values_str += (
@@ -596,12 +599,3 @@ def _lst_join(args: Iterable[int | float], sep: str = ",") -> str:
 
 def _get_available_memory() -> int:
     return int(get_container_memory_available() * 0.7)
-
-
-def _broadcast_preprocessing_values(
-    values: list[float], channels: int | None
-) -> list[float]:
-    """Expand a scalar preprocessing value for OpenVINO compatibility."""
-    if len(values) == 1 and channels is not None:
-        return values * channels
-    return values

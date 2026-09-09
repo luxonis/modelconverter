@@ -282,6 +282,14 @@ class InputConfig(OutputConfig):
             and self.encoding.to == Encoding.NONE
         )
 
+    @property
+    def channel_count(self) -> int | None:
+        """Return the known positive channel count, if available."""
+        if self.shape is None or self.layout is None or "C" not in self.layout:
+            return None
+        channels = self.shape[self.layout.index("C")]
+        return channels if channels > 0 else None
+
     @model_validator(mode="after")
     def _validate_grayscale_inputs(self) -> Self:
         if self.layout is None:
@@ -1300,6 +1308,15 @@ class Config(LuxonisConfig):
             self.stages = {model_name: stage}
             self.name = model_name
         return self
+
+
+def broadcast_preprocessing_values(
+    values: list[float], channels: int | None
+) -> list[float]:
+    """Expand a scalar preprocessing value to the resolved channel count."""
+    if len(values) == 1 and channels is not None:
+        return values * channels
+    return list(values)
 
 
 def _dtype_name(dtype: DataType | None) -> str | None:

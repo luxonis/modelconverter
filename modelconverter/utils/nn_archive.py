@@ -32,6 +32,7 @@ from modelconverter.utils.config import (
     Config,
     InputConfig,
     PlatformConfig,
+    broadcast_preprocessing_values,
 )
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import guess_new_layout, make_default_layout
@@ -568,8 +569,16 @@ def _default_archive_preprocessing(
     dai_type = make_dai_type(inp.encoding.to, inp.data_type, layout)
 
     return {
-        "mean": [0 for _ in inp.mean_values] if inp.mean_values else None,
-        "scale": ([1 for _ in inp.scale_values] if inp.scale_values else None),
+        "mean": (
+            broadcast_preprocessing_values([0], inp.channel_count)
+            if inp.mean_values
+            else None
+        ),
+        "scale": (
+            broadcast_preprocessing_values([1], inp.channel_count)
+            if inp.scale_values
+            else None
+        ),
         "reverse_channels": inp.encoding.to == Encoding.RGB,
         "interleaved_to_planar": layout == "NHWC",
         "dai_type": dai_type,

@@ -26,6 +26,7 @@ from modelconverter.utils import (
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
+    broadcast_preprocessing_values,
 )
 from modelconverter.utils.types import Platform
 
@@ -296,10 +297,12 @@ class HailoExporter(Exporter):
             values_len = inp.shape[inp.layout.index("C")]
             scale_values = inp.scale_values or [1.0] * values_len
             mean_values = inp.mean_values or [0.0] * values_len
-            if len(scale_values) == 1:
-                scale_values = scale_values * values_len
-            if len(mean_values) == 1:
-                mean_values = mean_values * values_len
+            scale_values = broadcast_preprocessing_values(
+                scale_values, values_len
+            )
+            mean_values = broadcast_preprocessing_values(
+                mean_values, values_len
+            )
             alls.append(
                 f"normalization_{safe_name} = normalization("
                 f"{mean_values},{scale_values},{hn_name})"

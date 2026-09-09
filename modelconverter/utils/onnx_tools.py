@@ -18,7 +18,10 @@ from loguru import logger
 from onnx import TensorProto, checker, helper
 from onnxsim import simplify
 
-from modelconverter.utils.config import InputConfig
+from modelconverter.utils.config import (
+    InputConfig,
+    broadcast_preprocessing_values,
+)
 from modelconverter.utils.onnx_compatibility import (
     ensure_onnx_helper_compatibility,
     has_external_data,
@@ -149,12 +152,12 @@ def onnx_attach_normalization_to_inputs(
         mean_values = (
             None
             if reverse_only or cfg.mean_values is None
-            else list(cfg.mean_values)
+            else broadcast_preprocessing_values(cfg.mean_values, n_channels)
         )
         scale_values = (
             None
             if reverse_only or cfg.scale_values is None
-            else list(cfg.scale_values)
+            else broadcast_preprocessing_values(cfg.scale_values, n_channels)
         )
 
         normalization_requested = (

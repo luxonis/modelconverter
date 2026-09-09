@@ -25,7 +25,7 @@ from modelconverter.utils import (
     resolve_path,
     sanitize_net_name,
 )
-from modelconverter.utils.config import Config
+from modelconverter.utils.config import Config, broadcast_preprocessing_values
 from modelconverter.utils.constants import (
     CALIBRATION_DIR,
     CONFIGS_DIR,
@@ -239,8 +239,16 @@ def extract_preprocessing(
     preprocessing = {}
     for inp in stage_cfg.inputs:
         inp.validate_input_contract()
-        mean = inp.mean_values
-        scale = inp.scale_values
+        mean = (
+            broadcast_preprocessing_values(inp.mean_values, inp.channel_count)
+            if inp.mean_values is not None
+            else None
+        )
+        scale = (
+            broadcast_preprocessing_values(inp.scale_values, inp.channel_count)
+            if inp.scale_values is not None
+            else None
+        )
         encoding = inp.encoding
         layout = inp.layout
 
