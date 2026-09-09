@@ -20,7 +20,6 @@ from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
-    ModelconverterException,
     ONNXModifier,
     PreprocessingEmbeddingError,
     exit_with,
@@ -97,15 +96,7 @@ class RVC4Exporter(Exporter):
         else:
             self._htp_socs = rvc4_cfg.htp_socs
 
-        requested_inputs = []
-        for inp in self._inputs.values():
-            if not inp.requires_input_preprocessing():
-                continue
-            requested_inputs.append(inp.name)
-            try:
-                inp.validate_preprocessing()
-            except ValueError as e:
-                raise ModelconverterException(str(e)) from e
+        requested_inputs = self._validate_requested_preprocessing()
 
         if self.config.input_file_type == InputFileType.ONNX:
             self._input_model = onnx_attach_normalization_to_inputs(

@@ -25,7 +25,6 @@ from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
-    ModelconverterException,
     ONNXModifier,
     PreprocessingEmbeddingError,
     SubprocessHandle,
@@ -135,12 +134,7 @@ class RVC2Exporter(Exporter):
                     inp_str += f"->{value}"
             args.extend(["--input", inp_str])
 
-        for inp in self._inputs.values():
-            if inp.requires_input_preprocessing():
-                try:
-                    inp.validate_preprocessing()
-                except ValueError as e:
-                    raise ModelconverterException(str(e)) from e
+        self._validate_requested_preprocessing()
 
         if not self._check_reverse_channels():
             logger.warning(
@@ -255,15 +249,7 @@ class RVC2Exporter(Exporter):
 
     def _validate_ir_preprocessing_contract(self) -> None:
         """Reject preprocessing that cannot be added to an existing IR."""
-        requested_inputs = []
-        for inp in self._inputs.values():
-            if not inp.requires_input_preprocessing():
-                continue
-            requested_inputs.append(inp.name)
-            try:
-                inp.validate_preprocessing()
-            except ValueError as e:
-                raise ModelconverterException(str(e)) from e
+        requested_inputs = self._validate_requested_preprocessing()
         if requested_inputs:
             names = ", ".join(requested_inputs)
             raise PreprocessingEmbeddingError(

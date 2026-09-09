@@ -19,7 +19,6 @@ from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
-    ModelconverterException,
     PreprocessingEmbeddingError,
     exit_with,
     read_image,
@@ -62,15 +61,7 @@ class HailoExporter(Exporter):
         self._disable_compilation = config.hailo.disable_compilation
         self._alls: list[str] = []
         self._hw_arch = config.hailo.hw_arch
-        requested_inputs = []
-        for inp in self._inputs.values():
-            if not inp.requires_input_preprocessing():
-                continue
-            requested_inputs.append(inp.name)
-            try:
-                inp.validate_preprocessing()
-            except ValueError as e:
-                raise ModelconverterException(str(e)) from e
+        requested_inputs = self._validate_requested_preprocessing()
         if self._disable_calibration and requested_inputs:
             names = ", ".join(requested_inputs)
             raise PreprocessingEmbeddingError(

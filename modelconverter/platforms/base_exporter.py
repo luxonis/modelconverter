@@ -22,6 +22,7 @@ from loguru import logger
 from luxonis_ml.typing import Params, PathType
 
 from modelconverter.utils import (
+    ModelconverterException,
     exit_with,
     read_calib_dir,
     sanitize_net_name,
@@ -252,6 +253,19 @@ class Exporter(ABC):
             json.dump(buildinfo, f, indent=4)
 
         return new_output_path
+
+    def _validate_requested_preprocessing(self) -> list[str]:
+        """Validate requested preprocessing and return affected input names."""
+        requested_inputs: list[str] = []
+        for inp in self._inputs.values():
+            if not inp.requires_input_preprocessing():
+                continue
+            requested_inputs.append(inp.name)
+            try:
+                inp.validate_preprocessing()
+            except ValueError as error:
+                raise ModelconverterException(str(error)) from error
+        return requested_inputs
 
     def _simplify_onnx(self) -> Path:  # pragma: no cover
         """Simplify the staged ONNX model.
