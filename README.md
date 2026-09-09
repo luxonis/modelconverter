@@ -734,6 +734,8 @@ optionally saves the results to a `.csv` file.
 > `depthai` backend (default):
 >
 > - `--benchmark-time`: The duration of the benchmark in seconds (default is 20 seconds).
+> - `--max-fps`: The maximum rate at which inputs are sent. It accepts `-1`
+>   for no limit or a positive float (default is `-1`).
 >
 > `SNPE` backend (only **RVC4** with `--no-dai-benchmark`):
 >
