@@ -334,13 +334,14 @@ class InputConfig(OutputConfig):
                 and all(isinstance(dim, int) for dim in shape)
                 and (layout is None or isinstance(layout, str))
             ):
+                int_shape = [dim for dim in shape if isinstance(dim, int)]
                 resolved_layout = (
-                    make_default_layout(shape)
+                    make_default_layout(int_shape)
                     if layout is None
                     else layout.upper()
                 )
                 if "C" in resolved_layout:
-                    channels = shape[resolved_layout.index("C")]
+                    channels = int_shape[resolved_layout.index("C")]
                     if channels > 0 and channels not in {1, 3}:
                         data["encoding"] = {
                             "from": "NONE",
