@@ -340,7 +340,10 @@ class InputConfig(OutputConfig):
                     if layout is None
                     else layout.upper()
                 )
-                if "C" in resolved_layout:
+                if (
+                    len(resolved_layout) == len(int_shape)
+                    and "C" in resolved_layout
+                ):
                     channels = int_shape[resolved_layout.index("C")]
                     if channels > 0 and channels not in {1, 3}:
                         data["encoding"] = {

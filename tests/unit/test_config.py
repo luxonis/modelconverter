@@ -427,6 +427,11 @@ def test_implicit_non_image_encoding_uses_inferred_layout():
     assert inp.encoding.from_ == inp.encoding.to == Encoding.NONE
 
 
+def test_invalid_input_layout_reaches_layout_validation():
+    with pytest.raises(ValueError, match="Length of `layout`"):
+        InputConfig(name="i", shape=[1], layout="NC")
+
+
 def test_non_three_channel_input_rejects_color_encoding():
     inp = _input_config(
         name="i",
