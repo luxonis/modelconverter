@@ -319,6 +319,26 @@ class InputConfig(OutputConfig):
     def _validate_encoding(cls, data: Params) -> Params:
         encoding = data.get("encoding")
         if encoding is None or encoding == {}:
+            shape = data.get("shape")
+            layout = data.get("layout")
+            if (
+                isinstance(shape, list)
+                and all(isinstance(dim, int) for dim in shape)
+                and (layout is None or isinstance(layout, str))
+            ):
+                resolved_layout = (
+                    make_default_layout(shape)
+                    if layout is None
+                    else layout.upper()
+                )
+                if "C" in resolved_layout:
+                    channels = shape[resolved_layout.index("C")]
+                    if channels > 0 and channels not in {1, 3}:
+                        data["encoding"] = {
+                            "from": "NONE",
+                            "to": "NONE",
+                        }
+                        return data
             data["encoding"] = {"from": "RGB", "to": "BGR"}
             return data
         if isinstance(encoding, str):

@@ -404,6 +404,27 @@ def test_explicit_raw_one_channel_input_stays_raw():
 def test_non_grayscale_channel_kept():
     inp = InputConfig(name="i", shape=[1, 3, 64, 64], layout="NCHW")
     assert inp.encoding.from_ == Encoding.RGB
+    assert inp.encoding.to == Encoding.BGR
+
+
+@pytest.mark.parametrize("channels", [2, 4, 6])
+def test_implicit_non_image_encoding_defaults_to_none(channels: int):
+    inp = InputConfig(
+        name="i",
+        shape=[1, channels, 64, 64],
+        layout="NCHW",
+    )
+
+    assert inp.encoding.from_ == inp.encoding.to == Encoding.NONE
+    assert inp.is_raw_input
+    inp.validate_input_contract()
+
+
+def test_implicit_non_image_encoding_uses_inferred_layout():
+    inp = InputConfig(name="i", shape=[1, 4, 64, 64])
+
+    assert inp.layout == "NCHW"
+    assert inp.encoding.from_ == inp.encoding.to == Encoding.NONE
 
 
 def test_non_three_channel_input_rejects_color_encoding():
