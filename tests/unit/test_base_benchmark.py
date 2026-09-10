@@ -8,7 +8,7 @@ from modelconverter.platforms.base_benchmark import (
     Benchmark,
     Configuration,
     Result,
-    get_max_fps,
+    get_input_fps,
     get_option,
     get_optional_option,
 )
@@ -107,18 +107,20 @@ def test_get_optional_option_accepts_an_unset_option():
     assert get_optional_option({"device_ip": None}, "device_ip", str) is None
 
 
-@pytest.mark.parametrize("max_fps", [-1, -1.0, 1, 12.5])
-def test_get_max_fps_accepts_unlimited_or_positive_values(max_fps: float):
-    assert get_max_fps({"max_fps": max_fps}) == float(max_fps)
+@pytest.mark.parametrize("input_fps", [-1, -1.0, 1, 12.5])
+def test_get_input_fps_accepts_unlimited_or_positive_values(input_fps: float):
+    assert get_input_fps({"input_fps": input_fps}) == float(input_fps)
 
 
-@pytest.mark.parametrize("max_fps", [-2, -0.5, 0, float("inf"), float("nan")])
-def test_get_max_fps_rejects_invalid_numeric_values(max_fps: float):
+@pytest.mark.parametrize(
+    "input_fps", [-2, -0.5, 0, float("inf"), float("nan")]
+)
+def test_get_input_fps_rejects_invalid_numeric_values(input_fps: float):
     with pytest.raises(ValueError, match="must be -1 or a positive float"):
-        get_max_fps({"max_fps": max_fps})
+        get_input_fps({"input_fps": input_fps})
 
 
-@pytest.mark.parametrize("max_fps", ["30", True])
-def test_get_max_fps_rejects_non_numeric_values(max_fps: object):
+@pytest.mark.parametrize("input_fps", ["30", True])
+def test_get_input_fps_rejects_non_numeric_values(input_fps: object):
     with pytest.raises(TypeError, match="must be of type 'float'"):
-        get_max_fps({"max_fps": max_fps})  # type: ignore[dict-item]
+        get_input_fps({"input_fps": input_fps})  # type: ignore[dict-item]

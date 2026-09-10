@@ -505,7 +505,7 @@ def benchmark(
     save: bool = False,
     repetitions: Annotated[int, Parameter(group=["RVC2", "RVC4"])] = 10,
     benchmark_time: Annotated[int, Parameter(group=["RVC2", "RVC4"])] = 20,
-    max_fps: Annotated[float, Parameter(group=["RVC2", "RVC4"])] = -1.0,
+    input_fps: Annotated[float, Parameter(group=["RVC2", "RVC4"])] = -1.0,
     num_threads: Annotated[int, Parameter(group=["RVC2", "RVC4"])] = 2,
     num_messages: Annotated[int, Parameter(group=["RVC2", "RVC4"])] = 50,
     requests: Annotated[int, Parameter(group="RVC3")] = 1,
@@ -543,7 +543,7 @@ def benchmark(
             for DAI benchmark.
         benchmark_time: The duration in seconds for time-based
             benchmarking (overrides repetitions).
-        max_fps: Maximum rate at which inputs are sent by the DAI
+        input_fps: Rate at which inputs are sent by the DAI
             benchmark. Use ``-1`` for no limit.
         num_threads: The number of threads to use for inference. Only
             relevant for DAI benchmark.
@@ -573,7 +573,7 @@ def benchmark(
         kwargs: Configuration = {
             "repetitions": repetitions,
             "benchmark_time": benchmark_time,
-            "max_fps": max_fps,
+            "input_fps": input_fps,
             "num_threads": num_threads,
             "num_messages": num_messages,
         }

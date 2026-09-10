@@ -16,7 +16,7 @@ from modelconverter.platforms.base_benchmark import (
     Benchmark,
     Configuration,
     Result,
-    get_max_fps,
+    get_input_fps,
     get_option,
 )
 from modelconverter.utils import create_progress_handler, environ
@@ -40,8 +40,8 @@ class RVC2Benchmark(Benchmark):
             ``benchmark_time``
                 Duration in seconds for time-based benchmarking (overrides
                 ``repetitions``).
-            ``max_fps``
-                Maximum rate at which inputs are sent. ``-1`` removes the
+            ``input_fps``
+                Rate at which inputs are sent. ``-1`` removes the
                 limit.
             ``num_messages``
                 The number of messages measured for each report.
@@ -51,7 +51,7 @@ class RVC2Benchmark(Benchmark):
         return {
             "repetitions": 10,
             "benchmark_time": 20,
-            "max_fps": -1.0,
+            "input_fps": -1.0,
             "num_messages": 50,
             "num_threads": 2,
         }
@@ -84,7 +84,7 @@ class RVC2Benchmark(Benchmark):
             num_messages=get_option(configuration, "num_messages", int),
             num_threads=get_option(configuration, "num_threads", int),
             benchmark_time=get_option(configuration, "benchmark_time", int),
-            max_fps=get_max_fps(configuration),
+            input_fps=get_input_fps(configuration),
         )
 
     @staticmethod
@@ -94,7 +94,7 @@ class RVC2Benchmark(Benchmark):
         num_messages: int,
         num_threads: int,
         benchmark_time: int,
-        max_fps: float,
+        input_fps: float,
     ) -> Result:
         device = dai.Device()
         if device.getPlatform() != dai.Platform.RVC2:
@@ -161,7 +161,7 @@ class RVC2Benchmark(Benchmark):
             with dai.Pipeline(device) as pipeline:
                 benchmarkOut = pipeline.create(dai.node.BenchmarkOut)
                 benchmarkOut.setRunOnHost(False)
-                benchmarkOut.setFps(max_fps)
+                benchmarkOut.setFps(input_fps)
 
                 neuralNetwork = pipeline.create(dai.node.NeuralNetwork)
                 if isinstance(model_path, str) or str(model_path).endswith(
