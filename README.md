@@ -13,6 +13,9 @@ Convert your **ONNX**, **OpenVINO IR** and **TensorFlow Lite** models to a forma
 
 `ModelConverter` is in an experimental public beta stage. Some parts might change in the future.
 
+For complete CLI and Python API documentation, see the
+[ModelConverter documentation and API reference](https://docs.luxonis.com/software-v3/ai-inference/conversion/rvc-conversion/offline/modelconverter/modelconverter-api-reference/).
+
 ## Table of Contents
 
 - [Installation](#installation)
