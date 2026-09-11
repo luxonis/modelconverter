@@ -21,6 +21,7 @@ from luxonis_ml.typing import Params
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
+    PreprocessingEmbeddingError,
     exit_with,
     onnx_attach_normalization_to_inputs,
     read_image,
@@ -95,6 +96,8 @@ class RVC4Exporter(Exporter):
         else:
             self._htp_socs = rvc4_cfg.htp_socs
 
+        requested_inputs = self._validate_requested_preprocessing()
+
         if self.config.input_file_type == InputFileType.ONNX:
             self._input_model = onnx_attach_normalization_to_inputs(
                 self._input_model,
@@ -129,9 +132,13 @@ class RVC4Exporter(Exporter):
                 finally:
                     if onnx_modifier.output_path.exists():  # pragma: no cover
                         onnx_modifier.output_path.unlink()
-        else:
-            logger.warning(
-                "Input file type is not ONNX. Skipping pre-processing."
+        elif requested_inputs:
+            names = ", ".join(requested_inputs)
+            raise PreprocessingEmbeddingError(
+                "RVC4 can only embed requested preprocessing into ONNX "
+                f"models; input(s) {names} still require preprocessing. "
+                "Use an ONNX source or `--archive-preprocess --to "
+                "nn_archive`."
             )
         self._raw_img_dir = self.intermediate_outputs_dir / "raw_files"
         self._input_list_path = self.intermediate_outputs_dir / "img_list.txt"

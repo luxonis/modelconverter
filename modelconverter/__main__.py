@@ -47,9 +47,11 @@ from modelconverter.platforms import (
     get_visualizer,
 )
 from modelconverter.platforms.base_benchmark import Configuration
+from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.platforms.multistage_exporter import MultiStageExporter
 from modelconverter.utils import (
     ModelconverterException,
+    PreprocessingEmbeddingError,
     archive_from_model,
     docker_build,
     docker_exec,
@@ -165,9 +167,11 @@ def convert(
             Only needed for multistage configs and when converting to
             NN Archive. When converting from NN Archive, the stage names
             are named the same as the model files without the suffix.
-        archive_preprocess: Add the pre-processing to the NN archive
-            instead of the model. In case of conversion from archive to
-            archive, it moves the preprocessing to the new archive.
+        archive_preprocess: Force preprocessing into NN Archive metadata
+            instead of embedding it in the model. Only valid with
+            ``to="nn_archive"``. Without this option, preprocessing is first
+            embedded when possible and otherwise falls back to archive
+            metadata for NN Archive output.
 
     """
 
@@ -187,6 +191,7 @@ def convert(
     overrides: list[str] = list(opts)
     conversion_start: float | None = None
     conversion_summary: dict[str, ParamValue] | None = None
+    configuration_captured = False
     output_artifact_count: int | None = None
     uploaded_output = False
     uploaded_intermediate_outputs = False
@@ -194,6 +199,12 @@ def convert(
     caught_exc: BaseException | None = None
 
     try:
+        if archive_preprocess and to != "nn_archive":
+            raise ModelconverterException(
+                "`--archive-preprocess` requires `--to nn_archive`; native "
+                "output cannot store externalized preprocessing."
+            )
+
         main_stage_provided = main_stage is not None
         if path is not None:
             suffix = Path(path).suffix
@@ -233,8 +244,26 @@ def convert(
             raise ValueError(
                 "Main stage name must be provided for multistage models."
             )
+
+        for stage in cfg.stages.values():
+            for inp in stage.inputs:
+                try:
+                    if inp.requires_input_preprocessing():
+                        inp.validate_preprocessing()
+                    else:
+                        inp.validate_input_contract()
+                except ValueError as error:
+                    raise ModelconverterException(str(error)) from error
+
         preprocessing = {}
+        preprocessing_input_types: dict[str, Literal["raw", "image"]] = {}
+        preprocessing_externalized = archive_preprocess
         if archive_preprocess:
+            stage = next(iter(cfg.stages.values()))
+            preprocessing_input_types = {
+                inp.name: "raw" if inp.is_raw_input else "image"
+                for inp in stage.inputs
+            }
             cfg, preprocessing = extract_preprocessing(cfg)
 
         output_path = get_output_dir_name(platform, cfg.name, output_dir)
@@ -244,46 +273,108 @@ def convert(
             file=str(output_path / "modelconverter.log"),
             use_rich=cfg.rich_logging,
         )
-        if is_multistage:
-            exporter = MultiStageExporter(
-                platform=platform, config=cfg, output_dir=output_path
+        if archive_preprocess:
+            logger.info(
+                "`--archive-preprocess` was specified; storing input "
+                "preprocessing in the NN Archive instead of baking it into "
+                "the converted model."
             )
-        else:
-            exporter = get_exporter(
+
+        def externalize_after_embedding_failure(
+            error: PreprocessingEmbeddingError,
+        ) -> bool:
+            """Move preprocessing to the archive when retrying is safe."""
+            nonlocal cfg, preprocessing, preprocessing_externalized
+            nonlocal preprocessing_input_types
+            if (
+                to != "nn_archive"
+                or preprocessing_externalized
+                or is_multistage
+            ):
+                return False
+
+            stage = next(iter(cfg.stages.values()))
+            preprocessing_input_types = {
+                inp.name: "raw" if inp.is_raw_input else "image"
+                for inp in stage.inputs
+            }
+            input_names = [
+                inp.name
+                for inp in stage.inputs
+                if inp.requires_input_preprocessing()
+            ]
+            if not input_names:
+                return False
+
+            cfg, preprocessing = extract_preprocessing(cfg)
+            preprocessing_externalized = True
+            names = ", ".join(input_names)
+            logger.warning(
+                f"Could not embed preprocessing for input(s) {names}: "
+                f"{error}. Falling back to NN Archive preprocessing; the "
+                "converted model will not contain these preprocessing "
+                "operations."
+            )
+            return True
+
+        def make_exporter() -> Exporter | MultiStageExporter:
+            if is_multistage:
+                return MultiStageExporter(
+                    platform=platform, config=cfg, output_dir=output_path
+                )
+            return get_exporter(
                 platform,
                 config=next(iter(cfg.stages.values())),
                 output_dir=output_path,
             )
 
-        conversion_summary = build_flow_properties(
-            conversion_run_id,
-            TelemetryFlowStep.CONFIGURATION_RESOLVED,
-            build_conversion_summary(
-                cfg,
-                platform=platform,
-                config_source=detect_config_source(
-                    original_path, overrides, archive_cfg
+        def resolved_conversion_summary() -> dict[str, ParamValue]:
+            """Build telemetry from the effective preprocessing placement."""
+            return build_flow_properties(
+                conversion_run_id,
+                TelemetryFlowStep.CONFIGURATION_RESOLVED,
+                build_conversion_summary(
+                    cfg,
+                    platform=platform,
+                    config_source=detect_config_source(
+                        original_path, overrides, archive_cfg
+                    ),
+                    archive_output_mode=ArchiveOutputMode(to),
+                    archive_preprocess=preprocessing_externalized,
+                    main_stage_provided=main_stage_provided,
                 ),
-                archive_output_mode=ArchiveOutputMode(to),
-                archive_preprocess=archive_preprocess,
-                main_stage_provided=main_stage_provided,
-            ),
-        )
+            )
+
+        try:
+            exporter = make_exporter()
+        except PreprocessingEmbeddingError as error:
+            if not externalize_after_embedding_failure(error):
+                raise
+            conversion_summary = resolved_conversion_summary()
+            exporter = make_exporter()
+        conversion_summary = resolved_conversion_summary()
+
+        conversion_start = time.monotonic()
+        phase = ConversionPhase.CONVERSION
+        try:
+            out_models = exporter.run()
+        except PreprocessingEmbeddingError as error:
+            if not externalize_after_embedding_failure(error):
+                raise
+            conversion_summary = resolved_conversion_summary()
+            exporter = make_exporter()
+            out_models = exporter.run()
+
         runtime_telemetry.capture(
             CONFIGURED_EVENT,
             conversion_summary,
             include_system_metadata=True,
             distinct_id=conversion_run_id,
         )
-
-        conversion_start = time.monotonic()
-        phase = ConversionPhase.CONVERSION
-        out_models = exporter.run()
+        configuration_captured = True
         if not isinstance(out_models, list):
             out_models = [out_models]
         if to == "nn_archive":
-            from modelconverter.platforms.base_exporter import Exporter
-
             archive_name = None
             if original_path is not None and is_nn_archive(original_path):
                 archive_filename = Path(original_path).name
@@ -304,6 +395,7 @@ def convert(
                     output_path=output_path,
                     archive_cfg=archive_cfg,
                     preprocessing=preprocessing,
+                    preprocessing_input_types=preprocessing_input_types,
                     inference_model_path=(
                         exporter.inference_model_path
                         if isinstance(exporter, Exporter)
@@ -374,6 +466,13 @@ def convert(
         logger.exception("Encountered an unexpected error!")
         raise SystemExit(2) from exc
     finally:
+        if conversion_summary is not None and not configuration_captured:
+            runtime_telemetry.capture(
+                CONFIGURED_EVENT,
+                conversion_summary,
+                include_system_metadata=True,
+                distinct_id=conversion_run_id,
+            )
         peak_ram_bytes = peak_ram_usage_bytes()
         logger.info(f"Peak RAM usage: {peak_ram_bytes / (1024 * 1024):.2f} MB")
         logger.info(

@@ -32,9 +32,14 @@ from modelconverter.utils.config import (
     Config,
     InputConfig,
     PlatformConfig,
+    broadcast_preprocessing_values,
 )
 from modelconverter.utils.constants import MISC_DIR
-from modelconverter.utils.layout import guess_new_layout, make_default_layout
+from modelconverter.utils.layout import (
+    guess_new_layout,
+    is_image_input_shape,
+    make_default_layout,
+)
 from modelconverter.utils.metadata import Metadata, get_metadata
 from modelconverter.utils.types import (
     DataType,
@@ -274,14 +279,19 @@ def modelconverter_config_to_nn(
     main_stage_key: str,
     model_path: Path,
     platform: Platform,
+    preprocessing_input_types: dict[str, Literal["raw", "image"]]
+    | None = None,
 ) -> NNArchiveConfig:
     """Build the archive config describing a converted model.
 
     Shapes and data types are taken from the converted model itself,
     layouts are guessed from the original ones, and the precision is
     derived from the platform together with its quantization settings.
-    Of the original archive config, the heads are carried over, as is
-    the type of every input and the preprocessing block of a raw one.
+    Of the original archive config, the heads are carried over. Input types
+    are derived from the effective conversion config, or restored from the
+    values captured before preprocessing was externalized. Archive
+    preprocessing is identity unless supplied explicitly through
+    ``preprocessing``.
 
     Args:
         config: Config the conversion was run with.
@@ -295,6 +305,9 @@ def modelconverter_config_to_nn(
         model_path: Path to the model whose metadata the shapes and
             data types are read from.
         platform: Platform the model was built for.
+        preprocessing_input_types: Original input types captured before
+            externalized preprocessing cleared the conversion config's
+            encodings.
 
     Returns:
         The archive config for the converted model.
@@ -387,19 +400,23 @@ def modelconverter_config_to_nn(
             mode="input",
         )
 
-        orig_inp = find_archive_input(orig_nn, inp.name)
         input_type = (
-            orig_inp.input_type.value
-            if orig_inp is not None
+            preprocessing_input_types[inp.name]
+            if preprocessing_input_types is not None
+            and inp.name in preprocessing_input_types
             else _default_archive_input_type(is_raw_input=inp.is_raw_input)
         )
-        preprocessing_cfg = (
-            orig_inp.preprocessing.model_dump(mode="json")
-            if input_type == "raw" and orig_inp is not None
-            else _default_archive_preprocessing(
+        preprocessing_block = preprocessing.get(inp.name)
+        if preprocessing_block is None:
+            preprocessing_cfg = _default_archive_preprocessing(
                 inp, layout, input_type=input_type
             )
-        )
+        else:
+            if input_type == "image":
+                preprocessing_block = _adapt_preprocessing_to_layout(
+                    preprocessing_block, layout
+                )
+            preprocessing_cfg = preprocessing_block.model_dump(mode="json")
 
         archive_cfg["model"]["inputs"].append(
             {
@@ -444,11 +461,13 @@ def modelconverter_config_to_nn(
             }
         )
 
-    archive = NNArchiveConfig(**archive_cfg)
+    input_names = {inp.name for inp in cfg.inputs}
+    unknown_preprocessing = preprocessing.keys() - input_names
+    if unknown_preprocessing:
+        names = ", ".join(sorted(unknown_preprocessing))
+        raise ValueError(f"Preprocessing input(s) not found: {names}")
 
-    for name, block in preprocessing.items():
-        nn_inp = get_archive_input(archive, name)
-        nn_inp.preprocessing = block
+    archive = NNArchiveConfig(**archive_cfg)
 
     if is_multistage:
         if len(config.stages) > 2:
@@ -469,28 +488,6 @@ def modelconverter_config_to_nn(
     return archive
 
 
-def find_archive_input(
-    cfg: NNArchiveConfig | None, name: str
-) -> NNArchiveInput | None:
-    """Look up an input of an archive config, tolerating its absence.
-
-    Args:
-        cfg: Archive config to search, or ``None`` if there is none.
-        name: Name of the input to look for.
-
-    Returns:
-        The matching archive input, or ``None`` if there is no config or
-        it declares no input of that name.
-
-    """
-    if cfg is None:
-        return None
-    for inp in cfg.model.inputs:
-        if inp.name == name:
-            return inp
-    return None
-
-
 def _default_archive_input_type(
     *, is_raw_input: bool
 ) -> Literal["raw", "image"]:
@@ -499,12 +496,49 @@ def _default_archive_input_type(
     return "image"
 
 
+def make_dai_type(
+    encoding: Encoding, data_type: DataType, layout: str | None
+) -> str:
+    """Build a DepthAI image type for an archive preprocessing block."""
+    if encoding == Encoding.NONE:
+        raise ValueError(
+            "Cannot build a DepthAI image type for Encoding.NONE."
+        )
+
+    if encoding == Encoding.GRAY:
+        channel_format = "F16" if data_type == DataType.FLOAT16 else "8"
+        return f"{encoding.value}{channel_format}"
+
+    channel_format = "F16F16F16" if data_type == DataType.FLOAT16 else "888"
+    storage = "i" if layout == "NHWC" else "p"
+    return f"{encoding.value}{channel_format}{storage}"
+
+
+def _adapt_preprocessing_to_layout(
+    block: PreprocessingBlock, layout: str
+) -> PreprocessingBlock:
+    """Return externalized image preprocessing for the converted layout."""
+    dai_type = block.dai_type
+    if dai_type is not None and dai_type.startswith(("RGB", "BGR")):
+        if dai_type.endswith(("i", "p")):
+            dai_type = dai_type[:-1]
+        dai_type += "i" if layout == "NHWC" else "p"
+
+    return block.model_copy(
+        update={
+            "interleaved_to_planar": layout == "NHWC",
+            "dai_type": dai_type,
+        }
+    )
+
+
 def _default_archive_preprocessing(
     inp: InputConfig,
     layout: str,
     *,
     input_type: Literal["raw", "image"],
 ) -> Params:
+    inp.validate_input_contract()
     if input_type == "raw":
         return {
             "mean": None,
@@ -514,17 +548,19 @@ def _default_archive_preprocessing(
             "dai_type": None,
         }
 
-    dai_type = inp.encoding.to.value
-    if inp.data_type == DataType.FLOAT16:
-        channel_format = "F16F16F16"
-    else:
-        channel_format = "888"
-    dai_type += channel_format
-    dai_type += "i" if layout == "NHWC" else "p"
+    dai_type = make_dai_type(inp.encoding.to, inp.data_type, layout)
 
     return {
-        "mean": [0 for _ in inp.mean_values] if inp.mean_values else None,
-        "scale": ([1 for _ in inp.scale_values] if inp.scale_values else None),
+        "mean": (
+            broadcast_preprocessing_values([0], inp.channel_count)
+            if inp.mean_values
+            else None
+        ),
+        "scale": (
+            broadcast_preprocessing_values([1], inp.channel_count)
+            if inp.scale_values
+            else None
+        ),
         "reverse_channels": inp.encoding.to == Encoding.RGB,
         "interleaved_to_planar": layout == "NHWC",
         "dai_type": dai_type,
@@ -534,10 +570,10 @@ def _default_archive_preprocessing(
 def archive_from_model(model_path: Path) -> NNArchiveConfig:
     """Build a bare archive config out of a model file alone.
 
-    The inputs and outputs come from the model's own metadata, every
-    input is declared as an image with a default layout and no
-    preprocessing, and no heads are declared. This is what packing an
-    unconverted model into an archive starts from.
+    The inputs and outputs come from the model's own metadata. Inputs with a
+    supported image shape and layout are declared as images; all others are
+    raw tensors. No preprocessing or heads are declared. This is what packing
+    an unconverted model into an archive starts from.
 
     Args:
         model_path: Path to the model file to describe.
@@ -562,13 +598,15 @@ def archive_from_model(model_path: Path) -> NNArchiveConfig:
     }
 
     for name, shape in metadata.input_shapes.items():
+        layout = make_default_layout(shape)
+        input_type = "image" if is_image_input_shape(shape, layout) else "raw"
         archive_cfg["model"]["inputs"].append(
             {
                 "name": name,
                 "shape": shape,
-                "layout": make_default_layout(shape),
+                "layout": layout,
                 "dtype": metadata.input_dtypes[name].value,
-                "input_type": "image",
+                "input_type": input_type,
                 "preprocessing": {
                     "mean": None,
                     "scale": None,
@@ -602,6 +640,8 @@ def generate_archive(
     preprocessing: dict[str, PreprocessingBlock],
     inference_model_path: Path,
     archive_name: str | None,
+    preprocessing_input_types: dict[str, Literal["raw", "image"]]
+    | None = None,
 ) -> Path:
     """Pack the converted models into an NN Archive.
 
@@ -624,6 +664,8 @@ def generate_archive(
             shapes and data types are read from.
         archive_name: Base name for the archive. If ``None``, the
             config's name is used.
+        preprocessing_input_types: Original input types captured before
+            externalizing preprocessing from the conversion config.
 
     Returns:
         Path to the created archive.
@@ -642,6 +684,7 @@ def generate_archive(
         main_stage,
         inference_model_path,
         platform,
+        preprocessing_input_types=preprocessing_input_types,
     )
     generator = ArchiveGenerator(
         archive_name=f"{archive_name or cfg.name}.{platform.value.lower()}",

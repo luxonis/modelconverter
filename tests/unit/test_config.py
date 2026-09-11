@@ -389,26 +389,111 @@ def test_grayscale_input_sets_gray_encoding():
     assert inp.encoding.from_ == inp.encoding.to == Encoding.GRAY
 
 
+def test_explicit_raw_one_channel_input_stays_raw():
+    inp = _input_config(
+        name="i",
+        shape=[1, 1, 64, 64],
+        layout="NCHW",
+        encoding="NONE",
+    )
+
+    assert inp.encoding.from_ == inp.encoding.to == Encoding.NONE
+    assert inp.is_raw_input
+
+
 def test_non_grayscale_channel_kept():
     inp = InputConfig(name="i", shape=[1, 3, 64, 64], layout="NCHW")
     assert inp.encoding.from_ == Encoding.RGB
+    assert inp.encoding.to == Encoding.BGR
 
 
-def test_multichannel_with_channel_dim_keeps_rgb():
-    # "C" present but the channel dim is not 1 -> not grayscale, stays RGB.
-    inp = InputConfig(name="i", shape=[1, 10], layout="NC")
-    assert inp.encoding.from_ == Encoding.RGB
+@pytest.mark.parametrize(
+    ("shape", "layout", "expected"),
+    [
+        ([1, 3, 64, 64], "NCHW", 3),
+        ([1, 0, 64, 64], "NCHW", None),
+        ([1, 3], "NA", None),
+        (None, None, None),
+    ],
+)
+def test_channel_count(
+    shape: list[int] | None, layout: str | None, expected: int | None
+):
+    inp = InputConfig(name="i", shape=shape, layout=layout)
+    assert inp.channel_count == expected
 
 
-def test_layout_without_channel_dim_keeps_rgb():
-    # No "C" in the layout -> the grayscale check early-returns, RGB stays.
-    inp = InputConfig(name="i", shape=[1, 10], layout="NA")
-    assert inp.encoding.from_ == Encoding.RGB
+@pytest.mark.parametrize("channels", [2, 4, 6])
+def test_implicit_non_image_encoding_defaults_to_none(channels: int):
+    inp = InputConfig(
+        name="i",
+        shape=[1, channels, 64, 64],
+        layout="NCHW",
+    )
+
+    assert inp.encoding.from_ == inp.encoding.to == Encoding.NONE
+    assert inp.is_raw_input
+    inp.validate_input_contract()
+
+
+def test_implicit_non_image_encoding_uses_inferred_layout():
+    inp = InputConfig(name="i", shape=[1, 4, 64, 64])
+
+    assert inp.layout == "NCHW"
+    assert inp.encoding.from_ == inp.encoding.to == Encoding.NONE
+
+
+@pytest.mark.parametrize(
+    ("shape", "layout", "expected_layout"),
+    [
+        ([1, 3, 8400], None, "NCD"),
+        ([32, 32, 3], "HWC", "HWC"),
+        ([1, 3, 4, 224, 224], None, "NCDEF"),
+        ([1, 10], "NA", "NA"),
+    ],
+)
+def test_implicit_non_image_layout_defaults_to_none(
+    shape: list[int], layout: str | None, expected_layout: str
+):
+    inp = InputConfig(name="i", shape=shape, layout=layout)
+
+    assert inp.layout == expected_layout
+    assert inp.encoding.from_ == inp.encoding.to == Encoding.NONE
+    assert inp.is_raw_input
+    inp.validate_input_contract()
+
+
+def test_invalid_input_layout_reaches_layout_validation():
+    with pytest.raises(ValueError, match="Length of `layout`"):
+        InputConfig(name="i", shape=[1], layout="NC")
+
+
+def test_non_three_channel_input_rejects_color_encoding():
+    inp = _input_config(
+        name="i",
+        shape=[1, 10],
+        layout="NC",
+        encoding="RGB",
+    )
+    with pytest.raises(ValueError, match="cannot use RGB/BGR encoding"):
+        inp.validate_input_contract()
+
+
+def test_multichannel_input_rejects_gray_encoding():
+    inp = _input_config(
+        name="i", shape=[1, 3, 64, 64], layout="NCHW", encoding="GRAY"
+    )
+    with pytest.raises(ValueError, match="cannot use GRAY encoding"):
+        inp.validate_input_contract()
 
 
 def test_dynamic_batch_size_set_to_one():
-    inp = InputConfig(name="i", shape=[0, 3, 64, 64], layout="NCHW")
+    inp = InputConfig(name="i", shape=[0, 3, 64, 64])
     assert inp.shape == [1, 3, 64, 64]
+    assert inp.layout == "NCHW"
+    assert inp.encoding.from_ == Encoding.RGB
+    assert inp.encoding.to == Encoding.BGR
+    inp.validate_input_contract()
 
 
 def test_no_layout_short_circuits_grayscale():
@@ -426,9 +511,40 @@ def test_named_scale_values():
     assert inp.scale_values == [58.395, 57.12, 57.375]
 
 
-def test_scalar_mean_value_broadcasts_over_channels():
+def test_scalar_mean_value_is_preserved_for_later_broadcast():
     inp = _input_config(name="i", mean_values=127)
-    assert inp.mean_values == [127, 127, 127]
+    assert inp.mean_values == [127]
+
+
+def test_zero_scale_value_is_rejected():
+    with pytest.raises(ValueError, match="zero scale value"):
+        _input_config(name="i", scale_values=[1, 0, 2])
+
+
+def test_zero_scale_value_is_rejected_after_assignment():
+    inp = _input_config(name="i", scale_values=[1, 2, 3])
+    inp.scale_values = [1, 0, 3]
+
+    with pytest.raises(ValueError, match="zero scale value"):
+        inp.validate_input_contract()
+
+
+@pytest.mark.parametrize(
+    ("field", "values"),
+    [("mean_values", [0, 0]), ("scale_values", [1, 1])],
+)
+def test_neutral_preprocessing_value_count_is_validated(
+    field: str, values: list[int]
+):
+    inp = _input_config(
+        name="i",
+        shape=[1, 3, 64, 64],
+        layout="NCHW",
+        encoding="BGR",
+        **{field: values},
+    )
+    with pytest.raises(ValueError, match="one value per channel"):
+        inp.validate_input_contract()
 
 
 def test_explicit_scale_values_pass_through():
@@ -441,24 +557,24 @@ def test_unset_mean_values_stay_none():
     assert inp.mean_values is None
 
 
-def test_encoding_mismatch_requires_onnx_modification():
+def test_encoding_mismatch_requires_preprocessing():
     inp = _input_config(name="i", encoding={"from": "RGB", "to": "BGR"})
-    assert inp.requires_onnx_input_modification()
+    assert inp.requires_input_preprocessing()
 
 
 def test_reverse_only_ignores_mean_and_scale():
     inp = _input_config(name="i", encoding="RGB", mean_values=[1, 2, 3])
-    assert not inp.requires_onnx_input_modification(reverse_only=True)
+    assert not inp.requires_input_preprocessing(reverse_only=True)
 
 
-def test_normalization_requires_onnx_modification():
+def test_normalization_requires_preprocessing():
     inp = _input_config(name="i", encoding="RGB", scale_values=[2, 2, 2])
-    assert inp.requires_onnx_input_modification()
+    assert inp.requires_input_preprocessing()
 
 
-def test_plain_input_needs_no_onnx_modification():
+def test_plain_input_needs_no_preprocessing():
     inp = _input_config(name="i", encoding="RGB")
-    assert not inp.requires_onnx_input_modification()
+    assert not inp.requires_input_preprocessing()
 
 
 def test_raw_and_colour_input_properties():

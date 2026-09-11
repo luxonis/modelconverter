@@ -43,7 +43,25 @@ def test_rvc4_raw_calibration(tmp_path: Path):
 @pytest.mark.hailo
 def test_hailo_without_calibration(tmp_path: Path):
     # No calibration data at all; `disable_calibration` returns the float HAR.
-    config = write_toy_conv_config(tmp_path, calibration="none")
+    # The input is explicitly raw because without calibration Hailo does not
+    # execute the model script that would embed requested preprocessing.
+    onnx_path = build_relu_onnx(tmp_path / "no-calib.onnx", [1, 3, 8, 8])
+    config = write_config(
+        tmp_path,
+        "no-calib",
+        {
+            "input_model": str(onnx_path),
+            "inputs": [
+                {
+                    "name": "data",
+                    "shape": [1, 3, 8, 8],
+                    "layout": "NCHW",
+                    "encoding": "NONE",
+                }
+            ],
+            "outputs": [{"name": "out"}],
+        },
+    )
     output_name = "_hailo-no-calib"
     convert(
         Platform.HAILO,

@@ -18,14 +18,17 @@ from loguru import logger
 from onnx import TensorProto, checker, helper
 from onnxsim import simplify
 
-from modelconverter.utils.config import InputConfig
+from modelconverter.utils.config import (
+    InputConfig,
+    broadcast_preprocessing_values,
+)
 from modelconverter.utils.onnx_compatibility import (
     ensure_onnx_helper_compatibility,
     has_external_data,
     save_onnx_model,
 )
 
-from .exceptions import ONNXException
+from .exceptions import ONNXException, PreprocessingEmbeddingError
 
 ensure_onnx_helper_compatibility()
 
@@ -72,14 +75,9 @@ def onnx_attach_normalization_to_inputs(
         y_c = (x_c - \mathrm{mean}_c) \cdot \frac{1}{\mathrm{scale}_c}
 
     for every channel :math:`c`. The resulting model is saved and
-    validated with the ONNX checker. Inputs whose layout is neither
-    ``"NCHW"`` nor ``"NHWC"``, and inputs with a known channel count
-    other than 3, are skipped with a warning.
-
-    .. warning::
-        The mean and scale values of an input whose channels are
-        reversed are reversed in place, so the `InputConfig` objects
-        the caller passed in are modified.
+    validated with the ONNX checker. Mean and scale normalization supports
+    any known channel count; color-channel reversal requires exactly three
+    channels. A scalar mean or scale broadcasts to every channel.
 
     Args:
         model_path: Path to the source ONNX model.
@@ -93,12 +91,13 @@ def onnx_attach_normalization_to_inputs(
         unmodified ``model_path``.
 
     Raises:
-        ONNXException: If ``input_configs`` names a tensor that is not
-            an input of the graph.
+        ONNXException: If the preprocessing request or source model is invalid.
+        PreprocessingEmbeddingError: If valid preprocessing cannot be embedded
+            into this ONNX graph.
 
     """
     if not any(
-        cfg.requires_onnx_input_modification(reverse_only=reverse_only)
+        cfg.requires_input_preprocessing(reverse_only=reverse_only)
         for cfg in input_configs.values()
     ):
         logger.info(
@@ -114,6 +113,7 @@ def onnx_attach_normalization_to_inputs(
     new_nodes = []
     new_initializers = []
     input_names = [input_tensor.name for input_tensor in graph.input]
+    output_names = {output_tensor.name for output_tensor in graph.output}
     if not all(name in input_names for name in input_configs):
         raise ONNXException(
             "You either used an invalid input name, or you're attempting "
@@ -128,34 +128,66 @@ def onnx_attach_normalization_to_inputs(
         if input_name not in input_configs:
             continue
         cfg = input_configs[input_name]
-        if not cfg.requires_onnx_input_modification(reverse_only=reverse_only):
+        if not cfg.requires_input_preprocessing(reverse_only=reverse_only):
             continue
 
-        shape = cfg.shape
-        layout = cfg.layout or "NCHW"
-        if layout not in ["NCHW", "NHWC"]:
-            logger.warning(
-                f"Input '{input_name}' has layout '{layout}', "
-                "but only 'NCHW' and 'NHWC' are supported for normalization. "
-                "Skipping."
+        if input_name in output_names:
+            raise PreprocessingEmbeddingError(
+                f"Cannot embed preprocessing for input '{input_name}' because "
+                "the same tensor is exposed directly as a graph output."
             )
-            continue
 
-        if shape is not None:
-            n_channels = shape[layout.index("C")]
-            if n_channels != 3:
-                logger.warning(
-                    f"Input '{input_name}' has {n_channels} channels, "
-                    "but normalization is only supported for 3 channels. "
-                    "Skipping."
-                )
-                continue
+        try:
+            n_channels = cfg.validate_preprocessing(reverse_only=reverse_only)
+        except ValueError as e:
+            raise ONNXException(str(e)) from e
+
+        layout = cfg.layout
+        if layout not in ["NCHW", "NHWC"]:
+            raise PreprocessingEmbeddingError(
+                f"Cannot embed preprocessing for input '{input_name}' with "
+                f"layout '{layout}'; only 'NCHW' and 'NHWC' are supported."
+            )
+
+        mean_values = (
+            None
+            if reverse_only or cfg.mean_values is None
+            else broadcast_preprocessing_values(cfg.mean_values, n_channels)
+        )
+        scale_values = (
+            None
+            if reverse_only or cfg.scale_values is None
+            else broadcast_preprocessing_values(cfg.scale_values, n_channels)
+        )
+
+        normalization_requested = (
+            mean_values is not None and any(v != 0 for v in mean_values)
+        ) or (scale_values is not None and any(v != 1 for v in scale_values))
+        floating_types = {
+            TensorProto.FLOAT16,
+            TensorProto.FLOAT,
+            TensorProto.DOUBLE,
+            TensorProto.BFLOAT16,
+        }
+        if normalization_requested and input_dtype not in floating_types:
+            dtype_name = TensorProto.DataType.Name(input_dtype)
+            raise PreprocessingEmbeddingError(
+                f"Cannot embed mean/scale preprocessing for input "
+                f"'{input_name}' with ONNX data type '{dtype_name}'; "
+                "normalization requires a floating-point input."
+            )
 
         last_output = input_name
 
         # 1. Reverse channels if needed
         if cfg.encoding_mismatch:
-            opset = get_opset_version(model)
+            try:
+                opset = get_opset_version(model)
+            except ONNXException as e:
+                raise PreprocessingEmbeddingError(
+                    f"Cannot embed channel reversal for input '{input_name}': "
+                    f"{e}"
+                ) from e
             split_names = [f"split_{i}_{input_name}" for i in range(3)]
             axis = 1 if layout == "NCHW" else 3
 
@@ -197,14 +229,7 @@ def onnx_attach_normalization_to_inputs(
             last_output = f"normalized_{input_name}"
 
         # 2. Subtract (mean) if mean_values is not None and not all 0
-        if (
-            not reverse_only
-            and cfg.mean_values is not None
-            and any(v != 0 for v in cfg.mean_values)
-        ):
-            if cfg.encoding_mismatch:
-                cfg.mean_values = cfg.mean_values[::-1]
-
+        if mean_values is not None and any(v != 0 for v in mean_values):
             sub_out = f"sub_out_{input_name}"
             sub_node = helper.make_node(
                 "Sub",
@@ -218,22 +243,15 @@ def onnx_attach_normalization_to_inputs(
             mean_tensor = helper.make_tensor(
                 f"mean_{input_name}",
                 input_dtype,
-                [1, len(cfg.mean_values), 1, 1]
+                [1, len(mean_values), 1, 1]
                 if layout == "NCHW"
-                else [1, 1, 1, len(cfg.mean_values)],
-                cfg.mean_values,
+                else [1, 1, 1, len(mean_values)],
+                mean_values,
             )
             new_initializers.append(mean_tensor)
 
         # 3. Divide (scale) if scale_values is not None and not all 1
-        if (
-            not reverse_only
-            and cfg.scale_values is not None
-            and any(v != 1 for v in cfg.scale_values)
-        ):
-            if cfg.encoding_mismatch:
-                cfg.scale_values = cfg.scale_values[::-1]
-
+        if scale_values is not None and any(v != 1 for v in scale_values):
             div_out = f"div_out_{input_name}"
             div_node = helper.make_node(
                 "Mul",
@@ -247,10 +265,10 @@ def onnx_attach_normalization_to_inputs(
             scale_tensor = helper.make_tensor(
                 f"scale_{input_name}",
                 input_dtype,
-                [1, len(cfg.scale_values), 1, 1]
+                [1, len(scale_values), 1, 1]
                 if layout == "NCHW"
-                else [1, 1, 1, len(cfg.scale_values)],
-                [1 / v for v in cfg.scale_values],
+                else [1, 1, 1, len(scale_values)],
+                [1 / v for v in scale_values],
             )
             new_initializers.append(scale_tensor)
 
@@ -288,7 +306,13 @@ def onnx_attach_normalization_to_inputs(
         location=f"{save_path.name}_data",
     )
 
-    checker.check_model(str(save_path))
+    try:
+        checker.check_model(str(save_path))
+    except checker.ValidationError as e:
+        raise PreprocessingEmbeddingError(
+            "The ONNX graph produced while embedding preprocessing failed "
+            f"validation: {e}"
+        ) from e
 
     return save_path
 

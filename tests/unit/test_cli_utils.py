@@ -27,7 +27,7 @@ from tests.helpers.archive_factory import (
     default_archive_config,
     pack_archive,
 )
-from tests.helpers.onnx_factory import standard_dummy_onnx
+from tests.helpers.onnx_factory import grayscale_onnx, standard_dummy_onnx
 
 
 def _single_stage_config(dummy_onnx: Path, **overrides) -> Config:
@@ -314,6 +314,37 @@ def test_image_input_rgb_planar(dummy_onnx: Path):
     assert stage.inputs[0].encoding.from_ == Encoding.NONE
 
 
+def test_externalized_preprocessing_uses_model_side_encoding(
+    dummy_onnx: Path,
+):
+    cfg = _single_stage_config(
+        dummy_onnx, encoding={"from": "RGB", "to": "BGR"}
+    )
+
+    _cfg, preprocessing = extract_preprocessing(cfg)
+
+    block = preprocessing["input0"]
+    assert block.dai_type == "RGB888p"
+    assert block.reverse_channels is True
+
+
+def test_externalized_scalar_preprocessing_expands_per_channel(
+    dummy_onnx: Path,
+):
+    cfg = _single_stage_config(
+        dummy_onnx,
+        encoding="RGB",
+        mean_values=127.5,
+        scale_values=255.0,
+    )
+
+    _cfg, preprocessing = extract_preprocessing(cfg)
+
+    block = preprocessing["input0"]
+    assert block.mean == [127.5, 127.5, 127.5]
+    assert block.scale == [255.0, 255.0, 255.0]
+
+
 def test_raw_input_with_mean_scale(dummy_onnx: Path):
     cfg = _single_stage_config(
         dummy_onnx,
@@ -343,3 +374,28 @@ def test_image_input_float16_channel_type(dummy_onnx: Path):
     dai_type = preprocessing["input0"].dai_type
     assert dai_type is not None
     assert dai_type.startswith("RGBF16F16F16")
+
+
+@pytest.mark.parametrize(
+    ("data_type", "expected_dai_type"),
+    [("float32", "GRAY8"), ("float16", "GRAYF16")],
+)
+def test_externalized_grayscale_uses_valid_dai_type(
+    tmp_path: Path, data_type: str, expected_dai_type: str
+):
+    model = grayscale_onnx(tmp_path / "gray.onnx")
+    cfg = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "encoding": "GRAY",
+            "data_type": data_type,
+        },
+    )
+
+    _cfg, preprocessing = extract_preprocessing(cfg)
+
+    block = next(iter(preprocessing.values()))
+    assert block.dai_type == expected_dai_type
+    assert block.mean == [0]
+    assert block.scale == [1]

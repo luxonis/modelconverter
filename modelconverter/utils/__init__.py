@@ -29,6 +29,8 @@ from .docker_utils import (
 from .environ import environ
 from .exceptions import (
     ModelconverterException,
+    ONNXException,
+    PreprocessingEmbeddingError,
     S3Exception,
     exit_with,
 )
@@ -46,6 +48,7 @@ from .metadata import Metadata, get_metadata
 from .nn_archive import (
     archive_from_model,
     get_archive_input,
+    make_dai_type,
     modelconverter_config_to_nn,
     process_nn_archive,
 )
@@ -65,7 +68,9 @@ __all__ = [
     "DeviceMonitor",
     "Metadata",
     "ModelconverterException",
+    "ONNXException",
     "ONNXModifier",
+    "PreprocessingEmbeddingError",
     "S3Exception",
     "SSHHandler",
     "SubprocessHandle",
@@ -90,6 +95,7 @@ __all__ = [
     "guess_new_layout",
     "in_docker",
     "is_hubai_model_variant_available",
+    "make_dai_type",
     "make_default_layout",
     "modelconverter_config_to_nn",
     "onnx_attach_normalization_to_inputs",

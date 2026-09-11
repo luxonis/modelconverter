@@ -13,7 +13,11 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from modelconverter.utils.layout import guess_new_layout, make_default_layout
+from modelconverter.utils.layout import (
+    guess_new_layout,
+    is_image_input_shape,
+    make_default_layout,
+)
 from tests.helpers.strategies import shape_permutations, shapes
 
 
@@ -21,6 +25,7 @@ from tests.helpers.strategies import shape_permutations, shapes
     ("shape", "expected"),
     [
         ([1, 3, 256, 256], "NCHW"),
+        ([0, 3, 256, 256], "NCHW"),
         ([1, 256, 256, 3], "NHWC"),
         # Leading 1 -> "N", remaining three dims are not min-channel
         # patterns, so the alphabet fallback (starting at "C") kicks in.
@@ -35,6 +40,24 @@ def test_no_leading_one():
     layout = make_default_layout([3, 4, 5])
     assert len(layout) == 3
     assert "N" not in layout
+
+
+@pytest.mark.parametrize(
+    ("shape", "layout", "expected"),
+    [
+        ([1, 3, 224, 224], "NCHW", True),
+        ([1, 224, 224, 3], "NHWC", True),
+        ([1, 1, 224, 224], "NCHW", True),
+        ([1, 0, 224, 224], "NCHW", True),
+        ([1, 4, 224, 224], "NCHW", False),
+        ([1, 512], "NC", False),
+        ([1, 3, 8400], "NCD", False),
+        ([224, 224, 3], "HWC", False),
+        ([1, 3, 224, 224], "NHWC", False),
+    ],
+)
+def test_image_input_shape(shape: list[int], layout: str, expected: bool):
+    assert is_image_input_shape(shape, layout) is expected
 
 
 def test_letter_collision_loop():
@@ -77,6 +100,11 @@ def test_every_dimension_gets_a_distinct_letter(shape: list[int]):
 @given(rest=shapes(max_rank=15))
 def test_leading_one_is_the_batch_dimension(rest: list[int]):
     assert make_default_layout([1, *rest]).startswith("N")
+
+
+@given(rest=shapes(max_rank=15))
+def test_leading_zero_is_the_batch_dimension(rest: list[int]):
+    assert make_default_layout([0, *rest]).startswith("N")
 
 
 @given(shape_and_permutation=shape_permutations())

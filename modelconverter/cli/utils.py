@@ -20,11 +20,12 @@ from luxonis_ml.typing import Params
 
 from modelconverter.utils import (
     ModelconverterException,
+    make_dai_type,
     process_nn_archive,
     resolve_path,
     sanitize_net_name,
 )
-from modelconverter.utils.config import Config
+from modelconverter.utils.config import Config, broadcast_preprocessing_values
 from modelconverter.utils.constants import (
     CALIBRATION_DIR,
     CONFIGS_DIR,
@@ -36,7 +37,7 @@ from modelconverter.utils.constants import (
     in_docker,
 )
 from modelconverter.utils.filesystem_utils import set_input_base
-from modelconverter.utils.types import DataType, Encoding, Platform
+from modelconverter.utils.types import Encoding, Platform
 
 
 def resolve_output_dir(output_dir: str) -> Path:
@@ -237,8 +238,17 @@ def extract_preprocessing(
     stage_cfg = next(iter(cfg.stages.values()))
     preprocessing = {}
     for inp in stage_cfg.inputs:
-        mean = inp.mean_values
-        scale = inp.scale_values
+        inp.validate_input_contract()
+        mean = (
+            broadcast_preprocessing_values(inp.mean_values, inp.channel_count)
+            if inp.mean_values is not None
+            else None
+        )
+        scale = (
+            broadcast_preprocessing_values(inp.scale_values, inp.channel_count)
+            if inp.scale_values is not None
+            else None
+        )
         encoding = inp.encoding
         layout = inp.layout
 
@@ -252,18 +262,21 @@ def extract_preprocessing(
                     dai_type=None,
                 )
         else:
-            dai_type = encoding.to.value
-            if inp.data_type == DataType.FLOAT16:
-                channel_type = "F16F16F16"
-            else:
-                channel_type = "888"
-            dai_type += channel_type
-            dai_type += "i" if layout == "NHWC" else "p"
+            # Once preprocessing is externalized, the converted model is fed
+            # directly in the format expected by the source graph.
+            dai_type = make_dai_type(encoding.from_, inp.data_type, layout)
+            identity_value_count = 1 if encoding.from_ == Encoding.GRAY else 3
 
             preprocessing[inp.name] = PreprocessingBlock(
-                mean=mean or [0, 0, 0],
-                scale=scale or [1, 1, 1],
-                reverse_channels=encoding.to == Encoding.RGB,
+                mean=(
+                    mean if mean is not None else [0.0] * identity_value_count
+                ),
+                scale=(
+                    scale
+                    if scale is not None
+                    else [1.0] * identity_value_count
+                ),
+                reverse_channels=encoding.from_ == Encoding.RGB,
                 interleaved_to_planar=layout == "NHWC",
                 dai_type=dai_type,
             )
