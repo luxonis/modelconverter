@@ -427,6 +427,26 @@ def test_implicit_non_image_encoding_uses_inferred_layout():
     assert inp.encoding.from_ == inp.encoding.to == Encoding.NONE
 
 
+@pytest.mark.parametrize(
+    ("shape", "layout", "expected_layout"),
+    [
+        ([1, 3, 8400], None, "NCD"),
+        ([32, 32, 3], "HWC", "HWC"),
+        ([1, 3, 4, 224, 224], None, "NCDEF"),
+        ([1, 10], "NA", "NA"),
+    ],
+)
+def test_implicit_non_image_layout_defaults_to_none(
+    shape: list[int], layout: str | None, expected_layout: str
+):
+    inp = InputConfig(name="i", shape=shape, layout=layout)
+
+    assert inp.layout == expected_layout
+    assert inp.encoding.from_ == inp.encoding.to == Encoding.NONE
+    assert inp.is_raw_input
+    inp.validate_input_contract()
+
+
 def test_invalid_input_layout_reaches_layout_validation():
     with pytest.raises(ValueError, match="Length of `layout`"):
         InputConfig(name="i", shape=[1], layout="NC")
@@ -449,12 +469,6 @@ def test_multichannel_input_rejects_gray_encoding():
     )
     with pytest.raises(ValueError, match="cannot use GRAY encoding"):
         inp.validate_input_contract()
-
-
-def test_layout_without_channel_dim_keeps_rgb():
-    # No "C" in the layout -> the grayscale check early-returns, RGB stays.
-    inp = InputConfig(name="i", shape=[1, 10], layout="NA")
-    assert inp.encoding.from_ == Encoding.RGB
 
 
 def test_dynamic_batch_size_set_to_one():

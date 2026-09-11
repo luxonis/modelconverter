@@ -134,8 +134,6 @@ def test_rvc4_ncd_layout(tmp_path: Path):
     output_name = "_rvc4-ncd"
     convert(
         Platform.RVC4,
-        "encoding",
-        "NONE",
         "rvc4.disable_calibration",
         "True",
         path=str(onnx_path),

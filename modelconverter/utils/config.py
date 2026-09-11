@@ -340,12 +340,18 @@ class InputConfig(OutputConfig):
                     if layout is None
                     else layout.upper()
                 )
-                if (
-                    len(resolved_layout) == len(int_shape)
-                    and "C" in resolved_layout
-                ):
-                    channels = int_shape[resolved_layout.index("C")]
-                    if channels > 0 and channels not in {1, 3}:
+                if len(resolved_layout) == len(int_shape):
+                    image_layout = resolved_layout in {"NCHW", "NHWC"}
+                    channels = (
+                        int_shape[resolved_layout.index("C")]
+                        if "C" in resolved_layout
+                        else None
+                    )
+                    if not image_layout or (
+                        channels is not None
+                        and channels > 0
+                        and channels not in {1, 3}
+                    ):
                         data["encoding"] = {
                             "from": "NONE",
                             "to": "NONE",
