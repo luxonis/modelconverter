@@ -458,8 +458,12 @@ def test_layout_without_channel_dim_keeps_rgb():
 
 
 def test_dynamic_batch_size_set_to_one():
-    inp = InputConfig(name="i", shape=[0, 3, 64, 64], layout="NCHW")
+    inp = InputConfig(name="i", shape=[0, 3, 64, 64])
     assert inp.shape == [1, 3, 64, 64]
+    assert inp.layout == "NCHW"
+    assert inp.encoding.from_ == Encoding.RGB
+    assert inp.encoding.to == Encoding.BGR
+    inp.validate_input_contract()
 
 
 def test_no_layout_short_circuits_grayscale():

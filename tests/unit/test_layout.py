@@ -21,6 +21,7 @@ from tests.helpers.strategies import shape_permutations, shapes
     ("shape", "expected"),
     [
         ([1, 3, 256, 256], "NCHW"),
+        ([0, 3, 256, 256], "NCHW"),
         ([1, 256, 256, 3], "NHWC"),
         # Leading 1 -> "N", remaining three dims are not min-channel
         # patterns, so the alphabet fallback (starting at "C") kicks in.
@@ -77,6 +78,11 @@ def test_every_dimension_gets_a_distinct_letter(shape: list[int]):
 @given(rest=shapes(max_rank=15))
 def test_leading_one_is_the_batch_dimension(rest: list[int]):
     assert make_default_layout([1, *rest]).startswith("N")
+
+
+@given(rest=shapes(max_rank=15))
+def test_leading_zero_is_the_batch_dimension(rest: list[int]):
+    assert make_default_layout([0, *rest]).startswith("N")
 
 
 @given(shape_and_permutation=shape_permutations())

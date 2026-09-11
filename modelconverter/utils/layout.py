@@ -32,7 +32,7 @@ def make_default_layout(shape: list[int]) -> str:
     """
     layout = []
     i = 0
-    if shape[0] == 1:
+    if shape[0] in {0, 1}:
         layout.append("N")
         i += 1
     if len(shape) - i == 3:
