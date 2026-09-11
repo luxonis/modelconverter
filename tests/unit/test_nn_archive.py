@@ -1000,6 +1000,48 @@ def test_builds_config_from_onnx(dummy_onnx: Path):
     assert archive.model.metadata.name == "dummy_model"
 
 
+@pytest.mark.parametrize(
+    ("shape", "expected_type"),
+    [
+        ([1, 3, 64, 64], InputType.IMAGE),
+        ([1, 1, 64, 64], InputType.IMAGE),
+        ([1, 4, 64, 64], InputType.RAW),
+        ([1, 512], InputType.RAW),
+        ([1, 3, 8400], InputType.RAW),
+    ],
+)
+def test_archive_from_model_infers_input_type(
+    tmp_path: Path, shape: list[int], expected_type: InputType
+):
+    model = single_io_onnx(
+        tmp_path / "model.onnx", shape=shape, output_shape=shape
+    )
+
+    archive = archive_from_model(model)
+
+    assert archive.model.inputs[0].input_type == expected_type
+
+
+def test_bare_archive_raw_input_roundtrip(work_dir: Path):
+    model = single_io_onnx(
+        work_dir / "rgba.onnx",
+        shape=[1, 4, 64, 64],
+        output_shape=[1, 4, 64, 64],
+    )
+    archive = archive_from_model(model)
+    tar = pack_archive(
+        work_dir / "rgba.tar",
+        model,
+        archive.model_dump(mode="json"),
+    )
+
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, None)
+    inp = config.stages[main_stage].inputs[0]
+
+    assert inp.is_raw_input
+    inp.validate_input_contract()
+
+
 def test_get_archive_input_found(dummy_onnx: Path):
     archive = archive_from_model(dummy_onnx)
     assert get_archive_input(archive, "input1").name == "input1"

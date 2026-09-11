@@ -41,7 +41,10 @@ from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
 from modelconverter.utils.encodings import parse_encodings
 from modelconverter.utils.filesystem_utils import resolve_path
-from modelconverter.utils.layout import make_default_layout
+from modelconverter.utils.layout import (
+    is_image_input_shape,
+    make_default_layout,
+)
 from modelconverter.utils.metadata import Metadata, get_metadata
 from modelconverter.utils.onnx_compatibility import (
     has_external_data,
@@ -340,23 +343,15 @@ class InputConfig(OutputConfig):
                     if layout is None
                     else layout.upper()
                 )
-                if len(resolved_layout) == len(int_shape):
-                    image_layout = resolved_layout in {"NCHW", "NHWC"}
-                    channels = (
-                        int_shape[resolved_layout.index("C")]
-                        if "C" in resolved_layout
-                        else None
-                    )
-                    if not image_layout or (
-                        channels is not None
-                        and channels > 0
-                        and channels not in {1, 3}
-                    ):
-                        data["encoding"] = {
-                            "from": "NONE",
-                            "to": "NONE",
-                        }
-                        return data
+                layout_matches_shape = len(resolved_layout) == len(int_shape)
+                if layout_matches_shape and not is_image_input_shape(
+                    int_shape, resolved_layout
+                ):
+                    data["encoding"] = {
+                        "from": "NONE",
+                        "to": "NONE",
+                    }
+                    return data
             data["encoding"] = {"from": "RGB", "to": "BGR"}
             return data
         if isinstance(encoding, str):

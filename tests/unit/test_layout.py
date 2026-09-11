@@ -13,7 +13,11 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from modelconverter.utils.layout import guess_new_layout, make_default_layout
+from modelconverter.utils.layout import (
+    guess_new_layout,
+    is_image_input_shape,
+    make_default_layout,
+)
 from tests.helpers.strategies import shape_permutations, shapes
 
 
@@ -36,6 +40,24 @@ def test_no_leading_one():
     layout = make_default_layout([3, 4, 5])
     assert len(layout) == 3
     assert "N" not in layout
+
+
+@pytest.mark.parametrize(
+    ("shape", "layout", "expected"),
+    [
+        ([1, 3, 224, 224], "NCHW", True),
+        ([1, 224, 224, 3], "NHWC", True),
+        ([1, 1, 224, 224], "NCHW", True),
+        ([1, 0, 224, 224], "NCHW", True),
+        ([1, 4, 224, 224], "NCHW", False),
+        ([1, 512], "NC", False),
+        ([1, 3, 8400], "NCD", False),
+        ([224, 224, 3], "HWC", False),
+        ([1, 3, 224, 224], "NHWC", False),
+    ],
+)
+def test_image_input_shape(shape: list[int], layout: str, expected: bool):
+    assert is_image_input_shape(shape, layout) is expected
 
 
 def test_letter_collision_loop():

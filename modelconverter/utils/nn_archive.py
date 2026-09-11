@@ -35,7 +35,11 @@ from modelconverter.utils.config import (
     broadcast_preprocessing_values,
 )
 from modelconverter.utils.constants import MISC_DIR
-from modelconverter.utils.layout import guess_new_layout, make_default_layout
+from modelconverter.utils.layout import (
+    guess_new_layout,
+    is_image_input_shape,
+    make_default_layout,
+)
 from modelconverter.utils.metadata import Metadata, get_metadata
 from modelconverter.utils.types import (
     DataType,
@@ -566,10 +570,10 @@ def _default_archive_preprocessing(
 def archive_from_model(model_path: Path) -> NNArchiveConfig:
     """Build a bare archive config out of a model file alone.
 
-    The inputs and outputs come from the model's own metadata, every
-    input is declared as an image with a default layout and no
-    preprocessing, and no heads are declared. This is what packing an
-    unconverted model into an archive starts from.
+    The inputs and outputs come from the model's own metadata. Inputs with a
+    supported image shape and layout are declared as images; all others are
+    raw tensors. No preprocessing or heads are declared. This is what packing
+    an unconverted model into an archive starts from.
 
     Args:
         model_path: Path to the model file to describe.
@@ -594,13 +598,15 @@ def archive_from_model(model_path: Path) -> NNArchiveConfig:
     }
 
     for name, shape in metadata.input_shapes.items():
+        layout = make_default_layout(shape)
+        input_type = "image" if is_image_input_shape(shape, layout) else "raw"
         archive_cfg["model"]["inputs"].append(
             {
                 "name": name,
                 "shape": shape,
-                "layout": make_default_layout(shape),
+                "layout": layout,
                 "dtype": metadata.input_dtypes[name].value,
-                "input_type": "image",
+                "input_type": input_type,
                 "preprocessing": {
                     "mean": None,
                     "scale": None,

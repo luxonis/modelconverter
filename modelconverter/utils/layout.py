@@ -50,6 +50,20 @@ def make_default_layout(shape: list[int]) -> str:
     return "".join(layout)
 
 
+def is_image_input_shape(shape: list[int], layout: str) -> bool:
+    """Return whether a shape and layout describe a supported image input.
+
+    Unknown channel counts are accepted for standard image layouts so they can
+    be resolved later. Known channel counts must represent grayscale or color
+    image data.
+    """
+    if len(shape) != len(layout) or layout not in {"NCHW", "NHWC"}:
+        return False
+
+    channels = shape[layout.index("C")]
+    return channels <= 0 or channels in {1, 3}
+
+
 def guess_new_layout(
     old_layout: str, old_shape: list[int], new_shape: list[int]
 ) -> str:
