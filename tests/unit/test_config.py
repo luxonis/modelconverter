@@ -407,6 +407,22 @@ def test_non_grayscale_channel_kept():
     assert inp.encoding.to == Encoding.BGR
 
 
+@pytest.mark.parametrize(
+    ("shape", "layout", "expected"),
+    [
+        ([1, 3, 64, 64], "NCHW", 3),
+        ([1, 0, 64, 64], "NCHW", None),
+        ([1, 3], "NA", None),
+        (None, None, None),
+    ],
+)
+def test_channel_count(
+    shape: list[int] | None, layout: str | None, expected: int | None
+):
+    inp = InputConfig(name="i", shape=shape, layout=layout)
+    assert inp.channel_count == expected
+
+
 @pytest.mark.parametrize("channels", [2, 4, 6])
 def test_implicit_non_image_encoding_defaults_to_none(channels: int):
     inp = InputConfig(

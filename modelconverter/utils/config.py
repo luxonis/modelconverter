@@ -295,17 +295,8 @@ class InputConfig(OutputConfig):
 
     @model_validator(mode="after")
     def _validate_grayscale_inputs(self) -> Self:
-        if self.layout is None:
-            return self
-
-        if "C" not in self.layout:
-            return self
-
-        assert self.shape is not None
-
-        channels = self.shape[self.layout.index("C")]
         encodings = {self.encoding.from_, self.encoding.to}
-        if channels == 1 and encodings <= {
+        if self.channel_count == 1 and encodings <= {
             Encoding.RGB,
             Encoding.BGR,
             Encoding.GRAY,
@@ -423,11 +414,8 @@ class InputConfig(OutputConfig):
                 "must be non-zero."
             )
 
-        if self.shape is None or self.layout is None or "C" not in self.layout:
-            return
-
-        channels = self.shape[self.layout.index("C")]
-        if channels <= 0:
+        channels = self.channel_count
+        if channels is None:
             return
 
         encodings = {self.encoding.from_, self.encoding.to}
