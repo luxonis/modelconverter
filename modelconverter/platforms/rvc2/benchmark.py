@@ -16,6 +16,7 @@ from modelconverter.platforms.base_benchmark import (
     Benchmark,
     Configuration,
     Result,
+    get_input_fps,
     get_option,
 )
 from modelconverter.utils import create_progress_handler, environ
@@ -32,18 +33,25 @@ class RVC2Benchmark(Benchmark):
     def default_configuration(self) -> Configuration:
         """Default configuration for RVC2 benchmarking.
 
-        Options:
-            repetitions: The number of repetitions to perform (ignored if
-            benchmark_time is set).
-
-            benchmark_time: Duration in seconds for time-based
-            benchmarking (overrides repetitions).
-            num_messages: The number of messages measured for each report.
-            num_threads: The number of threads to use for inference.
+        Configuration options:
+            ``repetitions``
+                The number of repetitions to perform (ignored if
+                ``benchmark_time`` is set).
+            ``benchmark_time``
+                Duration in seconds for time-based benchmarking (overrides
+                ``repetitions``).
+            ``input_fps``
+                Rate at which inputs are sent. ``-1`` removes the
+                limit.
+            ``num_messages``
+                The number of messages measured for each report.
+            ``num_threads``
+                The number of threads to use for inference.
         """
         return {
             "repetitions": 10,
             "benchmark_time": 20,
+            "input_fps": -1.0,
             "num_messages": 50,
             "num_threads": 2,
         }
@@ -76,6 +84,7 @@ class RVC2Benchmark(Benchmark):
             num_messages=get_option(configuration, "num_messages", int),
             num_threads=get_option(configuration, "num_threads", int),
             benchmark_time=get_option(configuration, "benchmark_time", int),
+            input_fps=get_input_fps(configuration),
         )
 
     @staticmethod
@@ -85,6 +94,7 @@ class RVC2Benchmark(Benchmark):
         num_messages: int,
         num_threads: int,
         benchmark_time: int,
+        input_fps: float,
     ) -> Result:
         device = dai.Device()
         if device.getPlatform() != dai.Platform.RVC2:
@@ -151,7 +161,7 @@ class RVC2Benchmark(Benchmark):
             with dai.Pipeline(device) as pipeline:
                 benchmarkOut = pipeline.create(dai.node.BenchmarkOut)
                 benchmarkOut.setRunOnHost(False)
-                benchmarkOut.setFps(-1)
+                benchmarkOut.setFps(input_fps)
 
                 neuralNetwork = pipeline.create(dai.node.NeuralNetwork)
                 if isinstance(model_path, str) or str(model_path).endswith(
