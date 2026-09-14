@@ -256,10 +256,11 @@ class RVC2Exporter(Exporter):
         if requested_inputs:
             names = ", ".join(requested_inputs)
             raise PreprocessingEmbeddingError(
-                "RVC2/RVC3 cannot embed requested preprocessing into an "
-                f"existing OpenVINO IR; input(s) {names} still require "
-                "preprocessing. Use an ONNX/TFLite source or "
-                "`--archive-preprocess --to nn_archive`."
+                f"Cannot apply preprocessing to input(s) {names}: an existing "
+                "OpenVINO IR cannot be modified. For native output, convert "
+                "from ONNX/TFLite or disable preprocessing (`encoding RGB` or "
+                "`encoding NONE`, as appropriate, with no mean/scale). "
+                "Otherwise, export an NN Archive with `--archive-preprocess`."
             )
 
     @staticmethod

@@ -204,7 +204,8 @@ def test_existing_ir_with_requested_preprocessing_fails(
     exporter._input_file_type = InputFileType.IR
 
     with pytest.raises(
-        PreprocessingEmbeddingError, match="existing OpenVINO IR"
+        PreprocessingEmbeddingError,
+        match="existing OpenVINO IR cannot be modified",
     ):
         exporter.export()
 

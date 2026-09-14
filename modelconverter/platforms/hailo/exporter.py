@@ -66,10 +66,11 @@ class HailoExporter(Exporter):
         if self._disable_calibration and requested_inputs:
             names = ", ".join(requested_inputs)
             raise PreprocessingEmbeddingError(
-                "Hailo cannot embed requested preprocessing when calibration "
-                f"is disabled; input(s) {names} still require preprocessing. "
-                "Enable calibration or use `--archive-preprocess --to "
-                "nn_archive`."
+                f"Cannot apply preprocessing to input(s) {names}: Hailo "
+                "applies it during calibration, which is disabled. Enable "
+                "calibration or disable preprocessing (`encoding RGB` or "
+                "`encoding NONE`, as appropriate, with no mean/scale). "
+                "Otherwise, export an NN Archive with `--archive-preprocess`."
             )
         if not tf.config.list_physical_devices("GPU"):
             logger.error(

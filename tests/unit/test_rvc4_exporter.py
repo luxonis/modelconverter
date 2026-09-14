@@ -188,15 +188,15 @@ def test_int16_standard_does_not_change_per_row_behavior(
     assert "--use_per_row_quantization" in command
 
 
-def test_non_onnx_preprocessing_request_fails(tmp_path: Path):
+def test_non_onnx_default_preprocessing_error_names_encoding_remedy(
+    tmp_path: Path,
+):
     onnx_model = single_io_onnx(tmp_path / "model.onnx").resolve()
     config = Config.get_config(
         None,
         {
             "input_model": str(onnx_model),
             "shape": [1, 3, 64, 64],
-            "encoding": "NONE",
-            "mean_values": [1, 2, 3],
             "rvc4.disable_calibration": True,
         },
     )
@@ -208,7 +208,10 @@ def test_non_onnx_preprocessing_request_fails(tmp_path: Path):
     output_dir = tmp_path / "out-tflite"
     output_dir.mkdir()
 
-    with pytest.raises(PreprocessingEmbeddingError, match=r"only embed.*ONNX"):
+    with pytest.raises(
+        PreprocessingEmbeddingError,
+        match=r"`encoding RGB` or `encoding NONE`",
+    ):
         RVC4Exporter(stage, output_dir)
 
 

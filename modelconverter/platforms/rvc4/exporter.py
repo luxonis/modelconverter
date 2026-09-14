@@ -135,10 +135,11 @@ class RVC4Exporter(Exporter):
         elif requested_inputs:
             names = ", ".join(requested_inputs)
             raise PreprocessingEmbeddingError(
-                "RVC4 can only embed requested preprocessing into ONNX "
-                f"models; input(s) {names} still require preprocessing. "
-                "Use an ONNX source or `--archive-preprocess --to "
-                "nn_archive`."
+                f"Cannot apply preprocessing to input(s) {names}: RVC4 can "
+                "embed it only when converting from ONNX. For native output, "
+                "use an ONNX source or disable preprocessing (`encoding RGB` "
+                "or `encoding NONE`, as appropriate, with no mean/scale). "
+                "Otherwise, export an NN Archive with `--archive-preprocess`."
             )
         self._raw_img_dir = self.intermediate_outputs_dir / "raw_files"
         self._input_list_path = self.intermediate_outputs_dir / "img_list.txt"
