@@ -338,6 +338,17 @@ class InputConfig(OutputConfig):
                 if layout_matches_shape and not is_image_input_shape(
                     int_shape, resolved_layout
                 ):
+                    if resolved_layout in {"CHW", "HWC"}:
+                        channels = int_shape[resolved_layout.index("C")]
+                        if channels <= 0 or channels in {1, 3}:
+                            name = data.get("name", "<unnamed>")
+                            logger.warning(
+                                f"Input '{name}' uses batchless image layout "
+                                f"'{resolved_layout}' but has no explicit "
+                                "encoding; treating it as a raw tensor. Set "
+                                "`encoding` explicitly to enable image color "
+                                "handling."
+                            )
                     data["encoding"] = {
                         "from": "NONE",
                         "to": "NONE",

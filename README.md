@@ -86,7 +86,7 @@ The `encoding` flag in the YAML configuration file specifies the format that the
   This configuration indicates that the **ONNX model** expects inputs in **RGB format**, and the converter will transform the input data to **BGR format** for **DepthAI** execution.
 
 > [!NOTE]
-> If the encoding is not specified in the YAML configuration, the default values are set to `encoding.from=RGB` and `encoding.to=BGR`.
+> When encoding is omitted, inputs with a known batched image shape and layout (`NCHW` or `NHWC`, with one or three channels) receive image defaults: `RGB` to `BGR`, or `GRAY` for a single channel. Inputs with a known non-image shape or layout default to `NONE`. A batchless `CHW` or `HWC` input is ambiguous and is therefore treated as raw by default; set `encoding` explicitly if it represents an image. When shape or layout metadata is unavailable, the legacy `RGB` to `BGR` default is retained.
 
 > [!NOTE]
 > Certain options can be set **globally**, applying to all inputs of the model, or **per input**. If specified per input, these settings will override the global configuration for that input alone. The options that support this flexibility include `scale_values`, `mean_values`, `encoding`, `data_type`, `shape`, and `layout`.

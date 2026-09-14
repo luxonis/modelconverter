@@ -463,6 +463,52 @@ def test_implicit_non_image_layout_defaults_to_none(
     inp.validate_input_contract()
 
 
+@pytest.mark.parametrize(
+    ("shape", "layout"),
+    [
+        ([3, 32, 32], "CHW"),
+        ([32, 32, 3], "HWC"),
+    ],
+)
+def test_implicit_batchless_image_layout_warns_about_raw_default(
+    shape: list[int],
+    layout: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    messages: list[str] = []
+    monkeypatch.setattr(config_module.logger, "warning", messages.append)
+
+    inp = InputConfig(name="image", shape=shape, layout=layout)
+
+    assert inp.is_raw_input
+    assert len(messages) == 1
+    assert "batchless image layout" in messages[0]
+    assert "treating it as a raw tensor" in messages[0]
+    assert "Set `encoding` explicitly" in messages[0]
+
+
+@pytest.mark.parametrize(
+    ("shape", "layout"),
+    [
+        ([3, 32, 32], "CHW"),
+        ([32, 32, 3], "HWC"),
+    ],
+)
+def test_explicit_batchless_image_encoding_opts_into_color_handling(
+    shape: list[int], layout: str
+):
+    inp = _input_config(
+        name="image",
+        shape=shape,
+        layout=layout,
+        encoding={"from": "RGB", "to": "BGR"},
+    )
+
+    assert not inp.is_raw_input
+    assert inp.encoding_mismatch
+    inp.validate_preprocessing()
+
+
 def test_invalid_input_layout_reaches_layout_validation():
     with pytest.raises(ValueError, match="Length of `layout`"):
         InputConfig(name="i", shape=[1], layout="NC")
