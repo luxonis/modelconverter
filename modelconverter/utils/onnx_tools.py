@@ -10,6 +10,7 @@ graph, and simplifying, optimizing and fusing the graph with
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import Final
 
 import numpy as np
 import onnx
@@ -35,6 +36,15 @@ ensure_onnx_helper_compatibility()
 # GraphSurgeon still imports helper conversion functions removed in ONNX 1.21.
 # Patch them back in before importing GraphSurgeon.
 import onnx_graphsurgeon as gs  # noqa: E402
+
+FLOATING_TENSOR_TYPES: Final = frozenset(
+    {
+        TensorProto.FLOAT16,
+        TensorProto.FLOAT,
+        TensorProto.DOUBLE,
+        TensorProto.BFLOAT16,
+    }
+)
 
 
 def get_opset_version(model: onnx.ModelProto) -> int:
@@ -163,13 +173,10 @@ def onnx_attach_normalization_to_inputs(
         normalization_requested = (
             mean_values is not None and any(v != 0 for v in mean_values)
         ) or (scale_values is not None and any(v != 1 for v in scale_values))
-        floating_types = {
-            TensorProto.FLOAT16,
-            TensorProto.FLOAT,
-            TensorProto.DOUBLE,
-            TensorProto.BFLOAT16,
-        }
-        if normalization_requested and input_dtype not in floating_types:
+        if (
+            normalization_requested
+            and input_dtype not in FLOATING_TENSOR_TYPES
+        ):
             dtype_name = TensorProto.DataType.Name(input_dtype)
             raise PreprocessingEmbeddingError(
                 f"Cannot embed mean/scale preprocessing for input "

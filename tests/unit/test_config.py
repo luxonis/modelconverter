@@ -413,6 +413,9 @@ def test_non_grayscale_channel_kept():
         ([1, 3, 64, 64], "NCHW", 3),
         ([1, 0, 64, 64], "NCHW", None),
         ([1, 3], "NA", None),
+        ([2, 3, 224, 224], None, None),
+        ([2, 3, 224, 224], "CDEF", 2),
+        ([1, 2, 8, 8], None, 2),
         (None, None, None),
     ],
 )
@@ -421,6 +424,21 @@ def test_channel_count(
 ):
     inp = InputConfig(name="i", shape=shape, layout=layout)
     assert inp.channel_count == expected
+
+
+def test_inferred_fallback_layout_rejects_preprocessing():
+    inp = InputConfig(
+        name="i",
+        shape=[2, 3, 224, 224],
+        scale_values=[255],
+    )
+
+    assert inp.layout == "CDEF"
+    assert inp.channel_count is None
+    with pytest.raises(
+        ValueError, match="provide the input layout explicitly"
+    ):
+        inp.validate_preprocessing()
 
 
 @pytest.mark.parametrize("channels", [2, 4, 6])
@@ -509,9 +527,10 @@ def test_explicit_batchless_image_encoding_opts_into_color_handling(
     inp.validate_preprocessing()
 
 
-def test_invalid_input_layout_reaches_layout_validation():
+@pytest.mark.parametrize("layout", ["NC", "HWC"])
+def test_invalid_input_layout_reaches_layout_validation(layout: str):
     with pytest.raises(ValueError, match="Length of `layout`"):
-        InputConfig(name="i", shape=[1], layout="NC")
+        InputConfig(name="i", shape=[1], layout=layout)
 
 
 def test_non_three_channel_input_rejects_color_encoding():

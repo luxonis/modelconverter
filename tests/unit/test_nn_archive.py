@@ -34,6 +34,7 @@ from modelconverter.utils.nn_archive import (
     _default_archive_preprocessing,
     _get_io_dtype,
     archive_from_model,
+    default_archive_input_type,
     generate_archive,
     get_archive_input,
     make_dai_type,
@@ -56,6 +57,15 @@ from tests.helpers.onnx_factory import (
 def _input_config(**data: ParamValue) -> InputConfig:
     """Validate raw user configuration through Pydantic's public API."""
     return InputConfig.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    ("is_raw_input", "expected"), [(True, "raw"), (False, "image")]
+)
+def test_default_archive_input_type(
+    is_raw_input: bool, expected: Literal["raw", "image"]
+):
+    assert default_archive_input_type(is_raw_input=is_raw_input) == expected
 
 
 def _single_input_archive_config(
@@ -807,7 +817,7 @@ def test_externalized_image_preprocessing_keeps_image_input_type(
     )
     stage = next(iter(config.stages.values()))
     input_types: dict[str, Literal["raw", "image"]] = {
-        inp.name: "raw" if inp.is_raw_input else "image"
+        inp.name: default_archive_input_type(is_raw_input=inp.is_raw_input)
         for inp in stage.inputs
     }
     config, preprocessing = extract_preprocessing(config)
@@ -842,7 +852,7 @@ def test_externalized_image_preprocessing_uses_converted_layout(
     )
     stage = next(iter(config.stages.values()))
     input_types: dict[str, Literal["raw", "image"]] = {
-        inp.name: "raw" if inp.is_raw_input else "image"
+        inp.name: default_archive_input_type(is_raw_input=inp.is_raw_input)
         for inp in stage.inputs
     }
     config, preprocessing = extract_preprocessing(config)

@@ -362,11 +362,11 @@ class InputConfig(OutputConfig):
                     if layout is None
                     else layout.upper()
                 )
-                layout_matches_shape = len(resolved_layout) == len(int_shape)
-                if layout_matches_shape and not is_image_input_shape(
-                    int_shape, resolved_layout
-                ):
-                    if resolved_layout in {"CHW", "HWC"}:
+                if not is_image_input_shape(int_shape, resolved_layout):
+                    if len(int_shape) == 3 and resolved_layout in {
+                        "CHW",
+                        "HWC",
+                    }:
                         channels = int_shape[resolved_layout.index("C")]
                         if channels <= 0 or channels in {1, 3}:
                             name = data.get("name", "<unnamed>")
@@ -431,6 +431,11 @@ class InputConfig(OutputConfig):
     @model_validator(mode="after")
     def _validate_preprocessing_values(self) -> Self:
         """Reject invalid preprocessing values."""
+        self._reject_zero_scale_values()
+        return self
+
+    def _reject_zero_scale_values(self) -> None:
+        """Reject scale values that make normalization undefined."""
         if self.scale_values is not None and any(
             value == 0 for value in self.scale_values
         ):
@@ -439,19 +444,10 @@ class InputConfig(OutputConfig):
                 "must be non-zero."
             )
 
-        return self
-
     def validate_input_contract(self, *, validate_values: bool = True) -> None:
         """Validate encoding and preprocessing against a known channel axis."""
-        if (
-            validate_values
-            and self.scale_values is not None
-            and any(value == 0 for value in self.scale_values)
-        ):
-            raise ValueError(
-                f"Input '{self.name}' has a zero scale value; scale values "
-                "must be non-zero."
-            )
+        if validate_values:
+            self._reject_zero_scale_values()
 
         channels = self.channel_count
         if channels is None:

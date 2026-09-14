@@ -53,6 +53,7 @@ from modelconverter.utils import (
     ModelconverterException,
     PreprocessingEmbeddingError,
     archive_from_model,
+    default_archive_input_type,
     docker_build,
     docker_exec,
     get_default_tool_version,
@@ -261,7 +262,9 @@ def convert(
         if archive_preprocess:
             stage = next(iter(cfg.stages.values()))
             preprocessing_input_types = {
-                inp.name: "raw" if inp.is_raw_input else "image"
+                inp.name: default_archive_input_type(
+                    is_raw_input=inp.is_raw_input
+                )
                 for inp in stage.inputs
             }
             cfg, preprocessing = extract_preprocessing(cfg)
@@ -295,7 +298,9 @@ def convert(
 
             stage = next(iter(cfg.stages.values()))
             preprocessing_input_types = {
-                inp.name: "raw" if inp.is_raw_input else "image"
+                inp.name: default_archive_input_type(
+                    is_raw_input=inp.is_raw_input
+                )
                 for inp in stage.inputs
             }
             input_names = [

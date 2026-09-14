@@ -47,6 +47,7 @@ from .layout import guess_new_layout, make_default_layout
 from .metadata import Metadata, get_metadata
 from .nn_archive import (
     archive_from_model,
+    default_archive_input_type,
     get_archive_input,
     make_dai_type,
     modelconverter_config_to_nn,
@@ -78,6 +79,7 @@ __all__ = [
     "check_docker",
     "create_handler",
     "create_progress_handler",
+    "default_archive_input_type",
     "docker_build",
     "docker_exec",
     "download_calibration_data",

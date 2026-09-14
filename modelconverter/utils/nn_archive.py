@@ -409,7 +409,7 @@ def modelconverter_config_to_nn(
             preprocessing_input_types[inp.name]
             if preprocessing_input_types is not None
             and inp.name in preprocessing_input_types
-            else _default_archive_input_type(is_raw_input=inp.is_raw_input)
+            else default_archive_input_type(is_raw_input=inp.is_raw_input)
         )
         preprocessing_block = preprocessing.get(inp.name)
         if preprocessing_block is None:
@@ -493,9 +493,10 @@ def modelconverter_config_to_nn(
     return archive
 
 
-def _default_archive_input_type(
+def default_archive_input_type(
     *, is_raw_input: bool
 ) -> Literal["raw", "image"]:
+    """Map a modelconverter input to its default NN Archive input type."""
     if is_raw_input:
         return "raw"
     return "image"
