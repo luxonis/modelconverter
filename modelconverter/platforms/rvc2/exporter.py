@@ -279,6 +279,7 @@ class RVC2Exporter(Exporter):
         self._input_model = onnx_path
         self._input_file_type = InputFileType.ONNX
         converted_shapes = get_metadata(onnx_path).input_shapes
+        layout_mappings: list[str] = []
 
         for name, inp in self._inputs.items():
             if not inp.layout or not inp.shape:  # pragma: no cover
@@ -293,9 +294,7 @@ class RVC2Exporter(Exporter):
                     if converted_shapes.get(name) != converted_shape:
                         continue
                     if not OV_2021:
-                        self._add_args(
-                            self._mo_args, ["--layout", f"{name}(nchw->nhwc)"]
-                        )
+                        layout_mappings.append(f"{name}(nchw->nhwc)")
                     inp.shape = converted_shape
                     inp.layout = f"{lt[0]}{lt[3]}{lt[1]}{lt[2]}"
 
@@ -304,11 +303,14 @@ class RVC2Exporter(Exporter):
                     if converted_shapes.get(name) != converted_shape:
                         continue
                     if not OV_2021:
-                        self._add_args(
-                            self._mo_args, ["--layout", f"{name}(chw->hwc)"]
-                        )
+                        layout_mappings.append(f"{name}(chw->hwc)")
                     inp.shape = converted_shape
                     inp.layout = f"{lt[2]}{lt[0]}{lt[1]}"
+
+        if layout_mappings:
+            self._add_args(
+                self._mo_args, ["--layout", ",".join(layout_mappings)]
+            )
 
     def export(self) -> Path:
         """Convert the model and compile it for RVC2.

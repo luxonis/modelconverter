@@ -72,6 +72,74 @@ def test_tflite_raw_layout_tracks_converted_onnx_shape(
     assert inp.layout == expected_layout
 
 
+def test_tflite_layout_argument_contains_every_matching_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    model = tmp_path / "multi-input.tflite"
+    model.touch()
+    raw_encoding = EncodingConfig.model_validate(
+        {"from": Encoding.NONE, "to": Encoding.NONE}
+    )
+    config = SingleStageConfig.model_construct(
+        input_model=model,
+        input_file_type=InputFileType.TFLITE,
+        inputs=[
+            InputConfig(
+                name="image",
+                shape=[1, 8, 8, 3],
+                layout="NHWC",
+                encoding=raw_encoding.model_copy(deep=True),
+            ),
+            InputConfig(
+                name="features",
+                shape=[8, 8, 3],
+                layout="HWC",
+                encoding=raw_encoding.model_copy(deep=True),
+            ),
+            InputConfig(
+                name="unmatched",
+                shape=[1, 6, 6, 3],
+                layout="NHWC",
+                encoding=raw_encoding.model_copy(deep=True),
+            ),
+        ],
+        outputs=[OutputConfig(name="output0", shape=[1], layout="N")],
+    )
+    output_dir = tmp_path / "out-multi-input"
+    output_dir.mkdir()
+    exporter = RVC2Exporter(config, output_dir)
+
+    def convert(_source: str, target: str) -> None:
+        build_onnx(
+            Path(target),
+            [
+                ("image", [1, 3, 8, 8], TensorProto.FLOAT),
+                ("features", [3, 8, 8], TensorProto.FLOAT),
+                ("unmatched", [1, 3, 7, 7], TensorProto.FLOAT),
+            ],
+            [("output0", [1], TensorProto.FLOAT)],
+        )
+
+    monkeypatch.setattr(
+        "modelconverter.platforms.rvc2.exporter.tflite2onnx.convert", convert
+    )
+    monkeypatch.setattr(
+        "modelconverter.platforms.rvc2.exporter.OV_2021", False
+    )
+
+    exporter._transform_tflite_to_onnx()
+
+    assert exporter._mo_args == [
+        "--layout",
+        "image(nchw->nhwc),features(chw->hwc)",
+    ]
+    assert exporter.inputs["image"].layout == "NCHW"
+    assert exporter.inputs["features"].layout == "CHW"
+    assert exporter.inputs["unmatched"].shape == [1, 6, 6, 3]
+    assert exporter.inputs["unmatched"].layout == "NHWC"
+
+
 def test_raw_two_channel_normalization_is_forwarded_to_model_optimizer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
