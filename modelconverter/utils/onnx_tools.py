@@ -115,6 +115,13 @@ def onnx_attach_normalization_to_inputs(
         )
         return model_path
 
+    try:
+        checker.check_model(str(model_path))
+    except checker.ValidationError as e:
+        raise ONNXException(
+            f"The source ONNX model failed validation: {e}"
+        ) from e
+
     model = onnx.load(str(model_path))
     model_has_external_data = has_external_data(model_path)
 

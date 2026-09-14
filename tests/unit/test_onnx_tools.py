@@ -143,6 +143,47 @@ def test_invalid_normalization_is_reported_as_onnx_error(tmp_path: Path):
         )
 
 
+def test_invalid_source_model_is_reported_as_onnx_error(tmp_path: Path):
+    shape = [1, 3, 8, 8]
+    input_tensor = helper.make_tensor_value_info(
+        "input0", TensorProto.FLOAT, shape
+    )
+    output_tensor = helper.make_tensor_value_info(
+        "output0", TensorProto.FLOAT, shape
+    )
+    model = helper.make_model(
+        helper.make_graph(
+            [helper.make_node("Relu", ["missing"], ["output0"])],
+            "invalid-source",
+            [input_tensor],
+            [output_tensor],
+        ),
+        opset_imports=[helper.make_opsetid("", 13)],
+        ir_version=9,
+    )
+    model_path = tmp_path / "invalid-source.onnx"
+    modified_path = tmp_path / "modified.onnx"
+    onnx.save(model, model_path)
+    config = InputConfig.model_validate(
+        {
+            "name": "input0",
+            "shape": shape,
+            "layout": "NCHW",
+            "encoding": "RGB",
+            "mean_values": 1.0,
+        }
+    )
+
+    with pytest.raises(ONNXException, match="source ONNX model failed"):
+        onnx_attach_normalization_to_inputs(
+            model_path,
+            modified_path,
+            {"input0": config},
+        )
+
+    assert not modified_path.exists()
+
+
 def test_unsupported_layout_with_preprocessing_fails(tmp_path: Path):
     shape = [1, 2]
     model_path = single_io_onnx(
