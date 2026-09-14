@@ -350,6 +350,37 @@ def test_no_flags_defaults_to_rgb(work_dir: Path):
 
 
 @pytest.mark.parametrize(
+    ("shape", "layout", "encoding"),
+    [
+        ([3, 64, 64], "CHW", ("RGB", "BGR")),
+        ([64, 64, 3], "HWC", ("RGB", "BGR")),
+        ([1, 64, 64], "CHW", ("GRAY", "GRAY")),
+        ([64, 64, 1], "HWC", ("GRAY", "GRAY")),
+    ],
+)
+def test_explicit_batchless_archive_image_preserves_image_contract(
+    work_dir: Path,
+    shape: list[int],
+    layout: str,
+    encoding: tuple[str, str],
+):
+    tar = _pack_single_input(
+        work_dir,
+        {"reverse_channels": True},
+        shape=shape,
+        layout=layout,
+    )
+
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
+    inp = _stage_input(config)
+
+    assert inp.layout == layout
+    assert (inp.encoding.from_.value, inp.encoding.to.value) == encoding
+    assert not inp.is_raw_input
+    inp.validate_preprocessing()
+
+
+@pytest.mark.parametrize(
     ("interleaved_to_planar", "shape", "layout"),
     [
         (True, [1, 3, 64, 64], "NCHW"),

@@ -50,14 +50,21 @@ def make_default_layout(shape: list[int]) -> str:
     return "".join(layout)
 
 
-def is_image_input_shape(shape: list[int], layout: str) -> bool:
+def is_image_input_shape(
+    shape: list[int], layout: str, *, allow_batchless: bool = False
+) -> bool:
     """Return whether a shape and layout describe a supported image input.
 
     Unknown channel counts are accepted for standard image layouts so they can
-    be resolved later. Known channel counts must represent grayscale or color
-    image data.
+    be resolved later. Batchless layouts are accepted only when the caller has
+    an explicit signal that the input is an image. Known channel counts must
+    represent grayscale or color image data.
     """
-    if len(shape) != len(layout) or layout not in {"NCHW", "NHWC"}:
+    supported_layouts = {"NCHW", "NHWC"}
+    if allow_batchless:
+        supported_layouts.update({"CHW", "HWC"})
+
+    if len(shape) != len(layout) or layout not in supported_layouts:
         return False
 
     channels = shape[layout.index("C")]

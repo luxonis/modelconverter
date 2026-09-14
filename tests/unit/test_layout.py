@@ -60,6 +60,26 @@ def test_image_input_shape(shape: list[int], layout: str, expected: bool):
     assert is_image_input_shape(shape, layout) is expected
 
 
+@pytest.mark.parametrize(
+    ("shape", "layout", "expected"),
+    [
+        ([3, 224, 224], "CHW", True),
+        ([224, 224, 3], "HWC", True),
+        ([1, 224, 224], "CHW", True),
+        ([224, 224, 1], "HWC", True),
+        ([4, 224, 224], "CHW", False),
+        ([224, 224, 4], "HWC", False),
+        ([1, 3, 8400], "NCD", False),
+    ],
+)
+def test_explicit_image_input_shape_allows_batchless_layouts(
+    shape: list[int], layout: str, expected: bool
+):
+    assert (
+        is_image_input_shape(shape, layout, allow_batchless=True) is expected
+    )
+
+
 def test_letter_collision_loop():
     # A shape long enough that the alphabet counter reaches the
     # already-used "N" (at i==11) forces the skip branch of the loop.

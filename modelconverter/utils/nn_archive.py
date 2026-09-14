@@ -145,7 +145,7 @@ def process_nn_archive(
         layout = inp.layout
         encoding = "NONE"
         if inp.input_type == InputType.IMAGE and is_image_input_shape(
-            inp.shape, layout
+            inp.shape, layout, allow_batchless=True
         ):
             if dai_type is not None:
                 if (reverse and dai_type.startswith("BGR")) or (
