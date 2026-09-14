@@ -194,11 +194,7 @@ class RVC2Exporter(Exporter):
         mean_values_str = ""
         scale_values_str = ""
         for name, inp in self._inputs.items():
-            channels = (
-                inp.validate_preprocessing()
-                if inp.requires_input_preprocessing()
-                else None
-            )
+            channels = inp.channel_count
 
             # Append mean values in a similar style
             if inp.mean_values is not None and any(

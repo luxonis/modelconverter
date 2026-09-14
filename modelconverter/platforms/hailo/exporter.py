@@ -294,8 +294,8 @@ class HailoExporter(Exporter):
             if not all(x is not None for x in inp.shape):
                 exit_with(ValueError(f"Input `{name}` has dynamic shape."))
 
-            assert inp.layout is not None
-            values_len = inp.shape[inp.layout.index("C")]
+            values_len = inp.channel_count
+            assert values_len is not None
             scale_values = inp.scale_values or [1.0] * values_len
             mean_values = inp.mean_values or [0.0] * values_len
             scale_values = broadcast_preprocessing_values(

@@ -16,7 +16,7 @@ model.
 import warnings
 from itertools import chain
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import onnx
 from loguru import logger
@@ -30,7 +30,9 @@ from luxonis_ml.utils import LuxonisConfig
 from onnx import TypeProto
 from pydantic import (
     Field,
+    ModelWrapValidatorHandler,
     PositiveInt,
+    PrivateAttr,
     field_serializer,
     field_validator,
     model_validator,
@@ -66,6 +68,10 @@ NAMED_VALUES = {
         "scale": [58.395, 57.12, 57.375],
     },
 }
+
+TRUSTWORTHY_INFERRED_CHANNEL_LAYOUTS = frozenset(
+    {"CHW", "HWC", "NCHW", "NHWC"}
+)
 
 
 class LinkCalibrationConfig(BaseModelExtraForbid):
@@ -266,6 +272,23 @@ class InputConfig(OutputConfig):
     mean_values: Annotated[list[float], Field(min_length=1)] | None = None
     frozen_value: list[int | float] | None = None
     encoding: EncodingConfig = EncodingConfig()
+    _layout_was_explicit: bool = PrivateAttr(default=False)
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def _track_layout_source(
+        cls, data: Any, handler: ModelWrapValidatorHandler[Self]
+    ) -> Self:
+        """Remember whether ``C`` came from the user or layout inference."""
+        if isinstance(data, cls):
+            layout_was_explicit = data._layout_was_explicit
+        else:
+            layout_was_explicit = (
+                isinstance(data, dict) and data.get("layout") is not None
+            )
+        model = handler(data)
+        model._layout_was_explicit = layout_was_explicit
+        return model
 
     @property
     def encoding_mismatch(self) -> bool:
@@ -287,8 +310,13 @@ class InputConfig(OutputConfig):
 
     @property
     def channel_count(self) -> int | None:
-        """Return the known positive channel count, if available."""
+        """Return the positive channel count when ``C`` is trustworthy."""
         if self.shape is None or self.layout is None or "C" not in self.layout:
+            return None
+        if (
+            not self._layout_was_explicit
+            and self.layout not in TRUSTWORTHY_INFERRED_CHANNEL_LAYOUTS
+        ):
             return None
         channels = self.shape[self.layout.index("C")]
         return channels if channels > 0 else None
@@ -499,17 +527,12 @@ class InputConfig(OutputConfig):
         """
         self.validate_input_contract(validate_values=not reverse_only)
 
-        if self.shape is None or self.layout is None or "C" not in self.layout:
+        channels = self.channel_count
+        if channels is None:
             raise ValueError(
                 f"Cannot apply preprocessing to input '{self.name}' without "
-                "a shape and layout containing a channel dimension."
-            )
-
-        channels = self.shape[self.layout.index("C")]
-        if channels <= 0:
-            raise ValueError(
-                f"Cannot apply preprocessing to input '{self.name}' with an "
-                "unknown channel count."
+                "a trustworthy, positive channel dimension; provide the "
+                "input layout explicitly."
             )
 
         if self.encoding_mismatch:
