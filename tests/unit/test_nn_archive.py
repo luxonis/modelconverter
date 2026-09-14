@@ -103,19 +103,23 @@ def _pack_single_input(
     *,
     grayscale: bool = False,
     input_type: str = "image",
+    shape: list[int] | None = None,
+    layout: str = "NCHW",
 ) -> Path:
     """Build a matching dummy ONNX + single-input archive and return
     the ``.tar`` path.
     """
     model_path = work_dir / "model.onnx"
-    shape = None
     if grayscale:
         grayscale_onnx(model_path)
         shape = [1, 1, 64, 64]
     else:
-        single_io_onnx(model_path)
+        single_io_onnx(model_path, shape=shape)
     config = _single_input_archive_config(
-        preprocessing, shape=shape, input_type=input_type
+        preprocessing,
+        shape=shape,
+        layout=layout,
+        input_type=input_type,
     )
     return pack_archive(work_dir / "model.tar", model_path, config)
 
@@ -260,6 +264,8 @@ def test_bgr_interleaved_conflicting_reverse_and_interleaved(work_dir: Path):
             "reverse_channels": True,  # conflicts with BGR
             "interleaved_to_planar": False,  # conflicts with 'i'
         },
+        shape=[1, 64, 64, 3],
+        layout="NHWC",
     )
     config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
@@ -307,7 +313,8 @@ def test_reverse_true_interleaved_true(work_dir: Path):
     config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
     assert inp.encoding.from_.value == "RGB"
-    assert inp.layout == "NHWC"
+    assert inp.layout == "NCHW"
+    inp.validate_preprocessing()
 
 
 def test_reverse_false_interleaved_false(work_dir: Path):
@@ -330,6 +337,55 @@ def test_no_flags_defaults_to_rgb(work_dir: Path):
         "RGB",
         "BGR",
     )
+
+
+@pytest.mark.parametrize(
+    ("interleaved_to_planar", "shape", "layout"),
+    [
+        (True, [1, 3, 64, 64], "NCHW"),
+        (False, [1, 64, 64, 3], "NHWC"),
+    ],
+)
+def test_legacy_interleaved_layout_mismatch_keeps_archive_layout(
+    work_dir: Path,
+    interleaved_to_planar: bool,
+    shape: list[int],
+    layout: str,
+):
+    tar = _pack_single_input(
+        work_dir,
+        {"interleaved_to_planar": interleaved_to_planar},
+        shape=shape,
+        layout=layout,
+    )
+
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
+    inp = _stage_input(config)
+
+    assert inp.layout == layout
+    assert (inp.encoding.from_.value, inp.encoding.to.value) == (
+        "RGB",
+        "BGR",
+    )
+    inp.validate_preprocessing()
+
+
+def test_legacy_image_with_non_image_shape_uses_none_encoding(
+    work_dir: Path,
+):
+    tar = _pack_single_input(
+        work_dir,
+        {},
+        shape=[1, 4, 64, 64],
+        layout="NCHW",
+    )
+
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
+    inp = _stage_input(config)
+
+    assert inp.layout == "NCHW"
+    assert inp.is_raw_input
+    inp.validate_input_contract()
 
 
 def test_grayscale_from_single_channel(work_dir: Path):

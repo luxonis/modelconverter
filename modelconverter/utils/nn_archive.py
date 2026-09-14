@@ -144,7 +144,9 @@ def process_nn_archive(
 
         layout = inp.layout
         encoding = "NONE"
-        if inp.input_type == InputType.IMAGE:
+        if inp.input_type == InputType.IMAGE and is_image_input_shape(
+            inp.shape, layout
+        ):
             if dai_type is not None:
                 if (reverse and dai_type.startswith("BGR")) or (
                     reverse is False and dai_type.startswith("RGB")
@@ -170,9 +172,13 @@ def process_nn_archive(
                         "'interleaved_to_planar' and 'dai_type' are conflicting, using dai_type"
                     )
                 if dai_type.endswith("i"):
-                    layout = "NHWC"
+                    dai_layout = "NHWC"
+                    if is_image_input_shape(inp.shape, dai_layout):
+                        layout = dai_layout
                 elif dai_type.endswith("p"):
-                    layout = "NCHW"
+                    dai_layout = "NCHW"
+                    if is_image_input_shape(inp.shape, dai_layout):
+                        layout = dai_layout
             else:
                 if reverse is not None:
                     logger.warning(
@@ -189,10 +195,9 @@ def process_nn_archive(
                     logger.warning(
                         "'interleaved_to_planar' flag is deprecated and will be removed in the future, use 'dai_type' instead"
                     )
-                    if interleaved_to_planar:
-                        layout = "NHWC"
-                    else:
-                        layout = "NCHW"
+                    legacy_layout = "NHWC" if interleaved_to_planar else "NCHW"
+                    if is_image_input_shape(inp.shape, legacy_layout):
+                        layout = legacy_layout
             channels = (
                 inp.shape[layout.index("C")]
                 if layout and "C" in layout
