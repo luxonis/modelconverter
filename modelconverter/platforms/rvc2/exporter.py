@@ -29,6 +29,7 @@ from modelconverter.utils import (
     PreprocessingEmbeddingError,
     SubprocessHandle,
     get_container_memory_available,
+    get_metadata,
     onnx_attach_normalization_to_inputs,
 )
 from modelconverter.utils.config import (
@@ -38,7 +39,6 @@ from modelconverter.utils.config import (
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import (
     DataType,
-    Encoding,
     InputFileType,
     Platform,
 )
@@ -281,13 +281,10 @@ class RVC2Exporter(Exporter):
 
         self._input_model = onnx_path
         self._input_file_type = InputFileType.ONNX
+        converted_shapes = get_metadata(onnx_path).input_shapes
 
         for name, inp in self._inputs.items():
-            if (
-                inp.encoding.from_ == Encoding.NONE
-                or not inp.layout
-                or not inp.shape
-            ):  # pragma: no cover
+            if not inp.layout or not inp.shape:  # pragma: no cover
                 continue
 
             lt = inp.layout
@@ -295,19 +292,25 @@ class RVC2Exporter(Exporter):
 
             if lt[-1] == "C":
                 if len(lt) == 4 and lt[0] == "N":
+                    converted_shape = [sh[0], sh[3], sh[1], sh[2]]
+                    if converted_shapes.get(name) != converted_shape:
+                        continue
                     if not OV_2021:
                         self._add_args(
                             self._mo_args, ["--layout", f"{name}(nchw->nhwc)"]
                         )
-                    inp.shape = [sh[0], sh[3], sh[1], sh[2]]
+                    inp.shape = converted_shape
                     inp.layout = f"{lt[0]}{lt[3]}{lt[1]}{lt[2]}"
 
                 elif len(inp.layout) == 3:
+                    converted_shape = [sh[2], sh[0], sh[1]]
+                    if converted_shapes.get(name) != converted_shape:
+                        continue
                     if not OV_2021:
                         self._add_args(
                             self._mo_args, ["--layout", f"{name}(chw->hwc)"]
                         )
-                    inp.shape = [sh[2], sh[0], sh[1]]
+                    inp.shape = converted_shape
                     inp.layout = f"{lt[2]}{lt[0]}{lt[1]}"
 
     def export(self) -> Path:

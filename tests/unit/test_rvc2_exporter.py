@@ -24,6 +24,54 @@ def test_scalar_preprocessing_is_expanded_to_resolved_channels():
     assert broadcast_preprocessing_values([127.0], 2) == [127.0, 127.0]
 
 
+@pytest.mark.parametrize(
+    ("converted_shape", "expected_shape", "expected_layout"),
+    [
+        ([1, 4, 8, 8], [1, 4, 8, 8], "NCHW"),
+        ([1, 8, 8, 4], [1, 8, 8, 4], "NHWC"),
+    ],
+)
+def test_tflite_raw_layout_tracks_converted_onnx_shape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    converted_shape: list[int],
+    expected_shape: list[int],
+    expected_layout: str,
+):
+    model = tmp_path / "packed.tflite"
+    model.touch()
+    config = SingleStageConfig.model_construct(
+        input_model=model,
+        input_file_type=InputFileType.TFLITE,
+        inputs=[
+            InputConfig(
+                name="input0",
+                shape=[1, 8, 8, 4],
+                layout="NHWC",
+                encoding=EncodingConfig.model_validate(
+                    {"from": Encoding.NONE, "to": Encoding.NONE}
+                ),
+            )
+        ],
+        outputs=[OutputConfig(name="output0", shape=[1], layout="N")],
+    )
+    output_dir = tmp_path / "out-tflite"
+    output_dir.mkdir()
+    exporter = RVC2Exporter(config, output_dir)
+    monkeypatch.setattr(
+        "modelconverter.platforms.rvc2.exporter.tflite2onnx.convert",
+        lambda _source, target: single_io_onnx(
+            Path(target), shape=converted_shape
+        ),
+    )
+
+    exporter._transform_tflite_to_onnx()
+
+    inp = exporter.inputs["input0"]
+    assert inp.shape == expected_shape
+    assert inp.layout == expected_layout
+
+
 def test_raw_two_channel_normalization_is_forwarded_to_model_optimizer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
