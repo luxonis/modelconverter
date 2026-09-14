@@ -450,22 +450,38 @@ class InputConfig(OutputConfig):
             self._reject_zero_scale_values()
 
         channels = self.channel_count
+        encodings = {self.encoding.from_, self.encoding.to}
+        image_encodings = {Encoding.RGB, Encoding.BGR, Encoding.GRAY}
+        if channels is not None:
+            if encodings & {Encoding.RGB, Encoding.BGR} and channels != 3:
+                raise ValueError(
+                    f"Input '{self.name}' has {channels} channels and cannot "
+                    "use RGB/BGR encoding; use `encoding: NONE` for a packed "
+                    "or non-image tensor input."
+                )
+            if Encoding.GRAY in encodings and channels != 1:
+                raise ValueError(
+                    f"Input '{self.name}' has {channels} channels and cannot "
+                    "use GRAY encoding; grayscale image inputs require "
+                    "exactly one channel."
+                )
+
+        if (
+            encodings & image_encodings
+            and self.shape is not None
+            and self.layout is not None
+            and not is_image_input_shape(
+                self.shape, self.layout, allow_batchless=True
+            )
+        ):
+            raise ValueError(
+                f"Input '{self.name}' has layout '{self.layout}', which does "
+                "not describe an image; use `encoding: NONE` for a packed "
+                "or non-image tensor input."
+            )
+
         if channels is None:
             return
-
-        encodings = {self.encoding.from_, self.encoding.to}
-        if encodings & {Encoding.RGB, Encoding.BGR} and channels != 3:
-            raise ValueError(
-                f"Input '{self.name}' has {channels} channels and cannot use "
-                "RGB/BGR encoding; use `encoding: NONE` for a packed or "
-                "non-image tensor input."
-            )
-        if Encoding.GRAY in encodings and channels != 1:
-            raise ValueError(
-                f"Input '{self.name}' has {channels} channels and cannot use "
-                "GRAY encoding; grayscale image inputs require exactly one "
-                "channel."
-            )
 
         if validate_values:
             for values_name, values in (

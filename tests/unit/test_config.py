@@ -552,6 +552,29 @@ def test_multichannel_input_rejects_gray_encoding():
         inp.validate_input_contract()
 
 
+@pytest.mark.parametrize(
+    ("shape", "layout", "encoding"),
+    [
+        ([1, 3, 8400], "NCD", "RGB"),
+        ([1, 3, 8400], "NCD", "BGR"),
+        ([1, 1, 8400], "NCD", "GRAY"),
+        ([1, 10], "NA", "RGB"),
+    ],
+)
+def test_non_image_layout_rejects_image_encoding(
+    shape: list[int], layout: str, encoding: str
+):
+    inp = _input_config(
+        name="detections",
+        shape=shape,
+        layout=layout,
+        encoding=encoding,
+    )
+
+    with pytest.raises(ValueError, match="does not describe an image"):
+        inp.validate_input_contract()
+
+
 def test_dynamic_batch_size_set_to_one():
     inp = InputConfig(name="i", shape=[0, 3, 64, 64])
     assert inp.shape == [1, 3, 64, 64]
