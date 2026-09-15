@@ -361,6 +361,7 @@ def test_conversion_does_not_fallback_for_nonrecoverable_errors(
     )
     output_dir = tmp_path / "output-no-fallback"
     attempts = 0
+    telemetry = _FakeTelemetry()
 
     def fail_exporter(*_args: object, **_kwargs: object) -> NoReturn:
         nonlocal attempts
@@ -384,7 +385,7 @@ def test_conversion_does_not_fallback_for_nonrecoverable_errors(
     monkeypatch.setattr(
         main_module,
         "get_component_telemetry",
-        _FakeTelemetry,
+        lambda: telemetry,
     )
     monkeypatch.setattr(
         main_module,
@@ -404,6 +405,27 @@ def test_conversion_does_not_fallback_for_nonrecoverable_errors(
     assert attempts == 1
     stage = next(iter(cfg.stages.values()))
     assert stage.inputs[0].mean_values == [1.0, 2.0, 3.0]
+
+    configured_properties = [
+        properties
+        for event, properties in telemetry.captures
+        if event == main_module.CONFIGURED_EVENT
+    ]
+    assert len(configured_properties) == 1
+    configured = configured_properties[0]
+    assert configured["target"] == Platform.RVC4.value
+    assert configured["archive_output_mode"] == output_mode
+
+    result_properties = [
+        properties
+        for event, properties in telemetry.captures
+        if event == main_module.RESULT_EVENT
+    ]
+    assert len(result_properties) == 1
+    result = result_properties[0]
+    for key, value in configured.items():
+        if key != "flow_step":
+            assert result[key] == value
 
 
 @pytest.mark.parametrize(

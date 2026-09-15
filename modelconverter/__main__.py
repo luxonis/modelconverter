@@ -350,6 +350,7 @@ def convert(
                 ),
             )
 
+        conversion_summary = resolved_conversion_summary()
         try:
             exporter = make_exporter()
         except PreprocessingEmbeddingError as error:
@@ -357,7 +358,6 @@ def convert(
                 raise
             conversion_summary = resolved_conversion_summary()
             exporter = make_exporter()
-        conversion_summary = resolved_conversion_summary()
 
         conversion_start = time.monotonic()
         phase = ConversionPhase.CONVERSION
