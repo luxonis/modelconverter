@@ -472,27 +472,7 @@ class RVC4Exporter(Exporter):
     def _normalize_io_encoding_item(item: dict[str, Any]) -> None:
         for key in RVC4Exporter._IO_ENCODING_TRANSFORMED_KEYS:
             item.pop(key, None)
-        item.update(
-            RVC4Exporter._normalized_io_encoding_entry(item, keep_name=True)
-        )
-
-    @staticmethod
-    def _normalized_io_encoding_entry(
-        value: Any, *, keep_name: bool = False
-    ) -> dict[str, Any]:
-        raw_item: dict[str, Any] = {}
-        if isinstance(value, list) and value and isinstance(value[0], dict):
-            raw_item = value[0]
-        elif isinstance(value, dict):
-            raw_item = value
-
-        preserved = {
-            key: item_value
-            for key, item_value in raw_item.items()
-            if key not in RVC4Exporter._IO_ENCODING_TRANSFORMED_KEYS
-            and (keep_name or key != "name")
-        }
-        return {**preserved, "bitwidth": 8, "dtype": "int"}
+        item.update({"bitwidth": 8, "dtype": "int"})
 
     @staticmethod
     def _raise_io_normalization_error(reason: str) -> None:
