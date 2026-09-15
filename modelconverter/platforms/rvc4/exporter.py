@@ -421,6 +421,11 @@ class RVC4Exporter(Exporter):
                         "activation_encodings list entries must be dicts"
                     )
                 name = item.get("name")
+                if not isinstance(name, str) or not name:
+                    self._raise_io_normalization_error(
+                        "activation_encodings list entries must have a "
+                        "nonempty string `name`"
+                    )
                 if name in exposed_names:
                     self._normalize_io_encoding_item(item)
                     seen.add(name)

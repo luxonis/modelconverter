@@ -368,6 +368,33 @@ def test_io_normalization_preserves_flat_activation_list_shape(
     ]
 
 
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"bitwidth": 16},
+        {"name": ""},
+        {"name": 123},
+    ],
+)
+def test_io_normalization_rejects_invalid_flat_activation_name(
+    work_dir: Path,
+    entry: dict[str, int | str],
+):
+    exporter = _make_exporter(work_dir, "CUSTOM")
+    payload = {
+        "activation_encodings": [entry],
+        "param_encodings": {},
+    }
+
+    with pytest.raises(
+        TypeError,
+        match=r"nonempty string `name`",
+    ):
+        exporter._generate_io_encodings(
+            QuantizationOverrides.from_payload(payload)
+        )
+
+
 def test_io_normalization_rejects_unsupported_activation_group_shape(
     work_dir: Path,
 ):
