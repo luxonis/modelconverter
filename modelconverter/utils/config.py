@@ -13,10 +13,12 @@ per-backend Docker image receives a fully resolved description of the
 model.
 """
 
+import copy
+import json
 import warnings
 from itertools import chain
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import onnx
 from loguru import logger
@@ -33,6 +35,7 @@ from pydantic import (
     PositiveInt,
     field_serializer,
     field_validator,
+    model_serializer,
     model_validator,
 )
 from typing_extensions import Self
@@ -547,6 +550,58 @@ class Encodings(BaseModelExtraForbid):
     param_encodings: dict[str, list[QuantizationOverridesItem]]
 
 
+class QuantizationOverrides(BaseModelExtraForbid):
+    """Raw RVC4 quantization overrides to pass to SNPE.
+
+    The payload is kept either as the user-provided mapping or as the path
+    to the user-provided file. It is intentionally not coerced through
+    ``Encodings`` unless the caller already provided an ``Encodings`` object.
+    """
+
+    payload: dict[str, Any] | None = None
+    source_path: Path | None = None
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> "QuantizationOverrides":
+        """Build overrides from an inline JSON payload."""
+        return cls(payload=copy.deepcopy(payload))
+
+    @classmethod
+    def from_path(cls, path: Path) -> "QuantizationOverrides":
+        """Build overrides from a JSON file path."""
+        return cls(source_path=path)
+
+    @model_validator(mode="after")
+    def _validate_source(self) -> Self:
+        if (self.payload is None) == (self.source_path is None):
+            raise ValueError(
+                "Quantization overrides require exactly one source."
+            )
+        return self
+
+    def load_payload(self) -> dict[str, Any]:
+        """Return the JSON payload without mutating the stored source."""
+        if self.payload is not None:
+            return copy.deepcopy(self.payload)
+        assert self.source_path is not None
+        with open(self.source_path) as f:
+            value = json.load(f)
+        if not isinstance(value, dict):
+            raise TypeError(
+                "Expected encodings to deserialize to a dict, "
+                f"got {type(value).__name__}."
+            )
+        return value
+
+    @model_serializer(mode="plain", when_used="json")
+    def serialize(self) -> dict[str, Any] | str:
+        """Serialize like the user-facing ``rvc4.encodings`` value."""
+        if self.payload is not None:
+            return copy.deepcopy(self.payload)
+        assert self.source_path is not None
+        return str(self.source_path)
+
+
 class RVC4Config(PlatformConfig):
     """Options of the RVC4 conversion.
 
@@ -576,7 +631,9 @@ class RVC4Config(PlatformConfig):
         quantization_mode: Pre-defined quantization mode. All modes
             except ``CUSTOM`` override the user-provided SNPE arguments.
         htp_socs: Platforms to pre-compute the DLC graph for.
-        encodings: Quantization encodings overriding the computed ones.
+        encodings: Raw quantization overrides passed to SNPE. ModelConverter
+            only inspects names when strict validation is enabled and only
+            rewrites exposed IO entries when IO normalization is enabled.
 
     """
 
@@ -593,16 +650,16 @@ class RVC4Config(PlatformConfig):
     htp_socs: list[
         Literal["sm8350", "sm8450", "sm8550", "sm8650", "qcs6490", "qcs8550"]
     ] = ["sm8550"]
-    encodings: Encodings | None = None
+    encodings: QuantizationOverrides | Encodings | None = None
 
     @model_validator(mode="after")
     def validate_quantization_overrides(self) -> Self:
-        """Normalize raw quantization override arguments into `Encodings`.
+        """Normalize raw quantization override arguments into ``encodings``.
 
         Both ``--quantization_overrides PATH`` and
         ``--quantization_overrides=PATH`` forms are removed from
-        ``snpe_onnx_to_dlc_args`` and the referenced JSON file is parsed
-        into the ``encodings`` field.
+        ``snpe_onnx_to_dlc_args`` and the referenced JSON file is stored
+        as the raw ``encodings`` source.
 
         Returns:
             The validated model.
@@ -667,30 +724,45 @@ class RVC4Config(PlatformConfig):
             )
 
         self.snpe_onnx_to_dlc_args = normalized_args
-        self.encodings = parse_encodings(Path(override_paths[0]).read_text())
+        override_path = resolve_path(override_paths[0], MISC_DIR)
+        self.encodings = QuantizationOverrides.from_path(override_path)
         return self
 
     @field_validator("encodings", mode="before")
     @staticmethod
-    def validate_encodings(value: ParamValue | Encodings) -> Encodings | None:
-        """Parse the quantization encodings from the config.
+    def validate_encodings(
+        value: ParamValue | QuantizationOverrides | Encodings,
+    ) -> QuantizationOverrides | Encodings | None:
+        """Preserve the quantization encodings from the config.
 
         Args:
             value: Either ``None``, a JSON string, a path to a JSON
                 file, or an already parsed mapping.
 
         Returns:
-            The parsed encodings, or ``None`` if no value was given.
+            The raw encodings source, or ``None`` if no value was given.
 
         """
         if value is None:
             return None
 
+        if isinstance(value, QuantizationOverrides | Encodings):
+            return value
+
         if isinstance(value, str):
             if value.lstrip().startswith("{"):
-                return parse_encodings(value)
+                loaded = json.loads(value)
+                if not isinstance(loaded, dict):
+                    raise TypeError(
+                        "Expected encodings to deserialize to a dict, "
+                        f"got {type(loaded).__name__}."
+                    )
+                return QuantizationOverrides.from_payload(loaded)
             value_path = resolve_path(value, MISC_DIR)
-            return parse_encodings(value_path.read_text())
+            return QuantizationOverrides.from_path(value_path)
+
+        if isinstance(value, dict):
+            return QuantizationOverrides.from_payload(value)
 
         return parse_encodings(value)
 

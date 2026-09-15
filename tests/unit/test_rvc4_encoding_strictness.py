@@ -15,6 +15,7 @@ from modelconverter.utils.config import (
     Encodings,
     InputConfig,
     OutputConfig,
+    QuantizationOverrides,
     RVC4Config,
     SingleStageConfig,
 )
@@ -151,7 +152,7 @@ def _constant_output_model(path: Path) -> Path:
 def _exporter_for_validation(
     *,
     model_path: Path,
-    encodings: Encodings | None,
+    encodings: QuantizationOverrides | Encodings | None,
     strict: bool = True,
     input_file_type: InputFileType = InputFileType.ONNX,
 ) -> RVC4Exporter:
@@ -331,7 +332,7 @@ def test_strict_true_rejects_unknown_activation(work_dir: Path):
         )
 
 
-def test_strict_true_validates_config_normalized_raw_override(
+def test_strict_true_validates_raw_override_names(
     work_dir: Path,
 ):
     model = _probe_model(work_dir / "probe.onnx")
@@ -355,6 +356,56 @@ def test_strict_true_validates_config_normalized_raw_override(
             r"activation_encodings=\['unknown_activation'\]; "
             r"param_encodings=\[\]"
         ),
+    ):
+        exporter._validate_quantization_overrides()
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_strict_validation_preserves_raw_override_payload(
+    work_dir: Path,
+    strict: bool,
+):
+    model = _probe_model(work_dir / "probe.onnx")
+    payload = {
+        "activation_encodings": {
+            "input0": [{"bitwidth": 8, "vendor_activation_key": "keep"}],
+        },
+        "param_encodings": {
+            "weight": [{"bitwidth": 8, "vendor_param_key": "keep"}],
+        },
+        "top_level_vendor_key": "keep",
+    }
+    encodings = QuantizationOverrides.from_payload(payload)
+    exporter = _exporter_for_validation(
+        model_path=model,
+        encodings=encodings,
+        strict=strict,
+    )
+
+    exporter._validate_quantization_overrides()
+
+    assert encodings.load_payload() == payload
+
+
+def test_strict_true_rejects_empty_activation_name(work_dir: Path):
+    model = _probe_model(work_dir / "probe.onnx")
+    encodings = QuantizationOverrides.from_payload(
+        {
+            "activation_encodings": {
+                "": [{"bitwidth": 8}],
+            },
+            "param_encodings": {},
+        }
+    )
+    exporter = _exporter_for_validation(
+        model_path=model,
+        encodings=encodings,
+        strict=True,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"activation_encodings=\[''\]",
     ):
         exporter._validate_quantization_overrides()
 
