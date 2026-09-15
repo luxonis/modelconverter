@@ -71,6 +71,11 @@ def is_image_input_shape(
     return channels <= 0 or channels in {1, 3}
 
 
+def is_interleaved_image_layout(layout: str | None) -> bool:
+    """Return whether an image layout stores channels last."""
+    return layout in {"HWC", "NHWC"}
+
+
 def guess_new_layout(
     old_layout: str, old_shape: list[int], new_shape: list[int]
 ) -> str:

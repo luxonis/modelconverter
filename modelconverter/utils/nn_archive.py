@@ -38,6 +38,7 @@ from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.layout import (
     guess_new_layout,
     is_image_input_shape,
+    is_interleaved_image_layout,
     make_default_layout,
 )
 from modelconverter.utils.metadata import Metadata, get_metadata
@@ -513,7 +514,7 @@ def make_dai_type(
         return f"{encoding.value}{channel_format}"
 
     channel_format = "F16F16F16" if data_type == DataType.FLOAT16 else "888"
-    storage = "i" if layout == "NHWC" else "p"
+    storage = "i" if is_interleaved_image_layout(layout) else "p"
     return f"{encoding.value}{channel_format}{storage}"
 
 
@@ -525,11 +526,11 @@ def _adapt_preprocessing_to_layout(
     if dai_type is not None and dai_type.startswith(("RGB", "BGR")):
         if dai_type.endswith(("i", "p")):
             dai_type = dai_type[:-1]
-        dai_type += "i" if layout == "NHWC" else "p"
+        dai_type += "i" if is_interleaved_image_layout(layout) else "p"
 
     return block.model_copy(
         update={
-            "interleaved_to_planar": layout == "NHWC",
+            "interleaved_to_planar": is_interleaved_image_layout(layout),
             "dai_type": dai_type,
         }
     )
@@ -565,7 +566,7 @@ def _default_archive_preprocessing(
             else None
         ),
         "reverse_channels": inp.encoding.to == Encoding.RGB,
-        "interleaved_to_planar": layout == "NHWC",
+        "interleaved_to_planar": is_interleaved_image_layout(layout),
         "dai_type": dai_type,
     }
 

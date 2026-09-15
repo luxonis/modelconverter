@@ -905,6 +905,41 @@ def test_externalized_image_preprocessing_uses_converted_layout(
     assert inp.preprocessing.model_dump()["interleaved_to_planar"] is True
 
 
+def test_externalized_batchless_hwc_preprocessing_is_interleaved(
+    tmp_path: Path,
+):
+    model = single_io_onnx(tmp_path / "model.onnx", shape=[8, 8, 3])
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "layout": "HWC",
+            "encoding": "RGB",
+        },
+    )
+    stage = next(iter(config.stages.values()))
+    input_types: dict[str, Literal["raw", "image"]] = {
+        inp.name: default_archive_input_type(is_raw_input=inp.is_raw_input)
+        for inp in stage.inputs
+    }
+
+    config, preprocessing = extract_preprocessing(config)
+    block = next(iter(preprocessing.values()))
+    assert block.dai_type == "RGB888i"
+    assert block.model_dump()["interleaved_to_planar"] is True
+
+    nn = _config_to_nn(
+        config,
+        model,
+        preprocessing=preprocessing,
+        preprocessing_input_types=input_types,
+    )
+    inp = nn.model.inputs[0]
+    assert inp.layout == "HWC"
+    assert inp.preprocessing.dai_type == "RGB888i"
+    assert inp.preprocessing.model_dump()["interleaved_to_planar"] is True
+
+
 def test_archive_image_overridden_with_none_encoding_becomes_raw(
     dummy_onnx: Path,
 ):
@@ -1036,6 +1071,20 @@ def test_image_float16_interleaved_with_mean_scale():
     assert block["interleaved_to_planar"] is True
     assert block["mean"] == [0, 0, 0]
     assert block["scale"] == [1, 1, 1]
+
+
+def test_batchless_hwc_image_uses_interleaved_metadata():
+    inp = _input_config(
+        name="x",
+        shape=[64, 64, 3],
+        layout="HWC",
+        encoding="RGB",
+    )
+
+    block = _default_archive_preprocessing(inp, "HWC", input_type="image")
+
+    assert block["dai_type"] == "RGB888i"
+    assert block["interleaved_to_planar"] is True
 
 
 def test_scalar_preprocessing_produces_per_channel_identity_values():

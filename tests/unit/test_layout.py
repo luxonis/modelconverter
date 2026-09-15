@@ -16,6 +16,7 @@ from hypothesis import strategies as st
 from modelconverter.utils.layout import (
     guess_new_layout,
     is_image_input_shape,
+    is_interleaved_image_layout,
     make_default_layout,
 )
 from tests.helpers.strategies import shape_permutations, shapes
@@ -78,6 +79,20 @@ def test_explicit_image_input_shape_allows_batchless_layouts(
     assert (
         is_image_input_shape(shape, layout, allow_batchless=True) is expected
     )
+
+
+@pytest.mark.parametrize(
+    ("layout", "expected"),
+    [
+        ("NHWC", True),
+        ("HWC", True),
+        ("NCHW", False),
+        ("CHW", False),
+        (None, False),
+    ],
+)
+def test_interleaved_image_layout(layout: str | None, expected: bool):
+    assert is_interleaved_image_layout(layout) is expected
 
 
 def test_letter_collision_loop():

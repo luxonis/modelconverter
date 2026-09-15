@@ -37,6 +37,7 @@ from modelconverter.utils.constants import (
     in_docker,
 )
 from modelconverter.utils.filesystem_utils import set_input_base
+from modelconverter.utils.layout import is_interleaved_image_layout
 from modelconverter.utils.types import Encoding, Platform
 
 
@@ -277,7 +278,7 @@ def extract_preprocessing(
                     else [1.0] * identity_value_count
                 ),
                 reverse_channels=encoding.from_ == Encoding.RGB,
-                interleaved_to_planar=layout == "NHWC",
+                interleaved_to_planar=is_interleaved_image_layout(layout),
                 dai_type=dai_type,
             )
 
