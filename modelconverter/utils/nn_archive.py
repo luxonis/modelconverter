@@ -195,9 +195,6 @@ def process_nn_archive(
                     logger.warning(
                         "'interleaved_to_planar' flag is deprecated and will be removed in the future, use 'dai_type' instead"
                     )
-                    legacy_layout = "NHWC" if interleaved_to_planar else "NCHW"
-                    if is_image_input_shape(inp.shape, legacy_layout):
-                        layout = legacy_layout
             channels = (
                 inp.shape[layout.index("C")]
                 if layout and "C" in layout

@@ -385,6 +385,8 @@ def test_explicit_batchless_archive_image_preserves_image_contract(
     [
         (True, [1, 3, 64, 64], "NCHW"),
         (False, [1, 64, 64, 3], "NHWC"),
+        (True, [1, 3, 64, 1], "NCHW"),
+        (False, [1, 1, 64, 3], "NHWC"),
     ],
 )
 def test_legacy_interleaved_layout_mismatch_keeps_archive_layout(
