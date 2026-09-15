@@ -596,7 +596,7 @@ def test_encodings_from_dict():
 def test_existing_encodings_instance_is_preserved():
     encodings = Encodings(activation_encodings={}, param_encodings={})
 
-    cfg = _rvc4_config(encodings=encodings)
+    cfg = RVC4Config.model_validate({"encodings": encodings})
 
     assert cfg.encodings is encodings
 
