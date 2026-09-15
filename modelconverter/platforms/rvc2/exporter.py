@@ -273,6 +273,7 @@ class RVC2Exporter(Exporter):
         logger.info("Converting TFLite model to ONNX.")
         logger.warning("The TFLite to ONNX conversion is experimental.")
 
+        source_shapes = get_metadata(self._input_model).input_shapes
         onnx_path = self._input_model.with_suffix(".onnx")
         tflite2onnx.convert(str(self._input_model), str(onnx_path))
 
@@ -287,24 +288,39 @@ class RVC2Exporter(Exporter):
 
             lt = inp.layout
             sh = inp.shape
+            source_shape = source_shapes.get(name)
+            converted_shape = converted_shapes.get(name)
+            if source_shape is None or converted_shape is None:
+                continue
+            if len(source_shape) != len(lt) or len(converted_shape) != len(lt):
+                continue
 
             if lt[-1] == "C":
                 if len(lt) == 4 and lt[0] == "N":
-                    converted_shape = [sh[0], sh[3], sh[1], sh[2]]
-                    if converted_shapes.get(name) != converted_shape:
+                    converted_source_shape = [
+                        source_shape[0],
+                        source_shape[3],
+                        source_shape[1],
+                        source_shape[2],
+                    ]
+                    if converted_shape != converted_source_shape:
                         continue
                     if not OV_2021:
                         layout_mappings.append(f"{name}(nchw->nhwc)")
-                    inp.shape = converted_shape
+                    inp.shape = [sh[0], sh[3], sh[1], sh[2]]
                     inp.layout = f"{lt[0]}{lt[3]}{lt[1]}{lt[2]}"
 
                 elif len(inp.layout) == 3:
-                    converted_shape = [sh[2], sh[0], sh[1]]
-                    if converted_shapes.get(name) != converted_shape:
+                    converted_source_shape = [
+                        source_shape[2],
+                        source_shape[0],
+                        source_shape[1],
+                    ]
+                    if converted_shape != converted_source_shape:
                         continue
                     if not OV_2021:
                         layout_mappings.append(f"{name}(chw->hwc)")
-                    inp.shape = converted_shape
+                    inp.shape = [sh[2], sh[0], sh[1]]
                     inp.layout = f"{lt[2]}{lt[0]}{lt[1]}"
 
         if layout_mappings:

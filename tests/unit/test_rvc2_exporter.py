@@ -7,7 +7,11 @@ from onnx import TensorProto
 
 from modelconverter.platforms.rvc2.exporter import RVC2Exporter
 from modelconverter.platforms.rvc3.exporter import RVC3Exporter
-from modelconverter.utils import PreprocessingEmbeddingError
+from modelconverter.utils import (
+    Metadata,
+    PreprocessingEmbeddingError,
+    get_metadata,
+)
 from modelconverter.utils.config import (
     Config,
     EncodingConfig,
@@ -18,6 +22,23 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.types import Encoding, InputFileType
 from tests.helpers.onnx_factory import build_onnx, single_io_onnx
+
+
+def _mock_tflite_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    input_shapes: dict[str, list[int]],
+) -> None:
+    """Provide source metadata for mocked TFLite conversion tests."""
+
+    def metadata_for_path(path: Path) -> Metadata:
+        if path.suffix == ".tflite":
+            return Metadata(input_shapes, {}, {}, {})
+        return get_metadata(path)
+
+    monkeypatch.setattr(
+        "modelconverter.platforms.rvc2.exporter.get_metadata",
+        metadata_for_path,
+    )
 
 
 def test_scalar_preprocessing_is_expanded_to_resolved_channels():
@@ -64,6 +85,7 @@ def test_tflite_raw_layout_tracks_converted_onnx_shape(
             Path(target), shape=converted_shape
         ),
     )
+    _mock_tflite_metadata(monkeypatch, {"input0": [1, 8, 8, 4]})
 
     exporter._transform_tflite_to_onnx()
 
@@ -127,6 +149,14 @@ def test_tflite_layout_argument_contains_every_matching_input(
     monkeypatch.setattr(
         "modelconverter.platforms.rvc2.exporter.OV_2021", False
     )
+    _mock_tflite_metadata(
+        monkeypatch,
+        {
+            "image": [1, 8, 8, 3],
+            "features": [8, 8, 3],
+            "unmatched": [1, 6, 6, 3],
+        },
+    )
 
     exporter._transform_tflite_to_onnx()
 
@@ -138,6 +168,53 @@ def test_tflite_layout_argument_contains_every_matching_input(
     assert exporter.inputs["features"].layout == "CHW"
     assert exporter.inputs["unmatched"].shape == [1, 6, 6, 3]
     assert exporter.inputs["unmatched"].layout == "NHWC"
+
+
+def test_tflite_shape_override_preserves_layout_rewrite(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    model = tmp_path / "model.tflite"
+    model.touch()
+    config = SingleStageConfig.model_construct(
+        input_model=model,
+        input_file_type=InputFileType.TFLITE,
+        inputs=[
+            InputConfig(
+                name="data",
+                shape=[1, 6, 6, 3],
+                layout="NHWC",
+                encoding=EncodingConfig.model_validate(
+                    {"from": Encoding.NONE, "to": Encoding.NONE}
+                ),
+            )
+        ],
+        outputs=[OutputConfig(name="out", shape=[1], layout="N")],
+    )
+    output_dir = tmp_path / "out-shape-override"
+    output_dir.mkdir()
+    exporter = RVC2Exporter(config, output_dir)
+
+    monkeypatch.setattr(
+        "modelconverter.platforms.rvc2.exporter.tflite2onnx.convert",
+        lambda _source, target: single_io_onnx(
+            Path(target),
+            name="data",
+            shape=[1, 3, 8, 8],
+            output_name="out",
+        ),
+    )
+    monkeypatch.setattr(
+        "modelconverter.platforms.rvc2.exporter.OV_2021", False
+    )
+    _mock_tflite_metadata(monkeypatch, {"data": [1, 8, 8, 3]})
+
+    exporter._transform_tflite_to_onnx()
+
+    inp = exporter.inputs["data"]
+    assert inp.shape == [1, 3, 6, 6]
+    assert inp.layout == "NCHW"
+    assert exporter._mo_args == ["--layout", "data(nchw->nhwc)"]
 
 
 def test_raw_two_channel_normalization_is_forwarded_to_model_optimizer(

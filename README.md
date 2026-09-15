@@ -129,12 +129,9 @@ In the NN Archive configuration, there are two flags related to color encoding c
   This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
 
 - **`interleaved_to_planar` (Deprecated)**:
-  A legacy NN Archive flag indicating whether input data should be converted from interleaved (`NHWC`) to planar (`NCHW`) format.
+  A legacy NN Archive flag that described whether input data was interleaved (`NHWC`) or planar (`NCHW`). ModelConverter preserves the archive's declared `layout`; use `dai_type` for current archives.
 
-  - `True`: ModelConverter treats the archive input as `NHWC` and passes that layout to the platform conversion tools.
-  - `False`: ModelConverter treats the archive input as `NCHW`.
-
-  This can affect the input layout of the converted model. The exact conversion is platform-specific and does not necessarily involve inserting ONNX transpose nodes.
+  The flag is retained for compatibility and emits a deprecation warning, but it does not override `layout`.
 
   This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
 
