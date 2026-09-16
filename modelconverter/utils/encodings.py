@@ -188,13 +188,6 @@ class _ONNXEncodingNames(NamedTuple):
     parameter_names: set[str]
 
 
-class _QuantizationOverrideNames(NamedTuple):
-    """Tensor names present in an override payload."""
-
-    activation_names: set[str]
-    parameter_names: set[str]
-
-
 def _encoding_group_names(entries: ParamValue) -> set[str]:
     if isinstance(entries, dict):
         return set(entries)
@@ -221,21 +214,17 @@ def _encoding_group_names(entries: ParamValue) -> set[str]:
 
 def collect_quantization_override_names(
     encodings: "Encodings | Mapping[str, Any]",
-) -> _QuantizationOverrideNames:
+) -> tuple[set[str], set[str]]:
     """Collect activation and parameter names without normalizing entries."""
     if not isinstance(encodings, Mapping):
-        return _QuantizationOverrideNames(
-            activation_names=set(encodings.activation_encodings),
-            parameter_names=set(encodings.param_encodings),
+        return (
+            set(encodings.activation_encodings),
+            set(encodings.param_encodings),
         )
 
-    return _QuantizationOverrideNames(
-        activation_names=_encoding_group_names(
-            encodings.get("activation_encodings", {})
-        ),
-        parameter_names=_encoding_group_names(
-            encodings.get("param_encodings", {})
-        ),
+    return (
+        _encoding_group_names(encodings.get("activation_encodings", {})),
+        _encoding_group_names(encodings.get("param_encodings", {})),
     )
 
 
@@ -243,13 +232,15 @@ def validate_quantization_override_names(
     encodings: "Encodings | Mapping[str, Any]", model_path: str | Path
 ) -> None:
     """Reject override names that are absent or in the wrong encoding group."""
-    override_names = collect_quantization_override_names(encodings)
+    activation_names, parameter_names = collect_quantization_override_names(
+        encodings
+    )
     model_names = _collect_onnx_encoding_names(model_path)
     invalid_activation_names = sorted(
-        override_names.activation_names - model_names.activation_names
+        activation_names - model_names.activation_names
     )
     invalid_parameter_names = sorted(
-        override_names.parameter_names - model_names.parameter_names
+        parameter_names - model_names.parameter_names
     )
 
     if invalid_activation_names or invalid_parameter_names:

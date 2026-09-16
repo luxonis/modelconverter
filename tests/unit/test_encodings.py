@@ -200,7 +200,7 @@ def test_dict_input():
 
 
 def test_collect_quantization_override_names_from_raw_payload():
-    names = collect_quantization_override_names(
+    activation_names, parameter_names = collect_quantization_override_names(
         {
             "activation_encodings": {
                 "act": [
@@ -221,8 +221,8 @@ def test_collect_quantization_override_names_from_raw_payload():
         }
     )
 
-    assert names.activation_names == {"act"}
-    assert names.parameter_names == {"weight"}
+    assert activation_names == {"act"}
+    assert parameter_names == {"weight"}
 
 
 def test_list_json_raises_type_error():
