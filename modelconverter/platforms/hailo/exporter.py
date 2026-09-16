@@ -21,13 +21,13 @@ from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
     PreprocessingEmbeddingError,
     exit_with,
-    read_image,
 )
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
     broadcast_preprocessing_values,
 )
+from modelconverter.utils.preprocessing import reorder_layout
 from modelconverter.utils.types import Platform
 
 
@@ -219,21 +219,40 @@ class HailoExporter(Exporter):
             images = self._read_img_dir(calib.path, calib.max_images)
             calib_dataset = np.zeros((len(images), *shape), dtype=np.float32)
 
-            if len(shape) == 3:
-                H, W, C = shape
-                shape = [C, H, W]
-
             for idx, img_path in enumerate(images):
-                img = read_image(
-                    img_path,
-                    [1, *shape],
-                    inp.encoding.to,
-                    calib.resize_method,
-                    data_type=inp.data_type,
-                    transpose=False,
-                )
-                if len(shape) == 3 and img.shape == (1, *shape):
-                    img = np.transpose(img, (0, 2, 3, 1))
+                if (
+                    img_path.suffix.lower() == ".raw"
+                    and not calib.generated_from_random
+                ):
+                    # User tensors are already in Hailo's input layout. Read
+                    # the bytes directly into the HN shape rather than first
+                    # interpreting them in the source model's layout.
+                    img = np.fromfile(
+                        img_path, dtype=inp.data_type.as_numpy_dtype()
+                    ).reshape(shape)
+                else:
+                    img, layout = self._read_calibration_file(
+                        inp, calib, img_path
+                    )
+                    if img.shape == tuple(shape):
+                        pass
+                    elif img.shape == (1, *shape):
+                        img = img[0]
+                    elif len(shape) == 3 and set(layout) in (
+                        set("HWC"),
+                        set("NHWC"),
+                    ):
+                        img = reorder_layout(img, layout, "HWC")
+                    elif "N" in layout and img.shape[layout.index("N")] == 1:
+                        img = reorder_layout(
+                            img, layout, layout.replace("N", "")
+                        )
+
+                if img.shape != tuple(shape):
+                    raise ValueError(
+                        f"Calibration data for input '{orig_name}' has shape "
+                        f"{list(img.shape)}, expected {shape}."
+                    )
 
                 calib_dataset[idx] = img
 

@@ -20,26 +20,28 @@ from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
+    ModelconverterException,
     ONNXModifier,
     PreprocessingEmbeddingError,
     exit_with,
     onnx_attach_normalization_to_inputs,
-    read_image,
 )
 from modelconverter.utils.config import (
     Encodings,
     ImageCalibrationConfig,
+    InputConfig,
     SingleStageConfig,
 )
 from modelconverter.utils.encodings import validate_quantization_override_names
+from modelconverter.utils.preprocessing import (
+    channels_last_image_layout,
+    reorder_layout,
+)
 from modelconverter.utils.subprocess import subprocess_run
 from modelconverter.utils.types import (
-    DataType,
-    Encoding,
     InputFileType,
     Platform,
     QuantizationMode,
-    ResizeMethod,
 )
 
 
@@ -213,7 +215,20 @@ class RVC4Exporter(Exporter):
 
         """
         args = self._snpe_dlc_quant
-        if "--input_list" not in args:
+        has_input_list = "--input_list" in args or any(
+            arg.startswith("--input_list=") for arg in args
+        )
+        if has_input_list and any(
+            inp.calibration_preprocessing is not None
+            for inp in self._inputs.values()
+        ):
+            raise ModelconverterException(
+                "A custom RVC4 `--input_list` cannot be used when "
+                "preprocessing is externalized. Its buffers cannot be "
+                "verified or transformed for the bare converted model."
+            )
+
+        if not has_input_list:
             logger.info("Preparing calibration data.")
             calibration_list = self._prepare_calibration_data()
             args.extend(["--input_list", str(calibration_list)])
@@ -289,10 +304,8 @@ class RVC4Exporter(Exporter):
         class Entry(NamedTuple):
             name: str
             path: Path
-            encoding: Encoding
-            resize_method: ResizeMethod
-            shape: list[int]
-            data_type: DataType
+            inp: InputConfig
+            calib: ImageCalibrationConfig
 
         entries: list[list[Entry]] = []
 
@@ -305,18 +318,13 @@ class RVC4Exporter(Exporter):
                 )
             if not all(x is not None for x in inp.shape):
                 exit_with(ValueError(f"Input `{name}` has dynamic shape."))
-            shape = inp.shape
-            if self._is_tflite:
-                shape = [shape[0], shape[3], shape[1], shape[2]]
             entries.append(
                 [
                     Entry(
                         name=name,
                         path=path,
-                        encoding=inp.encoding.to,
-                        resize_method=calib.resize_method,
-                        shape=shape,
-                        data_type=inp.data_type,
+                        inp=inp,
+                        calib=calib,
                     )
                     for path in self._read_img_dir(
                         calib.path, calib.max_images
@@ -338,14 +346,15 @@ class RVC4Exporter(Exporter):
                     if e.path.suffix == ".raw":
                         entry_str += f"{e.name}:={e.path} "
                     else:
-                        img = read_image(
-                            e.path,
-                            shape=e.shape,
-                            encoding=e.encoding,
-                            resize_method=e.resize_method,
-                            data_type=e.data_type,
-                            transpose=False,
+                        img, layout = self._read_calibration_file(
+                            e.inp, e.calib, e.path
                         )
+                        if e.calib.generated_from_random:
+                            target_layout = channels_last_image_layout(layout)
+                            if target_layout != layout:
+                                img = reorder_layout(
+                                    img, layout, target_layout
+                                )
                         raw_path = self._raw_img_dir / f"{i}.raw"
                         img.tofile(raw_path)
                         entry_str += f"{e.name}:={raw_path} "

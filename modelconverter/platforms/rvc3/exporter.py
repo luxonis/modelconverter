@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 import cv2
+import numpy as np
 from loguru import logger
 from luxonis_ml.typing import Params
 
@@ -20,6 +21,7 @@ from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
 )
+from modelconverter.utils.preprocessing import reorder_layout
 from modelconverter.utils.subprocess import subprocess_run
 from modelconverter.utils.types import (
     DataType,
@@ -150,38 +152,63 @@ class RVC3Exporter(RVC2Exporter):
         assert isinstance(calib, ImageCalibrationConfig)
 
         files = self._read_img_dir(calib.path, calib.max_images)
-        calibration_img_dir = (
-            self.intermediate_outputs_dir / "calibration_images"
+        if inp.shape is None:  # pragma: no cover
+            raise ValueError("Input shape must be provided for calibration")
+
+        # Normalized data cannot safely be written back to an image. POT's
+        # NumPy reader preserves floating-point and negative values and also
+        # lets `.npy`/`.raw` keep their model-ready pass-through contract.
+        use_numpy_reader = (
+            inp.calibration_preprocessing is not None
+            or calib.generated_from_random
+            or any(file.suffix.lower() in {".npy", ".raw"} for file in files)
         )
-        calibration_img_dir.mkdir(exist_ok=True)
+        calibration_dir = self.intermediate_outputs_dir / (
+            "calibration_tensors" if use_numpy_reader else "calibration_images"
+        )
+        calibration_dir.mkdir(exist_ok=True)
 
-        for file in files:
-            if inp.shape is None:  # pragma: no cover
+        if use_numpy_reader:
+            if inp.layout is None:  # pragma: no cover - shape resolves layout
                 raise ValueError(
-                    "Input shape must be provided for calibration"
+                    "Input layout must be provided for calibration"
                 )
-            img = read_image(
-                file,
-                inp.shape,
-                inp.encoding.to,
-                calib.resize_method,
-                data_type=DataType.UINT8,
-                transpose=False,
-            )
-            suffix = ".png" if file.suffix == ".npy" else file.suffix
-            cv2.imwrite(
-                str((calibration_img_dir / file.stem).with_suffix(suffix)), img
-            )
+            for index, file in enumerate(files):
+                array, layout = self._read_calibration_file(inp, calib, file)
+                array = reorder_layout(array, layout, inp.layout)
+                if array.shape != tuple(inp.shape):
+                    raise ValueError(
+                        f"Calibration data for input '{inp.name}' has shape "
+                        f"{list(array.shape)}, expected {inp.shape}."
+                    )
+                np.save(calibration_dir / f"{index}.npy", array)
 
-        dataset: Params = {
-            "name": "calibration",
-            "data_source": str(calibration_img_dir),
-            "reader": "opencv_imread",
-        }
-        if inp.encoding.to == Encoding.GRAY:
-            dataset["preprocessing"] = [{"type": "bgr_to_gray"}]
-        elif not self._reverse_input_channels:
-            dataset["preprocessing"] = [{"type": "bgr_to_rgb"}]
+            dataset: Params = {
+                "name": "calibration",
+                "data_source": str(calibration_dir),
+                "reader": "numpy_reader",
+            }
+        else:
+            for file in files:
+                img = read_image(
+                    file,
+                    inp.shape,
+                    inp.encoding.to,
+                    calib.resize_method,
+                    data_type=DataType.UINT8,
+                    transpose=False,
+                )
+                cv2.imwrite(str(calibration_dir / file.name), img)
+
+            dataset = {
+                "name": "calibration",
+                "data_source": str(calibration_dir),
+                "reader": "opencv_imread",
+            }
+            if inp.encoding.to == Encoding.GRAY:
+                dataset["preprocessing"] = [{"type": "bgr_to_gray"}]
+            elif not self._reverse_input_channels:
+                dataset["preprocessing"] = [{"type": "bgr_to_rgb"}]
 
         config = {
             "model": {

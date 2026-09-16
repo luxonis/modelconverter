@@ -3,13 +3,18 @@
 from pathlib import Path
 from typing import Literal, NoReturn
 
+import numpy as np
 import pytest
 from luxonis_ml.typing import Params
 
 import modelconverter.__main__ as main_module
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import ONNXException, PreprocessingEmbeddingError
-from modelconverter.utils.config import Config, SingleStageConfig
+from modelconverter.utils.config import (
+    Config,
+    ImageCalibrationConfig,
+    SingleStageConfig,
+)
 from modelconverter.utils.types import Platform
 
 
@@ -334,6 +339,111 @@ def test_nn_archive_retries_after_preprocessing_embedding_failure(
     ]
     assert len(configured_properties) == 1
     assert configured_properties[0]["archive_preprocess"] is True
+
+
+def test_fallback_regenerates_random_calibration_for_externalized_domain(
+    dummy_onnx: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = Config.get_config(
+        None,
+        {
+            "input_model": str(dummy_onnx),
+            "shape": [1, 3, 4, 4],
+            "layout": "NCHW",
+            "encoding": "BGR",
+            "mean_values": 10,
+            "scale_values": 2,
+            "calibration": {
+                "max_images": 1,
+                "min_value": 0,
+                "max_value": 255,
+                "mean": 100,
+                "std": 1,
+                "data_type": "float32",
+            },
+            "onnx_simplification": False,
+        },
+    )
+    main_stage = next(iter(cfg.stages))
+    output_dir = tmp_path / "retry-output"
+    generated_suffixes: list[str] = []
+    prepared_samples: list[tuple[np.ndarray, np.ndarray]] = []
+
+    class RetryExporter(Exporter):
+        platform = Platform.RVC4
+
+        def __init__(self, config: SingleStageConfig, output_dir: Path):
+            super().__init__(config, output_dir)
+            calibration = config.inputs[0].calibration
+            assert isinstance(calibration, ImageCalibrationConfig)
+            files = sorted(calibration.path.iterdir())
+            generated_suffixes.append(files[0].suffix)
+            if config.inputs[0].calibration_preprocessing is None:
+                raise PreprocessingEmbeddingError(
+                    "retry with archive preprocessing"
+                )
+
+        def exporter_buildinfo(self) -> Params:
+            return {}
+
+        def export(self) -> Path:
+            raise AssertionError("run() is overridden")
+
+        def run(self) -> Path:
+            inp = self.config.inputs[0]
+            calibration = inp.calibration
+            assert isinstance(calibration, ImageCalibrationConfig)
+            path = next(iter(calibration.path.iterdir()))
+            source = np.load(path)
+            prepared, _ = self._read_calibration_file(inp, calibration, path)
+            prepared_samples.append((source, prepared))
+            self._inference_model_path = self.output_dir / "model.dlc"
+            return self._inference_model_path
+
+    monkeypatch.setattr(main_module.signal, "signal", lambda *_args: None)
+    monkeypatch.setattr(main_module, "init_dirs", lambda: None)
+    monkeypatch.setattr(
+        main_module,
+        "get_configs",
+        lambda *_args, **_kwargs: (cfg, None, main_stage),
+    )
+    monkeypatch.setattr(
+        main_module,
+        "get_output_dir_name",
+        lambda *_args, **_kwargs: output_dir,
+    )
+    monkeypatch.setattr(main_module, "setup_logging", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        main_module,
+        "get_exporter",
+        lambda _platform, config, output_dir: RetryExporter(
+            config, output_dir
+        ),
+    )
+    monkeypatch.setattr(main_module, "get_component_telemetry", _FakeTelemetry)
+    monkeypatch.setattr(
+        main_module, "get_conversion_run_id", lambda: "test-run"
+    )
+    monkeypatch.setattr(main_module, "peak_ram_usage_bytes", lambda: 0)
+    monkeypatch.setattr(main_module, "is_nn_archive", lambda _path: False)
+    monkeypatch.setattr(
+        main_module,
+        "generate_archive",
+        lambda **_kwargs: output_dir / "model.rvc4.tar.xz",
+    )
+
+    main_module.convert(
+        Platform.RVC4,
+        path=str(dummy_onnx),
+        to="nn_archive",
+    )
+
+    assert generated_suffixes == [".png", ".npy"]
+    assert len(prepared_samples) == 1
+    source, prepared = prepared_samples[0]
+    np.testing.assert_allclose(prepared, (source - 10) / 2)
 
 
 @pytest.mark.parametrize(

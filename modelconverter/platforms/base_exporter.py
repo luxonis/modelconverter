@@ -25,6 +25,7 @@ from modelconverter.utils import (
     ModelconverterException,
     exit_with,
     read_calib_dir,
+    read_image,
     sanitize_net_name,
     subprocess_run,
 )
@@ -38,6 +39,10 @@ from modelconverter.utils.onnx_compatibility import (
     get_external_data_paths,
     has_external_data,
     save_onnx_model,
+)
+from modelconverter.utils.preprocessing import (
+    apply_calibration_preprocessing,
+    array_layout,
 )
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import InputFileType, Platform
@@ -400,7 +405,66 @@ class Exporter(ABC):
                 else:
                     np.save(dest / f"{i}.npy", arr)
 
-            self._inputs[name].calibration = ImageCalibrationConfig(path=dest)
+            resolved = ImageCalibrationConfig(path=dest)
+            resolved._generated_from_random = True
+            self._inputs[name].calibration = resolved
+
+    @staticmethod
+    def _read_calibration_file(
+        inp: InputConfig,
+        calib: ImageCalibrationConfig,
+        path: Path,
+    ) -> tuple[np.ndarray, str]:
+        """Load one calibration file and apply externalized preprocessing.
+
+        User-provided ``.npy`` and ``.raw`` files retain their documented
+        pass-through contract. Random calibration materialized as ``.npy`` is
+        different: it is still a managed, pre-preprocessing source and is
+        transformed when preprocessing has been externalized.
+        """
+        if inp.shape is None:  # pragma: no cover - validated by each backend
+            raise ValueError(
+                f"Input shape must be provided for calibration input '{inp.name}'."
+            )
+
+        suffix = path.suffix.lower()
+        is_tensor_file = suffix in {".npy", ".raw"}
+        preprocessing = inp.calibration_preprocessing
+        should_preprocess = preprocessing is not None and (
+            not is_tensor_file or calib.generated_from_random
+        )
+        if should_preprocess:
+            assert preprocessing is not None
+            encoding = preprocessing.encoding_to
+        else:
+            encoding = inp.encoding.to
+        array = read_image(
+            path,
+            inp.shape,
+            encoding,
+            calib.resize_method,
+            data_type=inp.data_type,
+            transpose=False,
+            layout=inp.layout,
+        )
+
+        if is_tensor_file:
+            layout = array_layout(
+                array,
+                configured_shape=inp.shape,
+                configured_layout=inp.layout,
+            )
+        else:
+            # Image decoding always produces HWC, including a singleton C for
+            # grayscale images, independently of the model's tensor layout.
+            layout = "HWC"
+
+        if should_preprocess:
+            assert preprocessing is not None
+            array = apply_calibration_preprocessing(
+                array, preprocessing, layout=layout
+            )
+        return array, layout
 
     @staticmethod
     def _attach_suffix(path: PathType, suffix: str) -> Path:

@@ -3,14 +3,21 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import onnx
 import pytest
+from onnx import TensorProto
+from PIL import Image
 
+from modelconverter.cli.utils import extract_preprocessing
 from modelconverter.platforms.rvc4.exporter import RVC4Exporter
-from modelconverter.utils import PreprocessingEmbeddingError
+from modelconverter.utils import (
+    ModelconverterException,
+    PreprocessingEmbeddingError,
+)
 from modelconverter.utils.config import Config, Encodings, RVC4Config
 from modelconverter.utils.types import InputFileType
-from tests.helpers.onnx_factory import single_io_onnx
+from tests.helpers.onnx_factory import build_onnx, single_io_onnx
 
 
 def _make_exporter(
@@ -275,3 +282,139 @@ def test_two_channel_normalization_is_embedded(tmp_path: Path):
         node.op_type for node in onnx.load(exporter._input_model).graph.node
     ]
     assert operations[:2] == ["Sub", "Mul"]
+
+
+def _externalized_calibration_exporter(
+    tmp_path: Path,
+    *,
+    quant_args: list[str] | None = None,
+) -> RVC4Exporter:
+    model = single_io_onnx(
+        tmp_path / "externalized.onnx",
+        shape=[1, 3, 1, 1],
+        output_shape=[1, 3, 1, 1],
+    ).resolve()
+    calibration_dir = tmp_path / "externalized-calibration"
+    calibration_dir.mkdir()
+    Image.fromarray(np.array([[[100, 110, 120]]], dtype=np.uint8)).save(
+        calibration_dir / "pixel.png"
+    )
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": [1, 3, 1, 1],
+            "layout": "NCHW",
+            "encoding": {"from": "RGB", "to": "BGR"},
+            "mean_values": [10, 20, 30],
+            "scale_values": 2,
+            "calibration": {"path": str(calibration_dir)},
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4": {
+                "quantization_mode": "CUSTOM",
+                "snpe_dlc_quant_args": quant_args or [],
+            },
+        },
+    )
+    extract_preprocessing(config)
+    output_dir = tmp_path / "externalized-output"
+    output_dir.mkdir()
+    return RVC4Exporter(next(iter(config.stages.values())), output_dir)
+
+
+def test_externalized_calibration_image_is_written_in_model_domain(
+    tmp_path: Path,
+):
+    exporter = _externalized_calibration_exporter(tmp_path)
+
+    input_list = exporter._prepare_calibration_data()
+
+    entry = input_list.read_text().strip()
+    raw_path = Path(entry.split(":=", 1)[1])
+    actual = np.fromfile(raw_path, dtype=np.float32).reshape(1, 1, 3)
+    np.testing.assert_array_equal(
+        actual, np.array([[[45.0, 45.0, 45.0]]], dtype=np.float32)
+    )
+
+
+def test_externalized_preprocessing_rejects_custom_input_list(tmp_path: Path):
+    custom_list = tmp_path / "custom-list.txt"
+    custom_list.write_text("input0:=sample.raw\n")
+    exporter = _externalized_calibration_exporter(
+        tmp_path,
+        quant_args=["--input_list", str(custom_list)],
+    )
+
+    with pytest.raises(ModelconverterException, match="cannot be used"):
+        exporter._calibrate(tmp_path / "model.dlc")
+
+
+def test_externalized_multi_input_calibration_uses_each_input_contract(
+    tmp_path: Path,
+) -> None:
+    shape = [1, 3, 1, 1]
+    model = build_onnx(
+        tmp_path / "multi-input.onnx",
+        [
+            ("rgb_input", shape, TensorProto.FLOAT),
+            ("bgr_input", shape, TensorProto.FLOAT),
+        ],
+        [
+            ("rgb_output", shape, TensorProto.FLOAT),
+            ("bgr_output", shape, TensorProto.FLOAT),
+        ],
+    ).resolve()
+    rgb_dir = tmp_path / "rgb-calibration"
+    bgr_dir = tmp_path / "bgr-calibration"
+    rgb_dir.mkdir()
+    bgr_dir.mkdir()
+    Image.fromarray(np.array([[[100, 110, 120]]], dtype=np.uint8)).save(
+        rgb_dir / "pixel.png"
+    )
+    Image.fromarray(np.array([[[50, 60, 70]]], dtype=np.uint8)).save(
+        bgr_dir / "pixel.png"
+    )
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "inputs": [
+                {
+                    "name": "rgb_input",
+                    "layout": "NCHW",
+                    "encoding": {"from": "RGB", "to": "BGR"},
+                    "mean_values": [10, 20, 30],
+                    "scale_values": 2,
+                    "calibration": {"path": str(rgb_dir)},
+                },
+                {
+                    "name": "bgr_input",
+                    "layout": "NCHW",
+                    "encoding": "BGR",
+                    "mean_values": 5,
+                    "scale_values": 5,
+                    "calibration": {"path": str(bgr_dir)},
+                },
+            ],
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4.quantization_mode": "CUSTOM",
+        },
+    )
+    extract_preprocessing(config)
+    output_dir = tmp_path / "multi-input-output"
+    output_dir.mkdir()
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+
+    input_list = exporter._prepare_calibration_data()
+
+    entries = {
+        name: Path(path)
+        for token in input_list.read_text().split()
+        for name, path in [token.split(":=", 1)]
+    }
+    rgb = np.fromfile(entries["rgb_input"], dtype=np.float32)
+    bgr = np.fromfile(entries["bgr_input"], dtype=np.float32)
+    np.testing.assert_array_equal(rgb, np.array([45, 45, 45], np.float32))
+    np.testing.assert_array_equal(bgr, np.array([13, 11, 9], np.float32))

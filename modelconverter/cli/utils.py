@@ -38,6 +38,7 @@ from modelconverter.utils.constants import (
 )
 from modelconverter.utils.filesystem_utils import set_input_base
 from modelconverter.utils.layout import is_interleaved_image_layout
+from modelconverter.utils.preprocessing import CalibrationPreprocessing
 from modelconverter.utils.types import Encoding, Platform
 
 
@@ -252,6 +253,20 @@ def extract_preprocessing(
         )
         encoding = inp.encoding
         layout = inp.layout
+        is_image = not inp.is_raw_input
+
+        # Clearing the conversion-side fields below must not discard the
+        # operation needed to put managed calibration samples into the bare
+        # source model's input domain.
+        inp._calibration_preprocessing = CalibrationPreprocessing(
+            encoding_from=encoding.from_,
+            encoding_to=encoding.to,
+            mean_values=None if mean is None else tuple(mean),
+            scale_values=None if scale is None else tuple(scale),
+            layout=layout,
+            data_type=inp.data_type,
+            is_image=is_image,
+        )
 
         if inp.is_raw_input:
             if mean is not None or scale is not None:
