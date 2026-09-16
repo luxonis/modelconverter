@@ -234,7 +234,16 @@ class HailoExporter(Exporter):
                     img, layout = self._read_calibration_file(
                         inp, calib, img_path
                     )
-                    if img.shape == tuple(shape):
+                    if (
+                        calib.generated_from_random
+                        and len(shape) == 3
+                        and set(layout) in (set("HWC"), set("NHWC"))
+                    ):
+                        # Managed tensors retain the source model's layout.
+                        # Reorder them before relying on shape equality, which
+                        # is ambiguous when C, H, and W happen to be equal.
+                        img = reorder_layout(img, layout, "HWC")
+                    elif img.shape == tuple(shape):
                         pass
                     elif img.shape == (1, *shape):
                         img = img[0]

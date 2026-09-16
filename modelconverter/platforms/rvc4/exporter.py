@@ -220,6 +220,10 @@ class RVC4Exporter(Exporter):
         )
         if has_input_list and any(
             inp.calibration_preprocessing is not None
+            and (
+                inp.calibration_preprocessing.encoding_mismatch
+                or inp.calibration_preprocessing.normalization_required
+            )
             for inp in self._inputs.values()
         ):
             raise ModelconverterException(
@@ -349,7 +353,13 @@ class RVC4Exporter(Exporter):
                         img, layout = self._read_calibration_file(
                             e.inp, e.calib, e.path
                         )
-                        if e.calib.generated_from_random:
+                        preprocessing = e.inp.calibration_preprocessing
+                        generated_image = (
+                            preprocessing.is_image
+                            if preprocessing is not None
+                            else not e.inp.is_raw_input
+                        )
+                        if e.calib.generated_from_random and generated_image:
                             target_layout = channels_last_image_layout(layout)
                             if target_layout != layout:
                                 img = reorder_layout(

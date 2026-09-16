@@ -15,7 +15,12 @@ from modelconverter.utils import (
     ModelconverterException,
     PreprocessingEmbeddingError,
 )
-from modelconverter.utils.config import Config, Encodings, RVC4Config
+from modelconverter.utils.config import (
+    Config,
+    Encodings,
+    ImageCalibrationConfig,
+    RVC4Config,
+)
 from modelconverter.utils.types import InputFileType
 from tests.helpers.onnx_factory import build_onnx, single_io_onnx
 
@@ -348,6 +353,81 @@ def test_externalized_preprocessing_rejects_custom_input_list(tmp_path: Path):
 
     with pytest.raises(ModelconverterException, match="cannot be used"):
         exporter._calibrate(tmp_path / "model.dlc")
+
+
+def test_identity_externalization_allows_custom_input_list(tmp_path: Path):
+    model = single_io_onnx(
+        tmp_path / "identity.onnx",
+        shape=[1, 8],
+        output_shape=[1, 8],
+    ).resolve()
+    calibration_dir = tmp_path / "identity-calibration"
+    calibration_dir.mkdir()
+    np.save(calibration_dir / "sample.npy", np.zeros((1, 8), np.float32))
+    custom_list = tmp_path / "custom-list.txt"
+    custom_list.write_text("input0:=sample.raw\n")
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": [1, 8],
+            "layout": "NC",
+            "encoding": "NONE",
+            "calibration": {"path": str(calibration_dir)},
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4": {
+                "quantization_mode": "CUSTOM",
+                "snpe_dlc_quant_args": [
+                    "--input_list",
+                    str(custom_list),
+                ],
+            },
+        },
+    )
+    extract_preprocessing(config)
+    output_dir = tmp_path / "identity-output"
+    output_dir.mkdir()
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+    exporter._subprocess_run = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+
+    result = exporter._calibrate(tmp_path / "model.dlc")
+
+    assert result.name.endswith("-quantized.dlc")
+
+
+def test_generated_raw_tensor_keeps_configured_layout(tmp_path: Path):
+    shape = [1, 2, 3, 4]
+    model = single_io_onnx(
+        tmp_path / "raw-tensor.onnx",
+        shape=shape,
+        output_shape=shape,
+    ).resolve()
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": shape,
+            "layout": "NCHW",
+            "encoding": "NONE",
+            "calibration": {"max_images": 1, "data_type": "float32"},
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4.quantization_mode": "CUSTOM",
+        },
+    )
+    output_dir = tmp_path / "raw-tensor-output"
+    output_dir.mkdir()
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+    calibration = exporter.inputs["input0"].calibration
+    assert isinstance(calibration, ImageCalibrationConfig)
+    source = np.load(next(calibration.path.glob("*.npy")))
+
+    input_list = exporter._prepare_calibration_data()
+
+    raw_path = Path(input_list.read_text().split(":=", 1)[1].strip())
+    actual = np.fromfile(raw_path, dtype=np.float32).reshape(shape)
+    np.testing.assert_array_equal(actual, source)
 
 
 def test_externalized_multi_input_calibration_uses_each_input_contract(
