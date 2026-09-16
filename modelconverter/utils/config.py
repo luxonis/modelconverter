@@ -133,11 +133,17 @@ class ImageCalibrationConfig(BaseModelExtraForbid):
     max_images: int = -1
     resize_method: ResizeMethod = ResizeMethod.RESIZE
     _generated_from_random: bool = PrivateAttr(default=False)
+    _generated_layout: str | None = PrivateAttr(default=None)
 
     @property
     def generated_from_random(self) -> bool:
         """Whether this file source was materialized from random calibration."""
         return self._generated_from_random
+
+    @property
+    def generated_layout(self) -> str | None:
+        """Layout used when generated tensor calibration was materialized."""
+        return self._generated_layout
 
     @field_validator("path", mode="before")
     @staticmethod

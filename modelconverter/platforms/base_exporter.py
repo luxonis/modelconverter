@@ -407,6 +407,7 @@ class Exporter(ABC):
 
             resolved = ImageCalibrationConfig(path=dest)
             resolved._generated_from_random = True
+            resolved._generated_layout = inp.layout
             self._inputs[name].calibration = resolved
 
     @staticmethod
@@ -449,11 +450,23 @@ class Exporter(ABC):
         )
 
         if is_tensor_file:
-            layout = array_layout(
-                array,
-                configured_shape=inp.shape,
-                configured_layout=inp.layout,
-            )
+            if (
+                calib.generated_from_random
+                and calib.generated_layout is not None
+            ):
+                layout = calib.generated_layout
+                if len(layout) != array.ndim:
+                    raise ModelconverterException(
+                        f"Generated calibration array with shape "
+                        f"{list(array.shape)} cannot use its generation-time "
+                        f"layout '{layout}'."
+                    )
+            else:
+                layout = array_layout(
+                    array,
+                    configured_shape=inp.shape,
+                    configured_layout=inp.layout,
+                )
         else:
             # Image decoding always produces HWC, including a singleton C for
             # grayscale images, independently of the model's tensor layout.
