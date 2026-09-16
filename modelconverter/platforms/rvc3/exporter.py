@@ -21,7 +21,10 @@ from modelconverter.utils.config import (
     ImageCalibrationConfig,
     SingleStageConfig,
 )
-from modelconverter.utils.preprocessing import reorder_layout
+from modelconverter.utils.preprocessing import (
+    channels_last_image_layout,
+    reorder_layout,
+)
 from modelconverter.utils.subprocess import subprocess_run
 from modelconverter.utils.types import (
     DataType,
@@ -173,13 +176,25 @@ class RVC3Exporter(RVC2Exporter):
                 raise ValueError(
                     "Input layout must be provided for calibration"
                 )
+            sample_layout = channels_last_image_layout(inp.layout)
+            if "N" in sample_layout:
+                sample_layout = sample_layout.replace("N", "", 1)
+            expected_sample_shape = tuple(
+                inp.shape[inp.layout.index(axis)] for axis in sample_layout
+            )
             for index, file in enumerate(files):
                 array, layout = self._read_calibration_file(inp, calib, file)
-                array = reorder_layout(array, layout, inp.layout)
-                if array.shape != tuple(inp.shape):
+                # Accuracy Checker's NumPy reader treats each file as one
+                # sample. Its input feeder adds the batch axis and, for a
+                # four-dimensional OpenVINO input, converts an HWC sample to
+                # the model layout. Persisting the full NCHW tensor here would
+                # therefore make POT interpret its axes as an NHWC sample.
+                array = reorder_layout(array, layout, sample_layout)
+                if array.shape != expected_sample_shape:
                     raise ValueError(
                         f"Calibration data for input '{inp.name}' has shape "
-                        f"{list(array.shape)}, expected {inp.shape}."
+                        f"{list(array.shape)}, expected "
+                        f"{list(expected_sample_shape)}."
                     )
                 np.save(calibration_dir / f"{index}.npy", array)
 

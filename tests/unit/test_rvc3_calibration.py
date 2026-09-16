@@ -62,11 +62,15 @@ def test_externalized_preprocessing_uses_float_numpy_pot_data(
     tensor_path = Path(dataset["data_source"]) / "0.npy"
     actual = np.load(tensor_path)
     assert actual.dtype == np.float32
-    assert actual.shape == (1, 3, 1, 1)
+    assert actual.shape == (1, 1, 3)
     np.testing.assert_array_equal(
         actual,
-        np.array([[[[45.0]], [[45.0]], [[45.0]]]], dtype=np.float32),
+        np.array([[[45.0, 45.0, 45.0]]], dtype=np.float32),
     )
+    # POT's Accuracy Checker batches HWC NumPy samples and converts the batch
+    # to the OpenVINO model layout.
+    pot_input = np.expand_dims(actual, axis=0).transpose(0, 3, 1, 2)
+    assert pot_input.shape == (1, 3, 1, 1)
     assert commands
     assert commands[0][0] == "pot"
 
@@ -115,9 +119,11 @@ def test_generated_calibration_keeps_layout_across_tflite_conversion(
     actual = np.load(
         exporter.intermediate_outputs_dir / "calibration_tensors/0.npy"
     )
-    expected = (
+    expected_model_input = (
         (source - np.array([1, 2, 3], dtype=np.float32).reshape(1, 1, 1, 3))
         / 2
     ).transpose(0, 3, 1, 2)
-    assert actual.shape == (1, 3, 2, 4)
-    np.testing.assert_allclose(actual, expected)
+    assert actual.shape == (2, 4, 3)
+    pot_input = np.expand_dims(actual, axis=0).transpose(0, 3, 1, 2)
+    assert pot_input.shape == (1, 3, 2, 4)
+    np.testing.assert_allclose(pot_input, expected_model_input)
