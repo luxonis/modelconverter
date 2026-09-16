@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from loguru import logger
 from luxonis_ml.typing import Params
@@ -28,6 +28,7 @@ from modelconverter.utils import (
 from modelconverter.utils.config import (
     Encodings,
     ImageCalibrationConfig,
+    QuantizationOverrides,
     SingleStageConfig,
 )
 from modelconverter.utils.encodings import validate_quantization_override_names
@@ -46,6 +47,17 @@ class RVC4Exporter(Exporter):
     """Exporter producing a DLC model for the RVC4 platform."""
 
     platform: Platform = Platform.RVC4
+    _IO_ENCODING_TRANSFORMED_KEYS = {
+        "bitwidth",
+        "bw",
+        "is_symmetric",
+        "is_sym",
+        "dtype",
+        "max",
+        "min",
+        "offset",
+        "scale",
+    }
 
     def __init__(self, config: SingleStageConfig, output_dir: Path):
         """Initialize the exporter and pre-process the input model.
@@ -348,36 +360,128 @@ class RVC4Exporter(Exporter):
                 f.write(entry_str + "\n")
         return self._input_list_path
 
-    def _generate_io_encodings(self, encodings: Encodings) -> Path:
-        """Write the quantization overrides to a JSON file.
+    def _generate_io_encodings(
+        self, encodings: QuantizationOverrides | Encodings
+    ) -> Path:
+        """Return the quantization overrides file to pass to SNPE.
 
         When IO normalization is enabled, the encodings of the model's
         own inputs and outputs are replaced by the default 8-bit integer
         encoding for DAI compatibility. Otherwise, their configured
-        encodings are preserved. Internal tensor encodings are preserved
-        in either case.
+        encodings are preserved. Existing file payloads are passed through
+        without reserialization when no normalization is requested.
 
         Args:
-            encodings: Encodings as resolved from the configuration,
+            encodings: Quantization overrides as resolved from the configuration,
                 before any optional exposed-tensor normalization.
 
         Returns:
-            Path to the written ``encodings.json``.
+            Path to the original or generated quantization-overrides file.
 
         """
-        encodings_dict = encodings.model_dump(mode="json", exclude_none=True)
+        if (
+            isinstance(encodings, QuantizationOverrides)
+            and encodings.source_path is not None
+            and not self._normalize_io_encodings
+        ):
+            return encodings.source_path
+
+        encodings_dict = self._quantization_override_payload(encodings)
         # DAI does not support custom TF8 encodings on exposed tensors.
-        # Keep AIMET's internal tensor encodings, but normalize exposed
+        # Keep internal tensor encodings unchanged, but normalize exposed
         # inputs and outputs to default int8 IO when requested.
         if self._normalize_io_encodings:
-            for name in list(self._inputs.keys()) + list(self._outputs.keys()):
-                encodings_dict["activation_encodings"][name] = [
-                    {"bitwidth": 8, "dtype": "int"}
-                ]
+            self._normalize_exposed_io_encodings(encodings_dict)
         encodings_path = self.intermediate_outputs_dir / "encodings.json"
         with open(encodings_path, "w") as encodings_file:
             json.dump(encodings_dict, encodings_file, indent=4)
         return encodings_path
+
+    @staticmethod
+    def _quantization_override_payload(
+        encodings: QuantizationOverrides | Encodings,
+    ) -> dict[str, Any]:
+        if isinstance(encodings, Encodings):
+            return encodings.model_dump(mode="json", exclude_none=True)
+        return encodings.load_payload()
+
+    def _normalize_exposed_io_encodings(
+        self, encodings_dict: dict[str, Any]
+    ) -> None:
+        activation_encodings = encodings_dict.setdefault(
+            "activation_encodings", {}
+        )
+        exposed_names = list(self._inputs.keys()) + list(self._outputs.keys())
+
+        if isinstance(activation_encodings, list):
+            seen = set()
+            for item in activation_encodings:
+                if not isinstance(item, dict):
+                    self._raise_io_normalization_error(
+                        "activation_encodings list entries must be dicts"
+                    )
+                name = item.get("name")
+                if not isinstance(name, str) or not name:
+                    self._raise_io_normalization_error(
+                        "activation_encodings list entries must have a "
+                        "nonempty string `name`"
+                    )
+                if name in exposed_names:
+                    self._normalize_io_encoding_item(item)
+                    seen.add(name)
+            for name in exposed_names:
+                if name not in seen:
+                    activation_encodings.append(
+                        {"name": name, "bitwidth": 8, "dtype": "int"}
+                    )
+            return
+
+        if not isinstance(activation_encodings, dict):
+            self._raise_io_normalization_error(
+                "`activation_encodings` must be a dict or list"
+            )
+
+        for name in exposed_names:
+            if name not in activation_encodings:
+                activation_encodings[name] = [{"bitwidth": 8, "dtype": "int"}]
+                continue
+
+            entry = activation_encodings[name]
+            if isinstance(entry, dict):
+                self._normalize_io_encoding_item(entry)
+                continue
+
+            if isinstance(entry, list):
+                if not entry:
+                    entry.append({"bitwidth": 8, "dtype": "int"})
+                    continue
+                for item in entry:
+                    if not isinstance(item, dict):
+                        self._raise_io_normalization_error(
+                            f"`activation_encodings.{name}` list entries "
+                            "must be dicts"
+                        )
+                    self._normalize_io_encoding_item(item)
+                continue
+
+            self._raise_io_normalization_error(
+                f"`activation_encodings.{name}` must be a dict or list"
+            )
+
+    @staticmethod
+    def _normalize_io_encoding_item(item: dict[str, Any]) -> None:
+        for key in RVC4Exporter._IO_ENCODING_TRANSFORMED_KEYS:
+            item.pop(key, None)
+        item.update({"bitwidth": 8, "dtype": "int"})
+
+    @staticmethod
+    def _raise_io_normalization_error(reason: str) -> None:
+        raise TypeError(
+            "Could not apply `rvc4.normalize_io_encodings=True` to the "
+            f"configured quantization overrides: {reason}. Disable IO "
+            "normalization with `rvc4.normalize_io_encodings=False` to pass "
+            "the raw overrides through to SNPE."
+        )
 
     def _onnx_to_dlc(self) -> Path:
         """Convert the input model to the DLC format.
@@ -498,6 +602,6 @@ class RVC4Exporter(Exporter):
             )
 
         validate_quantization_override_names(
-            self._encodings,
+            self._quantization_override_payload(self._encodings),
             self._input_model,
         )

@@ -1,12 +1,12 @@
 """RVC4 conversion driven by a custom ``encodings.json``.
 
-The unit tests cover *parsing* a custom ``encodings.json`` -- ``rvc4.encodings``
-accepting an inline dict / JSON string / path, the per-channel expansion, the
+The unit tests cover custom ``encodings.json`` source handling --
+``rvc4.encodings`` accepting an inline dict / JSON string / path, and
 ``--quantization_overrides`` extraction. Being host-only, they cannot cover the
-RVC4 exporter actually consuming those encodings, nor the two related SNPE knobs,
-so this e2e converts the toy conv net with:
+RVC4 exporter actually consuming those raw overrides, nor the two related SNPE
+knobs, so this e2e converts the toy conv net with:
 
-  * a custom ``encodings.json`` referenced by path, driving
+  * a custom, SNPE-facing ``encodings.json`` referenced by path, driving
     ``_generate_io_encodings`` -> ``snpe-onnx-to-dlc --quantization_overrides``
     and ``snpe-dlc-quant --override_params``;
   * ``strict_quantization_overrides`` -> ModelConverter validates custom
@@ -19,9 +19,12 @@ so this e2e converts the toy conv net with:
 By default, ``_generate_io_encodings`` normalizes the *exposed*
 input/output activation encodings to default int8 IO, so the custom values
 mainly exercise the internal-tensor / param path. Setting
-``rvc4.normalize_io_encodings`` to false opts out of that rewrite. The point is
-the exporter code, not numeric fidelity, so asserting a quantized ``.dlc`` is
-produced is enough. Unit tests cover the normalization switch directly.
+``rvc4.normalize_io_encodings`` to false opts out of that rewrite. Raw
+encodings are otherwise passed through to SNPE, not normalized through
+ModelConverter's ``Encodings`` schema. The point is the exporter code, not
+numeric fidelity, so asserting a quantized ``.dlc`` is produced is enough.
+Unit tests cover lossless source preservation and the normalization switch
+directly.
 
 Run inside the RVC4 Docker image::
 
@@ -54,8 +57,9 @@ _INT8_ACTIVATION = {
     "offset": 0,
 }
 
-# An AIMET-style encodings file. The `weight` param uses per-channel vectors (one
-# entry per output channel) so parsing also exercises the per-channel expansion.
+# A SNPE-facing encodings file. The `weight` param uses scalar per-channel
+# entries so this integration test does not depend on ModelConverter expanding
+# AIMET-style vector fields before invoking SNPE.
 _ENCODINGS = {
     "activation_encodings": {
         "img": [_INT8_ACTIVATION],
@@ -67,11 +71,12 @@ _ENCODINGS = {
                 "bitwidth": 8,
                 "dtype": "int",
                 "is_symmetric": "True",
-                "min": [-0.5] * _OUT_CHANNELS,
-                "max": [0.5] * _OUT_CHANNELS,
-                "scale": [0.004] * _OUT_CHANNELS,
-                "offset": [-128] * _OUT_CHANNELS,
+                "min": -0.5,
+                "max": 0.5,
+                "scale": 0.004,
+                "offset": -128,
             }
+            for _ in range(_OUT_CHANNELS)
         ],
     },
 }
