@@ -35,7 +35,10 @@ from modelconverter.platforms.base_benchmark import (
     get_option,
     get_optional_option,
 )
-from modelconverter.platforms.rvc4.utils import get_device_info
+from modelconverter.platforms.rvc4.utils import (
+    device_id_to_adb_id,
+    get_device_info,
+)
 from modelconverter.utils import (
     DataType,
     DeviceMonitor,
@@ -86,6 +89,24 @@ RUNTIMES: dict[str, str] = {
     "dsp": "use_dsp",
     "cpu": "use_cpu",
 }
+
+
+def _get_first_rvc4_device_info() -> dai.DeviceInfo:
+    for info in dai.Device.getAllAvailableDevices():
+        if info.platform == XLinkPlatform.X_LINK_RVC4:
+            return info
+
+    raise RuntimeError("No RVC4 device found.")
+
+
+def _resolve_monitored_dai_device(
+    device_ip: str | None, device_adb_id: str | None
+) -> tuple[str | None, str | None]:
+    if device_ip is not None or device_adb_id is not None:
+        return device_ip, device_adb_id
+
+    info = _get_first_rvc4_device_info()
+    return info.name, device_id_to_adb_id(info.getDeviceId())
 
 
 class RVC4Benchmark(Benchmark):
@@ -392,6 +413,10 @@ class RVC4Benchmark(Benchmark):
             get_optional_option(configuration, "device_ip", str),
             get_optional_option(configuration, "device_id", str),
         )
+        if dai_benchmark and device_monitor:
+            device_ip, device_adb_id = _resolve_monitored_dai_device(
+                device_ip, device_adb_id
+            )
         if device_monitor or not dai_benchmark:
             self._handler = create_handler(device_ip, device_adb_id)
         else:
@@ -625,12 +650,7 @@ class RVC4Benchmark(Benchmark):
         if device_ip:
             device = dai.Device(dai.DeviceInfo(device_ip))
         else:
-            for info in dai.Device.getAllAvailableDevices():
-                if info.platform == XLinkPlatform.X_LINK_RVC4:
-                    device = dai.Device(info)
-                    break
-            else:
-                raise RuntimeError("No RVC4 device found.")
+            device = dai.Device(_get_first_rvc4_device_info())
 
         if device.getPlatform() != dai.Platform.RVC4:
             raise ValueError(
