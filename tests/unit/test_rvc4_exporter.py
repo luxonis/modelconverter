@@ -376,7 +376,9 @@ def test_externalized_calibration_matches_embedded_model_output(
         session = ort.InferenceSession(
             str(model_path), providers=["CPUExecutionProvider"]
         )
-        return session.run(None, {session.get_inputs()[0].name: array})[0]
+        return np.asarray(
+            session.run(None, {session.get_inputs()[0].name: array})[0]
+        )
 
     embedded_output = infer(embedded._input_model, runtime_array)
     externalized_output = infer(externalized._input_model, model_array)
