@@ -30,7 +30,6 @@ from modelconverter.cli.utils import get_configs
 from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Platform
-from tests.helpers.conversion import assert_produced
 from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import platform_params
 from tests.helpers.precision import cosine_similarity, locate_converted_model
@@ -44,6 +43,14 @@ _THRESHOLD = 0.9
 _CHANNEL_VALUES = (90, 130, 170)
 
 _PARAMS = platform_params(PLATFORMS)
+
+
+def _conversion_options(platform: Platform) -> tuple[str, ...]:
+    """Use the source TFLite model's RGB contract on RVC4."""
+    options = platform_options(platform)
+    if platform is Platform.RVC4:
+        return (*options, "encoding", "RGB")
+    return options
 
 
 @pytest.fixture(scope="module")
@@ -61,25 +68,11 @@ def solid_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.mark.parametrize("platform_name", _PARAMS)
-def test_toy_tflite_conversion(platform_name: str, toy_tflite: Path):
-    platform = Platform(platform_name)
-    output_name = f"_toy-tflite-{platform_name}"
-    convert(
-        platform,
-        *platform_options(platform),
-        path=str(toy_tflite),
-        output_dir=output_name,
-        to="native",
-    )
-    assert_produced(output_name)
-
-
-@pytest.mark.parametrize("platform_name", _PARAMS)
 def test_toy_tflite_precision(
     platform_name: str, toy_tflite: Path, solid_image: Path
 ):
     platform = Platform(platform_name)
-    options = platform_options(platform)
+    options = _conversion_options(platform)
     output_name = f"_toy-tflite-prec-{platform_name}"
     convert(
         platform,
@@ -108,7 +101,23 @@ def test_toy_tflite_precision(
     converted = inferer.infer({stage.inputs[0].name: solid_image})
 
     (output,) = converted.values()
-    values = np.sort(np.asarray(output, dtype=np.float32).ravel())
+    output_array = np.asarray(output, dtype=np.float32)
+    if platform is Platform.RVC4:
+        # RVC4Inferer exposes four-dimensional outputs as NCHW. OpenCV writes
+        # the fixture as BGR, while the RVC4 input contract reads it as RGB,
+        # so the identity model must preserve the reversed channel order.
+        assert output_array.ndim == 4
+        assert output_array.shape[1] == 3
+        channel_means = output_array.mean(axis=(0, 2, 3))
+        expected_rgb = np.asarray(_CHANNEL_VALUES[::-1], dtype=np.float32)
+        assert np.array_equal(
+            np.argsort(channel_means), np.argsort(expected_rgb)
+        ), (
+            "rvc4 tflite changed RGB channel order: "
+            f"expected {expected_rgb.tolist()}, got {channel_means.tolist()}"
+        )
+
+    values = np.sort(output_array.ravel())
     per_channel = values.size // len(_CHANNEL_VALUES)
     reference = np.sort(
         np.repeat(np.array(_CHANNEL_VALUES, dtype=np.float32), per_channel)

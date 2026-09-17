@@ -86,6 +86,11 @@ SCENARIOS: list[Scenario] = [
 def _scenario_options(
     platform_name: str, scenario: Scenario
 ) -> tuple[str, ...]:
+    if scenario.id == "tflite-to-native" and platform_name == "rvc4":
+        # RVC4 cannot bake preprocessing into a TFLite model. The source
+        # model already expects RGB, so make that no-op contract explicit.
+        return (*scenario.opts, "encoding", "RGB")
+
     if scenario.id != "ir-to-archive":
         return scenario.opts
 

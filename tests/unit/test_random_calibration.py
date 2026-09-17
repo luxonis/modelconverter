@@ -21,14 +21,18 @@ from modelconverter.utils.config import InputConfig, RandomCalibrationConfig
 
 
 def _prepare(
-    tmp_path: Path, shape: list[int], layout: str | None, *, raw: bool = False
+    tmp_path: Path,
+    shape: list[int],
+    layout: str | None,
+    *,
+    encoding: str | None = None,
 ) -> list[str]:
     """Run the calibration prep for one input, returning the written suffixes."""
     data: dict = {"name": "x", "shape": shape}
     if layout is not None:
         data["layout"] = layout
-    if raw:
-        data["encoding"] = {"from": "NONE", "to": "NONE"}
+    if encoding is not None:
+        data["encoding"] = encoding
     inp = InputConfig.model_validate(data)
     inp.calibration = RandomCalibrationConfig(max_images=2)
 
@@ -42,28 +46,34 @@ def _prepare(
 
 
 @pytest.mark.parametrize(
-    ("shape", "layout", "raw", "suffix"),
+    ("shape", "layout", "encoding", "suffix"),
     [
         # 4D NCHW image: channel axis is known from the layout (the path the
         # conversion tests already cover) -> written as a `.png`.
-        ([1, 3, 8, 8], None, False, ".png"),
-        # Rank-3 tensor with a C-less layout: the channels-first heuristic
-        # (`shape[0] in {1, 3}`) transposes to HWC before the `.png` write.
-        ([3, 4, 5], "TNF", False, ".png"),
+        ([1, 3, 8, 8], None, None, ".png"),
+        # Explicit color encoding keeps the legacy channels-first image path
+        # for a rank-3 tensor with a C-less layout.
+        ([3, 4, 5], "TNF", "RGB", ".png"),
+        # Without an explicit color contract, the same nonstandard layout is
+        # treated as a raw tensor.
+        ([3, 4, 5], "TNF", None, ".npy"),
         # Rank-1 feature vector: not image-like -> raw `.npy`.
-        ([8], None, False, ".npy"),
+        ([8], None, None, ".npy"),
         # Batched (N > 1) tensor: not image-like -> raw `.npy`.
-        ([2, 3, 8, 8], None, False, ".npy"),
+        ([2, 3, 8, 8], None, None, ".npy"),
         # Raw tensors use NumPy even when their rank resembles an image.
-        ([1, 32], "NC", True, ".npy"),
+        ([1, 32], "NC", "NONE", ".npy"),
     ],
 )
 def test_random_calibration_output_format(
     tmp_path: Path,
     shape: list[int],
     layout: str | None,
-    raw: bool,
+    encoding: str | None,
     suffix: str,
 ):
     np.random.seed(0)
-    assert _prepare(tmp_path, shape, layout, raw=raw) == [suffix, suffix]
+    assert _prepare(tmp_path, shape, layout, encoding=encoding) == [
+        suffix,
+        suffix,
+    ]

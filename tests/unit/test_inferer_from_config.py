@@ -15,6 +15,7 @@ import pytest
 from luxonis_ml.typing import ParamValue
 
 from modelconverter.platforms.base_inferer import Inferer
+from modelconverter.platforms.rvc4.inferer import RVC4Inferer
 from modelconverter.utils.config import Config
 from modelconverter.utils.types import Encoding, ResizeMethod
 from tests.helpers.onnx_factory import single_io_onnx
@@ -99,6 +100,21 @@ def test_shapes_and_dtypes_are_mapped(work_dir: Path):
     inferer = _build(work_dir, [1, 3, 64, 64])
     assert inferer.in_shapes == {"input0": [1, 3, 64, 64]}
     assert inferer.out_shapes == {"output0": [1, 10]}
+
+
+def test_rvc4_output_layouts_are_cached_during_setup(work_dir: Path):
+    model = single_io_onnx(
+        work_dir / "rvc4.onnx",
+        output_shape=[1, 8, 8, 3],
+    ).resolve()
+    config = Config.get_config(None, {"input_model": str(model)})
+    stage = next(iter(config.stages.values()))
+
+    inferer = RVC4Inferer.from_config(
+        str(model), work_dir / "src", work_dir / "rvc4-dest", stage
+    )
+
+    assert inferer._output_layouts == {"output0": "NHWC"}
 
 
 def test_the_stand_in_reports_no_outputs(work_dir: Path):

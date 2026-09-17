@@ -83,6 +83,7 @@ class RVC3Exporter(RVC2Exporter):
         if self._input_file_type == InputFileType.ONNX:
             xml_path = self._export_openvino_ir()
         elif self._input_file_type == InputFileType.IR:
+            self._validate_ir_preprocessing_contract()
             xml_path = self._input_model
         else:
             raise NotImplementedError

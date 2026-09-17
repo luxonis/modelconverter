@@ -16,7 +16,7 @@ model.
 import warnings
 from itertools import chain
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import onnx
 from loguru import logger
@@ -30,7 +30,9 @@ from luxonis_ml.utils import LuxonisConfig
 from onnx import TypeProto
 from pydantic import (
     Field,
+    ModelWrapValidatorHandler,
     PositiveInt,
+    PrivateAttr,
     field_serializer,
     field_validator,
     model_validator,
@@ -41,7 +43,10 @@ from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
 from modelconverter.utils.encodings import parse_encodings
 from modelconverter.utils.filesystem_utils import resolve_path
-from modelconverter.utils.layout import make_default_layout
+from modelconverter.utils.layout import (
+    is_image_input_shape,
+    make_default_layout,
+)
 from modelconverter.utils.metadata import Metadata, get_metadata
 from modelconverter.utils.onnx_compatibility import (
     has_external_data,
@@ -63,6 +68,10 @@ NAMED_VALUES = {
         "scale": [58.395, 57.12, 57.375],
     },
 }
+
+TRUSTWORTHY_INFERRED_CHANNEL_LAYOUTS = frozenset(
+    {"CHW", "HWC", "NCHW", "NHWC"}
+)
 
 
 class LinkCalibrationConfig(BaseModelExtraForbid):
@@ -263,6 +272,23 @@ class InputConfig(OutputConfig):
     mean_values: Annotated[list[float], Field(min_length=1)] | None = None
     frozen_value: list[int | float] | None = None
     encoding: EncodingConfig = EncodingConfig()
+    _layout_was_explicit: bool = PrivateAttr(default=False)
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def _track_layout_source(
+        cls, data: Any, handler: ModelWrapValidatorHandler[Self]
+    ) -> Self:
+        """Remember whether ``C`` came from the user or layout inference."""
+        if isinstance(data, cls):
+            layout_was_explicit = data._layout_was_explicit
+        else:
+            layout_was_explicit = (
+                isinstance(data, dict) and data.get("layout") is not None
+            )
+        model = handler(data)
+        model._layout_was_explicit = layout_was_explicit
+        return model
 
     @property
     def encoding_mismatch(self) -> bool:
@@ -282,18 +308,27 @@ class InputConfig(OutputConfig):
             and self.encoding.to == Encoding.NONE
         )
 
+    @property
+    def channel_count(self) -> int | None:
+        """Return the positive channel count when ``C`` is trustworthy."""
+        if self.shape is None or self.layout is None or "C" not in self.layout:
+            return None
+        if (
+            not self._layout_was_explicit
+            and self.layout not in TRUSTWORTHY_INFERRED_CHANNEL_LAYOUTS
+        ):
+            return None
+        channels = self.shape[self.layout.index("C")]
+        return channels if channels > 0 else None
+
     @model_validator(mode="after")
     def _validate_grayscale_inputs(self) -> Self:
-        if self.layout is None:
-            return self
-
-        if "C" not in self.layout:
-            return self
-
-        assert self.shape is not None
-
-        channels = self.shape[self.layout.index("C")]
-        if channels == 1:
+        encodings = {self.encoding.from_, self.encoding.to}
+        if self.channel_count == 1 and encodings <= {
+            Encoding.RGB,
+            Encoding.BGR,
+            Encoding.GRAY,
+        }:
             logger.info("Detected grayscale input. Setting encoding to GRAY.")
             self.encoding.from_ = self.encoding.to = Encoding.GRAY
 
@@ -314,6 +349,39 @@ class InputConfig(OutputConfig):
     def _validate_encoding(cls, data: Params) -> Params:
         encoding = data.get("encoding")
         if encoding is None or encoding == {}:
+            shape = data.get("shape")
+            layout = data.get("layout")
+            if (
+                isinstance(shape, list)
+                and all(isinstance(dim, int) for dim in shape)
+                and (layout is None or isinstance(layout, str))
+            ):
+                int_shape = [dim for dim in shape if isinstance(dim, int)]
+                resolved_layout = (
+                    make_default_layout(int_shape)
+                    if layout is None
+                    else layout.upper()
+                )
+                if not is_image_input_shape(int_shape, resolved_layout):
+                    if len(int_shape) == 3 and resolved_layout in {
+                        "CHW",
+                        "HWC",
+                    }:
+                        channels = int_shape[resolved_layout.index("C")]
+                        if channels <= 0 or channels in {1, 3}:
+                            name = data.get("name", "<unnamed>")
+                            logger.warning(
+                                f"Input '{name}' uses batchless image layout "
+                                f"'{resolved_layout}' but has no explicit "
+                                "encoding; treating it as a raw tensor. Set "
+                                "`encoding` explicitly to enable image color "
+                                "handling."
+                            )
+                    data["encoding"] = {
+                        "from": "NONE",
+                        "to": "NONE",
+                    }
+                    return data
             data["encoding"] = {"from": "RGB", "to": "BGR"}
             return data
         if isinstance(encoding, str):
@@ -355,13 +423,83 @@ class InputConfig(OutputConfig):
         if isinstance(value, str) and value in NAMED_VALUES:
             return NAMED_VALUES[value][values_type]
         if isinstance(value, float | int):
-            return [value, value, value]
+            # Keep the documented scalar meaning until the input's channel
+            # count is known.
+            return [value]
         return value
 
-    def requires_onnx_input_modification(
+    @model_validator(mode="after")
+    def _validate_preprocessing_values(self) -> Self:
+        """Reject invalid preprocessing values."""
+        self._reject_zero_scale_values()
+        return self
+
+    def _reject_zero_scale_values(self) -> None:
+        """Reject scale values that make normalization undefined."""
+        if self.scale_values is not None and any(
+            value == 0 for value in self.scale_values
+        ):
+            raise ValueError(
+                f"Input '{self.name}' has a zero scale value; scale values "
+                "must be non-zero."
+            )
+
+    def validate_input_contract(self, *, validate_values: bool = True) -> None:
+        """Validate encoding and preprocessing against a known channel axis."""
+        if validate_values:
+            self._reject_zero_scale_values()
+
+        channels = self.channel_count
+        encodings = {self.encoding.from_, self.encoding.to}
+        image_encodings = {Encoding.RGB, Encoding.BGR, Encoding.GRAY}
+        if channels is not None:
+            if encodings & {Encoding.RGB, Encoding.BGR} and channels != 3:
+                raise ValueError(
+                    f"Input '{self.name}' has {channels} channels and cannot "
+                    "use RGB/BGR encoding; use `encoding: NONE` for a packed "
+                    "or non-image tensor input."
+                )
+            if Encoding.GRAY in encodings and channels != 1:
+                raise ValueError(
+                    f"Input '{self.name}' has {channels} channels and cannot "
+                    "use GRAY encoding; grayscale image inputs require "
+                    "exactly one channel."
+                )
+
+        if (
+            encodings & image_encodings
+            and self.shape is not None
+            and self.layout is not None
+            and not is_image_input_shape(
+                self.shape, self.layout, allow_batchless=True
+            )
+        ):
+            raise ValueError(
+                f"Input '{self.name}' has layout '{self.layout}', which does "
+                "not describe an image; use `encoding: NONE` for a packed "
+                "or non-image tensor input."
+            )
+
+        if channels is None:
+            return
+
+        if validate_values:
+            for values_name, values in (
+                ("mean_values", self.mean_values),
+                ("scale_values", self.scale_values),
+            ):
+                if values is not None and len(values) not in {1, channels}:
+                    raise ValueError(
+                        f"Input '{self.name}' has {channels} channels, but "
+                        f"'{values_name}' contains {len(values)} values; "
+                        "provide one value to broadcast or one value per "
+                        "channel."
+                    )
+
+    def requires_input_preprocessing(
         self, *, reverse_only: bool = False
     ) -> bool:
-        """Check whether the ONNX graph must be modified for this input.
+        """Check whether preprocessing is requested for this input.
 
         Args:
             reverse_only: If ``True``, only the channel reversal is
@@ -385,6 +523,47 @@ class InputConfig(OutputConfig):
             self.scale_values is not None
             and any(v != 1 for v in self.scale_values)
         )
+
+    def validate_preprocessing(self, *, reverse_only: bool = False) -> int:
+        """Validate requested preprocessing and return the channel count.
+
+        Args:
+            reverse_only: Validate only a requested encoding conversion.
+
+        Returns:
+            The resolved number of input channels.
+
+        Raises:
+            ValueError: If the input contract is insufficient or inconsistent.
+
+        """
+        self.validate_input_contract(validate_values=not reverse_only)
+
+        channels = self.channel_count
+        if channels is None:
+            raise ValueError(
+                f"Cannot apply preprocessing to input '{self.name}' without "
+                "a trustworthy, positive channel dimension; provide the "
+                "input layout explicitly."
+            )
+
+        if self.encoding_mismatch:
+            if not self.is_color_input or self.encoding.to not in {
+                Encoding.RGB,
+                Encoding.BGR,
+            }:
+                raise ValueError(
+                    f"Cannot reverse channels for input '{self.name}': "
+                    "channel reversal requires RGB/BGR color encodings."
+                )
+            if channels != 3:
+                raise ValueError(
+                    f"Cannot reverse channels for input '{self.name}' with "
+                    f"{channels} channels; RGB/BGR reversal requires exactly "
+                    "3 channels."
+                )
+
+        return channels
 
 
 class PlatformConfig(BaseModelExtraForbid):
@@ -1168,6 +1347,15 @@ class Config(LuxonisConfig):
             self.stages = {model_name: stage}
             self.name = model_name
         return self
+
+
+def broadcast_preprocessing_values(
+    values: list[float], channels: int | None
+) -> list[float]:
+    """Expand a scalar preprocessing value to the resolved channel count."""
+    if len(values) == 1 and channels is not None:
+        return values * channels
+    return list(values)
 
 
 def _dtype_name(dtype: DataType | None) -> str | None:

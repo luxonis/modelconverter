@@ -25,6 +25,10 @@ class ONNXException(ModelconverterException):
     """Raised when an ONNX model cannot be inspected or modified."""
 
 
+class PreprocessingEmbeddingError(ModelconverterException):
+    """Raised when valid preprocessing cannot be embedded into a model."""
+
+
 def exit_with(exception: BaseException, code: int = 1) -> NoReturn:
     """Log the exception and terminate the process.
 
