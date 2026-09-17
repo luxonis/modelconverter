@@ -142,14 +142,18 @@ def test_externalized_image_is_preprocessed(dummy_onnx: Path, tmp_path: Path):
     )
 
 
-def test_user_numpy_calibration_remains_opaque(
-    dummy_onnx: Path, tmp_path: Path
+@pytest.mark.parametrize("suffix", [".npy", ".raw"])
+def test_user_tensor_calibration_remains_opaque(
+    dummy_onnx: Path, tmp_path: Path, suffix: str
 ):
-    calibration_dir = tmp_path / "numpy"
+    calibration_dir = tmp_path / suffix.lstrip(".")
     calibration_dir.mkdir()
     source = np.array([[[[100.0]], [[110.0]], [[120.0]]]], dtype=np.float32)
-    npy_path = calibration_dir / "sample.npy"
-    np.save(npy_path, source)
+    tensor_path = calibration_dir / f"sample{suffix}"
+    if suffix == ".npy":
+        np.save(tensor_path, source)
+    else:
+        source.tofile(tensor_path)
     inp = _externalized_input(dummy_onnx, calibration_dir)
     calib = inp.calibration
     assert isinstance(calib, ImageCalibrationConfig)
@@ -157,27 +161,7 @@ def test_user_numpy_calibration_remains_opaque(
     array, layout = Exporter._read_calibration_file(
         inp,
         calib,
-        npy_path,
-    )
-
-    assert layout == "NCHW"
-    np.testing.assert_array_equal(array, source)
-
-
-def test_user_raw_calibration_remains_opaque(dummy_onnx: Path, tmp_path: Path):
-    calibration_dir = tmp_path / "raw"
-    calibration_dir.mkdir()
-    source = np.array([[[[100.0]], [[110.0]], [[120.0]]]], dtype=np.float32)
-    raw_path = calibration_dir / "sample.raw"
-    source.tofile(raw_path)
-    inp = _externalized_input(dummy_onnx, calibration_dir)
-    calib = inp.calibration
-    assert isinstance(calib, ImageCalibrationConfig)
-
-    array, layout = Exporter._read_calibration_file(
-        inp,
-        calib,
-        raw_path,
+        tensor_path,
     )
 
     assert layout == "NCHW"

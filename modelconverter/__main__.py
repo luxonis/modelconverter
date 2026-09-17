@@ -256,9 +256,7 @@ def convert(
                 except ValueError as error:
                     raise ModelconverterException(str(error)) from error
 
-        # Exporters may resolve random calibration or otherwise adjust their
-        # input configuration while attempting to embed preprocessing. Keep a
-        # pristine source for an archive-preprocessing retry.
+        # Keep cfg copy for an archive-preprocessing retry.
         fallback_source_cfg = cfg.model_copy(deep=True)
 
         preprocessing = {}

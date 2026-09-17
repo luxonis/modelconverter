@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import onnx
+import onnxruntime as ort
 import pytest
 from onnx import TensorProto
 from PIL import Image
@@ -21,6 +22,7 @@ from modelconverter.utils.config import (
     ImageCalibrationConfig,
     RVC4Config,
 )
+from modelconverter.utils.preprocessing import reorder_layout
 from modelconverter.utils.types import InputFileType
 from tests.helpers.onnx_factory import build_onnx, single_io_onnx
 
@@ -289,10 +291,11 @@ def test_two_channel_normalization_is_embedded(tmp_path: Path):
     assert operations[:2] == ["Sub", "Mul"]
 
 
-def _externalized_calibration_exporter(
+def _calibration_exporter(
     tmp_path: Path,
     *,
     quant_args: list[str] | None = None,
+    externalize: bool = True,
 ) -> RVC4Exporter:
     model = single_io_onnx(
         tmp_path / "externalized.onnx",
@@ -300,7 +303,7 @@ def _externalized_calibration_exporter(
         output_shape=[1, 3, 1, 1],
     ).resolve()
     calibration_dir = tmp_path / "externalized-calibration"
-    calibration_dir.mkdir()
+    calibration_dir.mkdir(exist_ok=True)
     Image.fromarray(np.array([[[100, 110, 120]]], dtype=np.uint8)).save(
         calibration_dir / "pixel.png"
     )
@@ -322,8 +325,11 @@ def _externalized_calibration_exporter(
             },
         },
     )
-    extract_preprocessing(config)
-    output_dir = tmp_path / "externalized-output"
+    if externalize:
+        extract_preprocessing(config)
+    output_dir = tmp_path / (
+        "externalized-output" if externalize else "embedded-output"
+    )
     output_dir.mkdir()
     return RVC4Exporter(next(iter(config.stages.values())), output_dir)
 
@@ -331,7 +337,7 @@ def _externalized_calibration_exporter(
 def test_externalized_calibration_image_is_written_in_model_domain(
     tmp_path: Path,
 ):
-    exporter = _externalized_calibration_exporter(tmp_path)
+    exporter = _calibration_exporter(tmp_path)
 
     input_list = exporter._prepare_calibration_data()
 
@@ -343,12 +349,78 @@ def test_externalized_calibration_image_is_written_in_model_domain(
     )
 
 
-def test_externalized_preprocessing_rejects_custom_input_list(tmp_path: Path):
+def test_externalized_calibration_matches_embedded_model_output(
+    tmp_path: Path,
+):
+    embedded = _calibration_exporter(tmp_path, externalize=False)
+    externalized = _calibration_exporter(tmp_path)
+    image_path = tmp_path / "externalized-calibration/pixel.png"
+
+    embedded_input = embedded.inputs["input0"]
+    embedded_calibration = embedded_input.calibration
+    assert isinstance(embedded_calibration, ImageCalibrationConfig)
+    runtime_array, runtime_layout = embedded._read_calibration_file(
+        embedded_input, embedded_calibration, image_path
+    )
+    runtime_array = reorder_layout(runtime_array, runtime_layout, "NCHW")
+
+    externalized_input = externalized.inputs["input0"]
+    externalized_calibration = externalized_input.calibration
+    assert isinstance(externalized_calibration, ImageCalibrationConfig)
+    model_array, model_layout = externalized._read_calibration_file(
+        externalized_input, externalized_calibration, image_path
+    )
+    model_array = reorder_layout(model_array, model_layout, "NCHW")
+
+    def infer(model_path: Path, array: np.ndarray) -> np.ndarray:
+        session = ort.InferenceSession(
+            str(model_path), providers=["CPUExecutionProvider"]
+        )
+        return session.run(None, {session.get_inputs()[0].name: array})[0]
+
+    embedded_output = infer(embedded._input_model, runtime_array)
+    externalized_output = infer(externalized._input_model, model_array)
+
+    np.testing.assert_allclose(embedded_output, externalized_output)
+    np.testing.assert_array_equal(
+        externalized_output,
+        np.array([[[[45.0]], [[45.0]], [[45.0]]]], dtype=np.float32),
+    )
+
+
+def test_user_raw_calibration_is_referenced_without_rewriting(tmp_path: Path):
+    exporter = _calibration_exporter(tmp_path)
+    calibration_dir = tmp_path / "raw-calibration"
+    calibration_dir.mkdir()
+    source = np.array([[[[1.0]], [[2.0]], [[3.0]]]], dtype=np.float32)
+    raw_path = calibration_dir / "model-domain.raw"
+    source.tofile(raw_path)
+    exporter.inputs["input0"].calibration = ImageCalibrationConfig(
+        path=calibration_dir
+    )
+
+    input_list = exporter._prepare_calibration_data()
+
+    assert input_list.read_text().strip() == f"input0:={raw_path}"
+    np.testing.assert_array_equal(
+        np.fromfile(raw_path, dtype=np.float32).reshape(source.shape), source
+    )
+
+
+@pytest.mark.parametrize("joined", [False, True])
+def test_externalized_preprocessing_rejects_custom_input_list(
+    tmp_path: Path, joined: bool
+):
     custom_list = tmp_path / "custom-list.txt"
     custom_list.write_text("input0:=sample.raw\n")
-    exporter = _externalized_calibration_exporter(
+    quant_args = (
+        [f"--input_list={custom_list}"]
+        if joined
+        else ["--input_list", str(custom_list)]
+    )
+    exporter = _calibration_exporter(
         tmp_path,
-        quant_args=["--input_list", str(custom_list)],
+        quant_args=quant_args,
     )
 
     with pytest.raises(ModelconverterException, match="cannot be used"):

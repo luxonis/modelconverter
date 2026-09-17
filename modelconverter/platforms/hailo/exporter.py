@@ -224,9 +224,7 @@ class HailoExporter(Exporter):
                     img_path.suffix.lower() == ".raw"
                     and not calib.generated_from_random
                 ):
-                    # User tensors are already in Hailo's input layout. Read
-                    # the bytes directly into the HN shape rather than first
-                    # interpreting them in the source model's layout.
+                    # User tensors are already in Hailo's input layout.
                     img = np.fromfile(
                         img_path, dtype=inp.data_type.as_numpy_dtype()
                     ).reshape(shape)

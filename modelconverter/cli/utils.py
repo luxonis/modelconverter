@@ -253,11 +253,8 @@ def extract_preprocessing(
         )
         encoding = inp.encoding
         layout = inp.layout
-        is_image = not inp.is_raw_input
 
-        # Clearing the conversion-side fields below must not discard the
-        # operation needed to put managed calibration samples into the bare
-        # source model's input domain.
+        # Saving preprocessing before it's cleared
         inp._calibration_preprocessing = CalibrationPreprocessing(
             encoding_from=encoding.from_,
             encoding_to=encoding.to,
@@ -265,7 +262,7 @@ def extract_preprocessing(
             scale_values=None if scale is None else tuple(scale),
             layout=layout,
             data_type=inp.data_type,
-            is_image=is_image,
+            is_image=not inp.is_raw_input,
         )
 
         if inp.is_raw_input:

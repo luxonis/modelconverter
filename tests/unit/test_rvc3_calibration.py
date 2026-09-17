@@ -75,6 +75,54 @@ def test_externalized_preprocessing_uses_float_numpy_pot_data(
     assert commands[0][0] == "pot"
 
 
+@pytest.mark.parametrize("suffix", [".npy", ".raw"])
+def test_user_tensor_is_opaque_but_serialized_for_pot_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    shape = [1, 3, 1, 2]
+    model = single_io_onnx(
+        tmp_path / "model.onnx", shape=shape, output_shape=shape
+    ).resolve()
+    calibration_dir = tmp_path / "calibration"
+    calibration_dir.mkdir()
+    source = np.arange(6, dtype=np.float32).reshape(shape)
+    tensor_path = calibration_dir / f"sample{suffix}"
+    if suffix == ".npy":
+        np.save(tensor_path, source)
+    else:
+        source.tofile(tensor_path)
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": shape,
+            "layout": "NCHW",
+            "encoding": {"from": "RGB", "to": "BGR"},
+            "mean_values": [100, 200, 300],
+            "scale_values": 10,
+            "calibration": {"path": str(calibration_dir)},
+            "onnx_simplification": False,
+        },
+    )
+    extract_preprocessing(config)
+    output_dir = tmp_path / "rvc3-output"
+    output_dir.mkdir()
+    exporter = RVC3Exporter(next(iter(config.stages.values())), output_dir)
+    monkeypatch.setattr(
+        rvc3_exporter, "subprocess_run", lambda *_args, **_kwargs: None
+    )
+
+    exporter._calibrate(tmp_path / "model.xml")
+
+    pot_config = json.loads(
+        (exporter.intermediate_outputs_dir / "pot_config.json").read_text()
+    )
+    dataset = pot_config["engine"]["datasets"][0]
+    actual = np.load(Path(dataset["data_source"]) / "0.npy")
+    assert dataset["reader"] == "numpy_reader"
+    np.testing.assert_array_equal(actual, source.transpose(0, 2, 3, 1)[0])
+
+
 def test_generated_calibration_keeps_layout_across_tflite_conversion(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
