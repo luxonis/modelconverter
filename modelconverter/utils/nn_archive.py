@@ -431,8 +431,36 @@ def modelconverter_config_to_nn(
                 "preprocessing": preprocessing_cfg,
             }
         )
+    metadata_output_names = list(model_metadata.output_shapes)
+    configured_output_names = [out.name for out in cfg.outputs]
+    if len(configured_output_names) != len(metadata_output_names):
+        raise ValueError(
+            "The converted model has a different number of outputs than the "
+            f"conversion config: {metadata_output_names} != "
+            f"{configured_output_names}."
+        )
+
+    exact_output_names = set(configured_output_names) & set(
+        metadata_output_names
+    )
+    renamed_output_names = iter(
+        name
+        for name in metadata_output_names
+        if name not in exact_output_names
+    )
     for out in cfg.outputs:
-        new_shape = model_metadata.output_shapes[out.name]
+        metadata_name = (
+            out.name
+            if out.name in model_metadata.output_shapes
+            else next(renamed_output_names)
+        )
+        if metadata_name != out.name:
+            logger.warning(
+                f"Converted model output '{out.name}' was renamed to "
+                f"'{metadata_name}'. Using the converted name in the NN Archive."
+            )
+
+        new_shape = model_metadata.output_shapes[metadata_name]
         if out.shape is not None and not any(s == 0 for s in out.shape):
             assert out.layout is not None
             try:
@@ -450,14 +478,14 @@ def modelconverter_config_to_nn(
 
         dtype = _get_io_dtype(
             platform,
-            out.name,
+            metadata_name,
             model_metadata,
             platform_cfg,
             mode="output",
         )
         archive_cfg["model"]["outputs"].append(
             {
-                "name": out.name,
+                "name": metadata_name,
                 "shape": new_shape,
                 "layout": layout,
                 "dtype": dtype,
