@@ -13,6 +13,9 @@ Convert your **ONNX**, **OpenVINO IR** and **TensorFlow Lite** models to a forma
 
 `ModelConverter` is in an experimental public beta stage. Some parts might change in the future.
 
+For complete CLI and Python API documentation, see the
+[ModelConverter documentation and API reference](https://docs.luxonis.com/software-v3/ai-inference/conversion/rvc-conversion/offline/modelconverter/modelconverter-api-reference/).
+
 ## Table of Contents
 
 - [Installation](#installation)
@@ -754,6 +757,8 @@ optionally saves the results to a `.csv` file.
 > `depthai` backend (default):
 >
 > - `--benchmark-time`: The duration of the benchmark in seconds (default is 20 seconds).
+> - `--input-fps`: The rate at which inputs are sent. It accepts `-1`
+>   for no limit or a positive float (default is `-1`).
 >
 > `SNPE` backend (only **RVC4** with `--no-dai-benchmark`):
 >
