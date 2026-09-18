@@ -19,6 +19,7 @@ from modelconverter.platforms.rvc2.exporter import RVC2Exporter
 from modelconverter.utils import exit_with, read_image
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
+    InputConfig,
     SingleStageConfig,
 )
 from modelconverter.utils.preprocessing import (
@@ -134,11 +135,11 @@ class RVC3Exporter(RVC2Exporter):
     def _calibrate(self, xml_path: Path) -> Path:
         """Quantize an OpenVINO IR to INT8 with the POT tool.
 
-        The calibration images configured for the model's single input
-        are read, resized to the input shape and written into the
-        intermediate outputs directory, a POT config pointing at them
-        is generated, and ``pot`` is run on it. Requires the input to
-        use image calibration data.
+        The calibration data configured for the model's single input is
+        written into the intermediate outputs directory -- as NumPy
+        samples when it holds values no image can carry, as images
+        otherwise. A POT config pointing at it is generated, and ``pot``
+        is run on that. Requires the input to use file calibration data.
 
         Args:
             xml_path: Path to the ``.xml`` of the IR to quantize.
@@ -161,69 +162,18 @@ class RVC3Exporter(RVC2Exporter):
         # Normalized data cannot safely be written back to an image. POT's
         # NumPy reader preserves floating-point and negative values and also
         # lets `.npy`/`.raw` keep their model-ready pass-through contract.
-        use_numpy_reader = (
+        if (
             inp.calibration_preprocessing is not None
             or calib.generated_from_random
             or any(file.suffix.lower() in {".npy", ".raw"} for file in files)
-        )
-        calibration_dir = self.intermediate_outputs_dir / (
-            "calibration_tensors" if use_numpy_reader else "calibration_images"
-        )
-        calibration_dir.mkdir(exist_ok=True)
-
-        if use_numpy_reader:
-            if inp.layout is None:  # pragma: no cover - shape resolves layout
-                raise ValueError(
-                    "Input layout must be provided for calibration"
-                )
-            sample_layout = channels_last_image_layout(inp.layout)
-            if "N" in sample_layout:
-                sample_layout = sample_layout.replace("N", "", 1)
-            expected_sample_shape = tuple(
-                inp.shape[inp.layout.index(axis)] for axis in sample_layout
+        ):
+            dataset = self._write_calibration_tensors(
+                inp, calib, files, shape=inp.shape
             )
-            for index, file in enumerate(files):
-                array, layout = self._read_calibration_file(inp, calib, file)
-                # Accuracy Checker's NumPy reader treats each file as one
-                # sample. Its input feeder adds the batch axis and, for a
-                # four-dimensional OpenVINO input, converts an HWC sample to
-                # the model layout. Persisting the full NCHW tensor here would
-                # therefore make POT interpret its axes as an NHWC sample.
-                array = reorder_layout(array, layout, sample_layout)
-                if array.shape != expected_sample_shape:
-                    raise ValueError(
-                        f"Calibration data for input '{inp.name}' has shape "
-                        f"{list(array.shape)}, expected "
-                        f"{list(expected_sample_shape)}."
-                    )
-                np.save(calibration_dir / f"{index}.npy", array)
-
-            dataset: Params = {
-                "name": "calibration",
-                "data_source": str(calibration_dir),
-                "reader": "numpy_reader",
-            }
         else:
-            for file in files:
-                img = read_image(
-                    file,
-                    inp.shape,
-                    inp.encoding.to,
-                    calib.resize_method,
-                    data_type=DataType.UINT8,
-                    transpose=False,
-                )
-                cv2.imwrite(str(calibration_dir / file.name), img)
-
-            dataset = {
-                "name": "calibration",
-                "data_source": str(calibration_dir),
-                "reader": "opencv_imread",
-            }
-            if inp.encoding.to == Encoding.GRAY:
-                dataset["preprocessing"] = [{"type": "bgr_to_gray"}]
-            elif not self._reverse_input_channels:
-                dataset["preprocessing"] = [{"type": "bgr_to_rgb"}]
+            dataset = self._write_calibration_images(
+                inp, calib, files, shape=inp.shape
+            )
 
         config = {
             "model": {
@@ -278,3 +228,105 @@ class RVC3Exporter(RVC2Exporter):
             / "optimized"
             / f"{xml_path.stem}-int8.xml"
         )
+
+    def _write_calibration_tensors(
+        self,
+        inp: InputConfig,
+        calib: ImageCalibrationConfig,
+        files: list[Path],
+        *,
+        shape: list[int],
+    ) -> Params:
+        """Write one NumPy sample per calibration file, for POT's numpy_reader.
+
+        Args:
+            inp: Input the calibration data belongs to.
+            calib: Image calibration configuration of that input.
+            files: Calibration files to convert.
+            shape: Shape of the model input, already resolved.
+
+        Returns:
+            The POT dataset description pointing at the written samples.
+
+        Raises:
+            ValueError: If the input has no layout, or if a sample does
+                not have the shape the model input asks for.
+
+        """
+        if inp.layout is None:  # pragma: no cover - shape resolves layout
+            raise ValueError("Input layout must be provided for calibration")
+
+        # Accuracy Checker's NumPy reader treats each file as one sample. Its
+        # input feeder adds the batch axis and, for a four-dimensional
+        # OpenVINO input, converts an HWC sample to the model layout.
+        # Persisting the full NCHW tensor here would therefore make POT
+        # interpret its axes as an NHWC sample.
+        sample_layout = channels_last_image_layout(inp.layout).replace(
+            "N", "", 1
+        )
+        expected_shape = tuple(
+            shape[inp.layout.index(axis)] for axis in sample_layout
+        )
+
+        directory = self.intermediate_outputs_dir / "calibration_tensors"
+        directory.mkdir(exist_ok=True)
+        for index, file in enumerate(files):
+            array, layout = self._read_calibration_file(inp, calib, file)
+            array = reorder_layout(array, layout, sample_layout)
+            if array.shape != expected_shape:
+                raise ValueError(
+                    f"Calibration data for input '{inp.name}' has shape "
+                    f"{list(array.shape)}, expected {list(expected_shape)}."
+                )
+            np.save(directory / f"{index}.npy", array)
+
+        return {
+            "name": "calibration",
+            "data_source": str(directory),
+            "reader": "numpy_reader",
+        }
+
+    def _write_calibration_images(
+        self,
+        inp: InputConfig,
+        calib: ImageCalibrationConfig,
+        files: list[Path],
+        *,
+        shape: list[int],
+    ) -> Params:
+        """Write the calibration images resized to the input, for POT.
+
+        Args:
+            inp: Input the calibration data belongs to.
+            calib: Image calibration configuration of that input.
+            files: Calibration files to convert.
+            shape: Shape of the model input, already resolved.
+
+        Returns:
+            The POT dataset description pointing at the written images,
+            including the color conversion POT itself has to apply.
+
+        """
+        directory = self.intermediate_outputs_dir / "calibration_images"
+        directory.mkdir(exist_ok=True)
+        for file in files:
+            img = read_image(
+                file,
+                shape,
+                inp.encoding.to,
+                calib.resize_method,
+                data_type=DataType.UINT8,
+                transpose=False,
+            )
+            cv2.imwrite(str(directory / file.name), img)
+
+        dataset: Params = {
+            "name": "calibration",
+            "data_source": str(directory),
+            "reader": "opencv_imread",
+        }
+        if inp.encoding.to == Encoding.GRAY:
+            dataset["preprocessing"] = [{"type": "bgr_to_gray"}]
+        elif not self._reverse_input_channels:
+            dataset["preprocessing"] = [{"type": "bgr_to_rgb"}]
+        return dataset

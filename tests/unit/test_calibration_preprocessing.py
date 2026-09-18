@@ -24,23 +24,16 @@ from modelconverter.utils.types import DataType, Encoding
 
 @pytest.mark.parametrize("layout", ["NCHW", "NHWC"])
 def test_color_conversion_precedes_channelwise_normalization(layout: str):
-    if layout == "NCHW":
-        bgr = np.array([30, 20, 10], dtype=np.float32).reshape(1, 3, 1, 1)
-        expected = np.array([2.25, 3.6, 4.5], dtype=np.float32).reshape(
-            1, 3, 1, 1
-        )
-    else:
-        bgr = np.array([30, 20, 10], dtype=np.float32).reshape(1, 1, 1, 3)
-        expected = np.array([2.25, 3.6, 4.5], dtype=np.float32).reshape(
-            1, 1, 1, 3
-        )
+    # Reversed to [10, 20, 30], then (x - mean) / scale per channel.
+    shape = (1, 3, 1, 1) if layout == "NCHW" else (1, 1, 1, 3)
+    bgr = np.array([30, 20, 10], dtype=np.float32).reshape(shape)
+    expected = np.array([2.25, 3.6, 4.5], dtype=np.float32).reshape(shape)
 
     preprocessing = CalibrationPreprocessing(
         encoding_from=Encoding.RGB,
         encoding_to=Encoding.BGR,
         mean_values=(1.0, 2.0, 3.0),
         scale_values=(4.0, 5.0, 6.0),
-        layout=layout,
         data_type=DataType.FLOAT32,
         is_image=True,
     )
@@ -57,7 +50,6 @@ def test_scalar_normalization_broadcasts_and_preserves_negative_values():
         encoding_to=Encoding.NONE,
         mean_values=(10.0,),
         scale_values=(2.0,),
-        layout="CHW",
         data_type=DataType.FLOAT32,
         is_image=False,
     )
@@ -77,7 +69,6 @@ def test_normalizing_to_integer_model_input_is_rejected():
         encoding_to=Encoding.NONE,
         mean_values=(1.0,),
         scale_values=(2.0,),
-        layout="NC",
         data_type=DataType.UINT8,
         is_image=False,
     )

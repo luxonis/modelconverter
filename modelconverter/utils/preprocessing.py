@@ -1,11 +1,8 @@
 """Calibration-side representation of externalized input preprocessing.
 
-The conversion configuration is cleared when preprocessing is moved to an
-NN Archive.  Calibration still needs the original operation, however, because
-the quantizer then consumes the input of the source model rather than the
-input of a model containing the preprocessing nodes.  This module keeps that
-operation independent from both the archive schema and backend-specific data
-serialization.
+Moving the preprocessing to an NN Archive clears it from the conversion
+config, but calibration still needs it: the quantizer then sees the input of
+the source model, not of a model that carries the preprocessing nodes.
 """
 
 from dataclasses import dataclass
@@ -24,7 +21,6 @@ class CalibrationPreprocessing:
     encoding_to: Encoding
     mean_values: tuple[float, ...] | None
     scale_values: tuple[float, ...] | None
-    layout: str | None
     data_type: DataType
     is_image: bool
 
@@ -53,9 +49,9 @@ def apply_calibration_preprocessing(
 ) -> np.ndarray:
     """Apply externalized color conversion and normalization to an array.
 
-    ``layout`` describes the array as it exists at this point.  It may omit a
-    singleton batch axis even when the configured model layout contains one,
-    which is the normal representation of a decoded image.
+    ``layout`` describes the array as it exists at this point. It may omit a
+    singleton batch axis even when the configured model layout has one, which
+    is how a decoded image normally arrives.
     """
     if len(layout) != array.ndim:
         raise ModelconverterException(
@@ -89,31 +85,26 @@ def apply_calibration_preprocessing(
                 f"channel axis, got '{layout}'."
             )
 
-        channels = result.shape[channel_axis]
+        # A float16 model input still normalizes in float32; only a float64
+        # one needs the wider accumulator.
         calculation_dtype = (
             np.float64 if target_dtype == np.float64 else np.float32
         )
+        channels = result.shape[channel_axis]
+        mean = _per_channel(
+            preprocessing.mean_values, channels, "mean", calculation_dtype
+        )
+        scale = _per_channel(
+            preprocessing.scale_values, channels, "scale", calculation_dtype
+        )
+        broadcast_shape = [1] * result.ndim
+        broadcast_shape[channel_axis] = channels
+
         result = result.astype(calculation_dtype, copy=False)
-        if preprocessing.mean_values is not None:
-            mean = _channel_values(
-                preprocessing.mean_values,
-                channels,
-                result.ndim,
-                channel_axis,
-                "mean",
-                calculation_dtype,
-            )
-            result = result - mean
-        if preprocessing.scale_values is not None:
-            scale = _channel_values(
-                preprocessing.scale_values,
-                channels,
-                result.ndim,
-                channel_axis,
-                "scale",
-                calculation_dtype,
-            )
-            result = result / scale
+        if mean is not None:
+            result = result - mean.reshape(broadcast_shape)
+        if scale is not None:
+            result = result / scale.reshape(broadcast_shape)
 
     return result.astype(preprocessing.data_type.as_numpy_dtype(), copy=False)
 
@@ -121,27 +112,27 @@ def apply_calibration_preprocessing(
 def array_layout(
     array: np.ndarray,
     *,
-    configured_shape: list[int],
-    configured_layout: str | None,
+    shape: list[int],
+    layout: str | None,
 ) -> str:
     """Resolve the configured layout for an array with optional batch omitted."""
-    if configured_layout is None:
+    if layout is None:
         raise ModelconverterException(
             "Calibration preprocessing requires the input layout to be known."
         )
-    if array.ndim == len(configured_layout):
-        return configured_layout
+    if array.ndim == len(layout):
+        return layout
 
     if (
-        array.ndim + 1 == len(configured_layout)
-        and "N" in configured_layout
-        and configured_shape[configured_layout.index("N")] == 1
+        array.ndim + 1 == len(layout)
+        and "N" in layout
+        and shape[layout.index("N")] == 1
     ):
-        return configured_layout.replace("N", "", 1)
+        return layout.replace("N", "", 1)
 
     raise ModelconverterException(
         f"Calibration array shape {list(array.shape)} is incompatible with "
-        f"input layout '{configured_layout}'."
+        f"input layout '{layout}'."
     )
 
 
@@ -153,8 +144,9 @@ def reorder_layout(
     current = source_layout
 
     if "N" in target_layout and "N" not in current:
-        result = np.expand_dims(result, axis=target_layout.index("N"))
-        current = _insert_axis(current, "N", target_layout.index("N"))
+        axis = target_layout.index("N")
+        result = np.expand_dims(result, axis=axis)
+        current = current[:axis] + "N" + current[axis:]
     elif "N" in current and "N" not in target_layout:
         axis = current.index("N")
         if result.shape[axis] != 1:
@@ -174,22 +166,26 @@ def reorder_layout(
 
 
 def channels_last_image_layout(layout: str) -> str:
-    """Return the NHWC/HWC counterpart of an image layout."""
-    axes = set(layout)
-    expected = set("NHWC" if "N" in layout else "HWC")
-    if axes != expected or len(layout) != len(expected):
-        return layout
-    return "NHWC" if "N" in layout else "HWC"
+    """Return the NHWC/HWC counterpart of an image layout.
+
+    A layout that does not describe an image is returned unchanged.
+    """
+    if sorted(layout) == ["C", "H", "N", "W"]:
+        return "NHWC"
+    if sorted(layout) == ["C", "H", "W"]:
+        return "HWC"
+    return layout
 
 
-def _channel_values(
-    values: tuple[float, ...],
+def _per_channel(
+    values: tuple[float, ...] | None,
     channels: int,
-    ndim: int,
-    channel_axis: int,
     name: str,
     dtype: type[np.float32] | type[np.float64],
-) -> np.ndarray:
+) -> np.ndarray | None:
+    """Expand preprocessing values to one value per channel."""
+    if values is None:
+        return None
     if len(values) == 1:
         values = values * channels
     if len(values) != channels:
@@ -197,10 +193,4 @@ def _channel_values(
             f"Calibration {name} has {len(values)} values for an array with "
             f"{channels} channels."
         )
-    shape = [1] * ndim
-    shape[channel_axis] = channels
-    return np.asarray(values, dtype=dtype).reshape(shape)
-
-
-def _insert_axis(layout: str, axis: str, index: int) -> str:
-    return layout[:index] + axis + layout[index:]
+    return np.asarray(values, dtype=dtype)

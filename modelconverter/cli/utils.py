@@ -254,13 +254,12 @@ def extract_preprocessing(
         encoding = inp.encoding
         layout = inp.layout
 
-        # Saving preprocessing before it's cleared
+        # Remember the preprocessing for calibration before it is cleared.
         inp._calibration_preprocessing = CalibrationPreprocessing(
             encoding_from=encoding.from_,
             encoding_to=encoding.to,
             mean_values=None if mean is None else tuple(mean),
             scale_values=None if scale is None else tuple(scale),
-            layout=layout,
             data_type=inp.data_type,
             is_image=not inp.is_raw_input,
         )

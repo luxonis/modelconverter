@@ -256,7 +256,8 @@ def convert(
                 except ValueError as error:
                     raise ModelconverterException(str(error)) from error
 
-        # Keep cfg copy for an archive-preprocessing retry.
+        # `extract_preprocessing` clears the inputs in place, so a retry needs
+        # this untouched copy.
         fallback_source_cfg = cfg.model_copy(deep=True)
         preprocessing = {}
         preprocessing_input_types: dict[str, Literal["raw", "image"]] = {}
@@ -316,9 +317,9 @@ def convert(
 
             cfg, preprocessing = extract_preprocessing(cfg)
             preprocessing_externalized = True
-            # A failed exporter may have materialized random calibration or
-            # produced other attempt-local intermediates. The retry recreates
-            # this directory from the pristine configuration.
+            # The failed attempt may have materialized random calibration in
+            # the runtime domain. The retry regenerates it from the pristine
+            # configuration.
             shutil.rmtree(
                 output_path / "intermediate_outputs", ignore_errors=True
             )

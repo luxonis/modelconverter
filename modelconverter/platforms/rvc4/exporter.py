@@ -219,12 +219,7 @@ class RVC4Exporter(Exporter):
             arg.startswith("--input_list=") for arg in args
         )
         if has_input_list and any(
-            inp.calibration_preprocessing is not None
-            and (
-                inp.calibration_preprocessing.encoding_mismatch
-                or inp.calibration_preprocessing.normalization_required
-            )
-            for inp in self._inputs.values()
+            _transforms_calibration(inp) for inp in self._inputs.values()
         ):
             raise ModelconverterException(
                 "A custom RVC4 `--input_list` cannot be used when "
@@ -294,11 +289,13 @@ class RVC4Exporter(Exporter):
         """Write the calibration data as raw files and list them.
 
         Every calibration file of every input is read with the input's
-        encoding, resize method and data type and written out as a raw
-        file, a ``.raw`` file being taken as it is. The SNPE input list
-        holds one line per calibration sample, pairing each input name
-        with its raw file. Terminates the process if an input has no
-        shape or a dynamic one.
+        encoding, resize method and data type, and written out as a raw
+        file; a ``.raw`` file is taken as it is. Preprocessing that was
+        moved to the NN Archive is applied on the way, and generated
+        image calibration is reordered to the layout SNPE expects. The
+        SNPE input list holds one line per calibration sample, pairing
+        each input name with its raw file. Terminates the process if an
+        input has no shape or a dynamic one.
 
         Returns:
             Path to the written input list.
@@ -306,7 +303,6 @@ class RVC4Exporter(Exporter):
         """
 
         class Entry(NamedTuple):
-            name: str
             path: Path
             inp: InputConfig
             calib: ImageCalibrationConfig
@@ -324,12 +320,7 @@ class RVC4Exporter(Exporter):
                 exit_with(ValueError(f"Input `{name}` has dynamic shape."))
             entries.append(
                 [
-                    Entry(
-                        name=name,
-                        path=path,
-                        inp=inp,
-                        calib=calib,
-                    )
+                    Entry(path=path, inp=inp, calib=calib)
                     for path in self._read_img_dir(
                         calib.path, calib.max_images
                     )
@@ -348,26 +339,24 @@ class RVC4Exporter(Exporter):
                 for e in entry:
                     i += 1
                     if e.path.suffix == ".raw":
-                        entry_str += f"{e.name}:={e.path} "
+                        entry_str += f"{e.inp.name}:={e.path} "
                     else:
                         img, layout = self._read_calibration_file(
                             e.inp, e.calib, e.path
                         )
-                        preprocessing = e.inp.calibration_preprocessing
-                        generated_image = (
-                            preprocessing.is_image
-                            if preprocessing is not None
-                            else not e.inp.is_raw_input
-                        )
-                        if e.calib.generated_from_random and generated_image:
+                        if e.calib.generated_from_random and _was_image_input(
+                            e.inp
+                        ):
                             target_layout = channels_last_image_layout(layout)
+                            # A layout with a repeated letter is returned
+                            # unchanged, and cannot be transposed either.
                             if target_layout != layout:
                                 img = reorder_layout(
                                     img, layout, target_layout
                                 )
                         raw_path = self._raw_img_dir / f"{i}.raw"
                         img.tofile(raw_path)
-                        entry_str += f"{e.name}:={raw_path} "
+                        entry_str += f"{e.inp.name}:={raw_path} "
                 entry_str = entry_str.strip()
                 if log:
                     logger.debug(f"Image list entry: {entry_str}")
@@ -528,3 +517,19 @@ class RVC4Exporter(Exporter):
             self._encodings,
             self._input_model,
         )
+
+
+def _transforms_calibration(inp: InputConfig) -> bool:
+    """Whether externalized preprocessing still has to reach the quantizer."""
+    preprocessing = inp.calibration_preprocessing
+    return preprocessing is not None and (
+        preprocessing.encoding_mismatch or preprocessing.normalization_required
+    )
+
+
+def _was_image_input(inp: InputConfig) -> bool:
+    """Whether the input took image data before its encoding was cleared."""
+    preprocessing = inp.calibration_preprocessing
+    if preprocessing is None:
+        return not inp.is_raw_input
+    return preprocessing.is_image

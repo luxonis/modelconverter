@@ -4,7 +4,7 @@ import importlib
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Protocol
 
 import numpy as np
 import pytest
@@ -19,12 +19,15 @@ from modelconverter.utils.config import (
 )
 from tests.helpers.onnx_factory import single_io_onnx
 
+# The HN layers, as `_get_hn_layer_info` reads them out of the Hailo IR.
+_HnLayers = dict[str, dict[str, list[str] | list[list[int]]]]
+
 
 class _Runner:
     def __init__(self, input_shape: list[int] | None = None) -> None:
         self.input_shape = input_shape or [1, 1, 1, 3]
 
-    def get_hn_dict(self) -> dict[str, Any]:
+    def get_hn_dict(self) -> dict[str, _HnLayers]:
         return {
             "layers": {
                 "hailo_input": {
@@ -35,17 +38,31 @@ class _Runner:
         }
 
 
+class _CalibrationExporter(Protocol):
+    """The slice of `HailoExporter` these tests drive."""
+
+    def _get_calibration_data(
+        self, runner: _Runner
+    ) -> dict[str, np.ndarray]: ...
+
+
+class _FakeHailoSdk(ModuleType):
+    ClientRunner = object
+    __version__ = "test"
+
+
+class _FakeTensorflow(ModuleType):
+    config = SimpleNamespace(list_physical_devices=lambda _kind: [])
+
+
 @pytest.fixture
 def hailo_exporter_module(monkeypatch: pytest.MonkeyPatch):
-    hailo_sdk = ModuleType("hailo_sdk_client")
-    hailo_sdk.ClientRunner = object  # type: ignore[attr-defined]
-    hailo_sdk.__version__ = "test"  # type: ignore[attr-defined]
-    tensorflow = ModuleType("tensorflow")
-    tensorflow.config = SimpleNamespace(  # type: ignore[attr-defined]
-        list_physical_devices=lambda _kind: []
+    monkeypatch.setitem(
+        sys.modules, "hailo_sdk_client", _FakeHailoSdk("hailo_sdk_client")
     )
-    monkeypatch.setitem(sys.modules, "hailo_sdk_client", hailo_sdk)
-    monkeypatch.setitem(sys.modules, "tensorflow", tensorflow)
+    monkeypatch.setitem(
+        sys.modules, "tensorflow", _FakeTensorflow("tensorflow")
+    )
     module_name = "modelconverter.platforms.hailo.exporter"
     sys.modules.pop(module_name, None)
 
@@ -63,7 +80,7 @@ def _externalized_exporter(
     shape: list[int] | None = None,
     encoding: str | dict[str, str] = "RGB",
     mean_values: list[int] | int = 0,
-) -> tuple[Any, InputConfig]:
+) -> tuple[_CalibrationExporter, InputConfig]:
     shape = shape or [1, 3, 1, 1]
     model = single_io_onnx(
         tmp_path / "model.onnx",

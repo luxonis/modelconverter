@@ -232,28 +232,15 @@ class HailoExporter(Exporter):
                     img, layout = self._read_calibration_file(
                         inp, calib, img_path
                     )
-                    if (
-                        calib.generated_from_random
-                        and len(shape) == 3
-                        and set(layout) in (set("HWC"), set("NHWC"))
+                    if calib.generated_from_random and _is_hwc_sample(
+                        shape, layout
                     ):
-                        # Managed tensors retain the source model's layout.
-                        # Reorder them before relying on shape equality, which
-                        # is ambiguous when C, H, and W happen to be equal.
+                        # Managed tensors keep the source model's layout, and
+                        # shape equality is ambiguous when C, H and W are
+                        # equal, so reorder by the layout instead.
                         img = reorder_layout(img, layout, "HWC")
-                    elif img.shape == tuple(shape):
-                        pass
-                    elif img.shape == (1, *shape):
-                        img = img[0]
-                    elif len(shape) == 3 and set(layout) in (
-                        set("HWC"),
-                        set("NHWC"),
-                    ):
-                        img = reorder_layout(img, layout, "HWC")
-                    elif "N" in layout and img.shape[layout.index("N")] == 1:
-                        img = reorder_layout(
-                            img, layout, layout.replace("N", "")
-                        )
+                    elif img.shape != tuple(shape):
+                        img = _fit_hailo_sample(img, shape, layout)
 
                 if img.shape != tuple(shape):
                     raise ValueError(
@@ -359,6 +346,27 @@ class HailoExporter(Exporter):
             "compression_level": self._compression_level,
             "alls": self._alls,
         }
+
+
+def _is_hwc_sample(shape: list[int], layout: str) -> bool:
+    """Whether the batchless Hailo input takes image data ``layout`` describes."""
+    return len(shape) == 3 and set(layout) in (
+        {"H", "W", "C"},
+        {"N", "H", "W", "C"},
+    )
+
+
+def _fit_hailo_sample(
+    array: np.ndarray, shape: list[int], layout: str
+) -> np.ndarray:
+    """Drop the batch axis, or reorder the axes, to match the Hailo input."""
+    if array.shape == (1, *shape):
+        return array[0]
+    if _is_hwc_sample(shape, layout):
+        return reorder_layout(array, layout, "HWC")
+    if "N" in layout and array.shape[layout.index("N")] == 1:
+        return reorder_layout(array, layout, layout.replace("N", ""))
+    return array
 
 
 def _supports_tf_tensor_shapes() -> bool:

@@ -440,13 +440,11 @@ def modelconverter_config_to_nn(
             f"{configured_output_names}."
         )
 
-    exact_output_names = set(configured_output_names) & set(
-        metadata_output_names
-    )
-    renamed_output_names = iter(
-        name
-        for name in metadata_output_names
-        if name not in exact_output_names
+    kept_output_names = set(configured_output_names)
+    # The converted names that no configured output claims pair up with the
+    # configured ones that no converted name claims, in order.
+    renamed_output_names = (
+        name for name in metadata_output_names if name not in kept_output_names
     )
     for out in cfg.outputs:
         metadata_name = (

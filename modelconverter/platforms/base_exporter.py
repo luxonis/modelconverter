@@ -405,10 +405,10 @@ class Exporter(ABC):
                 else:
                     np.save(dest / f"{i}.npy", arr)
 
-            resolved = ImageCalibrationConfig(path=dest)
-            resolved._generated_from_random = True
-            resolved._generated_layout = inp.layout
-            self._inputs[name].calibration = resolved
+            calibration = ImageCalibrationConfig(path=dest)
+            calibration._generated_from_random = True
+            calibration._generated_layout = inp.layout
+            self._inputs[name].calibration = calibration
 
     @staticmethod
     def _read_calibration_file(
@@ -428,17 +428,15 @@ class Exporter(ABC):
                 f"Input shape must be provided for calibration input '{inp.name}'."
             )
 
-        suffix = path.suffix.lower()
-        is_tensor_file = suffix in {".npy", ".raw"}
+        is_tensor_file = path.suffix.lower() in {".npy", ".raw"}
         preprocessing = inp.calibration_preprocessing
-        should_preprocess = preprocessing is not None and (
-            not is_tensor_file or calib.generated_from_random
+        if is_tensor_file and not calib.generated_from_random:
+            preprocessing = None
+        encoding = (
+            inp.encoding.to
+            if preprocessing is None
+            else preprocessing.encoding_to
         )
-        if should_preprocess:
-            assert preprocessing is not None
-            encoding = preprocessing.encoding_to
-        else:
-            encoding = inp.encoding.to
         array = read_image(
             path,
             inp.shape,
@@ -449,31 +447,28 @@ class Exporter(ABC):
             layout=inp.layout,
         )
 
-        if is_tensor_file:
-            if (
-                calib.generated_from_random
-                and calib.generated_layout is not None
-            ):
-                layout = calib.generated_layout
-                if len(layout) != array.ndim:
-                    raise ModelconverterException(
-                        f"Generated calibration array with shape "
-                        f"{list(array.shape)} cannot use its generation-time "
-                        f"layout '{layout}'."
-                    )
-            else:
-                layout = array_layout(
-                    array,
-                    configured_shape=inp.shape,
-                    configured_layout=inp.layout,
-                )
-        else:
+        if not is_tensor_file:
             # Image decoding always produces HWC, including a singleton C for
             # grayscale images, independently of the model's tensor layout.
             layout = "HWC"
+        elif (
+            calib.generated_from_random and calib.generated_layout is not None
+        ):
+            layout = calib.generated_layout
+            if len(layout) != array.ndim:
+                raise ModelconverterException(
+                    f"Generated calibration array with shape "
+                    f"{list(array.shape)} cannot use its generation-time "
+                    f"layout '{layout}'."
+                )
+        else:
+            layout = array_layout(
+                array,
+                shape=inp.shape,
+                layout=inp.layout,
+            )
 
-        if should_preprocess:
-            assert preprocessing is not None
+        if preprocessing is not None:
             array = apply_calibration_preprocessing(
                 array, preprocessing, layout=layout
             )

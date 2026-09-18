@@ -46,6 +46,9 @@ _SIZE = 32
 # quantized model represents it well.
 _INFER_VALUE = 100
 _THRESHOLD = 0.9
+# Both quantized paths run the same graph on the same numbers, so they have to
+# agree with each other much more closely than either does with the ONNX.
+_EQUIVALENCE_THRESHOLD = 0.99
 
 # Hailo: skip the slow HEF compile -- the check runs `SDK_QUANTIZED` inference on
 # the quantized HAR, so compilation is unneeded.
@@ -218,22 +221,25 @@ def test_externalized_calibration_matches_embedded_model(
     ):
         embedded_output = _to_nchw(embedded_value, platform.value)
         externalized_output = _to_nchw(externalized_value, platform.value)
-        embedded_fidelity = cosine_similarity(expected, embedded_output)
-        externalized_fidelity = cosine_similarity(
-            expected, externalized_output
+        checks = (
+            (
+                "embedded",
+                cosine_similarity(expected, embedded_output),
+                _THRESHOLD,
+            ),
+            (
+                "externalized",
+                cosine_similarity(expected, externalized_output),
+                _THRESHOLD,
+            ),
+            (
+                "embedded vs externalized",
+                cosine_similarity(embedded_output, externalized_output),
+                _EQUIVALENCE_THRESHOLD,
+            ),
         )
-        path_equivalence = cosine_similarity(
-            embedded_output, externalized_output
-        )
-        assert embedded_fidelity >= _THRESHOLD, (
-            f"{platform_name} embedded output {name!r}: cosine "
-            f"{embedded_fidelity:.5f} < {_THRESHOLD}"
-        )
-        assert externalized_fidelity >= _THRESHOLD, (
-            f"{platform_name} externalized output {name!r}: cosine "
-            f"{externalized_fidelity:.5f} < {_THRESHOLD}"
-        )
-        assert path_equivalence >= 0.99, (
-            f"{platform_name} embedded vs externalized output {name!r}: "
-            f"cosine {path_equivalence:.5f} < 0.99"
-        )
+        for compared, cos, threshold in checks:
+            assert cos >= threshold, (
+                f"{platform_name} {compared} output {name!r}: "
+                f"cosine {cos:.5f} < {threshold}"
+            )

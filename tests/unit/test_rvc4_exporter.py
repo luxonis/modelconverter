@@ -429,7 +429,9 @@ def test_externalized_preprocessing_rejects_custom_input_list(
         exporter._calibrate(tmp_path / "model.dlc")
 
 
-def test_identity_externalization_allows_custom_input_list(tmp_path: Path):
+def test_identity_externalization_allows_custom_input_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     model = single_io_onnx(
         tmp_path / "identity.onnx",
         shape=[1, 8],
@@ -463,7 +465,9 @@ def test_identity_externalization_allows_custom_input_list(tmp_path: Path):
     output_dir = tmp_path / "identity-output"
     output_dir.mkdir()
     exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
-    exporter._subprocess_run = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        exporter, "_subprocess_run", lambda *_args, **_kwargs: None
+    )
 
     result = exporter._calibrate(tmp_path / "model.dlc")
 
@@ -563,11 +567,9 @@ def test_externalized_multi_input_calibration_uses_each_input_contract(
 
     input_list = exporter._prepare_calibration_data()
 
-    entries = {
-        name: Path(path)
-        for token in input_list.read_text().split()
-        for name, path in [token.split(":=", 1)]
-    }
+    entries = dict(
+        token.split(":=", 1) for token in input_list.read_text().split()
+    )
     rgb = np.fromfile(entries["rgb_input"], dtype=np.float32)
     bgr = np.fromfile(entries["bgr_input"], dtype=np.float32)
     np.testing.assert_array_equal(rgb, np.array([45, 45, 45], np.float32))
