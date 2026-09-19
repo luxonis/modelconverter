@@ -52,6 +52,7 @@ from modelconverter.utils.onnx_compatibility import (
     has_external_data,
     save_onnx_model,
 )
+from modelconverter.utils.preprocessing import CalibrationPreprocessing
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -131,6 +132,18 @@ class ImageCalibrationConfig(BaseModelExtraForbid):
     path: Path
     max_images: int = -1
     resize_method: ResizeMethod = ResizeMethod.RESIZE
+    _generated_from_random: bool = PrivateAttr(default=False)
+    _generated_layout: str | None = PrivateAttr(default=None)
+
+    @property
+    def generated_from_random(self) -> bool:
+        """Whether this file source was materialized from random calibration."""
+        return self._generated_from_random
+
+    @property
+    def generated_layout(self) -> str | None:
+        """Layout used when generated tensor calibration was materialized."""
+        return self._generated_layout
 
     @field_validator("path", mode="before")
     @staticmethod
@@ -273,6 +286,14 @@ class InputConfig(OutputConfig):
     frozen_value: list[int | float] | None = None
     encoding: EncodingConfig = EncodingConfig()
     _layout_was_explicit: bool = PrivateAttr(default=False)
+    _calibration_preprocessing: CalibrationPreprocessing | None = PrivateAttr(
+        default=None
+    )
+
+    @property
+    def calibration_preprocessing(self) -> CalibrationPreprocessing | None:
+        """Preprocessing moved out of the model but retained for calibration."""
+        return self._calibration_preprocessing
 
     @model_validator(mode="wrap")
     @classmethod

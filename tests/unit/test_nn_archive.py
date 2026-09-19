@@ -659,6 +659,18 @@ def test_output_default_layout_when_shape_has_zero(dummy_onnx: Path):
     assert len(out1.layout) == 4
 
 
+def test_converted_output_rename_is_used_in_archive(tmp_path: Path):
+    source = single_io_onnx(tmp_path / "source.onnx")
+    converted = single_io_onnx(
+        tmp_path / "converted.onnx", output_name="out/add_/sink_port_0"
+    )
+    config = Config.get_config(None, {"input_model": str(source)})
+
+    nn = _config_to_nn(config, converted)
+
+    assert [out.name for out in nn.model.outputs] == ["out/add_/sink_port_0"]
+
+
 def test_input_default_layout_when_shape_has_zero(dummy_onnx: Path):
     # A zero in a spatial dim forces the make_default_layout branch.
     config = Config.get_config(

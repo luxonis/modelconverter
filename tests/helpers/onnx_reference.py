@@ -14,6 +14,7 @@ anywhere the unit tests do, unlike the vendor inferers.
 from pathlib import Path
 
 import numpy as np
+import onnx
 import onnxruntime as ort
 from luxonis_ml.typing import PathType
 
@@ -24,6 +25,8 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.image import read_image
 from modelconverter.utils.types import DataType, Encoding, ResizeMethod
+
+_MAX_ORT_IR_VERSION = 8
 
 
 class ONNXReferenceInferer:
@@ -43,8 +46,14 @@ class ONNXReferenceInferer:
 
         """
         self.stage = stage
+        model = onnx.load(str(model_path))
+        # The Hailo 2024.10 image ships ONNX Runtime 1.12, which supports IR
+        # versions only through 8. The test models use opset 13 and require
+        # only IR 7, so lowering the declared version is safe and keeps the
+        # reference path usable across every supported vendor container.
+        model.ir_version = min(model.ir_version, _MAX_ORT_IR_VERSION)
         self.session = ort.InferenceSession(
-            str(model_path), providers=["CPUExecutionProvider"]
+            model.SerializeToString(), providers=["CPUExecutionProvider"]
         )
         self._input_names = [i.name for i in self.session.get_inputs()]
         self._output_names = [o.name for o in self.session.get_outputs()]
