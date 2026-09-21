@@ -26,15 +26,19 @@ from luxonis_ml.typing import Params
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
     ONNXModifier,
+    PreprocessingEmbeddingError,
     SubprocessHandle,
     get_container_memory_available,
+    get_metadata,
     onnx_attach_normalization_to_inputs,
 )
-from modelconverter.utils.config import SingleStageConfig
+from modelconverter.utils.config import (
+    SingleStageConfig,
+    broadcast_preprocessing_values,
+)
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import (
     DataType,
-    Encoding,
     InputFileType,
     Platform,
 )
@@ -133,6 +137,8 @@ class RVC2Exporter(Exporter):
                     inp_str += f"->{value}"
             args.extend(["--input", inp_str])
 
+        self._validate_requested_preprocessing()
+
         if not self._check_reverse_channels():
             logger.warning(
                 "The model optimizer does not support reversing "
@@ -151,11 +157,12 @@ class RVC2Exporter(Exporter):
                 if inp.scale_values is not None and inp.encoding_mismatch:
                     inp.scale_values = inp.scale_values[::-1]
                 # Only colour inputs get their channels reversed in the ONNX;
-                # marking non-colour inputs (e.g. grayscale) as BGR is wrong and
-                # later makes their inferer read a 1-channel input as 3-channel.
+                # after that, the exposed input still expects the configured
+                # runtime encoding (`to`).
                 if inp.is_color_input and inp.encoding_mismatch:
-                    inp.encoding.from_ = Encoding.BGR
-                    inp.encoding.to = Encoding.BGR
+                    runtime_encoding = inp.encoding.to
+                    inp.encoding.from_ = runtime_encoding
+                    inp.encoding.to = runtime_encoding
 
         if not self._onnx_optimizations.all_disabled():
             onnx_modifier = ONNXModifier(
@@ -187,20 +194,32 @@ class RVC2Exporter(Exporter):
         mean_values_str = ""
         scale_values_str = ""
         for name, inp in self._inputs.items():
+            channels = inp.channel_count
+
             # Append mean values in a similar style
-            if inp.is_color_input and inp.mean_values is not None:
+            if inp.mean_values is not None and any(
+                value != 0 for value in inp.mean_values
+            ):
                 if mean_values_str:
                     mean_values_str += ","
+                mean_values = broadcast_preprocessing_values(
+                    inp.mean_values, channels
+                )
                 mean_values_str += (
-                    f"{name}[{','.join(str(v) for v in inp.mean_values)}]"
+                    f"{name}[{','.join(str(v) for v in mean_values)}]"
                 )
 
             # Append scale values in a similar style
-            if inp.is_color_input and inp.scale_values is not None:
+            if inp.scale_values is not None and any(
+                value != 1 for value in inp.scale_values
+            ):
                 if scale_values_str:
                     scale_values_str += ","
+                scale_values = broadcast_preprocessing_values(
+                    inp.scale_values, channels
+                )
                 scale_values_str += (
-                    f"{name}[{','.join(str(v) for v in inp.scale_values)}]"
+                    f"{name}[{','.join(str(v) for v in scale_values)}]"
                 )
         # Extend args with mean and scale values if they were collected
         if mean_values_str:
@@ -227,6 +246,19 @@ class RVC2Exporter(Exporter):
         reverses = [inp.encoding_mismatch for inp in self._inputs.values()]
         return all(reverses) or not any(reverses)
 
+    def _validate_ir_preprocessing_contract(self) -> None:
+        """Reject preprocessing that cannot be added to an existing IR."""
+        requested_inputs = self._validate_requested_preprocessing()
+        if requested_inputs:
+            names = ", ".join(requested_inputs)
+            raise PreprocessingEmbeddingError(
+                f"Cannot apply preprocessing to input(s) {names}: an existing "
+                "OpenVINO IR cannot be modified. For native output, convert "
+                "from ONNX/TFLite or disable preprocessing (`encoding RGB` or "
+                "`encoding NONE`, as appropriate, with no mean/scale). "
+                "Otherwise, export an NN Archive with `--archive-preprocess`."
+            )
+
     @staticmethod
     def _write_config(shaves: int, slices: int) -> str:
         with tempfile.NamedTemporaryFile(suffix=".conf", delete=False) as conf:
@@ -241,39 +273,60 @@ class RVC2Exporter(Exporter):
         logger.info("Converting TFLite model to ONNX.")
         logger.warning("The TFLite to ONNX conversion is experimental.")
 
+        source_shapes = get_metadata(self._input_model).input_shapes
         onnx_path = self._input_model.with_suffix(".onnx")
         tflite2onnx.convert(str(self._input_model), str(onnx_path))
 
         self._input_model = onnx_path
         self._input_file_type = InputFileType.ONNX
+        converted_shapes = get_metadata(onnx_path).input_shapes
+        layout_mappings: list[str] = []
 
         for name, inp in self._inputs.items():
-            if (
-                inp.encoding.from_ == Encoding.NONE
-                or not inp.layout
-                or not inp.shape
-            ):  # pragma: no cover
+            if not inp.layout or not inp.shape:  # pragma: no cover
                 continue
 
             lt = inp.layout
             sh = inp.shape
+            source_shape = source_shapes.get(name)
+            converted_shape = converted_shapes.get(name)
+            if source_shape is None or converted_shape is None:
+                continue
+            if len(source_shape) != len(lt) or len(converted_shape) != len(lt):
+                continue
 
             if lt[-1] == "C":
                 if len(lt) == 4 and lt[0] == "N":
+                    converted_source_shape = [
+                        source_shape[0],
+                        source_shape[3],
+                        source_shape[1],
+                        source_shape[2],
+                    ]
+                    if converted_shape != converted_source_shape:
+                        continue
                     if not OV_2021:
-                        self._add_args(
-                            self._mo_args, ["--layout", f"{name}(nchw->nhwc)"]
-                        )
+                        layout_mappings.append(f"{name}(nchw->nhwc)")
                     inp.shape = [sh[0], sh[3], sh[1], sh[2]]
                     inp.layout = f"{lt[0]}{lt[3]}{lt[1]}{lt[2]}"
 
                 elif len(inp.layout) == 3:
+                    converted_source_shape = [
+                        source_shape[2],
+                        source_shape[0],
+                        source_shape[1],
+                    ]
+                    if converted_shape != converted_source_shape:
+                        continue
                     if not OV_2021:
-                        self._add_args(
-                            self._mo_args, ["--layout", f"{name}(chw->hwc)"]
-                        )
+                        layout_mappings.append(f"{name}(chw->hwc)")
                     inp.shape = [sh[2], sh[0], sh[1]]
                     inp.layout = f"{lt[2]}{lt[0]}{lt[1]}"
+
+        if layout_mappings:
+            self._add_args(
+                self._mo_args, ["--layout", ",".join(layout_mappings)]
+            )
 
     def export(self) -> Path:
         """Convert the model and compile it for RVC2.
@@ -296,6 +349,7 @@ class RVC2Exporter(Exporter):
         if self._input_file_type == InputFileType.ONNX:
             xml_path = self._export_openvino_ir()
         elif self._input_file_type == InputFileType.IR:
+            self._validate_ir_preprocessing_contract()
             xml_path = self._input_model
         else:
             raise NotImplementedError

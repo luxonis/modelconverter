@@ -89,10 +89,16 @@ The `encoding` flag in the YAML configuration file specifies the format that the
   This configuration indicates that the **ONNX model** expects inputs in **RGB format**, and the converter will transform the input data to **BGR format** for **DepthAI** execution.
 
 > [!NOTE]
-> If the encoding is not specified in the YAML configuration, the default values are set to `encoding.from=RGB` and `encoding.to=BGR`.
+> When encoding is omitted, inputs with a known batched image shape and layout (`NCHW` or `NHWC`, with one or three channels) receive image defaults: `RGB` to `BGR`, or `GRAY` for a single channel. Inputs with a known non-image shape or layout default to `NONE`. A batchless `CHW` or `HWC` input is ambiguous and is therefore treated as raw by default; set `encoding` explicitly if it represents an image. When shape or layout metadata is unavailable, the legacy `RGB` to `BGR` default is retained.
 
 > [!NOTE]
 > Certain options can be set **globally**, applying to all inputs of the model, or **per input**. If specified per input, these settings will override the global configuration for that input alone. The options that support this flexibility include `scale_values`, `mean_values`, `encoding`, `data_type`, `shape`, and `layout`.
+
+> [!NOTE]
+> A single `mean_values` or `scale_values` value is broadcast to every channel. A list must contain either one value to broadcast or one value per channel, and scale values must be non-zero. ONNX preprocessing embedding currently supports `NCHW` and `NHWC` inputs.
+
+> [!IMPORTANT]
+> Use RGB, BGR, or GRAY encoding only when the input channels represent an image. Packed tensors, feature maps, and other non-image inputs—including tensors with nonstandard channel counts—must use `encoding: NONE`, which makes them raw tensor inputs rather than DepthAI image inputs.
 
 ### NN Archive Configuration File
 
@@ -125,13 +131,11 @@ In the NN Archive configuration, there are two flags related to color encoding c
 
   This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
 
-- **`interleaved_to_planar`**:
-  A boolean flag indicating whether the input data should be converted from interleaved (`NHWC`) to planar (`NCHW`) format.
+- **`interleaved_to_planar` (Deprecated)**:
+  A legacy NN Archive flag that described whether input data was interleaved (`NHWC`) or planar (`NCHW`). ModelConverter preserves the archive's declared `layout`; use `dai_type` for current archives.
 
-  - `True`: The converter will insert extra ONNX nodes to change the layout from interleaved to planar.
-  - `False`: No layout conversion is performed.
+  The flag is retained for compatibility and emits a deprecation warning, but it does not override `layout`.
 
-  If this flag is set to `null` or not provided, the converter will automatically determine and apply the necessary layout conversions. \
   This flag is deprecated and will be replaced by the `dai_type` flag in future versions.
 
 > [!NOTE]
@@ -489,10 +493,13 @@ Below is a table of common command-line options available when using the `modelc
 | `--main-stage`                                     |       | TEXT   | Name of the stage with the main model                                                                                                                      |
 | `--tool-version`                                   |       | TEXT   | Version of the underlying conversion tools to use. Available options differ based on the platform (RVC2, RVC3, RVC4, HAILO)                                |
 | `--image/docker-image`                             |       | TEXT   | Full Docker image name to use. If a tag is included, it is used as-is and overrides `--tool-version`, otherwise, the tag is derived from `--tool-version`. |
-| `--archive-preprocess` / `--no-archive-preprocess` |       | FLAG   | Add pre-processing to the NN archive instead of the model                                                                                                  |
+| `--archive-preprocess` / `--no-archive-preprocess` |       | FLAG   | For single-stage conversion, force preprocessing into NN Archive metadata instead of embedding it in the model; requires `--to nn_archive`                 |
 
 > [!NOTE]
 > This table is not exhaustive. For more detailed information about available options, run `modelconverter convert --help` in your command line interface. You can also check all the `[ config overrides ]` available at [defaults.yaml](configs/defaults.yaml).
+
+> [!NOTE]
+> By default, ModelConverter first tries to embed preprocessing in the model. For single-stage NN Archive output, valid preprocessing that cannot be embedded is moved to archive metadata and conversion is retried with a warning. This fallback is not supported for multi-stage conversions. Native output fails instead because it has nowhere to preserve that preprocessing.
 
 **RVC4 Quantization Mode**
 

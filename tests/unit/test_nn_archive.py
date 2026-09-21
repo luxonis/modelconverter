@@ -8,6 +8,7 @@ No network, cloud, Docker or vendor tooling: the dummy ONNX models and NN-archiv
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
@@ -19,6 +20,7 @@ from luxonis_ml.nn_archive.config_building_blocks import (
 )
 from luxonis_ml.typing import Params, ParamValue
 
+from modelconverter.cli.utils import extract_preprocessing
 from modelconverter.utils.config import (
     Config,
     InputConfig,
@@ -32,13 +34,14 @@ from modelconverter.utils.nn_archive import (
     _default_archive_preprocessing,
     _get_io_dtype,
     archive_from_model,
-    find_archive_input,
+    default_archive_input_type,
     generate_archive,
     get_archive_input,
+    make_dai_type,
     modelconverter_config_to_nn,
     process_nn_archive,
 )
-from modelconverter.utils.types import DataType, Platform
+from modelconverter.utils.types import DataType, Encoding, Platform
 from tests.helpers.archive_factory import (
     default_archive_config,
     pack_archive,
@@ -54,6 +57,15 @@ from tests.helpers.onnx_factory import (
 def _input_config(**data: ParamValue) -> InputConfig:
     """Validate raw user configuration through Pydantic's public API."""
     return InputConfig.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    ("is_raw_input", "expected"), [(True, "raw"), (False, "image")]
+)
+def test_default_archive_input_type(
+    is_raw_input: bool, expected: Literal["raw", "image"]
+):
+    assert default_archive_input_type(is_raw_input=is_raw_input) == expected
 
 
 def _single_input_archive_config(
@@ -101,19 +113,23 @@ def _pack_single_input(
     *,
     grayscale: bool = False,
     input_type: str = "image",
+    shape: list[int] | None = None,
+    layout: str = "NCHW",
 ) -> Path:
     """Build a matching dummy ONNX + single-input archive and return
     the ``.tar`` path.
     """
     model_path = work_dir / "model.onnx"
-    shape = None
     if grayscale:
         grayscale_onnx(model_path)
         shape = [1, 1, 64, 64]
     else:
-        single_io_onnx(model_path)
+        single_io_onnx(model_path, shape=shape)
     config = _single_input_archive_config(
-        preprocessing, shape=shape, input_type=input_type
+        preprocessing,
+        shape=shape,
+        layout=layout,
+        input_type=input_type,
     )
     return pack_archive(work_dir / "model.tar", model_path, config)
 
@@ -258,6 +274,8 @@ def test_bgr_interleaved_conflicting_reverse_and_interleaved(work_dir: Path):
             "reverse_channels": True,  # conflicts with BGR
             "interleaved_to_planar": False,  # conflicts with 'i'
         },
+        shape=[1, 64, 64, 3],
+        layout="NHWC",
     )
     config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
@@ -305,7 +323,8 @@ def test_reverse_true_interleaved_true(work_dir: Path):
     config, *_ = process_nn_archive(Platform.RVC4, tar, None)
     inp = _stage_input(config)
     assert inp.encoding.from_.value == "RGB"
-    assert inp.layout == "NHWC"
+    assert inp.layout == "NCHW"
+    inp.validate_preprocessing()
 
 
 def test_reverse_false_interleaved_false(work_dir: Path):
@@ -328,6 +347,88 @@ def test_no_flags_defaults_to_rgb(work_dir: Path):
         "RGB",
         "BGR",
     )
+
+
+@pytest.mark.parametrize(
+    ("shape", "layout", "encoding"),
+    [
+        ([3, 64, 64], "CHW", ("RGB", "BGR")),
+        ([64, 64, 3], "HWC", ("RGB", "BGR")),
+        ([1, 64, 64], "CHW", ("GRAY", "GRAY")),
+        ([64, 64, 1], "HWC", ("GRAY", "GRAY")),
+    ],
+)
+def test_explicit_batchless_archive_image_preserves_image_contract(
+    work_dir: Path,
+    shape: list[int],
+    layout: str,
+    encoding: tuple[str, str],
+):
+    tar = _pack_single_input(
+        work_dir,
+        {"reverse_channels": True},
+        shape=shape,
+        layout=layout,
+    )
+
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
+    inp = _stage_input(config)
+
+    assert inp.layout == layout
+    assert (inp.encoding.from_.value, inp.encoding.to.value) == encoding
+    assert not inp.is_raw_input
+    inp.validate_preprocessing()
+
+
+@pytest.mark.parametrize(
+    ("interleaved_to_planar", "shape", "layout"),
+    [
+        (True, [1, 3, 64, 64], "NCHW"),
+        (False, [1, 64, 64, 3], "NHWC"),
+        (True, [1, 3, 64, 1], "NCHW"),
+        (False, [1, 1, 64, 3], "NHWC"),
+    ],
+)
+def test_legacy_interleaved_layout_mismatch_keeps_archive_layout(
+    work_dir: Path,
+    interleaved_to_planar: bool,
+    shape: list[int],
+    layout: str,
+):
+    tar = _pack_single_input(
+        work_dir,
+        {"interleaved_to_planar": interleaved_to_planar},
+        shape=shape,
+        layout=layout,
+    )
+
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
+    inp = _stage_input(config)
+
+    assert inp.layout == layout
+    assert (inp.encoding.from_.value, inp.encoding.to.value) == (
+        "RGB",
+        "BGR",
+    )
+    inp.validate_preprocessing()
+
+
+def test_legacy_image_with_non_image_shape_uses_none_encoding(
+    work_dir: Path,
+):
+    tar = _pack_single_input(
+        work_dir,
+        {},
+        shape=[1, 4, 64, 64],
+        layout="NCHW",
+    )
+
+    config, *_ = process_nn_archive(Platform.RVC4, tar, None)
+    inp = _stage_input(config)
+
+    assert inp.layout == "NCHW"
+    assert inp.is_raw_input
+    inp.validate_input_contract()
 
 
 def test_grayscale_from_single_channel(work_dir: Path):
@@ -418,6 +519,8 @@ def _config_to_nn(
     preprocessing: dict[str, PreprocessingBlock] | None = None,
     main_stage: str | None = None,
     platform: Platform = Platform.RVC4,
+    preprocessing_input_types: dict[str, Literal["raw", "image"]]
+    | None = None,
 ) -> NNArchiveConfig:
     """``modelconverter_config_to_nn`` with the fixed test boilerplate (output
     name + model path) filled in, exposing only what tests vary.
@@ -430,6 +533,7 @@ def _config_to_nn(
         main_stage if main_stage is not None else next(iter(config.stages)),
         dummy_onnx,
         platform,
+        preprocessing_input_types=preprocessing_input_types,
     )
 
 
@@ -664,9 +768,42 @@ def test_raw_input_default_type_without_orig(dummy_onnx: Path):
     assert in0.preprocessing.dai_type is None
 
 
-def test_raw_input_preprocessing_preserved_from_orig(dummy_onnx: Path):
-    # input0 as raw in the config; orig archive carries a raw input whose
-    # preprocessing block must be preserved verbatim.
+def test_embedded_raw_preprocessing_is_identity_in_archive(
+    dummy_onnx: Path,
+):
+    # Original raw preprocessing is already represented in the converted
+    # model and must not be applied twice by the output archive.
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(dummy_onnx),
+            "inputs.0.name": "input0",
+            "inputs.0.encoding": "NONE",
+            "inputs.0.mean_values": [9, 9, 9],
+            "inputs.1.name": "input1",
+        },
+    )
+    orig = archive_from_model(dummy_onnx)
+    orig.model.inputs[0].input_type = InputType.RAW
+    orig.model.inputs[0].preprocessing = PreprocessingBlock(
+        mean=[9, 9, 9],
+        scale=[2, 2, 2],
+        reverse_channels=None,
+        interleaved_to_planar=None,
+        dai_type=None,
+    )
+
+    nn = _config_to_nn(config, dummy_onnx, orig=orig)
+
+    in0 = next(i for i in nn.model.inputs if i.name == "input0")
+    assert in0.input_type == InputType.RAW
+    assert in0.preprocessing.mean is None
+    assert in0.preprocessing.scale is None
+
+
+def test_externalized_raw_preprocessing_is_kept_in_archive(
+    dummy_onnx: Path,
+):
     config = Config.get_config(
         None,
         {
@@ -678,17 +815,155 @@ def test_raw_input_preprocessing_preserved_from_orig(dummy_onnx: Path):
     )
     orig = archive_from_model(dummy_onnx)
     orig.model.inputs[0].input_type = InputType.RAW
-    orig.model.inputs[0].preprocessing = PreprocessingBlock(
-        mean=[9, 9, 9],
-        scale=None,
-        reverse_channels=None,
-        interleaved_to_planar=None,
-        dai_type=None,
+    preprocessing = {
+        "input0": PreprocessingBlock(
+            mean=[9, 9, 9],
+            scale=[2, 2, 2],
+            reverse_channels=None,
+            interleaved_to_planar=None,
+            dai_type=None,
+        )
+    }
+
+    nn = _config_to_nn(
+        config, dummy_onnx, orig=orig, preprocessing=preprocessing
     )
-    nn = _config_to_nn(config, dummy_onnx, orig=orig)
+
     in0 = next(i for i in nn.model.inputs if i.name == "input0")
-    assert in0.input_type == InputType.RAW
     assert in0.preprocessing.mean == [9, 9, 9]
+    assert in0.preprocessing.scale == [2, 2, 2]
+
+
+def test_externalized_image_preprocessing_keeps_image_input_type(
+    dummy_onnx: Path,
+):
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(dummy_onnx),
+            "inputs.0.name": "input0",
+            "inputs.0.encoding": "BGR",
+            "inputs.0.mean_values": [1, 2, 3],
+            "inputs.0.scale_values": [4, 5, 6],
+            "inputs.1.name": "input1",
+        },
+    )
+    stage = next(iter(config.stages.values()))
+    input_types: dict[str, Literal["raw", "image"]] = {
+        inp.name: default_archive_input_type(is_raw_input=inp.is_raw_input)
+        for inp in stage.inputs
+    }
+    config, preprocessing = extract_preprocessing(config)
+
+    nn = _config_to_nn(
+        config,
+        dummy_onnx,
+        preprocessing=preprocessing,
+        preprocessing_input_types=input_types,
+    )
+
+    in0 = next(i for i in nn.model.inputs if i.name == "input0")
+    assert in0.input_type == InputType.IMAGE
+    assert in0.preprocessing.mean == [1, 2, 3]
+    assert in0.preprocessing.scale == [4, 5, 6]
+    assert in0.preprocessing.dai_type == "BGR888p"
+
+
+def test_externalized_image_preprocessing_uses_converted_layout(
+    tmp_path: Path,
+):
+    source = single_io_onnx(tmp_path / "source.onnx", shape=[1, 3, 8, 8])
+    converted = single_io_onnx(tmp_path / "converted.onnx", shape=[1, 8, 8, 3])
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(source),
+            "encoding": {"from": "RGB", "to": "BGR"},
+            "mean_values": [1, 2, 3],
+            "scale_values": [4, 5, 6],
+        },
+    )
+    stage = next(iter(config.stages.values()))
+    input_types: dict[str, Literal["raw", "image"]] = {
+        inp.name: default_archive_input_type(is_raw_input=inp.is_raw_input)
+        for inp in stage.inputs
+    }
+    config, preprocessing = extract_preprocessing(config)
+
+    nn = _config_to_nn(
+        config,
+        converted,
+        preprocessing=preprocessing,
+        preprocessing_input_types=input_types,
+    )
+
+    inp = nn.model.inputs[0]
+    assert inp.layout == "NHWC"
+    assert inp.preprocessing.mean == [1, 2, 3]
+    assert inp.preprocessing.scale == [4, 5, 6]
+    assert inp.preprocessing.dai_type == "RGB888i"
+    assert inp.preprocessing.model_dump()["interleaved_to_planar"] is True
+
+
+def test_externalized_batchless_hwc_preprocessing_is_interleaved(
+    tmp_path: Path,
+):
+    model = single_io_onnx(tmp_path / "model.onnx", shape=[8, 8, 3])
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "layout": "HWC",
+            "encoding": "RGB",
+        },
+    )
+    stage = next(iter(config.stages.values()))
+    input_types: dict[str, Literal["raw", "image"]] = {
+        inp.name: default_archive_input_type(is_raw_input=inp.is_raw_input)
+        for inp in stage.inputs
+    }
+
+    config, preprocessing = extract_preprocessing(config)
+    block = next(iter(preprocessing.values()))
+    assert block.dai_type == "RGB888i"
+    assert block.model_dump()["interleaved_to_planar"] is True
+
+    nn = _config_to_nn(
+        config,
+        model,
+        preprocessing=preprocessing,
+        preprocessing_input_types=input_types,
+    )
+    inp = nn.model.inputs[0]
+    assert inp.layout == "HWC"
+    assert inp.preprocessing.dai_type == "RGB888i"
+    assert inp.preprocessing.model_dump()["interleaved_to_planar"] is True
+
+
+def test_archive_image_overridden_with_none_encoding_becomes_raw(
+    dummy_onnx: Path,
+):
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(dummy_onnx),
+            "inputs.0.name": "input0",
+            "inputs.0.encoding": "NONE",
+            "inputs.1.name": "input1",
+        },
+    )
+    orig = archive_from_model(dummy_onnx)
+
+    nn = _config_to_nn(config, dummy_onnx, orig=orig)
+
+    inp = next(inp for inp in nn.model.inputs if inp.name == "input0")
+    assert inp.input_type == InputType.RAW
+    assert inp.preprocessing.dai_type is None
+
+
+def test_make_dai_type_rejects_none_encoding():
+    with pytest.raises(ValueError, match=r"Encoding\.NONE"):
+        make_dai_type(Encoding.NONE, DataType.FLOAT32, "NCHW")
 
 
 def test_iop_input_and_output(dummy_onnx: Path):
@@ -783,7 +1058,7 @@ def test_raw_input_preprocessing_is_all_none():
 def test_image_float16_interleaved_with_mean_scale():
     inp = _input_config(
         name="x",
-        shape=[1, 3, 64, 64],
+        shape=[1, 64, 64, 3],
         layout="NHWC",
         data_type="float16",
         encoding={"from": "RGB", "to": "RGB"},
@@ -796,6 +1071,54 @@ def test_image_float16_interleaved_with_mean_scale():
     assert block["interleaved_to_planar"] is True
     assert block["mean"] == [0, 0, 0]
     assert block["scale"] == [1, 1, 1]
+
+
+def test_batchless_hwc_image_uses_interleaved_metadata():
+    inp = _input_config(
+        name="x",
+        shape=[64, 64, 3],
+        layout="HWC",
+        encoding="RGB",
+    )
+
+    block = _default_archive_preprocessing(inp, "HWC", input_type="image")
+
+    assert block["dai_type"] == "RGB888i"
+    assert block["interleaved_to_planar"] is True
+
+
+def test_scalar_preprocessing_produces_per_channel_identity_values():
+    inp = _input_config(
+        name="x",
+        shape=[1, 3, 64, 64],
+        layout="NCHW",
+        encoding="RGB",
+        mean_values=[2],
+        scale_values=[3],
+    )
+
+    block = _default_archive_preprocessing(inp, "NCHW", input_type="image")
+
+    assert block["mean"] == [0, 0, 0]
+    assert block["scale"] == [1, 1, 1]
+
+
+def test_grayscale_image_uses_valid_dai_type():
+    inp = _input_config(
+        name="x",
+        shape=[1, 1, 64, 64],
+        layout="NCHW",
+        data_type="float32",
+        encoding="GRAY",
+        mean_values=[2],
+        scale_values=[3],
+    )
+
+    block = _default_archive_preprocessing(inp, "NCHW", input_type="image")
+
+    assert block["dai_type"] == "GRAY8"
+    assert block["mean"] == [0]
+    assert block["scale"] == [1]
 
 
 def test_image_uint8_planar_without_mean_scale():
@@ -825,6 +1148,48 @@ def test_builds_config_from_onnx(dummy_onnx: Path):
     assert archive.model.metadata.name == "dummy_model"
 
 
+@pytest.mark.parametrize(
+    ("shape", "expected_type"),
+    [
+        ([1, 3, 64, 64], InputType.IMAGE),
+        ([1, 1, 64, 64], InputType.IMAGE),
+        ([1, 4, 64, 64], InputType.RAW),
+        ([1, 512], InputType.RAW),
+        ([1, 3, 8400], InputType.RAW),
+    ],
+)
+def test_archive_from_model_infers_input_type(
+    tmp_path: Path, shape: list[int], expected_type: InputType
+):
+    model = single_io_onnx(
+        tmp_path / "model.onnx", shape=shape, output_shape=shape
+    )
+
+    archive = archive_from_model(model)
+
+    assert archive.model.inputs[0].input_type == expected_type
+
+
+def test_bare_archive_raw_input_roundtrip(work_dir: Path):
+    model = single_io_onnx(
+        work_dir / "rgba.onnx",
+        shape=[1, 4, 64, 64],
+        output_shape=[1, 4, 64, 64],
+    )
+    archive = archive_from_model(model)
+    tar = pack_archive(
+        work_dir / "rgba.tar",
+        model,
+        archive.model_dump(mode="json"),
+    )
+
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, None)
+    inp = config.stages[main_stage].inputs[0]
+
+    assert inp.is_raw_input
+    inp.validate_input_contract()
+
+
 def test_get_archive_input_found(dummy_onnx: Path):
     archive = archive_from_model(dummy_onnx)
     assert get_archive_input(archive, "input1").name == "input1"
@@ -834,18 +1199,6 @@ def test_get_archive_input_missing_raises(dummy_onnx: Path):
     archive = archive_from_model(dummy_onnx)
     with pytest.raises(ValueError, match="not found"):
         get_archive_input(archive, "nope")
-
-
-def test_find_archive_input_none_cfg():
-    assert find_archive_input(None, "input0") is None
-
-
-def test_find_archive_input_found_and_missing(dummy_onnx: Path):
-    archive = archive_from_model(dummy_onnx)
-    found_input = find_archive_input(archive, "input0")
-    assert found_input is not None
-    assert found_input.name == "input0"
-    assert find_archive_input(archive, "nope") is None
 
 
 def _prepare_output(name: str) -> Path:

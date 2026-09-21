@@ -32,7 +32,7 @@ def make_default_layout(shape: list[int]) -> str:
     """
     layout = []
     i = 0
-    if shape[0] == 1:
+    if shape[0] in {0, 1}:
         layout.append("N")
         i += 1
     if len(shape) - i == 3:
@@ -48,6 +48,32 @@ def make_default_layout(shape: list[int]) -> str:
             layout.append(letter)
         i += 1
     return "".join(layout)
+
+
+def is_image_input_shape(
+    shape: list[int], layout: str, *, allow_batchless: bool = False
+) -> bool:
+    """Return whether a shape and layout describe a supported image input.
+
+    Unknown channel counts are accepted for standard image layouts so they can
+    be resolved later. Batchless layouts are accepted only when the caller has
+    an explicit signal that the input is an image. Known channel counts must
+    represent grayscale or color image data.
+    """
+    supported_layouts = {"NCHW", "NHWC"}
+    if allow_batchless:
+        supported_layouts.update({"CHW", "HWC"})
+
+    if len(shape) != len(layout) or layout not in supported_layouts:
+        return False
+
+    channels = shape[layout.index("C")]
+    return channels <= 0 or channels in {1, 3}
+
+
+def is_interleaved_image_layout(layout: str | None) -> bool:
+    """Return whether an image layout stores channels last."""
+    return layout in {"HWC", "NHWC"}
 
 
 def guess_new_layout(
