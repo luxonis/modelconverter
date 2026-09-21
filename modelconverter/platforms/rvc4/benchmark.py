@@ -91,24 +91,6 @@ RUNTIMES: dict[str, str] = {
 }
 
 
-def _get_first_rvc4_device_info() -> dai.DeviceInfo:
-    for info in dai.Device.getAllAvailableDevices():
-        if info.platform == XLinkPlatform.X_LINK_RVC4:
-            return info
-
-    raise RuntimeError("No RVC4 device found.")
-
-
-def _resolve_monitored_dai_device(
-    device_ip: str | None, device_adb_id: str | None
-) -> tuple[str | None, str | None]:
-    if device_ip is not None or device_adb_id is not None:
-        return device_ip, device_adb_id
-
-    info = _get_first_rvc4_device_info()
-    return info.name, device_id_to_adb_id(info.getDeviceId())
-
-
 class RVC4Benchmark(Benchmark):
     """Benchmark of an NN archive, a ``.dlc`` or a HubAI slug on RVC4.
 
@@ -875,3 +857,21 @@ class RVC4Benchmark(Benchmark):
         if not isinstance(value, int | float) or not value:
             return "[orange3]N/A[reset]"
         return f"{value:.2f}"
+
+
+def _get_first_rvc4_device_info() -> dai.DeviceInfo:
+    for info in dai.Device.getAllAvailableDevices():
+        if info.platform == XLinkPlatform.X_LINK_RVC4:
+            return info
+
+    raise RuntimeError("No RVC4 device found.")
+
+
+def _resolve_monitored_dai_device(
+    device_ip: str | None, device_adb_id: str | None
+) -> tuple[str | None, str | None]:
+    if device_ip is not None or device_adb_id is not None:
+        return device_ip, device_adb_id
+
+    info = _get_first_rvc4_device_info()
+    return info.name, device_id_to_adb_id(info.getDeviceId())
