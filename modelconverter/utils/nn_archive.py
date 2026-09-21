@@ -31,6 +31,7 @@ from modelconverter.utils.config import (
     BlobBaseConfig,
     Config,
     InputConfig,
+    OutputConfig,
     PlatformConfig,
     broadcast_preprocessing_values,
 )
@@ -387,8 +388,17 @@ def modelconverter_config_to_nn(
         },
     }
 
+    input_name_map = _match_tensor_names(
+        cfg.inputs, model_metadata.input_shapes, kind="input"
+    )
     for inp in cfg.inputs:
-        new_shape = model_metadata.input_shapes[inp.name]
+        metadata_name = input_name_map[inp.name]
+        if metadata_name != inp.name:
+            logger.warning(
+                f"Converted model input '{inp.name}' was renamed to "
+                f"'{metadata_name}'. Using the converted name in the NN Archive."
+            )
+        new_shape = model_metadata.input_shapes[metadata_name]
         if inp.shape is not None and not any(s == 0 for s in inp.shape):
             assert inp.layout is not None
             layout = guess_new_layout(inp.layout, inp.shape, new_shape)
@@ -397,7 +407,7 @@ def modelconverter_config_to_nn(
 
         dtype = _get_io_dtype(
             platform,
-            inp.name,
+            metadata_name,
             model_metadata,
             platform_cfg,
             mode="input",
@@ -423,7 +433,7 @@ def modelconverter_config_to_nn(
 
         archive_cfg["model"]["inputs"].append(
             {
-                "name": inp.name,
+                "name": metadata_name,
                 "shape": new_shape,
                 "layout": layout,
                 "dtype": dtype,
@@ -440,18 +450,20 @@ def modelconverter_config_to_nn(
             f"{configured_output_names}."
         )
 
-    kept_output_names = set(configured_output_names)
-    # The converted names that no configured output claims pair up with the
-    # configured ones that no converted name claims, in order.
-    renamed_output_names = (
-        name for name in metadata_output_names if name not in kept_output_names
+    output_name_map = _match_tensor_names(
+        cfg.outputs, model_metadata.output_shapes, kind="output"
     )
-    for out in cfg.outputs:
-        metadata_name = (
-            out.name
-            if out.name in model_metadata.output_shapes
-            else next(renamed_output_names)
+    renamed_outputs = {
+        old_name: new_name
+        for old_name, new_name in output_name_map.items()
+        if old_name != new_name
+    }
+    if orig_nn is not None and renamed_outputs:
+        archive_cfg["model"]["heads"] = _replace_names(
+            orig_nn.model.heads, renamed_outputs
         )
+    for out in cfg.outputs:
+        metadata_name = output_name_map[out.name]
         if metadata_name != out.name:
             logger.warning(
                 f"Converted model output '{out.name}' was renamed to "
@@ -515,6 +527,102 @@ def modelconverter_config_to_nn(
             f"{post_stage_key}{model_name.suffix}"
         )
     return archive
+
+
+def _match_tensor_names(
+    configured_tensors: list[InputConfig] | list[OutputConfig],
+    converted_shapes: dict[str, list[int]],
+    *,
+    kind: Literal["input", "output"],
+) -> dict[str, str]:
+    """Match configured tensors to converted tensors without relying on order.
+
+    Exact names take precedence. Renamed tensors are paired by shape when that
+    shape identifies one configured and one converted output. A single pair
+    left after those matches is necessarily unambiguous even if conversion
+    changed its shape.
+
+    Args:
+        configured_tensors: Inputs or outputs from the conversion configuration.
+        converted_shapes: Converted tensor shapes keyed by tensor name.
+        kind: Tensor kind, used in ambiguity errors.
+
+    Returns:
+        A mapping from configured tensor names to converted tensor names.
+
+    Raises:
+        ValueError: If renamed tensors cannot be paired unambiguously.
+
+    """
+    configured_names = {tensor.name for tensor in configured_tensors}
+    matches = {
+        tensor.name: tensor.name
+        for tensor in configured_tensors
+        if tensor.name in converted_shapes
+    }
+    unmatched_configured = [
+        tensor for tensor in configured_tensors if tensor.name not in matches
+    ]
+    unmatched_converted = [
+        name for name in converted_shapes if name not in configured_names
+    ]
+
+    configured_by_shape: dict[
+        tuple[int, ...], list[InputConfig | OutputConfig]
+    ] = {}
+    for out in unmatched_configured:
+        if out.shape is not None:
+            configured_by_shape.setdefault(tuple(out.shape), []).append(out)
+
+    converted_by_shape: dict[tuple[int, ...], list[str]] = {}
+    for name in unmatched_converted:
+        converted_by_shape.setdefault(
+            tuple(converted_shapes[name]), []
+        ).append(name)
+
+    for shape, outputs in configured_by_shape.items():
+        converted_names = converted_by_shape.get(shape, [])
+        if len(outputs) == len(converted_names) == 1:
+            matches[outputs[0].name] = converted_names[0]
+
+    unmatched_configured = [
+        out for out in unmatched_configured if out.name not in matches
+    ]
+    matched_converted = set(matches.values())
+    unmatched_converted = [
+        name for name in unmatched_converted if name not in matched_converted
+    ]
+    if len(unmatched_configured) == len(unmatched_converted) == 1:
+        matches[unmatched_configured[0].name] = unmatched_converted[0]
+    elif unmatched_configured or unmatched_converted:
+        configured = {out.name: out.shape for out in unmatched_configured}
+        converted = {
+            name: converted_shapes[name] for name in unmatched_converted
+        }
+        raise ValueError(
+            f"Unable to unambiguously match renamed model {kind}s by shape: "
+            f"configured={configured}, converted={converted}."
+        )
+
+    return matches
+
+
+def _replace_names(value: object, name_map: dict[str, str]) -> object:
+    """Recursively replace exact tensor-name values in archive data."""
+    if isinstance(value, str):
+        return name_map.get(value, value)
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(mode="python")
+    if isinstance(value, dict):
+        return {
+            _replace_names(key, name_map): _replace_names(item, name_map)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_replace_names(item, name_map) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_replace_names(item, name_map) for item in value)
+    return value
 
 
 def default_archive_input_type(
