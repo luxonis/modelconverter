@@ -21,6 +21,7 @@ from modelconverter.utils.encodings import (
     _normalize_encoding_group,
     _normalize_encoding_item,
     _scalarize_encoding_value,
+    collect_quantization_override_names,
     parse_encodings,
 )
 from tests.helpers.strategies import (
@@ -196,6 +197,32 @@ def test_dict_input():
     assert isinstance(enc, Encodings)
     assert enc.activation_encodings["act"][0].scale == 0.5
     assert enc.param_encodings == {}
+
+
+def test_collect_quantization_override_names_from_raw_payload():
+    activation_names, parameter_names = collect_quantization_override_names(
+        {
+            "activation_encodings": {
+                "act": [
+                    {
+                        "bitwidth": 8,
+                        "future_snpe_key": {"kept_by_caller": True},
+                    }
+                ],
+            },
+            "param_encodings": [
+                {
+                    "name": "weight",
+                    "bitwidth": 8,
+                    "future_param_key": ["kept_by_caller"],
+                }
+            ],
+            "future_top_level_key": "ignored-by-name-check",
+        }
+    )
+
+    assert activation_names == {"act"}
+    assert parameter_names == {"weight"}
 
 
 def test_list_json_raises_type_error():

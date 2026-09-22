@@ -1,10 +1,12 @@
-"""Parsing of externally supplied quantization encodings.
+"""Helpers for externally supplied quantization encodings.
 
 Quantization encodings describe the scale, offset and bit width used to
 quantize activations and parameters of a model. They can be handed to
 the RVC4 conversion to override the values derived from calibration.
-The files come in several shapes, so this module normalizes them into
-the ``Encodings`` model used by the conversion configuration.
+Raw ``rvc4.encodings`` data is passed through to SNPE rather than
+normalized through ModelConverter's ``Encodings`` schema. The parser below
+is kept for already-typed compatibility paths; strict validation uses only
+the activation/parameter names it needs from the raw structure.
 """
 
 import json
@@ -186,16 +188,59 @@ class _ONNXEncodingNames(NamedTuple):
     parameter_names: set[str]
 
 
+def _encoding_group_names(entries: ParamValue) -> set[str]:
+    if isinstance(entries, dict):
+        return set(entries)
+
+    if not isinstance(entries, list):
+        raise TypeError(
+            f"Expected encoding group to be a list or dict, got {type(entries).__name__}."
+        )
+
+    names = set()
+    for item in entries:
+        if not isinstance(item, dict):
+            raise TypeError(
+                f"Expected dict encoding entry, got {type(item).__name__}."
+            )
+        name = item.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError(
+                f"Missing or invalid tensor name in entry: {item}"
+            )
+        names.add(name)
+    return names
+
+
+def collect_quantization_override_names(
+    encodings: "Encodings | Mapping[str, Any]",
+) -> tuple[set[str], set[str]]:
+    """Collect activation and parameter names without normalizing entries."""
+    if not isinstance(encodings, Mapping):
+        return (
+            set(encodings.activation_encodings),
+            set(encodings.param_encodings),
+        )
+
+    return (
+        _encoding_group_names(encodings.get("activation_encodings", {})),
+        _encoding_group_names(encodings.get("param_encodings", {})),
+    )
+
+
 def validate_quantization_override_names(
-    encodings: "Encodings", model_path: str | Path
+    encodings: "Encodings | Mapping[str, Any]", model_path: str | Path
 ) -> None:
     """Reject override names that are absent or in the wrong encoding group."""
+    activation_names, parameter_names = collect_quantization_override_names(
+        encodings
+    )
     model_names = _collect_onnx_encoding_names(model_path)
     invalid_activation_names = sorted(
-        set(encodings.activation_encodings) - model_names.activation_names
+        activation_names - model_names.activation_names
     )
     invalid_parameter_names = sorted(
-        set(encodings.param_encodings) - model_names.parameter_names
+        parameter_names - model_names.parameter_names
     )
 
     if invalid_activation_names or invalid_parameter_names:
