@@ -29,6 +29,23 @@ from modelconverter.utils.types import DataType, Encoding, ResizeMethod
 _MAX_ORT_IR_VERSION = 8
 
 
+def _create_onnx_session(model_path: Path) -> ort.InferenceSession:
+    """Load from disk, retrying with a lower IR version only when required."""
+    providers = ["CPUExecutionProvider"]
+    try:
+        return ort.InferenceSession(str(model_path), providers=providers)
+    except Exception as error:
+        if "Unsupported model IR version" not in str(error):
+            raise
+
+    # The Hailo 2024.10 image ships ONNX Runtime 1.12, which supports IR
+    # versions only through 8. The synthetic test models use opset 13 and
+    # require only IR 7, so lowering the declaration is safe for that fallback.
+    model = onnx.load(str(model_path))
+    model.ir_version = min(model.ir_version, _MAX_ORT_IR_VERSION)
+    return ort.InferenceSession(model.SerializeToString(), providers=providers)
+
+
 class ONNXReferenceInferer:
     """Runs the original ONNX model with the config's preprocessing applied.
 
@@ -46,15 +63,7 @@ class ONNXReferenceInferer:
 
         """
         self.stage = stage
-        model = onnx.load(str(model_path))
-        # The Hailo 2024.10 image ships ONNX Runtime 1.12, which supports IR
-        # versions only through 8. The test models use opset 13 and require
-        # only IR 7, so lowering the declared version is safe and keeps the
-        # reference path usable across every supported vendor container.
-        model.ir_version = min(model.ir_version, _MAX_ORT_IR_VERSION)
-        self.session = ort.InferenceSession(
-            model.SerializeToString(), providers=["CPUExecutionProvider"]
-        )
+        self.session = _create_onnx_session(model_path)
         self._input_names = [i.name for i in self.session.get_inputs()]
         self._output_names = [o.name for o in self.session.get_outputs()]
 
