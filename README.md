@@ -623,13 +623,19 @@ LDF datasets are also supported as calibration data by setting `calibration.path
 > Multi-input LDF datasets are not currently supported for calibration data.
 
 > [!IMPORTANT]
-> ModelConverter gives your `.npy` and `.raw` files to the quantizer as they
-> are. It does no color conversion and no normalization, also when the NN
-> Archive holds the preprocessing. Make sure that these files agree with the
-> input contract of the backend: the data type, the shape, the layout and the
-> numeric domain. RVC4 and Hailo need channel-last data: `NHWC`, or `HWC` for a
-> sample without a batch axis. ModelConverter transforms its own random
-> calibration tensors when they need it.
+> User-provided `.npy` and `.raw` calibration files are treated as opaque,
+> backend-ready tensors. ModelConverter does not color-convert, normalize or
+> reorder them, including when the NN Archive holds the preprocessing. Prepare
+> them in the exact data type, per-file shape, layout and numeric domain that
+> the target backend expects.
+>
+> For Hailo, each file represents one batchless sample. For an image input, a
+> `.npy` file must therefore have `HWC` shape. ModelConverter stacks the files
+> to form the `NHWC` calibration batch. RVC4/SNPE consumes image tensors in
+> channel-last order (normally `NHWC`).
+>
+> These requirements apply only to user-provided tensor files. ModelConverter
+> prepares image files and its own random calibration samples for the backend.
 
 > [!NOTE]
 > You cannot use a custom RVC4 `--input_list` when the NN Archive holds the
