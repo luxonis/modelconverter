@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import NamedTuple
 
+import cv2
 import numpy as np
 import pytest
 from luxonis_ml.typing import Params
@@ -13,15 +14,14 @@ from modelconverter.cli.utils import extract_preprocessing
 from modelconverter.platforms.rvc3 import exporter as rvc3_exporter
 from modelconverter.platforms.rvc3.exporter import RVC3Exporter
 from modelconverter.utils import ModelconverterException
-from modelconverter.utils.config import Config, ImageCalibrationConfig
+from modelconverter.utils.config import (
+    Config,
+    EncodingConfig,
+    ImageCalibrationConfig,
+    InputConfig,
+)
+from modelconverter.utils.types import DataType, Encoding
 from tests.helpers.onnx_factory import single_io_onnx
-
-
-class _PotDataset(NamedTuple):
-    """The parts of POT's dataset description these tests check."""
-
-    reader: str
-    data_source: Path
 
 
 def test_externalized_preprocessing_uses_float_numpy_pot_data(
@@ -67,6 +67,49 @@ def test_externalized_preprocessing_uses_float_numpy_pot_data(
     assert pot_input.shape == (1, 3, 1, 1)
     assert commands
     assert commands[0][0] == "pot"
+
+
+@pytest.mark.parametrize(
+    ("encoding", "expected"),
+    [
+        (Encoding.BGR, [0, 0, 255]),
+        (Encoding.RGB, [255, 0, 0]),
+    ],
+)
+def test_image_and_numpy_pot_readers_keep_the_same_color_order(
+    tmp_path: Path, encoding: Encoding, expected: list[int]
+) -> None:
+    calibration_dir = tmp_path / "calibration"
+    calibration_dir.mkdir()
+    image_path = calibration_dir / "red.png"
+    Image.fromarray(np.full((2, 2, 3), (255, 0, 0), np.uint8)).save(image_path)
+    inp = InputConfig(
+        name="input0",
+        shape=[1, 3, 2, 2],
+        layout="NCHW",
+        encoding=EncodingConfig.model_validate(
+            {"from": encoding, "to": encoding}
+        ),
+        data_type=DataType.UINT8,
+    )
+    calib = ImageCalibrationConfig(path=calibration_dir)
+    exporter = object.__new__(RVC3Exporter)
+    exporter.intermediate_outputs_dir = tmp_path
+
+    image_dataset = exporter._write_calibration_images(
+        inp, calib, [image_path], shape=[1, 3, 2, 2]
+    )
+    data_source = image_dataset["data_source"]
+    assert isinstance(data_source, str)
+    image_sample = cv2.imread(str(Path(data_source) / image_path.name))
+    exporter._write_calibration_tensors(
+        inp, calib, [image_path], shape=[1, 3, 2, 2]
+    )
+    numpy_sample = np.load(tmp_path / "calibration_tensors/0.npy")
+
+    assert "preprocessing" not in image_dataset
+    np.testing.assert_array_equal(image_sample[0, 0], expected)
+    np.testing.assert_array_equal(numpy_sample[0, 0], expected)
 
 
 @pytest.mark.parametrize("suffix", [".npy", ".raw"])
@@ -224,6 +267,13 @@ def _calibrating_exporter(
     output_dir = tmp_path / "rvc3-output"
     output_dir.mkdir()
     return RVC3Exporter(next(iter(config.stages.values())), output_dir)
+
+
+class _PotDataset(NamedTuple):
+    """The parts of POT's dataset description these tests check."""
+
+    reader: str
+    data_source: Path
 
 
 def _pot_dataset(exporter: RVC3Exporter) -> _PotDataset:

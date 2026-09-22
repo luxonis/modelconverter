@@ -317,7 +317,7 @@ class RVC3Exporter(RVC2Exporter):
 
         Returns:
             The POT dataset description pointing at the written images,
-            including the color conversion POT itself has to apply.
+            including grayscale conversion when POT has to apply it.
 
         """
         directory = self.intermediate_outputs_dir / "calibration_images"
@@ -340,6 +340,4 @@ class RVC3Exporter(RVC2Exporter):
         }
         if inp.encoding.to == Encoding.GRAY:
             dataset["preprocessing"] = [{"type": "bgr_to_gray"}]
-        elif not self._reverse_input_channels:
-            dataset["preprocessing"] = [{"type": "bgr_to_rgb"}]
         return dataset
