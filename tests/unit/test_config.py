@@ -25,6 +25,7 @@ from modelconverter.utils.config import (
     LinkCalibrationConfig,
     ONNXOptimizationsConfig,
     OutputConfig,
+    QuantizationOverrides,
     RandomCalibrationConfig,
     RVC2Config,
     RVC3Config,
@@ -40,6 +41,7 @@ from modelconverter.utils.config import (
     generate_renamed_onnx,
 )
 from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
+from modelconverter.utils.filesystem_utils import set_input_base
 from modelconverter.utils.metadata import Metadata
 from modelconverter.utils.types import (
     DataType,
@@ -772,14 +774,35 @@ def test_is_symmetric_json_serialization():
 def test_encodings_from_json_string():
     payload = json.dumps({"activation_encodings": {}, "param_encodings": {}})
     cfg = _rvc4_config(encodings=payload)
-    assert isinstance(cfg.encodings, Encodings)
+    assert isinstance(cfg.encodings, QuantizationOverrides)
+    assert cfg.encodings.payload == {
+        "activation_encodings": {},
+        "param_encodings": {},
+    }
 
 
 def test_encodings_from_dict():
-    cfg = _rvc4_config(
-        encodings={"activation_encodings": {}, "param_encodings": {}}
-    )
-    assert isinstance(cfg.encodings, Encodings)
+    payload = {
+        "activation_encodings": {
+            "act": [{"bitwidth": 8, "vendor_key": {"nested": True}}],
+        },
+        "param_encodings": {
+            "weight": [{"bitwidth": 8, "param_vendor_key": "keep"}],
+        },
+        "top_level_vendor_key": ["keep"],
+    }
+    cfg = _rvc4_config(encodings=payload)
+    assert isinstance(cfg.encodings, QuantizationOverrides)
+    assert cfg.encodings.payload == payload
+    assert json.loads(cfg.model_dump_json())["encodings"] == payload
+
+
+def test_existing_encodings_instance_is_preserved():
+    encodings = Encodings(activation_encodings={}, param_encodings={})
+
+    cfg = RVC4Config.model_validate({"encodings": encodings})
+
+    assert cfg.encodings is encodings
 
 
 def test_encodings_from_path():
@@ -788,7 +811,9 @@ def test_encodings_from_path():
         json.dumps({"activation_encodings": {}, "param_encodings": {}})
     )
     cfg = _rvc4_config(encodings=str(enc_file))
-    assert isinstance(cfg.encodings, Encodings)
+    assert isinstance(cfg.encodings, QuantizationOverrides)
+    assert cfg.encodings.source_path == enc_file
+    assert json.loads(cfg.model_dump_json())["encodings"] == str(enc_file)
 
 
 def test_quantization_overrides_separated_form_normalized():
@@ -812,7 +837,8 @@ def test_quantization_overrides_separated_form_normalized():
         "--bar",
         "bar-value",
     ]
-    assert isinstance(cfg.encodings, Encodings)
+    assert isinstance(cfg.encodings, QuantizationOverrides)
+    assert cfg.encodings.source_path == enc_file
 
 
 def test_quantization_overrides_equals_form_normalized():
@@ -835,7 +861,62 @@ def test_quantization_overrides_equals_form_normalized():
         "--bar",
         "bar-value",
     ]
-    assert isinstance(cfg.encodings, Encodings)
+    assert isinstance(cfg.encodings, QuantizationOverrides)
+    assert cfg.encodings.source_path == enc_file
+
+
+def test_direct_quantization_overrides_resolves_relative_to_input_base(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    enc_file = config_dir / "encodings.json"
+    enc_file.write_text(
+        json.dumps({"activation_encodings": {}, "param_encodings": {}})
+    )
+
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    monkeypatch.chdir(other_dir)
+
+    set_input_base(config_dir)
+    try:
+        cfg = _rvc4_config(
+            snpe_onnx_to_dlc_args=[
+                "--quantization_overrides",
+                "encodings.json",
+            ]
+        )
+    finally:
+        set_input_base(None)
+
+    assert isinstance(cfg.encodings, QuantizationOverrides)
+    assert cfg.encodings.source_path == enc_file
+
+
+def test_direct_quantization_overrides_matches_encodings_source():
+    enc_file = MISC_DIR / "qo-equivalent.json"
+    enc_file.write_text(
+        json.dumps(
+            {
+                "activation_encodings": {
+                    "act": [{"bitwidth": 8, "vendor_key": "keep"}],
+                },
+                "param_encodings": {},
+                "top_level_vendor_key": "keep",
+            }
+        )
+    )
+
+    sugar = _rvc4_config(encodings=str(enc_file))
+    direct = _rvc4_config(
+        snpe_onnx_to_dlc_args=[f"--quantization_overrides={enc_file}"],
+    )
+
+    assert isinstance(sugar.encodings, QuantizationOverrides)
+    assert isinstance(direct.encodings, QuantizationOverrides)
+    assert sugar.encodings.source_path == direct.encodings.source_path
 
 
 @pytest.mark.parametrize(
