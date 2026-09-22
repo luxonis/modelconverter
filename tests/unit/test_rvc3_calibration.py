@@ -102,6 +102,7 @@ def test_image_and_numpy_pot_readers_keep_the_same_color_order(
     data_source = image_dataset["data_source"]
     assert isinstance(data_source, str)
     image_sample = cv2.imread(str(Path(data_source) / image_path.name))
+    assert image_sample is not None
     exporter._write_calibration_tensors(
         inp, calib, [image_path], shape=[1, 3, 2, 2]
     )

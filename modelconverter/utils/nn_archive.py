@@ -26,6 +26,7 @@ from luxonis_ml.nn_archive.config_building_blocks import (
     PreprocessingBlock,
 )
 from luxonis_ml.typing import Params
+from pydantic import BaseModel
 
 from modelconverter.utils.config import (
     BlobBaseConfig,
@@ -611,7 +612,7 @@ def _replace_names(value: object, name_map: dict[str, str]) -> object:
     """Recursively replace exact tensor-name values in archive data."""
     if isinstance(value, str):
         return name_map.get(value, value)
-    if hasattr(value, "model_dump"):
+    if isinstance(value, BaseModel):
         value = value.model_dump(mode="python")
     if isinstance(value, dict):
         return {
