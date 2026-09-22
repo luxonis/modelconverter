@@ -91,6 +91,7 @@ class RVC4Exporter(Exporter):
             logger.warning(
                 f"Using pre-defined arguments for quantization mode {self._quantization_mode.value}, which will override user-provided SNPE arguments. If you need full control of SNPE arguments, set `rvc4.quantization_mode: CUSTOM` in the config or CLI."
             )
+        self._validate_custom_input_list()
         self._keep_raw_images = rvc4_cfg.keep_raw_images
         if "--htp_socs" in self._snpe_dlc_graph_prepare:
             i = self._snpe_dlc_graph_prepare.index("--htp_socs")
@@ -145,6 +146,19 @@ class RVC4Exporter(Exporter):
             )
         self._raw_img_dir = self.intermediate_outputs_dir / "raw_files"
         self._input_list_path = self.intermediate_outputs_dir / "img_list.txt"
+
+    def _validate_custom_input_list(self) -> None:
+        """Reject unverifiable buffers before starting model conversion."""
+        if self._disable_calibration or not _has_input_list(
+            self._snpe_dlc_quant
+        ):
+            return
+        if any(_transforms_calibration(inp) for inp in self._inputs.values()):
+            raise ModelconverterException(
+                "A custom RVC4 `--input_list` cannot be used when "
+                "preprocessing is externalized. Its buffers cannot be "
+                "verified or transformed for the bare converted model."
+            )
 
     def export(self) -> Path:
         """Convert, quantize and graph-prepare the model.
@@ -215,17 +229,7 @@ class RVC4Exporter(Exporter):
 
         """
         args = self._snpe_dlc_quant
-        has_input_list = "--input_list" in args or any(
-            arg.startswith("--input_list=") for arg in args
-        )
-        if has_input_list and any(
-            _transforms_calibration(inp) for inp in self._inputs.values()
-        ):
-            raise ModelconverterException(
-                "A custom RVC4 `--input_list` cannot be used when "
-                "preprocessing is externalized. Its buffers cannot be "
-                "verified or transformed for the bare converted model."
-            )
+        has_input_list = _has_input_list(args)
 
         if not has_input_list:
             logger.info("Preparing calibration data.")
@@ -523,8 +527,16 @@ class RVC4Exporter(Exporter):
 def _transforms_calibration(inp: InputConfig) -> bool:
     """Whether externalized preprocessing still has to reach the quantizer."""
     preprocessing = inp.calibration_preprocessing
-    return preprocessing is not None and (
-        preprocessing.encoding_mismatch or preprocessing.normalization_required
+    return (
+        preprocessing is not None
+        and preprocessing.requires_input_preprocessing()
+    )
+
+
+def _has_input_list(args: list[str]) -> bool:
+    """Whether SNPE quantization arguments provide an input list."""
+    return "--input_list" in args or any(
+        arg.startswith("--input_list=") for arg in args
     )
 
 

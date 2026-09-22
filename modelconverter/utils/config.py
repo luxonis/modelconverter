@@ -52,7 +52,10 @@ from modelconverter.utils.onnx_compatibility import (
     has_external_data,
     save_onnx_model,
 )
-from modelconverter.utils.preprocessing import CalibrationPreprocessing
+from modelconverter.utils.preprocessing import (
+    CalibrationPreprocessing,
+    input_preprocessing_required,
+)
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -533,16 +536,12 @@ class InputConfig(OutputConfig):
             values are set.
 
         """
-        if self.encoding_mismatch:
-            return True
-        if reverse_only:
-            return False
-        return (
-            self.mean_values is not None
-            and any(v != 0 for v in self.mean_values)
-        ) or (
-            self.scale_values is not None
-            and any(v != 1 for v in self.scale_values)
+        return input_preprocessing_required(
+            encoding_from=self.encoding.from_,
+            encoding_to=self.encoding.to,
+            mean_values=self.mean_values,
+            scale_values=self.scale_values,
+            reverse_only=reverse_only,
         )
 
     def validate_preprocessing(self, *, reverse_only: bool = False) -> int:

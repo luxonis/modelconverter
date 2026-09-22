@@ -5,6 +5,7 @@ config, but calibration still needs it: the quantizer then sees the input of
 the source model, not of a model that carries the preprocessing nodes.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +13,34 @@ import numpy as np
 
 from modelconverter.utils.exceptions import ModelconverterException
 from modelconverter.utils.types import DataType, Encoding
+
+
+def normalization_required(
+    mean_values: Sequence[float] | None,
+    scale_values: Sequence[float] | None,
+) -> bool:
+    """Whether mean subtraction or scale division is non-identity."""
+    return (
+        mean_values is not None and any(value != 0 for value in mean_values)
+    ) or (
+        scale_values is not None and any(value != 1 for value in scale_values)
+    )
+
+
+def input_preprocessing_required(
+    *,
+    encoding_from: Encoding,
+    encoding_to: Encoding,
+    mean_values: Sequence[float] | None,
+    scale_values: Sequence[float] | None,
+    reverse_only: bool = False,
+) -> bool:
+    """Whether an input's color conversion or normalization is non-identity."""
+    if encoding_from != encoding_to:
+        return True
+    return not reverse_only and normalization_required(
+        mean_values, scale_values
+    )
 
 
 @dataclass(frozen=True)
@@ -33,12 +62,18 @@ class CalibrationPreprocessing:
     @property
     def normalization_required(self) -> bool:
         """Whether mean subtraction or scale division is non-identity."""
-        return (
-            self.mean_values is not None
-            and any(value != 0 for value in self.mean_values)
-        ) or (
-            self.scale_values is not None
-            and any(value != 1 for value in self.scale_values)
+        return normalization_required(self.mean_values, self.scale_values)
+
+    def requires_input_preprocessing(
+        self, *, reverse_only: bool = False
+    ) -> bool:
+        """Whether this snapshot contains non-identity preprocessing."""
+        return input_preprocessing_required(
+            encoding_from=self.encoding_from,
+            encoding_to=self.encoding_to,
+            mean_values=self.mean_values,
+            scale_values=self.scale_values,
+            reverse_only=reverse_only,
         )
 
 

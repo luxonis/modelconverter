@@ -296,6 +296,7 @@ def _calibration_exporter(
     *,
     quant_args: list[str] | None = None,
     externalize: bool = True,
+    disable_calibration: bool = False,
 ) -> RVC4Exporter:
     model = single_io_onnx(
         tmp_path / "externalized.onnx",
@@ -322,6 +323,7 @@ def _calibration_exporter(
             "rvc4": {
                 "quantization_mode": "CUSTOM",
                 "snpe_dlc_quant_args": quant_args or [],
+                "disable_calibration": disable_calibration,
             },
         },
     )
@@ -456,13 +458,24 @@ def test_externalized_preprocessing_rejects_custom_input_list(
         if joined
         else ["--input_list", str(custom_list)]
     )
+    with pytest.raises(ModelconverterException, match="cannot be used"):
+        _calibration_exporter(
+            tmp_path,
+            quant_args=quant_args,
+        )
+
+
+def test_disabled_calibration_allows_custom_input_list(tmp_path: Path):
+    custom_list = tmp_path / "custom-list.txt"
+    custom_list.write_text("input0:=sample.raw\n")
+
     exporter = _calibration_exporter(
         tmp_path,
-        quant_args=quant_args,
+        quant_args=["--input_list", str(custom_list)],
+        disable_calibration=True,
     )
 
-    with pytest.raises(ModelconverterException, match="cannot be used"):
-        exporter._calibrate(tmp_path / "model.dlc")
+    assert exporter._disable_calibration
 
 
 def test_identity_externalization_allows_custom_input_list(
