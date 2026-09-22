@@ -6,6 +6,7 @@ the source model, not of a model that carries the preprocessing nodes.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -175,6 +176,39 @@ def channels_last_image_layout(layout: str) -> str:
     if sorted(layout) == ["C", "H", "W"]:
         return "HWC"
     return layout
+
+
+def channels_last_4d_layout(layout: str) -> str:
+    """Move a unique channel axis last in a four-dimensional layout."""
+    if len(layout) == 4 and layout.count("C") == 1:
+        return layout.replace("C", "") + "C"
+    return layout
+
+
+def read_user_calibration_tensor(
+    path: Path,
+    *,
+    raw_shape: list[int] | tuple[int, ...],
+    data_type: DataType,
+    input_name: str,
+) -> np.ndarray:
+    """Load an opaque user tensor in a backend-required sample shape.
+
+    NumPy files carry their own shape and are returned unchanged. Raw buffers
+    carry no shape, so they are reshaped without reordering after their element
+    count is validated.
+    """
+    if path.suffix.lower() == ".npy":
+        return np.load(path)
+
+    array = np.fromfile(path, dtype=data_type.as_numpy_dtype())
+    expected_size = int(np.prod(raw_shape))
+    if array.size != expected_size:
+        raise ModelconverterException(
+            f"Calibration data for input '{input_name}' has {array.size} "
+            f"elements, expected {expected_size} for shape {list(raw_shape)}."
+        )
+    return array.reshape(raw_shape)
 
 
 def _per_channel(

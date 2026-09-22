@@ -19,6 +19,7 @@ from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
+    ModelconverterException,
     PreprocessingEmbeddingError,
     exit_with,
 )
@@ -27,7 +28,10 @@ from modelconverter.utils.config import (
     SingleStageConfig,
     broadcast_preprocessing_values,
 )
-from modelconverter.utils.preprocessing import reorder_layout
+from modelconverter.utils.preprocessing import (
+    read_user_calibration_tensor,
+    reorder_layout,
+)
 from modelconverter.utils.types import Platform
 
 
@@ -220,18 +224,22 @@ class HailoExporter(Exporter):
             calib_dataset = np.zeros((len(images), *shape), dtype=np.float32)
 
             for idx, img_path in enumerate(images):
-                if (
-                    img_path.suffix.lower() == ".raw"
+                is_user_tensor = (
+                    img_path.suffix.lower() in {".npy", ".raw"}
                     and not calib.generated_from_random
-                ):
-                    # User tensors are already in Hailo's input layout.
-                    img = np.fromfile(
-                        img_path, dtype=inp.data_type.as_numpy_dtype()
-                    ).reshape(shape)
+                )
+                if is_user_tensor:
+                    img = read_user_calibration_tensor(
+                        img_path,
+                        raw_shape=shape,
+                        data_type=inp.data_type,
+                        input_name=orig_name,
+                    )
                 else:
                     img, layout = self._read_calibration_file(
                         inp, calib, img_path
                     )
+                    assert layout is not None
                     if calib.generated_from_random and _is_hwc_sample(
                         shape, layout
                     ):
@@ -243,7 +251,7 @@ class HailoExporter(Exporter):
                         img = _fit_hailo_sample(img, shape, layout)
 
                 if img.shape != tuple(shape):
-                    raise ValueError(
+                    raise ModelconverterException(
                         f"Calibration data for input '{orig_name}' has shape "
                         f"{list(img.shape)}, expected {shape}."
                     )

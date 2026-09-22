@@ -11,7 +11,10 @@ import pytest
 from PIL import Image
 
 from modelconverter.cli.utils import extract_preprocessing
-from modelconverter.utils import PreprocessingEmbeddingError
+from modelconverter.utils import (
+    ModelconverterException,
+    PreprocessingEmbeddingError,
+)
 from modelconverter.utils.config import (
     Config,
     ImageCalibrationConfig,
@@ -140,7 +143,7 @@ def test_user_tensor_is_opaque_and_backend_ready(
 ) -> None:
     calibration_dir = tmp_path / "calibration"
     calibration_dir.mkdir()
-    source = np.array([[[1.0, 2.0, 3.0]]], dtype=np.float32)
+    source = np.arange(12, dtype=np.float32).reshape(2, 2, 3)
     path = calibration_dir / f"model-domain{suffix}"
     if suffix == ".npy":
         np.save(path, source)
@@ -150,13 +153,39 @@ def test_user_tensor_is_opaque_and_backend_ready(
         hailo_exporter_module,
         tmp_path,
         calibration_dir,
+        shape=[1, 3, 2, 2],
         encoding={"from": "RGB", "to": "BGR"},
         mean_values=[10, 20, 30],
     )
 
-    actual = exporter._get_calibration_data(_Runner())["hailo_input"][0]
+    actual = exporter._get_calibration_data(_Runner([1, 2, 2, 3]))[
+        "hailo_input"
+    ][0]
 
     np.testing.assert_array_equal(actual, source)
+
+
+@pytest.mark.parametrize("suffix", [".npy", ".raw"])
+def test_user_tensor_with_wrong_shape_is_rejected(
+    hailo_exporter_module: ModuleType, tmp_path: Path, suffix: str
+) -> None:
+    calibration_dir = tmp_path / "calibration"
+    calibration_dir.mkdir()
+    source = np.arange(6, dtype=np.float32)
+    path = calibration_dir / f"wrong-shape{suffix}"
+    if suffix == ".npy":
+        np.save(path, source.reshape(1, 2, 3))
+    else:
+        source.tofile(path)
+    exporter, _ = _externalized_exporter(
+        hailo_exporter_module,
+        tmp_path,
+        calibration_dir,
+        shape=[1, 3, 2, 2],
+    )
+
+    with pytest.raises(ModelconverterException, match="expected"):
+        exporter._get_calibration_data(_Runner([1, 2, 2, 3]))
 
 
 def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(

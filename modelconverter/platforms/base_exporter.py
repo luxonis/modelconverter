@@ -415,13 +415,15 @@ class Exporter(ABC):
         inp: InputConfig,
         calib: ImageCalibrationConfig,
         path: Path,
-    ) -> tuple[np.ndarray, str]:
+    ) -> tuple[np.ndarray, str | None]:
         """Load one calibration file and apply externalized preprocessing.
 
         User-provided ``.npy`` and ``.raw`` files retain their documented
-        pass-through contract. Random calibration materialized as ``.npy`` is
-        different: it is still a managed, pre-preprocessing source and is
-        transformed when preprocessing has been externalized.
+        pass-through contract: they are loaded without shape or layout
+        interpretation and return ``None`` as their layout. Random calibration
+        materialized as ``.npy`` is different: it is still a managed,
+        pre-preprocessing source and is transformed when preprocessing has
+        been externalized.
         """
         if inp.shape is None:  # pragma: no cover - validated by each backend
             raise ValueError(
@@ -429,9 +431,15 @@ class Exporter(ABC):
             )
 
         is_tensor_file = path.suffix.lower() in {".npy", ".raw"}
-        preprocessing = inp.calibration_preprocessing
         if is_tensor_file and not calib.generated_from_random:
-            preprocessing = None
+            if path.suffix.lower() == ".npy":
+                return np.load(path), None
+            return (
+                np.fromfile(path, dtype=inp.data_type.as_numpy_dtype()),
+                None,
+            )
+
+        preprocessing = inp.calibration_preprocessing
         encoding = (
             inp.encoding.to
             if preprocessing is None

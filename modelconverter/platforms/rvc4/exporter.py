@@ -338,7 +338,7 @@ class RVC4Exporter(Exporter):
                 entry_str = ""
                 for e in entry:
                     i += 1
-                    if e.path.suffix == ".raw":
+                    if e.path.suffix.lower() == ".raw":
                         entry_str += f"{e.inp.name}:={e.path} "
                     else:
                         img, layout = self._read_calibration_file(
@@ -347,6 +347,7 @@ class RVC4Exporter(Exporter):
                         if e.calib.generated_from_random and _was_image_input(
                             e.inp
                         ):
+                            assert layout is not None
                             target_layout = channels_last_image_layout(layout)
                             # A layout with a repeated letter is returned
                             # unchanged, and cannot be transposed either.

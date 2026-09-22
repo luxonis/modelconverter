@@ -409,6 +409,42 @@ def test_user_raw_calibration_is_referenced_without_rewriting(tmp_path: Path):
     )
 
 
+def test_user_numpy_calibration_is_serialized_without_shape_interpretation(
+    tmp_path: Path,
+):
+    shape = [1, 1, 4, 4]
+    model = single_io_onnx(
+        tmp_path / "rank-two.onnx", shape=shape, output_shape=shape
+    ).resolve()
+    calibration_dir = tmp_path / "rank-two-calibration"
+    calibration_dir.mkdir()
+    source = np.arange(16, dtype=np.float32).reshape(4, 4)
+    np.save(calibration_dir / "sample.npy", source)
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": shape,
+            "layout": "NCHW",
+            "encoding": "NONE",
+            "calibration": {"path": str(calibration_dir)},
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4.quantization_mode": "CUSTOM",
+        },
+    )
+    output_dir = tmp_path / "rank-two-output"
+    output_dir.mkdir()
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+
+    input_list = exporter._prepare_calibration_data()
+
+    raw_path = Path(input_list.read_text().split(":=", 1)[1].strip())
+    np.testing.assert_array_equal(
+        np.fromfile(raw_path, dtype=np.float32).reshape(source.shape), source
+    )
+
+
 @pytest.mark.parametrize("joined", [False, True])
 def test_externalized_preprocessing_rejects_custom_input_list(
     tmp_path: Path, joined: bool

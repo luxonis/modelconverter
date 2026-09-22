@@ -16,14 +16,15 @@ from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.platforms.rvc2.exporter import RVC2Exporter
-from modelconverter.utils import exit_with, read_image
+from modelconverter.utils import ModelconverterException, exit_with, read_image
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
     InputConfig,
     SingleStageConfig,
 )
 from modelconverter.utils.preprocessing import (
-    channels_last_image_layout,
+    channels_last_4d_layout,
+    read_user_calibration_tensor,
     reorder_layout,
 )
 from modelconverter.utils.subprocess import subprocess_run
@@ -249,8 +250,9 @@ class RVC3Exporter(RVC2Exporter):
             The POT dataset description pointing at the written samples.
 
         Raises:
-            ValueError: If the input has no layout, or if a sample does
-                not have the shape the model input asks for.
+            ValueError: If the input has no layout.
+            ModelconverterException: If a sample does not have the shape the
+                backend input asks for.
 
         """
         if inp.layout is None:  # pragma: no cover - shape resolves layout
@@ -261,9 +263,7 @@ class RVC3Exporter(RVC2Exporter):
         # OpenVINO input, converts an HWC sample to the model layout.
         # Persisting the full NCHW tensor here would therefore make POT
         # interpret its axes as an NHWC sample.
-        sample_layout = channels_last_image_layout(inp.layout).replace(
-            "N", "", 1
-        )
+        sample_layout = channels_last_4d_layout(inp.layout).replace("N", "", 1)
         expected_shape = tuple(
             shape[inp.layout.index(axis)] for axis in sample_layout
         )
@@ -271,10 +271,23 @@ class RVC3Exporter(RVC2Exporter):
         directory = self.intermediate_outputs_dir / "calibration_tensors"
         directory.mkdir(exist_ok=True)
         for index, file in enumerate(files):
-            array, layout = self._read_calibration_file(inp, calib, file)
-            array = reorder_layout(array, layout, sample_layout)
+            is_user_tensor = (
+                file.suffix.lower() in {".npy", ".raw"}
+                and not calib.generated_from_random
+            )
+            if is_user_tensor:
+                array = read_user_calibration_tensor(
+                    file,
+                    raw_shape=expected_shape,
+                    data_type=inp.data_type,
+                    input_name=inp.name,
+                )
+            else:
+                array, layout = self._read_calibration_file(inp, calib, file)
+                assert layout is not None
+                array = reorder_layout(array, layout, sample_layout)
             if array.shape != expected_shape:
-                raise ValueError(
+                raise ModelconverterException(
                     f"Calibration data for input '{inp.name}' has shape "
                     f"{list(array.shape)}, expected {list(expected_shape)}."
                 )

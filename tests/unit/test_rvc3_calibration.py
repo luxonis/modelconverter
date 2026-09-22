@@ -12,6 +12,7 @@ from PIL import Image
 from modelconverter.cli.utils import extract_preprocessing
 from modelconverter.platforms.rvc3 import exporter as rvc3_exporter
 from modelconverter.platforms.rvc3.exporter import RVC3Exporter
+from modelconverter.utils import ModelconverterException
 from modelconverter.utils.config import Config, ImageCalibrationConfig
 from tests.helpers.onnx_factory import single_io_onnx
 
@@ -75,7 +76,7 @@ def test_user_tensor_is_opaque_but_serialized_for_pot_layout(
     shape = [1, 3, 1, 2]
     calibration_dir = tmp_path / "calibration"
     calibration_dir.mkdir()
-    source = np.arange(6, dtype=np.float32).reshape(shape)
+    source = np.arange(6, dtype=np.float32).reshape(1, 2, 3)
     tensor_path = calibration_dir / f"sample{suffix}"
     if suffix == ".npy":
         np.save(tensor_path, source)
@@ -101,7 +102,63 @@ def test_user_tensor_is_opaque_but_serialized_for_pot_layout(
     dataset = _pot_dataset(exporter)
     assert dataset.reader == "numpy_reader"
     actual = np.load(dataset.data_source / "0.npy")
-    np.testing.assert_array_equal(actual, source.transpose(0, 2, 3, 1)[0])
+    np.testing.assert_array_equal(actual, source)
+
+
+def test_user_tensor_uses_generic_four_dimensional_channel_last_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shape = [1, 19, 7, 8]
+    calibration_dir = tmp_path / "calibration"
+    calibration_dir.mkdir()
+    source = np.arange(7 * 8 * 19, dtype=np.float32).reshape(7, 8, 19)
+    np.save(calibration_dir / "sample.npy", source)
+    exporter = _calibrating_exporter(
+        tmp_path,
+        shape,
+        {
+            "layout": "NCDE",
+            "encoding": "NONE",
+            "calibration": {"path": str(calibration_dir)},
+        },
+    )
+    monkeypatch.setattr(
+        rvc3_exporter, "subprocess_run", lambda *_args, **_kwargs: None
+    )
+
+    exporter._calibrate(tmp_path / "model.xml")
+
+    actual = np.load(_pot_dataset(exporter).data_source / "0.npy")
+    np.testing.assert_array_equal(actual, source)
+
+
+@pytest.mark.parametrize("suffix", [".npy", ".raw"])
+def test_user_tensor_with_wrong_shape_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    calibration_dir = tmp_path / "calibration"
+    calibration_dir.mkdir()
+    source = np.arange(5, dtype=np.float32)
+    tensor_path = calibration_dir / f"wrong-shape{suffix}"
+    if suffix == ".npy":
+        np.save(tensor_path, source.reshape(1, 5))
+    else:
+        source.tofile(tensor_path)
+    exporter = _calibrating_exporter(
+        tmp_path,
+        [1, 3, 1, 2],
+        {
+            "layout": "NCHW",
+            "encoding": "RGB",
+            "calibration": {"path": str(calibration_dir)},
+        },
+    )
+    monkeypatch.setattr(
+        rvc3_exporter, "subprocess_run", lambda *_args, **_kwargs: None
+    )
+
+    with pytest.raises(ModelconverterException, match="expected"):
+        exporter._calibrate(tmp_path / "model.xml")
 
 
 def test_generated_calibration_keeps_layout_across_tflite_conversion(

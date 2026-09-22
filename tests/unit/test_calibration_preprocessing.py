@@ -155,7 +155,30 @@ def test_user_tensor_calibration_remains_opaque(
         tensor_path,
     )
 
-    assert layout == "NCHW"
+    assert layout is None
+    expected = source if suffix == ".npy" else source.reshape(-1)
+    np.testing.assert_array_equal(array, expected)
+
+
+def test_user_numpy_tensor_does_not_infer_or_validate_source_layout(
+    dummy_onnx: Path, tmp_path: Path
+):
+    calibration_dir = tmp_path / "rank-two"
+    calibration_dir.mkdir()
+    source = np.arange(16, dtype=np.float32).reshape(4, 4)
+    tensor_path = calibration_dir / "sample.npy"
+    np.save(tensor_path, source)
+    inp = _externalized_input(dummy_onnx, calibration_dir)
+    calib = inp.calibration
+    assert isinstance(calib, ImageCalibrationConfig)
+
+    array, layout = Exporter._read_calibration_file(
+        inp,
+        calib,
+        tensor_path,
+    )
+
+    assert layout is None
     np.testing.assert_array_equal(array, source)
 
 
