@@ -4,7 +4,7 @@ import importlib
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Protocol
+from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
 import pytest
@@ -22,15 +22,28 @@ from modelconverter.utils.config import (
 )
 from tests.helpers.onnx_factory import single_io_onnx
 
-# The HN layers, as `_get_hn_layer_info` reads them out of the Hailo IR.
-_HnLayers = dict[str, dict[str, list[str] | list[list[int]]]]
+if TYPE_CHECKING:
+    from modelconverter.platforms.hailo.exporter import HailoExporter
+
+
+class _HnLayer(TypedDict):
+    """HN layer fields read by `HailoExporter._get_hn_layer_info`."""
+
+    original_names: list[str]
+    input_shapes: list[list[int]]
+
+
+class _HnDict(TypedDict):
+    """The portion of the Hailo network dictionary used by these tests."""
+
+    layers: dict[str, _HnLayer]
 
 
 class _Runner:
     def __init__(self, input_shape: list[int] | None = None) -> None:
         self.input_shape = input_shape or [1, 1, 1, 3]
 
-    def get_hn_dict(self) -> dict[str, _HnLayers]:
+    def get_hn_dict(self) -> _HnDict:
         return {
             "layers": {
                 "hailo_input": {
@@ -39,14 +52,6 @@ class _Runner:
                 }
             }
         }
-
-
-class _CalibrationExporter(Protocol):
-    """The slice of `HailoExporter` these tests drive."""
-
-    def _get_calibration_data(
-        self, runner: _Runner
-    ) -> dict[str, np.ndarray]: ...
 
 
 class _FakeHailoSdk(ModuleType):
@@ -58,21 +63,34 @@ class _FakeTensorflow(ModuleType):
     config = SimpleNamespace(list_physical_devices=lambda _kind: [])
 
 
-@pytest.fixture
-def hailo_exporter_module(monkeypatch: pytest.MonkeyPatch):
+def _load_hailo_exporter_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> ModuleType:
+    """Import the exporter with fake SDK modules and restorable module state."""
     monkeypatch.setitem(
         sys.modules, "hailo_sdk_client", _FakeHailoSdk("hailo_sdk_client")
     )
     monkeypatch.setitem(
         sys.modules, "tensorflow", _FakeTensorflow("tensorflow")
     )
+    package = importlib.import_module("modelconverter.platforms.hailo")
     module_name = "modelconverter.platforms.hailo.exporter"
-    sys.modules.pop(module_name, None)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    monkeypatch.setattr(
+        package,
+        "exporter",
+        getattr(package, "exporter", None),
+        raising=False,
+    )
 
-    try:
-        yield importlib.import_module(module_name)
-    finally:
-        sys.modules.pop(module_name, None)
+    return importlib.import_module(module_name)
+
+
+@pytest.fixture
+def hailo_exporter_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> ModuleType:
+    return _load_hailo_exporter_module(monkeypatch)
 
 
 def _externalized_exporter(
@@ -83,7 +101,7 @@ def _externalized_exporter(
     shape: list[int] | None = None,
     encoding: str | dict[str, str] = "RGB",
     mean_values: list[int] | int = 0,
-) -> tuple[_CalibrationExporter, InputConfig]:
+) -> tuple["HailoExporter", InputConfig]:
     shape = shape or [1, 3, 1, 1]
     model = single_io_onnx(
         tmp_path / "model.onnx",
@@ -105,9 +123,29 @@ def _externalized_exporter(
     )
     extract_preprocessing(config)
     stage = next(iter(config.stages.values()))
-    exporter = object.__new__(hailo_exporter_module.HailoExporter)
+    exporter: HailoExporter = object.__new__(
+        hailo_exporter_module.HailoExporter
+    )
     exporter._inputs = {inp.name: inp for inp in stage.inputs}
     return exporter, stage.inputs[0]
+
+
+def test_exporter_import_restores_preexisting_module_and_package_attribute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module_name = "modelconverter.platforms.hailo.exporter"
+    package = importlib.import_module("modelconverter.platforms.hailo")
+    preexisting = ModuleType(module_name)
+    monkeypatch.setitem(sys.modules, module_name, preexisting)
+    monkeypatch.setattr(package, "exporter", preexisting, raising=False)
+
+    with pytest.MonkeyPatch.context() as isolated:
+        loaded = _load_hailo_exporter_module(isolated)
+        assert loaded is not preexisting
+        assert package.exporter is loaded
+
+    assert sys.modules[module_name] is preexisting
+    assert package.exporter is preexisting
 
 
 def test_externalized_preprocessing_reaches_hailo_in_model_domain(
@@ -244,7 +282,7 @@ def test_disabled_calibration_accepts_archive_preprocessing_retry(
     extract_preprocessing(retry_config)
     retry_output = tmp_path / "retry"
     retry_output.mkdir()
-    exporter = hailo_exporter_module.HailoExporter(
+    exporter: HailoExporter = hailo_exporter_module.HailoExporter(
         next(iter(retry_config.stages.values())), retry_output
     )
 
