@@ -112,12 +112,12 @@ def _write_calibration(
                 calib_dir / f"{i}.raw"
             )
         elif kind == "npy":
-            # A `.npy` is loaded verbatim (no image decode), so a pre-shaped
-            # `(1, C, H, W)` tensor is what reaches hailo's NCHW->NHWC
-            # calibration transpose.
+            # Hailo treats each opaque `.npy` as one backend-ready sample and
+            # stacks the files into a batch, so image samples must already be
+            # channel-last and batchless.
             np.save(
                 calib_dir / f"{i}.npy",
-                rng.uniform(0, 255, (1, 3, size, size)).astype(np.float32),
+                rng.uniform(0, 255, (size, size, 3)).astype(np.float32),
             )
         else:
             cv2.imwrite(
