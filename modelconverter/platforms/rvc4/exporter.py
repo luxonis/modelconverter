@@ -36,6 +36,8 @@ from modelconverter.utils.config import (
 from modelconverter.utils.encodings import validate_quantization_override_names
 from modelconverter.utils.preprocessing import (
     channels_last_image_layout,
+    is_user_calibration_tensor,
+    read_user_calibration_tensor,
     reorder_layout,
 )
 from modelconverter.utils.subprocess import subprocess_run
@@ -354,8 +356,15 @@ class RVC4Exporter(Exporter):
                 entry_str = ""
                 for e in entry:
                     i += 1
-                    if e.path.suffix.lower() == ".raw":
-                        entry_str += f"{e.inp.name}:={e.path} "
+                    if is_user_calibration_tensor(e.path, e.calib):
+                        if e.path.suffix.lower() == ".raw":
+                            entry_str += f"{e.inp.name}:={e.path} "
+                            continue
+                        img = read_user_calibration_tensor(
+                            e.path,
+                            data_type=e.inp.data_type,
+                            input_name=e.inp.name,
+                        )
                     else:
                         img, layout = self._read_calibration_file(
                             e.inp, e.calib, e.path
@@ -363,7 +372,6 @@ class RVC4Exporter(Exporter):
                         if e.calib.generated_from_random and _was_image_input(
                             e.inp
                         ):
-                            assert layout is not None
                             target_layout = channels_last_image_layout(layout)
                             # A layout with a repeated letter is returned
                             # unchanged, and cannot be transposed either.
@@ -371,9 +379,9 @@ class RVC4Exporter(Exporter):
                                 img = reorder_layout(
                                     img, layout, target_layout
                                 )
-                        raw_path = self._raw_img_dir / f"{i}.raw"
-                        img.tofile(raw_path)
-                        entry_str += f"{e.inp.name}:={raw_path} "
+                    raw_path = self._raw_img_dir / f"{i}.raw"
+                    img.tofile(raw_path)
+                    entry_str += f"{e.inp.name}:={raw_path} "
                 entry_str = entry_str.strip()
                 if log:
                     logger.debug(f"Image list entry: {entry_str}")

@@ -24,6 +24,7 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.preprocessing import (
     channels_last_4d_layout,
+    is_user_calibration_tensor,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -271,11 +272,7 @@ class RVC3Exporter(RVC2Exporter):
         directory = self.intermediate_outputs_dir / "calibration_tensors"
         directory.mkdir(exist_ok=True)
         for index, file in enumerate(files):
-            is_user_tensor = (
-                file.suffix.lower() in {".npy", ".raw"}
-                and not calib.generated_from_random
-            )
-            if is_user_tensor:
+            if is_user_calibration_tensor(file, calib):
                 array = read_user_calibration_tensor(
                     file,
                     raw_shape=expected_shape,
@@ -284,7 +281,6 @@ class RVC3Exporter(RVC2Exporter):
                 )
             else:
                 array, layout = self._read_calibration_file(inp, calib, file)
-                assert layout is not None
                 array = reorder_layout(array, layout, sample_layout)
             if array.shape != expected_shape:
                 raise ModelconverterException(

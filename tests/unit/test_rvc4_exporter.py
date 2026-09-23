@@ -641,7 +641,6 @@ def test_externalized_calibration_matches_embedded_model_output(
     runtime_array, runtime_layout = embedded._read_calibration_file(
         embedded_input, embedded_calibration, image_path
     )
-    assert runtime_layout is not None
     runtime_array = reorder_layout(runtime_array, runtime_layout, "NCHW")
 
     externalized_input = externalized.inputs["input0"]
@@ -650,7 +649,6 @@ def test_externalized_calibration_matches_embedded_model_output(
     model_array, model_layout = externalized._read_calibration_file(
         externalized_input, externalized_calibration, image_path
     )
-    assert model_layout is not None
     model_array = reorder_layout(model_array, model_layout, "NCHW")
 
     def infer(model_path: Path, array: np.ndarray) -> np.ndarray:

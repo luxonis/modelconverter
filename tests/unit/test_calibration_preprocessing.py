@@ -17,6 +17,7 @@ from modelconverter.utils.exceptions import ModelconverterException
 from modelconverter.utils.preprocessing import (
     CalibrationPreprocessing,
     apply_calibration_preprocessing,
+    read_user_calibration_tensor,
     reorder_layout,
 )
 from modelconverter.utils.types import DataType, Encoding
@@ -134,8 +135,8 @@ def test_externalized_image_is_preprocessed(dummy_onnx: Path, tmp_path: Path):
 
 
 @pytest.mark.parametrize("suffix", [".npy", ".raw"])
-def test_user_tensor_calibration_remains_opaque(
-    dummy_onnx: Path, tmp_path: Path, suffix: str
+def test_user_tensor_reader_preserves_values_and_reshapes_raw(
+    tmp_path: Path, suffix: str
 ):
     calibration_dir = tmp_path / suffix.lstrip(".")
     calibration_dir.mkdir()
@@ -145,40 +146,30 @@ def test_user_tensor_calibration_remains_opaque(
         np.save(tensor_path, source)
     else:
         source.tofile(tensor_path)
-    inp = _externalized_input(dummy_onnx, calibration_dir)
-    calib = inp.calibration
-    assert isinstance(calib, ImageCalibrationConfig)
-
-    array, layout = Exporter._read_calibration_file(
-        inp,
-        calib,
+    array = read_user_calibration_tensor(
         tensor_path,
+        raw_shape=source.shape,
+        data_type=DataType.FLOAT32,
+        input_name="input0",
     )
 
-    assert layout is None
-    expected = source if suffix == ".npy" else source.reshape(-1)
-    np.testing.assert_array_equal(array, expected)
+    np.testing.assert_array_equal(array, source)
 
 
 def test_user_numpy_tensor_does_not_infer_or_validate_source_layout(
-    dummy_onnx: Path, tmp_path: Path
+    tmp_path: Path,
 ):
     calibration_dir = tmp_path / "rank-two"
     calibration_dir.mkdir()
     source = np.arange(16, dtype=np.float32).reshape(4, 4)
     tensor_path = calibration_dir / "sample.npy"
     np.save(tensor_path, source)
-    inp = _externalized_input(dummy_onnx, calibration_dir)
-    calib = inp.calibration
-    assert isinstance(calib, ImageCalibrationConfig)
-
-    array, layout = Exporter._read_calibration_file(
-        inp,
-        calib,
+    array = read_user_calibration_tensor(
         tensor_path,
+        data_type=DataType.FLOAT32,
+        input_name="input0",
     )
 
-    assert layout is None
     np.testing.assert_array_equal(array, source)
 
 
@@ -233,6 +224,8 @@ def test_generated_numpy_calibration_is_managed(
     calib = inp.calibration
     assert isinstance(calib, ImageCalibrationConfig)
     calib._generated_from_random = True
+    assert inp.layout is not None
+    calib._generated_layout = inp.layout
 
     array, layout = Exporter._read_calibration_file(
         inp,

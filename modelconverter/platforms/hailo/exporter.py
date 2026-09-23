@@ -30,6 +30,7 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.preprocessing import (
     channels_last_4d_layout,
+    is_user_calibration_tensor,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -234,11 +235,7 @@ class HailoExporter(Exporter):
             calib_dataset = np.zeros((len(images), *shape), dtype=np.float32)
 
             for idx, img_path in enumerate(images):
-                is_user_tensor = (
-                    img_path.suffix.lower() in {".npy", ".raw"}
-                    and not calib.generated_from_random
-                )
-                if is_user_tensor:
+                if is_user_calibration_tensor(img_path, calib):
                     img = read_user_calibration_tensor(
                         img_path,
                         raw_shape=shape,
@@ -254,7 +251,6 @@ class HailoExporter(Exporter):
                     img, layout = self._read_calibration_file(
                         inp, calib, img_path
                     )
-                    assert layout is not None
                     if (
                         calib.generated_from_random
                         and img.ndim == 4

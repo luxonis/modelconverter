@@ -139,7 +139,7 @@ class ImageCalibrationConfig(BaseModelExtraForbid):
     max_images: int = -1
     resize_method: ResizeMethod = ResizeMethod.RESIZE
     _generated_from_random: bool = PrivateAttr(default=False)
-    _generated_layout: str | None = PrivateAttr(default=None)
+    _generated_layout: str = PrivateAttr(default="")
 
     @property
     def generated_from_random(self) -> bool:
@@ -147,7 +147,7 @@ class ImageCalibrationConfig(BaseModelExtraForbid):
         return self._generated_from_random
 
     @property
-    def generated_layout(self) -> str | None:
+    def generated_layout(self) -> str:
         """Layout used when generated tensor calibration was materialized."""
         return self._generated_layout
 

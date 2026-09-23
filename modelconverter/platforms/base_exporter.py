@@ -42,7 +42,7 @@ from modelconverter.utils.onnx_compatibility import (
 )
 from modelconverter.utils.preprocessing import (
     apply_calibration_preprocessing,
-    array_layout,
+    is_user_calibration_tensor,
 )
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import InputFileType, Platform
@@ -407,6 +407,7 @@ class Exporter(ABC):
 
             calibration = ImageCalibrationConfig(path=dest)
             calibration._generated_from_random = True
+            assert inp.layout is not None
             calibration._generated_layout = inp.layout
             self._inputs[name].calibration = calibration
 
@@ -415,28 +416,15 @@ class Exporter(ABC):
         inp: InputConfig,
         calib: ImageCalibrationConfig,
         path: Path,
-    ) -> tuple[np.ndarray, str | None]:
-        """Load one calibration file and apply externalized preprocessing.
-
-        User-provided ``.npy`` and ``.raw`` files retain their documented
-        pass-through contract: they are loaded without shape or layout
-        interpretation and return ``None`` as their layout. Random calibration
-        materialized as ``.npy`` is different: it is still a managed,
-        pre-preprocessing source and is transformed when preprocessing has
-        been externalized.
-        """
+    ) -> tuple[np.ndarray, str]:
+        """Load a managed calibration file and apply preprocessing."""
         if inp.shape is None:  # pragma: no cover - validated by each backend
             raise ValueError(
                 f"Input shape must be provided for calibration input '{inp.name}'."
             )
-
-        is_tensor_file = path.suffix.lower() in {".npy", ".raw"}
-        if is_tensor_file and not calib.generated_from_random:
-            if path.suffix.lower() == ".npy":
-                return np.load(path), None
-            return (
-                np.fromfile(path, dtype=inp.data_type.as_numpy_dtype()),
-                None,
+        if is_user_calibration_tensor(path, calib):
+            raise ValueError(
+                "User calibration tensors must use read_user_calibration_tensor."
             )
 
         preprocessing = inp.calibration_preprocessing
@@ -455,13 +443,11 @@ class Exporter(ABC):
             layout=inp.layout,
         )
 
-        if not is_tensor_file:
+        if path.suffix.lower() not in {".npy", ".raw"}:
             # Image decoding always produces HWC, including a singleton C for
             # grayscale images, independently of the model's tensor layout.
             layout = "HWC"
-        elif (
-            calib.generated_from_random and calib.generated_layout is not None
-        ):
+        else:
             layout = calib.generated_layout
             if len(layout) != array.ndim:
                 raise ModelconverterException(
@@ -469,13 +455,6 @@ class Exporter(ABC):
                     f"{list(array.shape)} cannot use its generation-time "
                     f"layout '{layout}'."
                 )
-        else:
-            layout = array_layout(
-                array,
-                shape=inp.shape,
-                layout=inp.layout,
-            )
-
         if preprocessing is not None:
             array = apply_calibration_preprocessing(
                 array, preprocessing, layout=layout

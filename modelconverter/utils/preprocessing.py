@@ -8,11 +8,15 @@ the source model, not of a model that carries the preprocessing nodes.
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from modelconverter.utils.exceptions import ModelconverterException
 from modelconverter.utils.types import DataType, Encoding
+
+if TYPE_CHECKING:
+    from modelconverter.utils.config import ImageCalibrationConfig
 
 
 def normalization_required(
@@ -145,33 +149,6 @@ def apply_calibration_preprocessing(
     return result.astype(preprocessing.data_type.as_numpy_dtype(), copy=False)
 
 
-def array_layout(
-    array: np.ndarray,
-    *,
-    shape: list[int],
-    layout: str | None,
-) -> str:
-    """Resolve the configured layout for an array with optional batch omitted."""
-    if layout is None:
-        raise ModelconverterException(
-            "Calibration preprocessing requires the input layout to be known."
-        )
-    if array.ndim == len(layout):
-        return layout
-
-    if (
-        array.ndim + 1 == len(layout)
-        and "N" in layout
-        and shape[layout.index("N")] == 1
-    ):
-        return layout.replace("N", "", 1)
-
-    raise ModelconverterException(
-        f"Calibration array shape {list(array.shape)} is incompatible with "
-        f"input layout '{layout}'."
-    )
-
-
 def reorder_layout(
     array: np.ndarray, source_layout: str, target_layout: str
 ) -> np.ndarray:
@@ -220,22 +197,34 @@ def channels_last_4d_layout(layout: str) -> str:
     return layout
 
 
+def is_user_calibration_tensor(
+    path: Path, calib: "ImageCalibrationConfig"
+) -> bool:
+    """Whether a tensor file uses the backend-ready calibration contract."""
+    return (
+        path.suffix.lower() in {".npy", ".raw"}
+        and not calib.generated_from_random
+    )
+
+
 def read_user_calibration_tensor(
     path: Path,
     *,
-    raw_shape: list[int] | tuple[int, ...],
+    raw_shape: list[int] | tuple[int, ...] | None = None,
     data_type: DataType,
     input_name: str,
 ) -> np.ndarray:
     """Load an opaque user tensor in a backend-required sample shape.
 
     NumPy files carry their own shape and are returned unchanged. Raw buffers
-    carry no shape, so they are reshaped without reordering after their element
-    count is validated.
+    require ``raw_shape`` and are reshaped without reordering after their
+    element count is validated.
     """
     if path.suffix.lower() == ".npy":
         return np.load(path)
 
+    if raw_shape is None:
+        raise ValueError("A shape is required to load a raw calibration file.")
     array = np.fromfile(path, dtype=data_type.as_numpy_dtype())
     expected_size = int(np.prod(raw_shape))
     if array.size != expected_size:
