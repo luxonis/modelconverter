@@ -25,6 +25,7 @@ from modelconverter.cli.utils import extract_preprocessing
 from modelconverter.utils.config import (
     Config,
     InputConfig,
+    OutputConfig,
     RVC2Config,
     RVC3Config,
     RVC4Config,
@@ -34,6 +35,7 @@ from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.nn_archive import (
     _default_archive_preprocessing,
     _get_io_dtype,
+    _match_tensor_names,
     archive_from_model,
     default_archive_input_type,
     generate_archive,
@@ -782,6 +784,27 @@ def test_ambiguous_converted_output_renames_raise(tmp_path: Path):
         ValueError, match="Unable to unambiguously match renamed model outputs"
     ):
         _config_to_nn(config, converted)
+
+
+def test_renamed_tensors_with_permuted_shapes_raise():
+    configured = [
+        OutputConfig(name="camera", shape=[1, 3, 224, 320]),
+        OutputConfig(name="tokens", shape=[1, 224, 320, 3]),
+    ]
+    converted_shapes = {
+        "camera_sink": [1, 224, 320, 3],
+        "tokens_sink": [1, 3, 224, 320],
+    }
+
+    with pytest.raises(ValueError, match="after an axis permutation"):
+        _match_tensor_names(configured, converted_shapes, kind="output")
+
+    # An unchanged name establishes identity even when the shape changes.
+    assert _match_tensor_names(
+        configured,
+        {"camera": [1, 224, 320, 3], "tokens": [1, 3, 224, 320]},
+        kind="output",
+    ) == {"camera": "camera", "tokens": "tokens"}
 
 
 def test_input_default_layout_when_shape_has_zero(dummy_onnx: Path):

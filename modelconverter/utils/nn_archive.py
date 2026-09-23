@@ -538,10 +538,10 @@ def _match_tensor_names(
 ) -> dict[str, str]:
     """Match configured tensors to converted tensors without relying on order.
 
-    Exact names take precedence. Renamed tensors are paired by shape when that
-    shape identifies one configured and one converted output. A single pair
-    left after those matches is necessarily unambiguous even if conversion
-    changed its shape.
+    Exact names take precedence. Renamed tensors are paired by shape only when
+    no other unmatched configured tensor has the same dimensions in a different
+    order. A single pair left after those matches is necessarily unambiguous
+    even if conversion changed its shape.
 
     Args:
         configured_tensors: Inputs or outputs from the conversion configuration.
@@ -584,6 +584,19 @@ def _match_tensor_names(
     for shape, outputs in configured_by_shape.items():
         converted_names = converted_by_shape.get(shape, [])
         if len(outputs) == len(converted_names) == 1:
+            permutation_candidates = [
+                tensor.name
+                for tensor in unmatched_configured
+                if tensor.shape is not None
+                and sorted(tensor.shape) == sorted(shape)
+            ]
+            if len(permutation_candidates) > 1:
+                raise ValueError(
+                    f"Unable to unambiguously match renamed model {kind}s by "
+                    f"shape: converted tensor '{converted_names[0]}' with shape "
+                    f"{list(shape)} could correspond to any of "
+                    f"{permutation_candidates} after an axis permutation."
+                )
             matches[outputs[0].name] = converted_names[0]
 
     unmatched_configured = [
