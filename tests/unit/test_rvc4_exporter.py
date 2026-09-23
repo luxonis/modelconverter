@@ -3,19 +3,29 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import onnx
+import onnxruntime as ort
 import pytest
+from onnx import TensorProto
+from PIL import Image
 
+from modelconverter.cli.utils import extract_preprocessing
 from modelconverter.platforms.rvc4.exporter import RVC4Exporter
-from modelconverter.utils import PreprocessingEmbeddingError
+from modelconverter.utils import (
+    ModelconverterException,
+    PreprocessingEmbeddingError,
+)
 from modelconverter.utils.config import (
     Config,
     Encodings,
+    ImageCalibrationConfig,
     QuantizationOverrides,
     RVC4Config,
 )
+from modelconverter.utils.preprocessing import reorder_layout
 from modelconverter.utils.types import InputFileType
-from tests.helpers.onnx_factory import single_io_onnx
+from tests.helpers.onnx_factory import build_onnx, single_io_onnx
 
 
 def _make_exporter(
@@ -556,3 +566,337 @@ def test_two_channel_normalization_is_embedded(tmp_path: Path):
         node.op_type for node in onnx.load(exporter._input_model).graph.node
     ]
     assert operations[:2] == ["Sub", "Mul"]
+
+
+def _calibration_exporter(
+    tmp_path: Path,
+    *,
+    quant_args: list[str] | None = None,
+    externalize: bool = True,
+    disable_calibration: bool = False,
+) -> RVC4Exporter:
+    model = single_io_onnx(
+        tmp_path / "externalized.onnx",
+        shape=[1, 3, 1, 1],
+        output_shape=[1, 3, 1, 1],
+    ).resolve()
+    calibration_dir = tmp_path / "externalized-calibration"
+    calibration_dir.mkdir(exist_ok=True)
+    Image.fromarray(np.array([[[100, 110, 120]]], dtype=np.uint8)).save(
+        calibration_dir / "pixel.png"
+    )
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": [1, 3, 1, 1],
+            "layout": "NCHW",
+            "encoding": {"from": "RGB", "to": "BGR"},
+            "mean_values": [10, 20, 30],
+            "scale_values": 2,
+            "calibration": {"path": str(calibration_dir)},
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4": {
+                "quantization_mode": "CUSTOM",
+                "snpe_dlc_quant_args": quant_args or [],
+                "disable_calibration": disable_calibration,
+            },
+        },
+    )
+    if externalize:
+        extract_preprocessing(config)
+    output_dir = tmp_path / (
+        "externalized-output" if externalize else "embedded-output"
+    )
+    output_dir.mkdir()
+    return RVC4Exporter(next(iter(config.stages.values())), output_dir)
+
+
+def test_externalized_calibration_image_is_written_in_model_domain(
+    tmp_path: Path,
+):
+    exporter = _calibration_exporter(tmp_path)
+
+    input_list = exporter._prepare_calibration_data()
+
+    entry = input_list.read_text().strip()
+    raw_path = Path(entry.split(":=", 1)[1])
+    actual = np.fromfile(raw_path, dtype=np.float32).reshape(1, 1, 3)
+    np.testing.assert_array_equal(
+        actual, np.array([[[45.0, 45.0, 45.0]]], dtype=np.float32)
+    )
+
+
+def test_externalized_calibration_matches_embedded_model_output(
+    tmp_path: Path,
+):
+    embedded = _calibration_exporter(tmp_path, externalize=False)
+    externalized = _calibration_exporter(tmp_path)
+    image_path = tmp_path / "externalized-calibration/pixel.png"
+
+    embedded_input = embedded.inputs["input0"]
+    embedded_calibration = embedded_input.calibration
+    assert isinstance(embedded_calibration, ImageCalibrationConfig)
+    runtime_array, runtime_layout = embedded._read_calibration_file(
+        embedded_input, embedded_calibration, image_path
+    )
+    runtime_array = reorder_layout(runtime_array, runtime_layout, "NCHW")
+
+    externalized_input = externalized.inputs["input0"]
+    externalized_calibration = externalized_input.calibration
+    assert isinstance(externalized_calibration, ImageCalibrationConfig)
+    model_array, model_layout = externalized._read_calibration_file(
+        externalized_input, externalized_calibration, image_path
+    )
+    model_array = reorder_layout(model_array, model_layout, "NCHW")
+
+    def infer(model_path: Path, array: np.ndarray) -> np.ndarray:
+        session = ort.InferenceSession(
+            str(model_path), providers=["CPUExecutionProvider"]
+        )
+        return np.asarray(
+            session.run(None, {session.get_inputs()[0].name: array})[0]
+        )
+
+    embedded_output = infer(embedded._input_model, runtime_array)
+    externalized_output = infer(externalized._input_model, model_array)
+
+    np.testing.assert_allclose(embedded_output, externalized_output)
+    np.testing.assert_array_equal(
+        externalized_output,
+        np.array([[[[45.0]], [[45.0]], [[45.0]]]], dtype=np.float32),
+    )
+
+
+def test_user_raw_calibration_is_referenced_without_rewriting(tmp_path: Path):
+    exporter = _calibration_exporter(tmp_path)
+    calibration_dir = tmp_path / "raw-calibration"
+    calibration_dir.mkdir()
+    source = np.array([[[[1.0]], [[2.0]], [[3.0]]]], dtype=np.float32)
+    raw_path = calibration_dir / "model-domain.raw"
+    source.tofile(raw_path)
+    exporter.inputs["input0"].calibration = ImageCalibrationConfig(
+        path=calibration_dir
+    )
+
+    input_list = exporter._prepare_calibration_data()
+
+    assert input_list.read_text().strip() == f"input0:={raw_path}"
+    np.testing.assert_array_equal(
+        np.fromfile(raw_path, dtype=np.float32).reshape(source.shape), source
+    )
+
+
+def test_user_numpy_calibration_is_serialized_without_shape_interpretation(
+    tmp_path: Path,
+):
+    shape = [1, 1, 4, 4]
+    model = single_io_onnx(
+        tmp_path / "rank-two.onnx", shape=shape, output_shape=shape
+    ).resolve()
+    calibration_dir = tmp_path / "rank-two-calibration"
+    calibration_dir.mkdir()
+    source = np.arange(16, dtype=np.float32).reshape(4, 4)
+    np.save(calibration_dir / "sample.npy", source)
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": shape,
+            "layout": "NCHW",
+            "encoding": "NONE",
+            "calibration": {"path": str(calibration_dir)},
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4.quantization_mode": "CUSTOM",
+        },
+    )
+    output_dir = tmp_path / "rank-two-output"
+    output_dir.mkdir()
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+
+    input_list = exporter._prepare_calibration_data()
+
+    raw_path = Path(input_list.read_text().split(":=", 1)[1].strip())
+    np.testing.assert_array_equal(
+        np.fromfile(raw_path, dtype=np.float32).reshape(source.shape), source
+    )
+
+
+@pytest.mark.parametrize("joined", [False, True])
+def test_externalized_preprocessing_rejects_custom_input_list(
+    tmp_path: Path, joined: bool
+):
+    custom_list = tmp_path / "custom-list.txt"
+    custom_list.write_text("input0:=sample.raw\n")
+    quant_args = (
+        [f"--input_list={custom_list}"]
+        if joined
+        else ["--input_list", str(custom_list)]
+    )
+    with pytest.raises(ModelconverterException, match="cannot be used"):
+        _calibration_exporter(
+            tmp_path,
+            quant_args=quant_args,
+        )
+
+
+def test_disabled_calibration_allows_custom_input_list(tmp_path: Path):
+    custom_list = tmp_path / "custom-list.txt"
+    custom_list.write_text("input0:=sample.raw\n")
+
+    exporter = _calibration_exporter(
+        tmp_path,
+        quant_args=["--input_list", str(custom_list)],
+        disable_calibration=True,
+    )
+
+    assert exporter._disable_calibration
+
+
+def test_identity_externalization_allows_custom_input_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    model = single_io_onnx(
+        tmp_path / "identity.onnx",
+        shape=[1, 8],
+        output_shape=[1, 8],
+    ).resolve()
+    calibration_dir = tmp_path / "identity-calibration"
+    calibration_dir.mkdir()
+    np.save(calibration_dir / "sample.npy", np.zeros((1, 8), np.float32))
+    custom_list = tmp_path / "custom-list.txt"
+    custom_list.write_text("input0:=sample.raw\n")
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": [1, 8],
+            "layout": "NC",
+            "encoding": "NONE",
+            "calibration": {"path": str(calibration_dir)},
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4": {
+                "quantization_mode": "CUSTOM",
+                "snpe_dlc_quant_args": [
+                    "--input_list",
+                    str(custom_list),
+                ],
+            },
+        },
+    )
+    extract_preprocessing(config)
+    output_dir = tmp_path / "identity-output"
+    output_dir.mkdir()
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+    monkeypatch.setattr(
+        exporter, "_subprocess_run", lambda *_args, **_kwargs: None
+    )
+
+    result = exporter._calibrate(tmp_path / "model.dlc")
+
+    assert result.name.endswith("-quantized.dlc")
+
+
+def test_generated_raw_tensor_keeps_configured_layout(tmp_path: Path):
+    shape = [1, 2, 3, 4]
+    model = single_io_onnx(
+        tmp_path / "raw-tensor.onnx",
+        shape=shape,
+        output_shape=shape,
+    ).resolve()
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": shape,
+            "layout": "NCHW",
+            "encoding": "NONE",
+            "calibration": {"max_images": 1, "data_type": "float32"},
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4.quantization_mode": "CUSTOM",
+        },
+    )
+    output_dir = tmp_path / "raw-tensor-output"
+    output_dir.mkdir()
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+    calibration = exporter.inputs["input0"].calibration
+    assert isinstance(calibration, ImageCalibrationConfig)
+    source = np.load(next(calibration.path.glob("*.npy")))
+
+    input_list = exporter._prepare_calibration_data()
+
+    raw_path = Path(input_list.read_text().split(":=", 1)[1].strip())
+    actual = np.fromfile(raw_path, dtype=np.float32).reshape(shape)
+    np.testing.assert_array_equal(actual, source)
+
+
+def test_externalized_multi_input_calibration_uses_each_input_contract(
+    tmp_path: Path,
+) -> None:
+    shape = [1, 3, 1, 1]
+    model = build_onnx(
+        tmp_path / "multi-input.onnx",
+        [
+            ("rgb_input", shape, TensorProto.FLOAT),
+            ("bgr_input", shape, TensorProto.FLOAT),
+        ],
+        [
+            ("rgb_output", shape, TensorProto.FLOAT),
+            ("bgr_output", shape, TensorProto.FLOAT),
+        ],
+    ).resolve()
+    rgb_dir = tmp_path / "rgb-calibration"
+    bgr_dir = tmp_path / "bgr-calibration"
+    rgb_dir.mkdir()
+    bgr_dir.mkdir()
+    Image.fromarray(np.array([[[100, 110, 120]]], dtype=np.uint8)).save(
+        rgb_dir / "pixel.png"
+    )
+    Image.fromarray(np.array([[[50, 60, 70]]], dtype=np.uint8)).save(
+        bgr_dir / "pixel.png"
+    )
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "inputs": [
+                {
+                    "name": "rgb_input",
+                    "layout": "NCHW",
+                    "encoding": {"from": "RGB", "to": "BGR"},
+                    "mean_values": [10, 20, 30],
+                    "scale_values": 2,
+                    "calibration": {"path": str(rgb_dir)},
+                },
+                {
+                    "name": "bgr_input",
+                    "layout": "NCHW",
+                    "encoding": "BGR",
+                    "mean_values": 5,
+                    "scale_values": 5,
+                    "calibration": {"path": str(bgr_dir)},
+                },
+            ],
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4.quantization_mode": "CUSTOM",
+        },
+    )
+    extract_preprocessing(config)
+    output_dir = tmp_path / "multi-input-output"
+    output_dir.mkdir()
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+
+    input_list = exporter._prepare_calibration_data()
+
+    entries = dict(
+        token.split(":=", 1) for token in input_list.read_text().split()
+    )
+    rgb = np.fromfile(entries["rgb_input"], dtype=np.float32)
+    bgr = np.fromfile(entries["bgr_input"], dtype=np.float32)
+    np.testing.assert_array_equal(rgb, np.array([45, 45, 45], np.float32))
+    np.testing.assert_array_equal(bgr, np.array([13, 11, 9], np.float32))

@@ -20,27 +20,31 @@ from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
+    ModelconverterException,
     ONNXModifier,
     PreprocessingEmbeddingError,
     exit_with,
     onnx_attach_normalization_to_inputs,
-    read_image,
 )
 from modelconverter.utils.config import (
     Encodings,
     ImageCalibrationConfig,
+    InputConfig,
     QuantizationOverrides,
     SingleStageConfig,
 )
 from modelconverter.utils.encodings import validate_quantization_override_names
+from modelconverter.utils.preprocessing import (
+    channels_last_image_layout,
+    is_user_calibration_tensor,
+    read_user_calibration_tensor,
+    reorder_layout,
+)
 from modelconverter.utils.subprocess import subprocess_run
 from modelconverter.utils.types import (
-    DataType,
-    Encoding,
     InputFileType,
     Platform,
     QuantizationMode,
-    ResizeMethod,
 )
 
 
@@ -101,6 +105,7 @@ class RVC4Exporter(Exporter):
             logger.warning(
                 f"Using pre-defined arguments for quantization mode {self._quantization_mode.value}, which will override user-provided SNPE arguments. If you need full control of SNPE arguments, set `rvc4.quantization_mode: CUSTOM` in the config or CLI."
             )
+        self._validate_custom_input_list()
         self._keep_raw_images = rvc4_cfg.keep_raw_images
         if "--htp_socs" in self._snpe_dlc_graph_prepare:
             i = self._snpe_dlc_graph_prepare.index("--htp_socs")
@@ -155,6 +160,19 @@ class RVC4Exporter(Exporter):
             )
         self._raw_img_dir = self.intermediate_outputs_dir / "raw_files"
         self._input_list_path = self.intermediate_outputs_dir / "img_list.txt"
+
+    def _validate_custom_input_list(self) -> None:
+        """Reject unverifiable buffers before starting model conversion."""
+        if self._disable_calibration or not _has_input_list(
+            self._snpe_dlc_quant
+        ):
+            return
+        if any(_transforms_calibration(inp) for inp in self._inputs.values()):
+            raise ModelconverterException(
+                "A custom RVC4 `--input_list` cannot be used when "
+                "preprocessing is externalized. Its buffers cannot be "
+                "verified or transformed for the bare converted model."
+            )
 
     def export(self) -> Path:
         """Convert, quantize and graph-prepare the model.
@@ -225,7 +243,9 @@ class RVC4Exporter(Exporter):
 
         """
         args = self._snpe_dlc_quant
-        if "--input_list" not in args:
+        has_input_list = _has_input_list(args)
+
+        if not has_input_list:
             logger.info("Preparing calibration data.")
             calibration_list = self._prepare_calibration_data()
             args.extend(["--input_list", str(calibration_list)])
@@ -287,11 +307,13 @@ class RVC4Exporter(Exporter):
         """Write the calibration data as raw files and list them.
 
         Every calibration file of every input is read with the input's
-        encoding, resize method and data type and written out as a raw
-        file, a ``.raw`` file being taken as it is. The SNPE input list
-        holds one line per calibration sample, pairing each input name
-        with its raw file. Terminates the process if an input has no
-        shape or a dynamic one.
+        encoding, resize method and data type, and written out as a raw
+        file; a ``.raw`` file is taken as it is. Preprocessing that was
+        moved to the NN Archive is applied on the way, and generated
+        image calibration is reordered to the layout SNPE expects. The
+        SNPE input list holds one line per calibration sample, pairing
+        each input name with its raw file. Terminates the process if an
+        input has no shape or a dynamic one.
 
         Returns:
             Path to the written input list.
@@ -299,12 +321,9 @@ class RVC4Exporter(Exporter):
         """
 
         class Entry(NamedTuple):
-            name: str
             path: Path
-            encoding: Encoding
-            resize_method: ResizeMethod
-            shape: list[int]
-            data_type: DataType
+            inp: InputConfig
+            calib: ImageCalibrationConfig
 
         entries: list[list[Entry]] = []
 
@@ -317,19 +336,9 @@ class RVC4Exporter(Exporter):
                 )
             if not all(x is not None for x in inp.shape):
                 exit_with(ValueError(f"Input `{name}` has dynamic shape."))
-            shape = inp.shape
-            if self._is_tflite:
-                shape = [shape[0], shape[3], shape[1], shape[2]]
             entries.append(
                 [
-                    Entry(
-                        name=name,
-                        path=path,
-                        encoding=inp.encoding.to,
-                        resize_method=calib.resize_method,
-                        shape=shape,
-                        data_type=inp.data_type,
-                    )
+                    Entry(path=path, inp=inp, calib=calib)
                     for path in self._read_img_dir(
                         calib.path, calib.max_images
                     )
@@ -347,20 +356,32 @@ class RVC4Exporter(Exporter):
                 entry_str = ""
                 for e in entry:
                     i += 1
-                    if e.path.suffix == ".raw":
-                        entry_str += f"{e.name}:={e.path} "
-                    else:
-                        img = read_image(
+                    if is_user_calibration_tensor(e.path, e.calib):
+                        if e.path.suffix.lower() == ".raw":
+                            entry_str += f"{e.inp.name}:={e.path} "
+                            continue
+                        img = read_user_calibration_tensor(
                             e.path,
-                            shape=e.shape,
-                            encoding=e.encoding,
-                            resize_method=e.resize_method,
-                            data_type=e.data_type,
-                            transpose=False,
+                            data_type=e.inp.data_type,
+                            input_name=e.inp.name,
                         )
-                        raw_path = self._raw_img_dir / f"{i}.raw"
-                        img.tofile(raw_path)
-                        entry_str += f"{e.name}:={raw_path} "
+                    else:
+                        img, layout = self._read_calibration_file(
+                            e.inp, e.calib, e.path
+                        )
+                        if e.calib.generated_from_random and _was_image_input(
+                            e.inp
+                        ):
+                            target_layout = channels_last_image_layout(layout)
+                            # A layout with a repeated letter is returned
+                            # unchanged, and cannot be transposed either.
+                            if target_layout != layout:
+                                img = reorder_layout(
+                                    img, layout, target_layout
+                                )
+                    raw_path = self._raw_img_dir / f"{i}.raw"
+                    img.tofile(raw_path)
+                    entry_str += f"{e.inp.name}:={raw_path} "
                 entry_str = entry_str.strip()
                 if log:
                     logger.debug(f"Image list entry: {entry_str}")
@@ -613,3 +634,27 @@ class RVC4Exporter(Exporter):
             self._quantization_override_payload(self._encodings),
             self._input_model,
         )
+
+
+def _transforms_calibration(inp: InputConfig) -> bool:
+    """Whether externalized preprocessing still has to reach the quantizer."""
+    preprocessing = inp.calibration_preprocessing
+    return (
+        preprocessing is not None
+        and preprocessing.requires_input_preprocessing()
+    )
+
+
+def _has_input_list(args: list[str]) -> bool:
+    """Whether SNPE quantization arguments provide an input list."""
+    return "--input_list" in args or any(
+        arg.startswith("--input_list=") for arg in args
+    )
+
+
+def _was_image_input(inp: InputConfig) -> bool:
+    """Whether the input took image data before its encoding was cleared."""
+    preprocessing = inp.calibration_preprocessing
+    if preprocessing is None:
+        return not inp.is_raw_input
+    return preprocessing.is_image

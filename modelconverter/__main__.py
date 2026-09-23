@@ -256,6 +256,9 @@ def convert(
                 except ValueError as error:
                     raise ModelconverterException(str(error)) from error
 
+        # `extract_preprocessing` clears the inputs in place, so a retry needs
+        # this untouched copy.
+        fallback_source_cfg = cfg.model_copy(deep=True)
         preprocessing = {}
         preprocessing_input_types: dict[str, Literal["raw", "image"]] = {}
         preprocessing_externalized = archive_preprocess
@@ -296,6 +299,7 @@ def convert(
             ):
                 return False
 
+            cfg = fallback_source_cfg.model_copy(deep=True)
             stage = next(iter(cfg.stages.values()))
             preprocessing_input_types = {
                 inp.name: default_archive_input_type(
@@ -313,6 +317,12 @@ def convert(
 
             cfg, preprocessing = extract_preprocessing(cfg)
             preprocessing_externalized = True
+            # The failed attempt may have materialized random calibration in
+            # the runtime domain. The retry regenerates it from the pristine
+            # configuration.
+            shutil.rmtree(
+                output_path / "intermediate_outputs", ignore_errors=True
+            )
             names = ", ".join(input_names)
             logger.warning(
                 f"Could not embed preprocessing for input(s) {names}: "

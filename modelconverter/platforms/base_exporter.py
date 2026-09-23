@@ -25,6 +25,7 @@ from modelconverter.utils import (
     ModelconverterException,
     exit_with,
     read_calib_dir,
+    read_image,
     sanitize_net_name,
     subprocess_run,
 )
@@ -38,6 +39,10 @@ from modelconverter.utils.onnx_compatibility import (
     get_external_data_paths,
     has_external_data,
     save_onnx_model,
+)
+from modelconverter.utils.preprocessing import (
+    apply_calibration_preprocessing,
+    is_user_calibration_tensor,
 )
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import InputFileType, Platform
@@ -400,7 +405,61 @@ class Exporter(ABC):
                 else:
                     np.save(dest / f"{i}.npy", arr)
 
-            self._inputs[name].calibration = ImageCalibrationConfig(path=dest)
+            calibration = ImageCalibrationConfig(path=dest)
+            calibration._generated_from_random = True
+            assert inp.layout is not None
+            calibration._generated_layout = inp.layout
+            self._inputs[name].calibration = calibration
+
+    @staticmethod
+    def _read_calibration_file(
+        inp: InputConfig,
+        calib: ImageCalibrationConfig,
+        path: Path,
+    ) -> tuple[np.ndarray, str]:
+        """Load a managed calibration file and apply preprocessing."""
+        if inp.shape is None:  # pragma: no cover - validated by each backend
+            raise ValueError(
+                f"Input shape must be provided for calibration input '{inp.name}'."
+            )
+        if is_user_calibration_tensor(path, calib):
+            raise ValueError(
+                "User calibration tensors must use read_user_calibration_tensor."
+            )
+
+        preprocessing = inp.calibration_preprocessing
+        encoding = (
+            inp.encoding.to
+            if preprocessing is None
+            else preprocessing.encoding_to
+        )
+        array = read_image(
+            path,
+            inp.shape,
+            encoding,
+            calib.resize_method,
+            data_type=inp.data_type,
+            transpose=False,
+            layout=inp.layout,
+        )
+
+        if path.suffix.lower() not in {".npy", ".raw"}:
+            # Image decoding always produces HWC, including a singleton C for
+            # grayscale images, independently of the model's tensor layout.
+            layout = "HWC"
+        else:
+            layout = calib.generated_layout
+            if len(layout) != array.ndim:
+                raise ModelconverterException(
+                    f"Generated calibration array with shape "
+                    f"{list(array.shape)} cannot use its generation-time "
+                    f"layout '{layout}'."
+                )
+        if preprocessing is not None:
+            array = apply_calibration_preprocessing(
+                array, preprocessing, layout=layout
+            )
+        return array, layout
 
     @staticmethod
     def _attach_suffix(path: PathType, suffix: str) -> Path:

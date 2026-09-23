@@ -28,6 +28,7 @@ from modelconverter.utils.onnx_compatibility import (
     has_external_data,
     save_onnx_model,
 )
+from modelconverter.utils.preprocessing import normalization_required
 
 from .exceptions import ONNXException, PreprocessingEmbeddingError
 
@@ -177,9 +178,9 @@ def onnx_attach_normalization_to_inputs(
             else broadcast_preprocessing_values(cfg.scale_values, n_channels)
         )
 
-        normalization_requested = (
-            mean_values is not None and any(v != 0 for v in mean_values)
-        ) or (scale_values is not None and any(v != 1 for v in scale_values))
+        normalization_requested = normalization_required(
+            mean_values, scale_values
+        )
         if (
             normalization_requested
             and input_dtype not in FLOATING_TENSOR_TYPES
