@@ -734,19 +734,20 @@ def test_converted_inputs_are_matched_by_shape_not_order(tmp_path: Path):
 
 
 def test_converted_outputs_are_matched_by_shape_not_order(tmp_path: Path):
+    # Distinct dimensions make the shape match unambiguous even if axes move.
     source = build_onnx(
         tmp_path / "source.onnx",
         inputs=[("image", [1, 3, 64, 64], TensorProto.FLOAT)],
         outputs=[
             ("feat", [1, 3, 64, 64], TensorProto.FLOAT),
-            ("other", [1, 64, 3, 64], TensorProto.FLOAT),
+            ("other", [1, 64, 5, 64], TensorProto.FLOAT),
         ],
     )
     converted = build_onnx(
         tmp_path / "converted.onnx",
         inputs=[("image", [1, 3, 64, 64], TensorProto.FLOAT)],
         outputs=[
-            ("other_sink", [1, 64, 3, 64], TensorProto.FLOAT),
+            ("other_sink", [1, 64, 5, 64], TensorProto.FLOAT),
             ("feat_sink", [1, 3, 64, 64], TensorProto.FLOAT),
         ],
     )
