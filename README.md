@@ -612,6 +612,10 @@ The `modelconverter` CLI is available inside the container as well.
 
 Calibration data can be a mix of images (`.jpg`, `.png`, `.jpeg`) and `.npy`, `.raw` files.
 Image files will be loaded and converted to the format specified in the config.
+When the NN Archive metadata holds the preprocessing, the converted model does
+not contain it. ModelConverter then normalizes and color-converts the image and
+the random calibration samples itself, before the quantizer reads them. Thus
+calibration uses the numeric domain that the model gets at runtime.
 
 LDF datasets are also supported as calibration data by setting `calibration.path` to `<dataset_name>:<split>`, or `<dataset_name>:<split>:<loader_plugin>` when using a custom loader.
 
@@ -619,10 +623,19 @@ LDF datasets are also supported as calibration data by setting `calibration.path
 > Multi-input LDF datasets are not currently supported for calibration data.
 
 > [!IMPORTANT]
-> No conversion is performed for `.npy` or `.raw` files, the files are used as provided.
+> `.npy` and `.raw` calibration files must contain backend-ready values;
+> ModelConverter does not apply image preprocessing to them. Hailo and RVC3
+> expect batchless, channel-last samples (`HWC` for images). Hailo also accepts
+> a leading singleton batch axis in `.npy` files. RVC4/SNPE expects
+> channel-last image tensors (normally `NHWC`).
+>
+> This also applies to linked multi-stage tensor files. ModelConverter prepares
+> image files and its generated random calibration samples for the backend.
 
-> [!WARNING]
-> `RVC4` and `Hailo` expects images to be provided in `NHWC` layout. If you provide the calibration data in a form of `.npy` or `.raw` format, you need to make sure they have the correct layout.
+> [!NOTE]
+> You cannot use a custom RVC4 `--input_list` when the NN Archive holds the
+> preprocessing. ModelConverter cannot inspect or transform the raw buffers in
+> that list.
 
 ## Inference
 

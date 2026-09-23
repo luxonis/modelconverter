@@ -31,7 +31,7 @@ pip install "uv==0.12.5"
 uv sync --locked --active
 
 pip install hil-framework --upgrade \
-  --index-url "https://__token__:$PAT_TOKEN@gitlab.luxonis.com/api/v4/projects/213/packages/pypi/simple" \
+  --index-url "https://__token__:$PAT_TOKEN@gitlab.luxonis.com/api/v4/projects/213/packages/pypi/simple" --no-cache-dir \
   > /dev/null
 
 pip install --upgrade \

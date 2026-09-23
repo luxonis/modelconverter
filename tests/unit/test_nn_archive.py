@@ -19,11 +19,13 @@ from luxonis_ml.nn_archive.config_building_blocks import (
     PreprocessingBlock,
 )
 from luxonis_ml.typing import Params, ParamValue
+from onnx import TensorProto
 
 from modelconverter.cli.utils import extract_preprocessing
 from modelconverter.utils.config import (
     Config,
     InputConfig,
+    OutputConfig,
     RVC2Config,
     RVC3Config,
     RVC4Config,
@@ -33,6 +35,7 @@ from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.nn_archive import (
     _default_archive_preprocessing,
     _get_io_dtype,
+    _match_tensor_names,
     archive_from_model,
     default_archive_input_type,
     generate_archive,
@@ -48,6 +51,7 @@ from tests.helpers.archive_factory import (
     write_json,
 )
 from tests.helpers.onnx_factory import (
+    build_onnx,
     grayscale_onnx,
     single_io_onnx,
     standard_dummy_onnx,
@@ -657,6 +661,151 @@ def test_output_default_layout_when_shape_has_zero(dummy_onnx: Path):
     assert out1.shape == [1, 5, 5, 5]
     assert out1.layout is not None
     assert len(out1.layout) == 4
+
+
+def test_converted_output_rename_is_used_in_archive(tmp_path: Path):
+    source = single_io_onnx(tmp_path / "source.onnx")
+    converted = single_io_onnx(
+        tmp_path / "converted.onnx", output_name="out/add_/sink_port_0"
+    )
+    config = Config.get_config(None, {"input_model": str(source)})
+
+    nn = _config_to_nn(config, converted)
+
+    assert [out.name for out in nn.model.outputs] == ["out/add_/sink_port_0"]
+
+
+def test_converted_output_rename_is_propagated_through_head(tmp_path: Path):
+    source = single_io_onnx(tmp_path / "source.onnx")
+    converted = single_io_onnx(
+        tmp_path / "converted.onnx", output_name="output0/sink_port_0"
+    )
+    config = Config.get_config(None, {"input_model": str(source)})
+    orig = archive_from_model(source)
+    orig.model.heads = [
+        Head.model_validate(
+            {
+                "parser": "custom",
+                "outputs": ["output0"],
+                "metadata": {
+                    "tensor_name": "output0",
+                    "nested": {"tensor_names": ["output0"]},
+                },
+            }
+        )
+    ]
+
+    nn = _config_to_nn(config, converted, orig=orig)
+
+    assert nn.model.heads is not None
+    head = nn.model.heads[0]
+    assert head.outputs == ["output0/sink_port_0"]
+    metadata = head.metadata.model_dump()
+    assert metadata["tensor_name"] == "output0/sink_port_0"
+    assert metadata["nested"] == {"tensor_names": ["output0/sink_port_0"]}
+
+
+def test_converted_inputs_are_matched_by_shape_not_order(tmp_path: Path):
+    source = build_onnx(
+        tmp_path / "source.onnx",
+        inputs=[
+            ("image", [1, 3, 64, 64], TensorProto.FLOAT),
+            ("aux", [1, 5], TensorProto.FLOAT),
+        ],
+        outputs=[("output0", [1, 3, 64, 64], TensorProto.FLOAT)],
+    )
+    converted = build_onnx(
+        tmp_path / "converted.onnx",
+        inputs=[
+            ("aux_sink", [1, 5], TensorProto.FLOAT),
+            ("image_sink", [1, 3, 64, 64], TensorProto.FLOAT),
+        ],
+        outputs=[("output0", [1, 3, 64, 64], TensorProto.FLOAT)],
+    )
+    config = Config.get_config(None, {"input_model": str(source)})
+
+    nn = _config_to_nn(config, converted)
+
+    assert [inp.name for inp in nn.model.inputs] == ["image_sink", "aux_sink"]
+    assert [inp.shape for inp in nn.model.inputs] == [
+        [1, 3, 64, 64],
+        [1, 5],
+    ]
+
+
+def test_converted_outputs_are_matched_by_shape_not_order(tmp_path: Path):
+    # Distinct dimensions make the shape match unambiguous even if axes move.
+    source = build_onnx(
+        tmp_path / "source.onnx",
+        inputs=[("image", [1, 3, 64, 64], TensorProto.FLOAT)],
+        outputs=[
+            ("feat", [1, 3, 64, 64], TensorProto.FLOAT),
+            ("other", [1, 64, 5, 64], TensorProto.FLOAT),
+        ],
+    )
+    converted = build_onnx(
+        tmp_path / "converted.onnx",
+        inputs=[("image", [1, 3, 64, 64], TensorProto.FLOAT)],
+        outputs=[
+            ("other_sink", [1, 64, 5, 64], TensorProto.FLOAT),
+            ("feat_sink", [1, 3, 64, 64], TensorProto.FLOAT),
+        ],
+    )
+    config = Config.get_config(None, {"input_model": str(source)})
+
+    nn = _config_to_nn(config, converted)
+
+    assert [out.name for out in nn.model.outputs] == [
+        "feat_sink",
+        "other_sink",
+    ]
+    assert [out.layout for out in nn.model.outputs] == ["NCHW", "NCDE"]
+
+
+def test_ambiguous_converted_output_renames_raise(tmp_path: Path):
+    source = build_onnx(
+        tmp_path / "source.onnx",
+        inputs=[("image", [1, 3, 8, 8], TensorProto.FLOAT)],
+        outputs=[
+            ("first", [1, 10], TensorProto.FLOAT),
+            ("second", [1, 10], TensorProto.FLOAT),
+        ],
+    )
+    converted = build_onnx(
+        tmp_path / "converted.onnx",
+        inputs=[("image", [1, 3, 8, 8], TensorProto.FLOAT)],
+        outputs=[
+            ("first_sink", [1, 10], TensorProto.FLOAT),
+            ("second_sink", [1, 10], TensorProto.FLOAT),
+        ],
+    )
+    config = Config.get_config(None, {"input_model": str(source)})
+
+    with pytest.raises(
+        ValueError, match="Unable to unambiguously match renamed model outputs"
+    ):
+        _config_to_nn(config, converted)
+
+
+def test_renamed_tensors_with_permuted_shapes_raise():
+    configured = [
+        OutputConfig(name="camera", shape=[1, 3, 224, 320]),
+        OutputConfig(name="tokens", shape=[1, 224, 320, 3]),
+    ]
+    converted_shapes = {
+        "camera_sink": [1, 224, 320, 3],
+        "tokens_sink": [1, 3, 224, 320],
+    }
+
+    with pytest.raises(ValueError, match="after an axis permutation"):
+        _match_tensor_names(configured, converted_shapes, kind="output")
+
+    # An unchanged name establishes identity even when the shape changes.
+    assert _match_tensor_names(
+        configured,
+        {"camera": [1, 224, 320, 3], "tokens": [1, 3, 224, 320]},
+        kind="output",
+    ) == {"camera": "camera", "tokens": "tokens"}
 
 
 def test_input_default_layout_when_shape_has_zero(dummy_onnx: Path):

@@ -55,6 +55,10 @@ from modelconverter.utils.onnx_compatibility import (
     has_external_data,
     save_onnx_model,
 )
+from modelconverter.utils.preprocessing import (
+    CalibrationPreprocessing,
+    input_preprocessing_required,
+)
 from modelconverter.utils.types import (
     DataType,
     Encoding,
@@ -134,6 +138,18 @@ class ImageCalibrationConfig(BaseModelExtraForbid):
     path: Path
     max_images: int = -1
     resize_method: ResizeMethod = ResizeMethod.RESIZE
+    _generated_from_random: bool = PrivateAttr(default=False)
+    _generated_layout: str = PrivateAttr(default="")
+
+    @property
+    def generated_from_random(self) -> bool:
+        """Whether this file source was materialized from random calibration."""
+        return self._generated_from_random
+
+    @property
+    def generated_layout(self) -> str:
+        """Layout used when generated tensor calibration was materialized."""
+        return self._generated_layout
 
     @field_validator("path", mode="before")
     @staticmethod
@@ -276,6 +292,14 @@ class InputConfig(OutputConfig):
     frozen_value: list[int | float] | None = None
     encoding: EncodingConfig = EncodingConfig()
     _layout_was_explicit: bool = PrivateAttr(default=False)
+    _calibration_preprocessing: CalibrationPreprocessing | None = PrivateAttr(
+        default=None
+    )
+
+    @property
+    def calibration_preprocessing(self) -> CalibrationPreprocessing | None:
+        """Preprocessing moved out of the model but retained for calibration."""
+        return self._calibration_preprocessing
 
     @model_validator(mode="wrap")
     @classmethod
@@ -515,16 +539,12 @@ class InputConfig(OutputConfig):
             values are set.
 
         """
-        if self.encoding_mismatch:
-            return True
-        if reverse_only:
-            return False
-        return (
-            self.mean_values is not None
-            and any(v != 0 for v in self.mean_values)
-        ) or (
-            self.scale_values is not None
-            and any(v != 1 for v in self.scale_values)
+        return input_preprocessing_required(
+            encoding_from=self.encoding.from_,
+            encoding_to=self.encoding.to,
+            mean_values=self.mean_values,
+            scale_values=self.scale_values,
+            reverse_only=reverse_only,
         )
 
     def validate_preprocessing(self, *, reverse_only: bool = False) -> int:

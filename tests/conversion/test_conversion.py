@@ -41,6 +41,8 @@ class Scenario:
     opts: tuple[str, ...] = field(default_factory=tuple)
     # Required for multistage configs.
     main_stage: str | None = None
+    # Store preprocessing in the produced archive instead of the native model.
+    archive_preprocess: bool = False
     # Platforms where this scenario is a known failure -> reason.
     xfail: dict[str, str] = field(default_factory=dict)
 
@@ -49,7 +51,12 @@ SCENARIOS: list[Scenario] = [
     # Single-stage (resnet18), every input/output format combination.
     Scenario("archive-to-archive", f"{GS}/resnet18.tar.xz", "nn_archive"),
     Scenario("archive-to-native", f"{GS}/resnet18.tar.xz", "native"),
-    Scenario("config-to-archive", f"{GS}/resnet18.yaml", "nn_archive"),
+    Scenario(
+        "config-to-archive",
+        f"{GS}/resnet18.yaml",
+        "nn_archive",
+        archive_preprocess=True,
+    ),
     Scenario("config-to-native", f"{GS}/resnet18.yaml", "native"),
     # Multistage (yolov5n-seg + mult) with full linked calibration: stage-2
     # `coeffs` via a script, `prototypes` from stage-1 `protos_output`. A raw
@@ -125,5 +132,6 @@ def test_convert(platform_name: str, scenario: Scenario):
         output_dir=output_name,
         to=scenario.to_format,
         main_stage=scenario.main_stage,
+        archive_preprocess=scenario.archive_preprocess,
     )
     assert_produced(output_name, scenario.to_format)

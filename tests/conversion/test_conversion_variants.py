@@ -191,9 +191,9 @@ def test_hailo_tflite_conversion(tmp_path: Path):
 
 @pytest.mark.hailo
 def test_hailo_npy_calibration(tmp_path: Path):
-    # `.npy` calibration files are pre-shaped `(1, C, H, W)` tensors, which
-    # hailo's calibration reader loads verbatim and transposes to NHWC -- a
-    # branch `.png` calibration (read as `HWC`) never reaches.
+    # `.npy` calibration files are opaque, backend-ready HWC samples. Hailo's
+    # calibration reader loads them without the image conversion used for ONGs
+    # and stacks the samples into an NHWC batch.
     config = write_toy_conv_config(tmp_path, calibration="npy")
     output_name = "_hailo-npy-calib"
     convert(
