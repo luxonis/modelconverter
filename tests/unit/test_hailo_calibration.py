@@ -282,6 +282,7 @@ def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
     )
     calibration = inp.calibration
     assert isinstance(calibration, ImageCalibrationConfig)
+    assert inp.layout == "NCHW"
     calibration._generated_from_random = True
     calibration._generated_layout = inp.layout
 
