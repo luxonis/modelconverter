@@ -227,8 +227,7 @@ class HailoExporter(Exporter):
             ):
                 logger.warning(
                     "Hailo .raw calibration for input '{}' is read in "
-                    "channel-last sample order {}. Convert legacy "
-                    "channel-first buffers before quantization.",
+                    "channel-last sample order {}.",
                     orig_name,
                     shape,
                 )

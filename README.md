@@ -623,27 +623,14 @@ LDF datasets are also supported as calibration data by setting `calibration.path
 > Multi-input LDF datasets are not currently supported for calibration data.
 
 > [!IMPORTANT]
-> User-provided `.npy` and `.raw` calibration files are treated as opaque,
-> backend-ready tensors. ModelConverter does not color-convert, normalize or
-> reorder them, including when the NN Archive holds the preprocessing. Prepare
-> them in the exact data type, per-file shape, layout and numeric domain that
-> the target backend expects.
+> `.npy` and `.raw` calibration files must contain backend-ready values;
+> ModelConverter does not apply image preprocessing to them. Hailo and RVC3
+> expect batchless, channel-last samples (`HWC` for images). Hailo also accepts
+> a leading singleton batch axis in `.npy` files. RVC4/SNPE expects
+> channel-last image tensors (normally `NHWC`).
 >
-> Hailo and RVC3 consume one batchless sample per file. For an `NCHW` image
-> input, a `.npy` file therefore has `HWC` shape. Hailo
-> also accepts a `.npy` file with one leading batch axis (`NHWC`) and removes
-> that axis before stacking samples. A Hailo `.raw` file has no shape metadata:
-> its bytes must already be in the same channel-last sample order. RVC4/SNPE
-> consumes image tensors in channel-last order (normally `NHWC`).
->
-> These requirements apply to every `.npy` or `.raw` file other than
-> ModelConverter's random calibration samples, including tensors written by
-> linked multi-stage calibration. ModelConverter prepares image files and its
-> own random calibration samples for the backend.
->
-> Previous Hailo conversions also accepted batched `NCHW` `.npy` files and
-> interpreted `.raw` bytes in `NCHW` order. Convert those existing calibration
-> files to channel-last sample order before using them with this version.
+> This also applies to linked multi-stage tensor files. ModelConverter prepares
+> image files and its generated random calibration samples for the backend.
 
 > [!NOTE]
 > You cannot use a custom RVC4 `--input_list` when the NN Archive holds the
