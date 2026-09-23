@@ -94,7 +94,6 @@ class RVC2Exporter(Exporter):
         self._mo_args = config.rvc2.mo_args
         self._compile_tool_args = config.rvc2.compile_tool_args
         self._device = "MYRIAD"
-        self._reverse_input_channels = False
 
         self._device_specific_buildinfo = {
             "is_superblob": self._superblob,
@@ -232,7 +231,6 @@ class RVC2Exporter(Exporter):
             inp.encoding_mismatch for inp in self._inputs.values()
         )
         if reverse_input_flag:
-            self._reverse_input_channels = True
             args.append("--reverse_input_channels")
 
         self._add_args(args, ["--input_model", self._input_model])

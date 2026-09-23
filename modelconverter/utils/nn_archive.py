@@ -622,7 +622,7 @@ def _match_tensor_names(
 
 
 def _replace_names(value: object, name_map: dict[str, str]) -> object:
-    """Recursively replace exact tensor-name values in archive data."""
+    """Recursively replace exact tensor names in archive data, keys included."""
     if isinstance(value, str):
         return name_map.get(value, value)
     if isinstance(value, BaseModel):

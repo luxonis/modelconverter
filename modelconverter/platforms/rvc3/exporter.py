@@ -64,7 +64,6 @@ class RVC3Exporter(RVC2Exporter):
         self._mo_args = config.rvc3.mo_args
         self._compile_tool_args = config.rvc3.compile_tool_args
         self._device = "VPUX.3400"
-        self._reverse_input_channels = False
         self._device_specific_buildinfo = {}
 
     def export(self) -> Path:
