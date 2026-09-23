@@ -29,6 +29,7 @@ from modelconverter.utils.config import (
     broadcast_preprocessing_values,
 )
 from modelconverter.utils.preprocessing import (
+    channels_last_4d_layout,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -221,6 +222,16 @@ class HailoExporter(Exporter):
             assert isinstance(calib, ImageCalibrationConfig)
 
             images = self._read_img_dir(calib.path, calib.max_images)
+            if len(shape) == 3 and any(
+                path.suffix.lower() == ".raw" for path in images
+            ):
+                logger.warning(
+                    "Hailo .raw calibration for input '{}' is read in "
+                    "channel-last sample order {}. Convert legacy "
+                    "channel-first buffers before quantization.",
+                    orig_name,
+                    shape,
+                )
             calib_dataset = np.zeros((len(images), *shape), dtype=np.float32)
 
             for idx, img_path in enumerate(images):
@@ -235,18 +246,30 @@ class HailoExporter(Exporter):
                         data_type=inp.data_type,
                         input_name=orig_name,
                     )
+                    if img_path.suffix.lower() == ".npy" and img.shape == (
+                        1,
+                        *shape,
+                    ):
+                        img = img[0]
                 else:
                     img, layout = self._read_calibration_file(
                         inp, calib, img_path
                     )
                     assert layout is not None
-                    if calib.generated_from_random and _is_hwc_sample(
-                        shape, layout
+                    if (
+                        calib.generated_from_random
+                        and img.ndim == 4
+                        and len(shape) == 3
+                        and "N" in layout
+                        and layout.count("C") == 1
                     ):
-                        # Managed tensors keep the source model's layout, and
-                        # shape equality is ambiguous when C, H and W are
-                        # equal, so reorder by the layout instead.
-                        img = reorder_layout(img, layout, "HWC")
+                        # Hailo moves the channel axis last even for non-image
+                        # inputs. Shape equality cannot reveal that move when
+                        # the axes have equal sizes.
+                        sample_layout = channels_last_4d_layout(
+                            layout
+                        ).replace("N", "", 1)
+                        img = reorder_layout(img, layout, sample_layout)
                     elif img.shape != tuple(shape):
                         img = _fit_hailo_sample(img, shape, layout)
 

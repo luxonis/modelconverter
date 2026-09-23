@@ -19,6 +19,7 @@ from modelconverter.utils.config import (
     Config,
     ImageCalibrationConfig,
     InputConfig,
+    RandomCalibrationConfig,
 )
 from tests.helpers.onnx_factory import single_io_onnx
 
@@ -181,7 +182,7 @@ def test_user_tensor_is_opaque_and_backend_ready(
 ) -> None:
     calibration_dir = tmp_path / "calibration"
     calibration_dir.mkdir()
-    source = np.arange(12, dtype=np.float32).reshape(2, 2, 3)
+    source = np.arange(60, dtype=np.float32).reshape(4, 5, 3)
     path = calibration_dir / f"model-domain{suffix}"
     if suffix == ".npy":
         np.save(path, source)
@@ -191,16 +192,55 @@ def test_user_tensor_is_opaque_and_backend_ready(
         hailo_exporter_module,
         tmp_path,
         calibration_dir,
-        shape=[1, 3, 2, 2],
+        shape=[1, 3, 4, 5],
         encoding={"from": "RGB", "to": "BGR"},
         mean_values=[10, 20, 30],
     )
 
-    actual = exporter._get_calibration_data(_Runner([1, 2, 2, 3]))[
+    actual = exporter._get_calibration_data(_Runner([1, 4, 5, 3]))[
         "hailo_input"
     ][0]
 
     np.testing.assert_array_equal(actual, source)
+
+
+def test_user_npy_with_singleton_batch_is_accepted(
+    hailo_exporter_module: ModuleType, tmp_path: Path
+) -> None:
+    calibration_dir = tmp_path / "calibration"
+    calibration_dir.mkdir()
+    source = np.arange(60, dtype=np.float32).reshape(4, 5, 3)
+    np.save(calibration_dir / "sample.npy", source[np.newaxis])
+    exporter, _ = _externalized_exporter(
+        hailo_exporter_module,
+        tmp_path,
+        calibration_dir,
+        shape=[1, 3, 4, 5],
+    )
+
+    actual = exporter._get_calibration_data(_Runner([1, 4, 5, 3]))[
+        "hailo_input"
+    ][0]
+
+    np.testing.assert_array_equal(actual, source)
+
+
+def test_user_nchw_npy_is_rejected_without_implicit_reordering(
+    hailo_exporter_module: ModuleType, tmp_path: Path
+) -> None:
+    calibration_dir = tmp_path / "calibration"
+    calibration_dir.mkdir()
+    source = np.arange(60, dtype=np.float32).reshape(4, 5, 3)
+    np.save(calibration_dir / "sample.npy", source.transpose(2, 0, 1)[None])
+    exporter, _ = _externalized_exporter(
+        hailo_exporter_module,
+        tmp_path,
+        calibration_dir,
+        shape=[1, 3, 4, 5],
+    )
+
+    with pytest.raises(ModelconverterException, match="expected"):
+        exporter._get_calibration_data(_Runner([1, 4, 5, 3]))
 
 
 @pytest.mark.parametrize("suffix", [".npy", ".raw"])
@@ -243,6 +283,7 @@ def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
     calibration = inp.calibration
     assert isinstance(calibration, ImageCalibrationConfig)
     calibration._generated_from_random = True
+    calibration._generated_layout = inp.layout
 
     actual = exporter._get_calibration_data(_Runner([1, 3, 3, 3]))[
         "hailo_input"
@@ -251,6 +292,36 @@ def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
     means = np.array([1, 2, 3], dtype=np.float32).reshape(1, 3, 1, 1)
     expected = ((source - means) / 2).transpose(0, 2, 3, 1)[0]
     np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("channels", [256, 20])
+def test_generated_non_image_tensor_uses_hailo_channel_last_layout(
+    hailo_exporter_module: ModuleType, tmp_path: Path, channels: int
+) -> None:
+    inp = InputConfig.model_validate(
+        {
+            "name": "input0",
+            "shape": [1, channels, 20, 20],
+            "encoding": "NONE",
+        }
+    )
+    inp.calibration = RandomCalibrationConfig(max_images=1)
+    assert inp.layout == "NCDE"
+    exporter: HailoExporter = object.__new__(
+        hailo_exporter_module.HailoExporter
+    )
+    exporter._inputs = {inp.name: inp}
+    exporter.intermediate_outputs_dir = tmp_path
+    exporter._prepare_random_calibration_data()
+
+    calibration = inp.calibration
+    assert isinstance(calibration, ImageCalibrationConfig)
+    generated = np.load(calibration.path / "0.npy")
+    actual = exporter._get_calibration_data(_Runner([1, 20, 20, channels]))[
+        "hailo_input"
+    ][0]
+
+    np.testing.assert_array_equal(actual, generated.transpose(0, 2, 3, 1)[0])
 
 
 def test_disabled_calibration_accepts_archive_preprocessing_retry(
