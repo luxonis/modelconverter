@@ -90,17 +90,15 @@ jobs:
           ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          python-version: "3.10"
-          cache: pip
-
-      - name: Install prek
-        run: python -m pip install 'prek~=0.4.13'
+          enable-cache: true
 
       - name: Run hooks
-        run: prek run --all-files --show-diff-on-failure --color=always
+        run: >-
+          uv run --locked --only-group lint prek run
+          --all-files --show-diff-on-failure --color=always
         env:
           # CI can run from a checked-out protected branch via `workflow_call`.
           # Keep the hook for local commits, but skip it for a full lint run.
@@ -118,20 +116,16 @@ jobs:
           ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          python-version: "3.10"
-          cache: pip
+          enable-cache: true
 
       # pydoctor reads the sources rather than importing them, so the package's
       # own dependencies are not needed here.
-      - name: Install pydoctor
-        run: python -m pip install 'pydoctor~=25.10'
-
       - name: Build docs
         run: >
-          python -m pydoctor
+          uv run --locked --only-group docs python -m pydoctor
           --docformat=google
           --warnings-as-errors
           --project-name ModelConverter
@@ -154,24 +148,21 @@ jobs:
           ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          python-version: "3.10"
-          cache: pip
+          enable-cache: true
 
       - name: Install package
-        run: pip install -e .[dev]
+        run: uv sync --locked
 
       - name: Install LuxonisML from main
         if: ${{ inputs.ml_ref || !startsWith(inputs.modelconv_ref || github.head_ref || github.ref_name, 'release/') }}
         env:
           ML_REF: ${{ inputs.ml_ref || 'main' }}
-        run: |
-          pip uninstall luxonis-ml -y
-          pip install \
-            "luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
-            --upgrade --force-reinstall
+        run: >-
+          uv pip install --reinstall-package luxonis-ml
+          "luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
@@ -182,15 +173,19 @@ jobs:
       - name: Install platform dependencies
         run: |
           gcloud storage cp "${GS_BUILD_ARTIFACTS}/${HAILO_WHEEL}" .
-          pip install --no-deps \
+          uv pip install --no-deps \
             -r requirements-typecheck.txt \
             "./${HAILO_WHEEL}"
+
+      # The pyright action looks the binary up on PATH, see `version: PATH`.
+      - name: Put the virtual environment on PATH
+        run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Run pyright
         uses: jakebailey/pyright-action@8ec14b5cfe41f26e5f41686a31eb6012758217ef
         with:
-          # `version: PATH` runs the pyright that `.[dev]` pins, so CI and a
-          # local run agree.
+          # `version: PATH` runs the pyright that the lockfile pins, so CI and
+          # a local run agree.
           version: PATH
           warnings: true
 
@@ -206,24 +201,21 @@ jobs:
           ref: ${{ inputs.modelconv_ref || github.head_ref || github.ref }}
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          python-version: "3.10"
-          cache: pip
+          enable-cache: true
 
       - name: Install package
-        run: pip install -e .[dev]
+        run: uv sync --locked
 
       - name: Install LuxonisML from main
         if: ${{ inputs.ml_ref || !startsWith(inputs.modelconv_ref || github.head_ref || github.ref_name, 'release/') }}
         env:
           ML_REF: ${{ inputs.ml_ref || 'main' }}
-        run: |
-          pip uninstall luxonis-ml -y
-          pip install \
-            "luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}" \
-            --upgrade --force-reinstall
+        run: >-
+          uv pip install --reinstall-package luxonis-ml
+          "luxonis-ml[data,nn_archive,s3,gcs,telemetry] @ git+https://github.com/luxonis/luxonis-ml.git@${ML_REF}"
 
       - name: Run unit tests
         env:
@@ -233,7 +225,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
           HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
         run: |
-          python -m pytest tests/unit -n auto \
+          uv run --no-sync pytest tests/unit -n auto \
             --junitxml junit-unit.xml -o junit_family=legacy \
             --cov --cov-report term-missing \
             --cov-report xml:coverage-unit.xml
@@ -329,14 +321,13 @@ jobs:
       - name: Set up Docker
         uses: crazy-max/ghaction-setup-docker@77e84dbf09b47d1e29270283c22f16145aa85ca1
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
-          python-version: "3.10"
-          cache: pip
+          enable-cache: true
 
       - name: Install package (host CLI)
-        run: pip install -e .
+        run: uv sync --locked --no-default-groups
 
       - name: Authenticate to Google Cloud
         id: google-auth
@@ -403,7 +394,7 @@ jobs:
             ML_INSTALL_COMMAND=""
           fi
 
-          modelconverter shell "${PACKAGE}" --dev --no-gpu \
+          uv run --no-sync modelconverter shell "${PACKAGE}" --dev --no-gpu \
             --tool-version "${VERSION}" \
             -c "${ML_INSTALL_COMMAND} \
               python -m pytest tests/conversion -m '${PACKAGE}' -x \
