@@ -23,6 +23,7 @@ python3 -m venv venv
 
 # Activate virtual environment
 source venv/bin/activate
+pip install --upgrade pip
 
 # Install dependencies from the lockfile. `uv pip install` would resolve from
 # the indexes and ignore uv.lock, so the testbed could run versions no CI job
