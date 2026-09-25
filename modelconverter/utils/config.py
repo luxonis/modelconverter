@@ -1360,9 +1360,12 @@ class Config(LuxonisConfig):
     Attributes:
         stages: Configurations of the individual stages, keyed by stage
             name.
-        name: Name of the model. Defaults to the stage names joined by
-            dashes, or to the stem of the input model for a single
-            unnamed stage.
+        name: Name of the conversion package, used for the output archive
+            basename and the generated output directory. An explicit name
+            overrides the input archive's basename. Defaults to the stage
+            names joined by dashes, or to the stem of the input model for
+            a single unnamed stage. Also supplies the stage key in flat
+            single-stage configs; does not rename model files or tensors.
         rich_logging: Whether to use rich formatting for the log
             messages.
 

@@ -160,8 +160,7 @@ def convert(
             file.
         path: A URL or a path to the configuration file, NN Archive
             or a standalone model file.
-        output_dir: Name of the directory where the exported model will
-            be saved.
+        output_dir: Destination directory for conversion results.
         to: Whether to export the model to a simple model file or a
             Luxonis NN Archive.
         main_stage: Name of the stage with the main model.
@@ -391,7 +390,11 @@ def convert(
             out_models = [out_models]
         if to == "nn_archive":
             archive_name = None
-            if original_path is not None and is_nn_archive(original_path):
+            if (
+                original_path is not None
+                and is_nn_archive(original_path)
+                and "name" not in overrides[::2]
+            ):
                 archive_filename = Path(original_path).name
                 archive_suffix = "".join(Path(original_path).suffixes)
                 archive_name = (

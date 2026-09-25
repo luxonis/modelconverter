@@ -21,7 +21,7 @@ from luxonis_ml.nn_archive.config_building_blocks import (
 from luxonis_ml.typing import Params, ParamValue
 from onnx import TensorProto
 
-from modelconverter.cli.utils import extract_preprocessing
+from modelconverter.cli.utils import extract_preprocessing, get_configs
 from modelconverter.utils.config import (
     Config,
     InputConfig,
@@ -154,6 +154,34 @@ def test_process_plain_tar(work_dir: Path):
     assert isinstance(archive_cfg, NNArchiveConfig)
     assert main_stage in config.stages
     assert (MISC_DIR / "dummy_model" / "config.json").exists()
+
+
+@pytest.mark.parametrize("name", [None, "custom", "default_stage"])
+@pytest.mark.parametrize("packed", [False, True])
+def test_archive_name_override_preserves_main_stage_lookup(
+    work_dir: Path, name: str | None, packed: bool
+):
+    onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
+    archive = pack_archive(
+        work_dir / "dummy_model.tar", onnx, default_archive_config()
+    )
+    config, archive_cfg, main_stage = get_configs(
+        Platform.RVC4,
+        str(archive if packed else work_dir),
+        ["name", name] if name is not None else None,
+    )
+    expected_name = "custom" if name == "custom" else "dummy_model"
+    assert config.name == expected_name
+    assert main_stage == expected_name
+    assert set(config.stages) == {expected_name}
+
+    # Exercise the downstream lookup that previously raised KeyError.
+    nn = _config_to_nn(config, onnx, orig=archive_cfg, main_stage=main_stage)
+    assert nn.model.metadata.name == "out"
+    assert [output.name for output in nn.model.outputs] == [
+        "output0",
+        "output1",
+    ]
 
 
 def test_process_tar_xz(work_dir: Path):
@@ -475,7 +503,8 @@ def test_raw_input_keeps_none_encoding(work_dir: Path):
     assert inp.scale_values is None
 
 
-def test_postprocessor_path_adds_stage(work_dir: Path):
+@pytest.mark.parametrize("name", [None, "custom"])
+def test_postprocessor_path_adds_stage(work_dir: Path, name: str | None):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     post = single_io_onnx(work_dir / "post.onnx")
     config_dict = default_archive_config(
@@ -500,11 +529,13 @@ def test_postprocessor_path_adds_stage(work_dir: Path):
         config_dict,
         extra_files={"post.onnx": post},
     )
-    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, None)
+    config, _, main_stage = process_nn_archive(
+        Platform.RVC4, tar, {"name": name} if name is not None else None
+    )
     # Two stages: the main model plus the postprocessor.
-    assert len(config.stages) == 2
-    assert main_stage in config.stages
-    assert "post" in config.stages
+    assert config.name == (name or "dummy_model")
+    assert set(config.stages) == {"dummy_model", "post"}
+    assert main_stage == "dummy_model"
 
 
 def _config_from_overrides(

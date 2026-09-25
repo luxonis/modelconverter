@@ -273,7 +273,11 @@ def process_nn_archive(
             },
         }
 
-    return Config.get_config(config, overrides), archive_config, main_stage_key
+    cfg = Config.get_config(config, overrides)
+    if len(cfg.stages) == 1:
+        # Use the final stage key after applying config overrides.
+        main_stage_key = next(iter(cfg.stages))
+    return cfg, archive_config, main_stage_key
 
 
 def modelconverter_config_to_nn(
