@@ -79,6 +79,54 @@ class _FakeMultiStageExporter:
 
 
 @pytest.mark.parametrize(
+    ("archive_input", "override_name", "expected_archive_name"),
+    [(True, False, "original"), (True, True, None), (False, False, None)],
+)
+def test_convert_selects_archive_name(
+    dummy_onnx: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    archive_input: bool,
+    override_name: bool,
+    expected_archive_name: str | None,
+) -> None:
+    cfg = Config.get_config(
+        None, {"input_model": str(dummy_onnx), "name": "custom"}
+    )
+    output_dir = tmp_path / "output"
+    _patch_convert(
+        monkeypatch,
+        cfg=cfg,
+        main_stage="custom",
+        output_dir=output_dir,
+        exporter=lambda _platform, config, output_dir: _FakeExporter(
+            config, output_dir
+        ),
+    )
+    monkeypatch.setattr(
+        main_module, "is_nn_archive", lambda _path: archive_input
+    )
+    archive_names: list[object] = []
+
+    def generate_archive(**kwargs: object) -> Path:
+        assert kwargs["cfg"] is cfg
+        archive_names.append(kwargs["archive_name"])
+        return output_dir / "result.rvc4.tar.xz"
+
+    monkeypatch.setattr(main_module, "generate_archive", generate_archive)
+    main_module.convert(
+        Platform.RVC4,
+        *(["name", "custom"] if override_name else []),
+        path=str(tmp_path / "original.tar.xz")
+        if archive_input
+        else str(dummy_onnx),
+    )
+
+    # None delegates to generate_archive's existing cfg.name default.
+    assert archive_names == [expected_archive_name]
+
+
+@pytest.mark.parametrize(
     ("output_mode", "expected_names", "multistage", "archive_preprocess"),
     [
         ("native", ["model.dlc"], False, False),

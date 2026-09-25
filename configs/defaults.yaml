@@ -1,4 +1,6 @@
-# Name of the model. Will be the stem of the input model if undefined.
+# Conversion package name, used for the output archive and generated directory.
+# Defaults to the model stem or joined stage names; archive inputs keep their
+# archive basename unless explicitly overridden.
 name: ~
 
 # Whether to enable rich formatting for the log messages.
