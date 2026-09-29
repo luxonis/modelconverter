@@ -17,6 +17,7 @@ from modelconverter.utils.config import (
     SingleStageConfig,
 )
 from modelconverter.utils.types import Platform
+from tests.helpers.archive_factory import default_archive_config, pack_archive
 
 
 class _FakeTelemetry:
@@ -78,52 +79,87 @@ class _FakeMultiStageExporter:
         ]
 
 
-@pytest.mark.parametrize(
-    ("archive_input", "override_name", "expected_archive_name"),
-    [(True, False, "original"), (True, True, None), (False, False, None)],
-)
-def test_convert_selects_archive_name(
+@pytest.mark.parametrize("name", [None, "custom", "default_stage"])
+@pytest.mark.parametrize("input_kind", ["flat", "archive", "unpacked"])
+@pytest.mark.parametrize("output_mode", ["native", "nn_archive"])
+@pytest.mark.parametrize("explicit_dir", [None, "destination"])
+def test_convert_uses_resolved_package_name(
     dummy_onnx: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    archive_input: bool,
-    override_name: bool,
-    expected_archive_name: str | None,
+    name: str | None,
+    input_kind: str,
+    output_mode: Literal["native", "nn_archive"],
+    explicit_dir: str | None,
 ) -> None:
-    cfg = Config.get_config(
-        None, {"input_model": str(dummy_onnx), "name": "custom"}
-    )
-    output_dir = tmp_path / "output"
+    """Resolve names through config loading and both output modes."""
+    path = None
+    overrides = ["input_model", str(dummy_onnx)]
+    default_name = dummy_onnx.stem
+    if input_kind != "flat":
+        # Keep model metadata and package names deliberately different.
+        archive_dir = tmp_path / "bundle.v1"
+        archive_dir.mkdir()
+        model = archive_dir / dummy_onnx.name
+        model.write_bytes(dummy_onnx.read_bytes())
+        archive = pack_archive(
+            archive_dir / "bundle.v1.tar", model, default_archive_config()
+        )
+        path = str(archive if input_kind == "archive" else archive_dir)
+        overrides = []
+        default_name = "bundle.v1"
+    if name is not None:
+        # The last override wins, including the literal default_stage.
+        overrides += ["name", "discarded", "name", name]
+    expected_name = name if name is not None else default_name
+    get_configs = main_module.get_configs
+    get_output_dir_name = main_module.get_output_dir_name
+    cfg, _, stage_key = get_configs(Platform.RVC4, path, overrides)
+    assert stage_key is not None
+    assert stage_key == expected_name
     _patch_convert(
         monkeypatch,
         cfg=cfg,
-        main_stage="custom",
-        output_dir=output_dir,
+        main_stage=stage_key,
+        output_dir=tmp_path / "unused",
         exporter=lambda _platform, config, output_dir: _FakeExporter(
             config, output_dir
         ),
     )
+    monkeypatch.setattr(main_module, "get_configs", get_configs)
     monkeypatch.setattr(
-        main_module, "is_nn_archive", lambda _path: archive_input
+        main_module, "get_output_dir_name", get_output_dir_name
     )
-    archive_names: list[object] = []
+    archive_names: list[str] = []
 
     def generate_archive(**kwargs: object) -> Path:
-        assert kwargs["cfg"] is cfg
-        archive_names.append(kwargs["archive_name"])
-        return output_dir / "result.rvc4.tar.xz"
+        resolved = kwargs["cfg"]
+        assert isinstance(resolved, Config)
+        assert resolved.name == expected_name
+        assert kwargs["main_stage"] == expected_name
+        archive_names.append(resolved.name)
+        output_path = kwargs["output_path"]
+        assert isinstance(output_path, Path)
+        return output_path / f"{resolved.name}.rvc4.tar.xz"
 
     monkeypatch.setattr(main_module, "generate_archive", generate_archive)
     main_module.convert(
         Platform.RVC4,
-        *(["name", "custom"] if override_name else []),
-        path=str(tmp_path / "original.tar.xz")
-        if archive_input
-        else str(dummy_onnx),
+        *overrides,
+        path=path,
+        to=output_mode,
+        output_dir=explicit_dir,
     )
-
-    # None delegates to generate_archive's existing cfg.name default.
-    assert archive_names == [expected_archive_name]
+    assert archive_names == (
+        [expected_name] if output_mode == "nn_archive" else []
+    )
+    directories = list((tmp_path / "output").iterdir())
+    assert len(directories) == 1
+    if explicit_dir is not None:
+        assert directories[0].name == explicit_dir
+    else:
+        directory_name = expected_name.replace(".", "_")
+        assert directories[0].name.startswith(f"{directory_name}_to_rvc4_")
 
 
 @pytest.mark.parametrize(
@@ -610,4 +646,3 @@ def _patch_convert(
         main_module, "get_conversion_run_id", lambda: "test-run"
     )
     monkeypatch.setattr(main_module, "peak_ram_usage_bytes", lambda: 0)
-    monkeypatch.setattr(main_module, "is_nn_archive", lambda _path: False)

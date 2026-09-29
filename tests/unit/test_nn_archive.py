@@ -163,14 +163,18 @@ def test_archive_name_override_preserves_main_stage_lookup(
 ):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     archive = pack_archive(
-        work_dir / "dummy_model.tar", onnx, default_archive_config()
+        work_dir / "bundle.v1.tar", onnx, default_archive_config()
     )
     config, archive_cfg, main_stage = get_configs(
         Platform.RVC4,
         str(archive if packed else work_dir),
         ["name", name] if name is not None else None,
     )
-    expected_name = "custom" if name == "custom" else "dummy_model"
+    expected_name = (
+        name
+        if name is not None
+        else ("bundle.v1" if packed else work_dir.name)
+    )
     assert config.name == expected_name
     assert main_stage == expected_name
     assert set(config.stages) == {expected_name}
@@ -182,6 +186,21 @@ def test_archive_name_override_preserves_main_stage_lookup(
         "output0",
         "output1",
     ]
+
+
+def test_null_archive_name_uses_basename(work_dir: Path):
+    onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
+    archive = pack_archive(
+        work_dir / "bundle.v1.tar.xz",
+        onnx,
+        default_archive_config(),
+        mode="w:xz",
+    )
+    config, _, stage_key = process_nn_archive(
+        Platform.RVC4, archive, {"name": None}
+    )
+    assert config.name == "bundle.v1"
+    assert stage_key == "bundle.v1"
 
 
 def test_process_tar_xz(work_dir: Path):
@@ -503,7 +522,7 @@ def test_raw_input_keeps_none_encoding(work_dir: Path):
     assert inp.scale_values is None
 
 
-@pytest.mark.parametrize("name", [None, "custom"])
+@pytest.mark.parametrize("name", [None, "custom", "default_stage"])
 def test_postprocessor_path_adds_stage(work_dir: Path, name: str | None):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     post = single_io_onnx(work_dir / "post.onnx")
@@ -524,7 +543,7 @@ def test_postprocessor_path_adds_stage(work_dir: Path, name: str | None):
         ]
     )
     tar = pack_archive(
-        work_dir / "dummy_model.tar",
+        work_dir / "bundle.v1.tar",
         onnx,
         config_dict,
         extra_files={"post.onnx": post},
@@ -533,7 +552,7 @@ def test_postprocessor_path_adds_stage(work_dir: Path, name: str | None):
         Platform.RVC4, tar, {"name": name} if name is not None else None
     )
     # Two stages: the main model plus the postprocessor.
-    assert config.name == (name or "dummy_model")
+    assert config.name == (name or "bundle.v1")
     assert set(config.stages) == {"dummy_model", "post"}
     assert main_stage == "dummy_model"
 
@@ -1388,11 +1407,12 @@ def _prepare_output(name: str) -> Path:
     return out_dir
 
 
-def test_single_model_roundtrip(dummy_onnx: Path):
+@pytest.mark.parametrize("name", ["myarchive", "default_stage", "bundle.v1"])
+def test_single_model_roundtrip(dummy_onnx: Path, name: str):
     out_dir = _prepare_output("single")
     out_model = out_dir / "output.onnx"
     shutil.copy(dummy_onnx, out_model)
-    config = _config_from_overrides(dummy_onnx)
+    config = _config_from_overrides(dummy_onnx, name=name)
     main_stage = next(iter(config.stages))
     archive = generate_archive(
         Platform.RVC4,
@@ -1403,10 +1423,9 @@ def test_single_model_roundtrip(dummy_onnx: Path):
         None,
         {},
         dummy_onnx,
-        "myarchive",
     )
     assert archive.exists()
-    assert archive.name.endswith(".rvc4.tar.xz")
+    assert archive.name == f"{name}.rvc4.tar.xz"
     # Re-parsing the produced archive must succeed.
     reparsed, archive_cfg, _ = process_nn_archive(Platform.RVC4, archive, None)
     assert archive_cfg is not None
@@ -1430,7 +1449,6 @@ def test_multiple_models_use_stage_name(dummy_onnx: Path):
         None,
         {},
         dummy_onnx,
-        None,  # archive_name None -> falls back to cfg.name
     )
     assert archive.exists()
     assert archive.name.endswith(".rvc2.tar.xz")

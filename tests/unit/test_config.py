@@ -117,9 +117,7 @@ def _pt_model() -> Path:
 
 
 def test_flat_config_wrapped_and_renamed():
-    """A flat single-stage config is wrapped and the ``default_stage``
-    placeholder is renamed to the input-model stem.
-    """
+    """An unnamed flat config uses the model stem for package and stage."""
     dummy = _dummy()
     config = Config.get_config(None, {"input_model": str(dummy)})
     assert config.name == dummy.stem
@@ -127,14 +125,60 @@ def test_flat_config_wrapped_and_renamed():
     assert "default_stage" not in config.stages
 
 
-def test_flat_config_with_explicit_name_kept():
-    """An explicit name suppresses the ``default_stage`` rename."""
+@pytest.mark.parametrize("name", ["custom", "default_stage"])
+def test_flat_config_with_explicit_name_kept(name: str):
+    """Explicit names supply the implicit stage key without normalization."""
     dummy = _dummy()
+    config = Config.get_config(None, {"input_model": str(dummy), "name": name})
+    assert config.name == name
+    assert set(config.stages) == {name}
+
+
+@pytest.mark.parametrize("name", [None, "bundle", "default_stage"])
+@pytest.mark.parametrize("stage_key", ["detector", "default_stage"])
+def test_explicit_stage_key_is_preserved(name: str | None, stage_key: str):
     config = Config.get_config(
-        None, {"input_model": str(dummy), "name": "custom"}
+        None,
+        {
+            "name": name,
+            f"stages.{stage_key}.input_model": str(_dummy()),
+        },
     )
-    assert config.name == "custom"
-    assert set(config.stages) == {"custom"}
+    assert config.name == (name if name is not None else stage_key)
+    assert set(config.stages) == {stage_key}
+    assert (
+        Config.model_validate(config.model_dump(by_alias=True)).name
+        == config.name
+    )
+
+
+def test_flat_null_name_uses_model_stem():
+    dummy = _dummy()
+    config = Config.get_config(None, {"name": None, "input_model": str(dummy)})
+    assert config.name == dummy.stem
+    assert set(config.stages) == {dummy.stem}
+
+
+@pytest.mark.parametrize("explicit_stages", [False, True])
+def test_cli_name_overrides_yaml_name(tmp_path: Path, explicit_stages: bool):
+    dummy = _dummy()
+    path = tmp_path / "config.yaml"
+    stages = (
+        f"stages:\n  detector:\n    input_model: {dummy}\n"
+        if explicit_stages
+        else f"input_model: {dummy}\n"
+    )
+    path.write_text("name: configured\n" + stages)
+    configured = Config.get_config(path)
+    overridden = Config.get_config(path, {"name": "default_stage"})
+    assert configured.name == "configured"
+    assert overridden.name == "default_stage"
+    assert set(configured.stages) == {
+        "detector" if explicit_stages else "configured"
+    }
+    assert set(overridden.stages) == {
+        "detector" if explicit_stages else "default_stage"
+    }
 
 
 def test_stage_name_must_be_a_string():

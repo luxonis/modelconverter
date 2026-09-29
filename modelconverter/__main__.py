@@ -22,7 +22,7 @@ from typing import Annotated, Literal
 
 from cyclopts import App, Group, Parameter
 from loguru import logger
-from luxonis_ml.nn_archive import ArchiveGenerator, is_nn_archive
+from luxonis_ml.nn_archive import ArchiveGenerator
 from luxonis_ml.typing import ParamValue
 from luxonis_ml.utils import LuxonisFileSystem, setup_logging
 from rich import box
@@ -389,20 +389,6 @@ def convert(
         if not isinstance(out_models, list):
             out_models = [out_models]
         if to == "nn_archive":
-            archive_name = None
-            if (
-                original_path is not None
-                and is_nn_archive(original_path)
-                and "name" not in overrides[::2]
-            ):
-                archive_filename = Path(original_path).name
-                archive_suffix = "".join(Path(original_path).suffixes)
-                archive_name = (
-                    archive_filename.removesuffix(archive_suffix)
-                    if archive_suffix
-                    else archive_filename
-                )
-
             assert main_stage is not None
             out_models = [
                 generate_archive(
@@ -421,7 +407,6 @@ def convert(
                             main_stage
                         ].inference_model_path
                     ),
-                    archive_name=archive_name,
                 )
             ]
 

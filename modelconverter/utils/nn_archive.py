@@ -124,9 +124,17 @@ def process_nn_archive(
     with open(untar_path / "config.json") as f:
         archive_config = NNArchiveConfig(**json.load(f))
 
+    # Strip only the archive extension, preserving dots in package names.
+    package_name = path.resolve().name if path.is_dir() else path.name
+    if not path.is_dir():
+        for suffix in (".tar.xz", ".tar.gz", ".tar.bz2", ".tar"):
+            if package_name.endswith(suffix):
+                package_name = package_name.removesuffix(suffix)
+                break
+
     main_stage_key = archive_config.model.metadata.name
     main_stage_config: Params = {
-        "name": main_stage_key,
+        "name": package_name,
         "input_model": str(untar_path / archive_config.model.metadata.path),
     }
 
@@ -266,13 +274,18 @@ def process_nn_archive(
     if stages:
         del main_stage_config["name"]
         config = {
-            "name": main_stage_key,
+            "name": package_name,
             "stages": {
                 main_stage_key: main_stage_config,
                 **stages,
             },
         }
 
+    # Null means unspecified, so it must not erase the archive default.
+    if overrides is not None and overrides.get("name") is None:
+        overrides = {
+            key: value for key, value in overrides.items() if key != "name"
+        }
     cfg = Config.get_config(config, overrides)
     if len(cfg.stages) == 1:
         # Use the final stage key after applying config overrides.
@@ -795,7 +808,6 @@ def generate_archive(
     archive_cfg: NNArchiveConfig | None,
     preprocessing: dict[str, PreprocessingBlock],
     inference_model_path: Path,
-    archive_name: str | None,
     preprocessing_input_types: dict[str, Literal["raw", "image"]]
     | None = None,
 ) -> Path:
@@ -818,8 +830,6 @@ def generate_archive(
             name.
         inference_model_path: Path to the model whose metadata the
             shapes and data types are read from.
-        archive_name: Base name for the archive. If ``None``, the
-            config's name is used.
         preprocessing_input_types: Original input types captured before
             externalizing preprocessing from the conversion config.
 
@@ -843,7 +853,7 @@ def generate_archive(
         preprocessing_input_types=preprocessing_input_types,
     )
     generator = ArchiveGenerator(
-        archive_name=f"{archive_name or cfg.name}.{platform.value.lower()}",
+        archive_name=f"{cfg.name}.{platform.value.lower()}",
         save_path=str(output_path),
         cfg_dict=nn_archive.model_dump(),
         executables_paths=[

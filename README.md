@@ -361,13 +361,31 @@ output/
         └── <intermediate files generated during the conversion>
 ```
 
-The top-level config `name` names the conversion package for single- and
-multistage models. An explicit name produces `<name>.<platform>.tar.xz`.
-Without one, archive inputs use their archive basename; other inputs use the
-model stem or the stage names joined by dashes.
+The top-level config `name` names the conversion package. Its value is resolved
+once, in this order:
 
-`--output-dir` selects a directory under `output/`. If omitted, the directory
-is `<name>_to_<platform>_<date>_<time>`.
+1. An explicit `name` (CLI overrides take precedence over the config file).
+2. The input archive basename, without its archive extension, or the directory
+   name for an unpacked archive.
+3. The input model stem for a flat single-stage config, or the explicitly
+   defined stage keys joined by dashes.
+
+NN Archive output uses `<name>.<platform>.tar.xz`. Native output (`--to native`)
+does not create an archive. In either mode, the generated output directory is
+`<name>_to_<platform>_<date>_<time>` (with the name sanitized for the directory).
+`--output-dir` selects a directory under `output/` independently of the package
+name.
+
+For a flat single-stage config, the resolved package name also supplies the
+implicit stage key. Explicit keys under `stages` are preserved, even when
+`name` is overridden. `default_stage` is an ordinary explicit name, not a
+placeholder. Package naming does not rename internal model files, model
+metadata, or tensors.
+
+For example, converting `bundle.tar.xz` without a name override produces
+`bundle.rvc4.tar.xz` in `output/bundle_to_rvc4_<date>_<time>/`, even if the
+archive's model metadata uses a different name. This changes the default
+output directory for archives whose basename differs from their model name.
 
 > [!NOTE]
 > The conversion runs inside the container, so the paths it logs are

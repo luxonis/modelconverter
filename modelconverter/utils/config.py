@@ -1360,12 +1360,12 @@ class Config(LuxonisConfig):
     Attributes:
         stages: Configurations of the individual stages, keyed by stage
             name.
-        name: Name of the conversion package, used for the output archive
-            basename and the generated output directory. An explicit name
-            overrides the input archive's basename. Defaults to the stage
-            names joined by dashes, or to the stem of the input model for
-            a single unnamed stage. Also supplies the stage key in flat
-            single-stage configs; does not rename model files or tensors.
+        name: Resolved conversion package name, used for the output archive
+            basename and generated output directory. Explicit names take
+            precedence over the input archive basename, then the model stem
+            for flat configs or joined explicit stage keys. Also supplies
+            the implicit stage key in flat configs; never renames explicit
+            stage keys, model files, metadata, or tensors.
         rich_logging: Whether to use rich formatting for the log
             messages.
 
@@ -1405,19 +1405,36 @@ class Config(LuxonisConfig):
             data["name"] = "-".join(stages.keys())
         return data
 
-    @model_validator(mode="before")
+    @model_validator(mode="wrap")
     @classmethod
-    def _validate_stages(cls, data: Params) -> Params:
+    def _validate_stages(
+        cls, data: Any, handler: ModelWrapValidatorHandler[Self]
+    ) -> Self:
+        """Fill implicit stage names without changing explicit stage keys."""
+        if not isinstance(data, dict):
+            return handler(data)
+        data = data.copy()
         if "stages" not in data:
-            name = data.pop("name", "default_stage")
-            if not isinstance(name, str):
+            name = data.pop("name", None)
+            if name is not None and not isinstance(name, str):
                 raise TypeError("`name` must be a string.")
             rich_logging = data.pop("rich_logging", True)
-            return {
-                "name": name,
-                "rich_logging": rich_logging,
-                "stages": {name: data},
-            }
+            # An unnamed flat stage needs validation before its resolved
+            # input path can supply the model stem. Track absence directly,
+            # so even the literal name "default_stage" remains explicit.
+            stage_key = name if name is not None else ""
+            config = handler(
+                {
+                    "name": stage_key,
+                    "rich_logging": rich_logging,
+                    "stages": {stage_key: data},
+                }
+            )
+            if name is None:
+                stage = config.stages[stage_key]
+                config.name = stage.input_model.stem
+                config.stages = {config.name: stage}
+            return config
 
         extra: Params = {}
         for key in list(data.keys()):
@@ -1429,19 +1446,7 @@ class Config(LuxonisConfig):
             for key, value in extra.items():
                 if key not in stage_data:
                     stage_data[key] = value
-        return data
-
-    @model_validator(mode="after")
-    def _validate_single_stage_name(self) -> Self:
-        """Change the default 'default_stage' name to the name of the
-        input model.
-        """
-        if len(self.stages) == 1 and "default_stage" in self.stages:
-            stage = next(iter(self.stages.values()))
-            model_name = stage.input_model.stem
-            self.stages = {model_name: stage}
-            self.name = model_name
-        return self
+        return handler(data)
 
 
 def broadcast_preprocessing_values(
