@@ -1,6 +1,9 @@
-# Conversion package name, used for the output archive and generated directory.
-# Defaults to the model stem or joined stage names; archive inputs keep their
-# archive basename unless explicitly overridden.
+# Conversion package name: explicit CLI name > config name > input archive
+# basename (directory name for unpacked archives) > model stem for flat configs
+# or joined explicit stage keys. Used for the NN Archive output basename and
+# generated output directory; --output-dir overrides only the directory.
+# Also supplies the implicit stage key in flat configs. Explicit stage keys,
+# model files, metadata, and tensors are not renamed. Null means unspecified.
 name: ~
 
 # Whether to enable rich formatting for the log messages.
