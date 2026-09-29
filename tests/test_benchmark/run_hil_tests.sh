@@ -19,7 +19,7 @@ BENCHMARK_RUN_ID="${5:-}"
 cd /tmp/modelconverter
 
 # Create virtual environment
-python3 -m venv venv
+python3 -m venv --clear venv
 
 # Activate virtual environment
 source venv/bin/activate
@@ -28,8 +28,10 @@ pip install --upgrade pip
 # Install dependencies from the lockfile. `uv pip install` would resolve from
 # the indexes and ignore uv.lock, so the testbed could run versions no CI job
 # tested. `--active` targets the virtual environment activated above.
+# `--python` keeps its interpreter, which .python-version would replace, and
+# `--inexact` keeps pip and uv, which uv.lock does not list.
 pip install "uv==0.12.5"
-uv sync --locked --active
+uv sync --locked --active --inexact --python "$VIRTUAL_ENV/bin/python"
 
 pip install hil-framework --upgrade \
   --index-url "https://__token__:$PAT_TOKEN@gitlab.luxonis.com/api/v4/projects/213/packages/pypi/simple" --no-cache-dir \
