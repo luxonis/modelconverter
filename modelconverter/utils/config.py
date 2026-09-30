@@ -1360,12 +1360,11 @@ class Config(LuxonisConfig):
     Attributes:
         stages: Configurations of the individual stages, keyed by stage
             name.
-        name: Resolved conversion package name, used for the output archive
-            basename and generated output directory. Explicit names take
-            precedence over the input archive basename, then the model stem
-            for flat configs or joined explicit stage keys. Also supplies
-            the implicit stage key in flat configs; never renames explicit
-            stage keys, model files, metadata, or tensors.
+        name: Package name for NN Archive files and default output
+            directories in both output modes. Defaults to the archive
+            basename, model stem for flat configs, or joined explicit
+            stage keys. Also names the implicit stage in flat configs;
+            explicit stage keys and model files stay unchanged.
         rich_logging: Whether to use rich formatting for the log
             messages.
 
@@ -1420,8 +1419,7 @@ class Config(LuxonisConfig):
                 raise TypeError("`name` must be a string.")
             rich_logging = data.pop("rich_logging", True)
             # An unnamed flat stage needs validation before its resolved
-            # input path can supply the model stem. Track absence directly,
-            # so even the literal name "default_stage" remains explicit.
+            # input path can supply the model stem.
             stage_key = name if name is not None else ""
             config = handler(
                 {

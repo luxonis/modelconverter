@@ -134,7 +134,6 @@ def process_nn_archive(
 
     main_stage_key = archive_config.model.metadata.name
     main_stage_config: Params = {
-        "name": package_name,
         "input_model": str(untar_path / archive_config.model.metadata.path),
     }
 
@@ -272,21 +271,19 @@ def process_nn_archive(
 
     config: Params = main_stage_config
     if stages:
-        del main_stage_config["name"]
         config = {
-            "name": package_name,
             "stages": {
                 main_stage_key: main_stage_config,
                 **stages,
             },
         }
 
-    # Null means unspecified, so it must not erase the archive default.
-    if overrides is not None and overrides.get("name") is None:
-        overrides = {
-            key: value for key, value in overrides.items() if key != "name"
-        }
-    cfg = Config.get_config(config, overrides)
+    # Resolve the archive default after overrides have been parsed, so
+    # omitted names and null values follow the same fallback.
+    Config._merge_overrides(config, overrides or {})
+    if config.get("name") is None:
+        config["name"] = package_name
+    cfg = Config.model_validate(config)
     if len(cfg.stages) == 1:
         # Use the final stage key after applying config overrides.
         main_stage_key = next(iter(cfg.stages))

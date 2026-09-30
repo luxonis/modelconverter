@@ -156,7 +156,7 @@ def test_process_plain_tar(work_dir: Path):
     assert (MISC_DIR / "dummy_model" / "config.json").exists()
 
 
-@pytest.mark.parametrize("name", [None, "custom", "default_stage"])
+@pytest.mark.parametrize("name", [None, "None", "custom", "default_stage"])
 @pytest.mark.parametrize("packed", [False, True])
 def test_archive_name_override_preserves_main_stage_lookup(
     work_dir: Path, name: str | None, packed: bool
@@ -172,7 +172,7 @@ def test_archive_name_override_preserves_main_stage_lookup(
     )
     expected_name = (
         name
-        if name is not None
+        if name not in (None, "None")
         else ("bundle.v1" if packed else work_dir.name)
     )
     assert config.name == expected_name
@@ -188,7 +188,8 @@ def test_archive_name_override_preserves_main_stage_lookup(
     ]
 
 
-def test_null_archive_name_uses_basename(work_dir: Path):
+@pytest.mark.parametrize("name", [None, "None"])
+def test_null_archive_name_uses_basename(work_dir: Path, name: str | None):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     archive = pack_archive(
         work_dir / "bundle.v1.tar.xz",
@@ -197,7 +198,7 @@ def test_null_archive_name_uses_basename(work_dir: Path):
         mode="w:xz",
     )
     config, _, stage_key = process_nn_archive(
-        Platform.RVC4, archive, {"name": None}
+        Platform.RVC4, archive, {"name": name}
     )
     assert config.name == "bundle.v1"
     assert stage_key == "bundle.v1"
@@ -522,8 +523,19 @@ def test_raw_input_keeps_none_encoding(work_dir: Path):
     assert inp.scale_values is None
 
 
-@pytest.mark.parametrize("name", [None, "custom", "default_stage"])
-def test_postprocessor_path_adds_stage(work_dir: Path, name: str | None):
+@pytest.mark.parametrize(
+    ("overrides", "expected_name"),
+    [
+        (None, "bundle.v1"),
+        ({"name": None}, "bundle.v1"),
+        (["name", "None"], "bundle.v1"),
+        (["name", "custom"], "custom"),
+        (["name", "default_stage"], "default_stage"),
+    ],
+)
+def test_postprocessor_path_adds_stage(
+    work_dir: Path, overrides: Params | list[str] | None, expected_name: str
+):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     post = single_io_onnx(work_dir / "post.onnx")
     config_dict = default_archive_config(
@@ -548,11 +560,9 @@ def test_postprocessor_path_adds_stage(work_dir: Path, name: str | None):
         config_dict,
         extra_files={"post.onnx": post},
     )
-    config, _, main_stage = process_nn_archive(
-        Platform.RVC4, tar, {"name": name} if name is not None else None
-    )
+    config, _, main_stage = get_configs(Platform.RVC4, str(tar), overrides)
     # Two stages: the main model plus the postprocessor.
-    assert config.name == (name or "bundle.v1")
+    assert config.name == expected_name
     assert set(config.stages) == {"dummy_model", "post"}
     assert main_stage == "dummy_model"
 
