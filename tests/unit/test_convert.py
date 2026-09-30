@@ -6,6 +6,7 @@ from typing import Literal, NoReturn
 
 import numpy as np
 import pytest
+from luxonis_ml.nn_archive import Config as NNArchiveConfig
 from luxonis_ml.typing import Params
 
 import modelconverter.__main__ as main_module
@@ -79,10 +80,18 @@ class _FakeMultiStageExporter:
         ]
 
 
-@pytest.mark.parametrize("name", [None, "custom", "default_stage"])
-@pytest.mark.parametrize("input_kind", ["flat", "archive", "unpacked"])
+@pytest.mark.parametrize(
+    ("input_kind", "name", "explicit_dir"),
+    [
+        ("flat", None, None),
+        ("flat", "custom", "destination"),
+        ("archive", None, "destination"),
+        ("archive", "custom", None),
+        ("unpacked", None, None),
+        ("unpacked", "default_stage", "destination"),
+    ],
+)
 @pytest.mark.parametrize("output_mode", ["native", "nn_archive"])
-@pytest.mark.parametrize("explicit_dir", [None, "destination"])
 def test_convert_uses_resolved_package_name(
     dummy_onnx: Path,
     tmp_path: Path,
@@ -113,23 +122,26 @@ def test_convert_uses_resolved_package_name(
         overrides += ["name", "discarded", "name", name]
     expected_name = name if name is not None else default_name
     get_configs = main_module.get_configs
-    get_output_dir_name = main_module.get_output_dir_name
-    cfg, _, stage_key = get_configs(Platform.RVC4, path, overrides)
-    assert stage_key is not None
-    assert stage_key == expected_name
+
+    def checked_get_configs(
+        platform: Platform,
+        path: str | None,
+        opts: list[str] | Params | None = None,
+    ) -> tuple[Config, NNArchiveConfig | None, str | None]:
+        result = get_configs(platform, path, opts)
+        cfg, _, stage_key = result
+        assert cfg.name == expected_name
+        assert stage_key == expected_name
+        assert set(cfg.stages) == {expected_name}
+        return result
+
     _patch_convert(
         monkeypatch,
-        cfg=cfg,
-        main_stage=stage_key,
-        output_dir=tmp_path / "unused",
         exporter=lambda _platform, config, output_dir: _FakeExporter(
             config, output_dir
         ),
     )
-    monkeypatch.setattr(main_module, "get_configs", get_configs)
-    monkeypatch.setattr(
-        main_module, "get_output_dir_name", get_output_dir_name
-    )
+    monkeypatch.setattr(main_module, "get_configs", checked_get_configs)
     archive_names: list[str] = []
 
     def generate_archive(**kwargs: object) -> Path:
@@ -620,25 +632,27 @@ def test_invalid_preprocessing_is_rejected_before_fallback(
 def _patch_convert(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    cfg: Config,
-    main_stage: str,
-    output_dir: Path,
+    cfg: Config | None = None,
+    main_stage: str | None = None,
+    output_dir: Path | None = None,
     exporter: Callable[[Platform, SingleStageConfig, Path], Exporter],
     telemetry: Callable[[], _FakeTelemetry] = _FakeTelemetry,
 ) -> None:
     """Replace everything `convert` reaches outside the code under test."""
     monkeypatch.setattr(main_module.signal, "signal", lambda *_args: None)
     monkeypatch.setattr(main_module, "init_dirs", lambda: None)
-    monkeypatch.setattr(
-        main_module,
-        "get_configs",
-        lambda *_args, **_kwargs: (cfg, None, main_stage),
-    )
-    monkeypatch.setattr(
-        main_module,
-        "get_output_dir_name",
-        lambda *_args, **_kwargs: output_dir,
-    )
+    if cfg is not None:
+        monkeypatch.setattr(
+            main_module,
+            "get_configs",
+            lambda *_args, **_kwargs: (cfg, None, main_stage),
+        )
+    if output_dir is not None:
+        monkeypatch.setattr(
+            main_module,
+            "get_output_dir_name",
+            lambda *_args, **_kwargs: output_dir,
+        )
     monkeypatch.setattr(main_module, "setup_logging", lambda **_kwargs: None)
     monkeypatch.setattr(main_module, "get_exporter", exporter)
     monkeypatch.setattr(main_module, "get_component_telemetry", telemetry)

@@ -156,23 +156,39 @@ def test_process_plain_tar(work_dir: Path):
     assert (MISC_DIR / "dummy_model" / "config.json").exists()
 
 
-@pytest.mark.parametrize("name", [None, "None", "custom", "default_stage"])
-@pytest.mark.parametrize("packed", [False, True])
+@pytest.mark.parametrize(
+    ("overrides", "name"),
+    [
+        (None, None),
+        ({"name": None}, None),
+        (["name", "None"], None),
+        (["name", "custom"], "custom"),
+        (["name", "default_stage"], "default_stage"),
+    ],
+    ids=["omitted", "null", "cli-null", "custom", "literal-default-stage"],
+)
+@pytest.mark.parametrize("packed", [False, True], ids=["directory", "tar-xz"])
 def test_archive_name_override_preserves_main_stage_lookup(
-    work_dir: Path, name: str | None, packed: bool
+    work_dir: Path,
+    overrides: Params | list[str] | None,
+    name: str | None,
+    packed: bool,
 ):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     archive = pack_archive(
-        work_dir / "bundle.v1.tar", onnx, default_archive_config()
+        work_dir / "bundle.v1.tar.xz",
+        onnx,
+        default_archive_config(),
+        mode="w:xz",
     )
     config, archive_cfg, main_stage = get_configs(
         Platform.RVC4,
         str(archive if packed else work_dir),
-        ["name", name] if name is not None else None,
+        overrides,
     )
     expected_name = (
         name
-        if name not in (None, "None")
+        if name is not None
         else ("bundle.v1" if packed else work_dir.name)
     )
     assert config.name == expected_name
@@ -186,22 +202,6 @@ def test_archive_name_override_preserves_main_stage_lookup(
         "output0",
         "output1",
     ]
-
-
-@pytest.mark.parametrize("name", [None, "None"])
-def test_null_archive_name_uses_basename(work_dir: Path, name: str | None):
-    onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
-    archive = pack_archive(
-        work_dir / "bundle.v1.tar.xz",
-        onnx,
-        default_archive_config(),
-        mode="w:xz",
-    )
-    config, _, stage_key = process_nn_archive(
-        Platform.RVC4, archive, {"name": name}
-    )
-    assert config.name == "bundle.v1"
-    assert stage_key == "bundle.v1"
 
 
 def test_process_tar_xz(work_dir: Path):

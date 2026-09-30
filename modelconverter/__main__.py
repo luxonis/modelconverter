@@ -160,7 +160,10 @@ def convert(
             file.
         path: A URL or a path to the configuration file, NN Archive
             or a standalone model file.
-        output_dir: Destination directory for conversion results.
+        output_dir: Directory under ``output/`` for all conversion results
+            when running through Docker. Defaults to
+            ``<name>_to_<platform>_<YYYY_MM_DD_HH_MM_SS>`` (UTC),
+            with the package name sanitized for the directory.
         to: Whether to export the model to a simple model file or a
             Luxonis NN Archive.
         main_stage: Name of the stage with the main model.

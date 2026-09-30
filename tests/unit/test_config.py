@@ -116,22 +116,19 @@ def _pt_model() -> Path:
     return pt
 
 
-def test_flat_config_wrapped_and_renamed():
-    """An unnamed flat config uses the model stem for package and stage."""
+@pytest.mark.parametrize(
+    "overrides",
+    [{}, {"name": None}, {"name": "custom"}, {"name": "default_stage"}],
+    ids=["omitted", "null", "custom", "literal-default-stage"],
+)
+def test_flat_config_resolves_package_and_stage_name(
+    overrides: dict[str, str | None],
+):
     dummy = _dummy()
-    config = Config.get_config(None, {"input_model": str(dummy)})
-    assert config.name == dummy.stem
-    assert set(config.stages) == {dummy.stem}
-    assert "default_stage" not in config.stages
-
-
-@pytest.mark.parametrize("name", ["custom", "default_stage"])
-def test_flat_config_with_explicit_name_kept(name: str):
-    """Explicit names supply the implicit stage key without normalization."""
-    dummy = _dummy()
-    config = Config.get_config(None, {"input_model": str(dummy), "name": name})
-    assert config.name == name
-    assert set(config.stages) == {name}
+    config = Config.get_config(None, {"input_model": str(dummy), **overrides})
+    expected_name = overrides.get("name") or dummy.stem
+    assert config.name == expected_name
+    assert set(config.stages) == {expected_name}
 
 
 @pytest.mark.parametrize("name", [None, "bundle", "default_stage"])
@@ -146,17 +143,9 @@ def test_explicit_stage_key_is_preserved(name: str | None, stage_key: str):
     )
     assert config.name == (name if name is not None else stage_key)
     assert set(config.stages) == {stage_key}
-    assert (
-        Config.model_validate(config.model_dump(by_alias=True)).name
-        == config.name
-    )
-
-
-def test_flat_null_name_uses_model_stem():
-    dummy = _dummy()
-    config = Config.get_config(None, {"name": None, "input_model": str(dummy)})
-    assert config.name == dummy.stem
-    assert set(config.stages) == {dummy.stem}
+    restored = Config.model_validate(config.model_dump(by_alias=True))
+    assert restored.name == config.name
+    assert set(restored.stages) == {stage_key}
 
 
 @pytest.mark.parametrize("explicit_stages", [False, True])
