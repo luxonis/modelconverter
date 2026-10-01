@@ -39,6 +39,9 @@ env:
   INFLUX_BUCKET: fps_metrics
   INFLUX_TOKEN: ${{ secrets.INFLUX_TOKEN }}
 
+permissions:
+  contents: read
+
 jobs:
   id:
     name: Workflow ID Provider

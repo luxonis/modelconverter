@@ -157,8 +157,10 @@ jobs:
           docker push "${GAR_NAME}"
 
       - name: GAR publish clients
+        env:
+          EXTERNAL_CLIENTS: ${{ vars.EXTERNAL_CLIENTS }}
         run: |
-          read -r -a REPO_ARRAY <<< "${{ vars.EXTERNAL_CLIENTS }}"
+          read -r -a REPO_ARRAY <<< "$EXTERNAL_CLIENTS"
           SHA=$(git rev-parse --short HEAD)
           for REPO in "${REPO_ARRAY[@]}"; do
             GAR_CLIENT_NAME="${GAR_STEM}/${REPO}/${STEM}:${VERSION}-${SHA}"

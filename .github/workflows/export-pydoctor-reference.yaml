@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   export:
-    uses: luxonis/luxonis-ml/.github/workflows/reusable-export-pydoctor-reference.yaml@59ca6fe93e5c854289dba1e4dede0700ee57d658
+    uses: luxonis/luxonis-ml/.github/workflows/reusable-export-pydoctor-reference.yaml@90b4157a4040727fe38905acecb02d75f2f9d768
     with:
       package-id: modelconverter
     secrets:
