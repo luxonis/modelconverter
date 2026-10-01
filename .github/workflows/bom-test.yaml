@@ -31,13 +31,10 @@ env:
   DISTINCT_ID: ${{ github.event.inputs.distinct_id }}
   DEPTHAI_VERSION: ${{ github.event.inputs.depthai_version }}
   OS_VERSION: ${{ github.event.inputs.os_version }}
-  HIL_FRAMEWORK_TOKEN: ${{ secrets.HIL_FRAMEWORK_TOKEN }}
-  HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
   RESERVATION_NAME: ${{ github.event.inputs.reservation_name }}
   HOLD_RESERVATION: ${{ github.event.inputs.hold_reservation }}
   ADDITIONAL_OPTIONS: ${{ github.event.inputs.additional_options }}
   INFLUX_BUCKET: fps_metrics
-  INFLUX_TOKEN: ${{ secrets.INFLUX_TOKEN }}
 
 permissions:
   contents: read
@@ -51,6 +48,10 @@ jobs:
         run: echo $DISTINCT_ID
   BOM-test:
     runs-on: ["self-hosted", "testbed-runner"]
+    env:
+      HIL_FRAMEWORK_TOKEN: ${{ secrets.HIL_FRAMEWORK_TOKEN }}
+      HUBAI_API_KEY: ${{ secrets.HUBAI_API_KEY }}
+      INFLUX_TOKEN: ${{ secrets.INFLUX_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
