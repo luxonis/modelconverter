@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   release-pr:
-    uses: luxonis/luxonis-ml/.github/workflows/reusable-release-pr.yaml@90b4157a4040727fe38905acecb02d75f2f9d768
+    uses: luxonis/luxonis-ml/.github/workflows/reusable-release-pr.yaml@1556182be18dd350dbeb5b07bc7282e17828b655
     with:
       version: ${{ inputs.version }}
       version-file: modelconverter/__init__.py
