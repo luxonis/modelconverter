@@ -372,7 +372,9 @@ archive. Both modes use the default output subfolder
 `output/` when using Docker. An existing destination is replaced only if
 empty or marked as previous conversion output; other contents are refused.
 
-The resolved `name` also names an implicit single stage. Explicit `stages` keys are preserved. Package naming
+The resolved `name` also names an implicit single stage in a flat config.
+Explicit `stages` keys are preserved. Imported NN Archives use
+`model.metadata.name` for the main stage key, independently of the package name. Package naming
 does not rename model files, model metadata, or tensors.
 
 For example, converting `bundle.tar.xz` to RVC4 produces

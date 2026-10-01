@@ -269,14 +269,13 @@ def process_nn_archive(
             }
             stages[input_model_path.stem] = head_stage_config
 
-    config: Params = main_stage_config
-    if stages:
-        config = {
-            "stages": {
-                main_stage_key: main_stage_config,
-                **stages,
-            },
-        }
+    # Archive stages already have identities independent of the package name.
+    config: Params = {
+        "stages": {
+            main_stage_key: main_stage_config,
+            **stages,
+        },
+    }
 
     # Resolve the archive default after overrides have been parsed, so
     # omitted names and null values follow the same fallback.
@@ -284,9 +283,6 @@ def process_nn_archive(
     if config.get("name") is None:
         config["name"] = package_name
     cfg = Config.model_validate(config)
-    if len(cfg.stages) == 1:
-        # Use the final stage key after applying config overrides.
-        main_stage_key = next(iter(cfg.stages))
     return cfg, archive_config, main_stage_key
 
 

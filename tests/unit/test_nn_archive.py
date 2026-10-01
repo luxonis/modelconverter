@@ -164,8 +164,24 @@ def test_process_plain_tar(work_dir: Path):
         (["name", "None"], None),
         (["name", "custom"], "custom"),
         (["name", "default_stage"], "default_stage"),
+        (
+            [
+                "name",
+                "custom.v1",
+                "stages.dummy_model.calibration.max_images",
+                "16",
+            ],
+            "custom.v1",
+        ),
     ],
-    ids=["omitted", "null", "cli-null", "custom", "literal-default-stage"],
+    ids=[
+        "omitted",
+        "null",
+        "cli-null",
+        "custom",
+        "literal-default-stage",
+        "dotted-package-stage-override",
+    ],
 )
 @pytest.mark.parametrize("packed", [False, True], ids=["directory", "tar-xz"])
 def test_archive_name_override_preserves_main_stage_lookup(
@@ -192,11 +208,19 @@ def test_archive_name_override_preserves_main_stage_lookup(
         else ("bundle.v1" if packed else work_dir.name)
     )
     assert config.name == expected_name
-    assert main_stage == expected_name
-    assert set(config.stages) == {expected_name}
+    assert main_stage == "dummy_model"
+    assert set(config.stages) == {"dummy_model"}
+    # Explicit selection used by `infer --stage` keeps the archive identity.
+    assert config.get_stage_config("dummy_model") is config.stages[main_stage]
+    if name == "custom.v1":
+        for inp in config.stages[main_stage].inputs:
+            assert inp.calibration is not None
+            assert inp.calibration.max_images == 16
 
     # Exercise the downstream lookup that previously raised KeyError.
-    nn = _config_to_nn(config, onnx, orig=archive_cfg, main_stage=main_stage)
+    nn = _config_to_nn(
+        config, onnx, orig=archive_cfg, main_stage="dummy_model"
+    )
     assert nn.model.metadata.name == "out"
     assert [output.name for output in nn.model.outputs] == [
         "output0",

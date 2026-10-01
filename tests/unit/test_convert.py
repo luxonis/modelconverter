@@ -121,6 +121,7 @@ def test_convert_uses_resolved_package_name(
         # The last override wins, including the literal default_stage.
         overrides += ["name", "discarded", "name", name]
     expected_name = name if name is not None else default_name
+    expected_stage = expected_name if input_kind == "flat" else "dummy_model"
     get_configs = main_module.get_configs
 
     def checked_get_configs(
@@ -131,8 +132,8 @@ def test_convert_uses_resolved_package_name(
         result = get_configs(platform, path, opts)
         cfg, _, stage_key = result
         assert cfg.name == expected_name
-        assert stage_key == expected_name
-        assert set(cfg.stages) == {expected_name}
+        assert stage_key == expected_stage
+        assert set(cfg.stages) == {expected_stage}
         return result
 
     _patch_convert(
@@ -148,7 +149,7 @@ def test_convert_uses_resolved_package_name(
         resolved = kwargs["cfg"]
         assert isinstance(resolved, Config)
         assert resolved.name == expected_name
-        assert kwargs["main_stage"] == expected_name
+        assert kwargs["main_stage"] == expected_stage
         archive_names.append(resolved.name)
         output_path = kwargs["output_path"]
         assert isinstance(output_path, Path)
@@ -161,6 +162,7 @@ def test_convert_uses_resolved_package_name(
         path=path,
         to=output_mode,
         output_dir=explicit_dir,
+        main_stage=expected_stage if name is not None else None,
     )
     assert archive_names == (
         [expected_name] if output_mode == "nn_archive" else []

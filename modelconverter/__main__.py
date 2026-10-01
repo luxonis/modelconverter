@@ -168,8 +168,10 @@ def convert(
             Luxonis NN Archive.
         main_stage: Name of the stage with the main model.
             Only needed for multistage configs and when converting to
-            NN Archive. When converting from NN Archive, the stage names
-            are named the same as the model files without the suffix.
+            NN Archive. When converting from NN Archive, the main stage
+            uses ``model.metadata.name``; postprocessor stages use their
+            model filenames without the suffix. The package ``name``
+            does not rename archive stages.
         archive_preprocess: Force preprocessing into NN Archive metadata
             instead of embedding it in the model. Only valid with
             ``to="nn_archive"``. Without this option, preprocessing is first
