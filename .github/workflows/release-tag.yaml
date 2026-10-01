@@ -5,12 +5,15 @@ on:
     types: [closed]
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   release:
     if: >-
       github.event.pull_request.merged &&
       startsWith(github.event.pull_request.head.ref, 'release/')
-    uses: luxonis/luxonis-ml/.github/workflows/reusable-release-tag.yaml@main
+    uses: luxonis/luxonis-ml/.github/workflows/reusable-release-tag.yaml@1556182be18dd350dbeb5b07bc7282e17828b655
     with:
       version-file: modelconverter/__init__.py
     secrets:

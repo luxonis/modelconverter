@@ -8,9 +8,12 @@ on:
         type: string
         default: patch
 
+permissions:
+  contents: read
+
 jobs:
   release-pr:
-    uses: luxonis/luxonis-ml/.github/workflows/reusable-release-pr.yaml@main
+    uses: luxonis/luxonis-ml/.github/workflows/reusable-release-pr.yaml@1556182be18dd350dbeb5b07bc7282e17828b655
     with:
       version: ${{ inputs.version }}
       version-file: modelconverter/__init__.py
