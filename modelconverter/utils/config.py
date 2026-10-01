@@ -1420,7 +1420,7 @@ class Config(LuxonisConfig):
             rich_logging = data.pop("rich_logging", True)
             # An unnamed flat stage needs validation before its resolved
             # input path can supply the model stem.
-            stage_key = name if name is not None else ""
+            stage_key = name if name is not None else "default_stage"
             config = handler(
                 {
                     "name": stage_key,

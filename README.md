@@ -367,7 +367,7 @@ unpacked directory name, model stem for a flat config, or explicit `stages` keys
 
 NN Archives are named `<name>.<platform>.tar.xz`; `--to native` creates no
 archive. Both modes use the default output subfolder
-`<name>_to_<platform>_<YYYY_MM_DD_HH_MM_SS>` (UTC).
+`<sanitized_name>_to_<platform>_<YYYY_MM_DD_HH_MM_SS>` (UTC).
 `--output-dir` overrides this directory independently of `name`, under
 `output/` when using Docker. An existing destination is replaced only if
 empty or marked as previous conversion output; other contents are refused.

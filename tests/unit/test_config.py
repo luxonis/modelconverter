@@ -131,6 +131,25 @@ def test_flat_config_resolves_package_and_stage_name(
     assert set(config.stages) == {expected_name}
 
 
+@pytest.mark.parametrize("name_config", [{}, {"name": None}])
+def test_unnamed_flat_config_validation_error_has_stage_key(
+    dummy_onnx: Path, name_config: dict[str, None]
+):
+    with pytest.raises(ValidationError) as exc_info:
+        Config.model_validate(
+            {
+                "input_model": str(dummy_onnx),
+                "unexpected_field": True,
+                **name_config,
+            }
+        )
+    assert exc_info.value.errors()[0]["loc"] == (
+        "stages",
+        "default_stage",
+        "unexpected_field",
+    )
+
+
 @pytest.mark.parametrize("name", [None, "bundle", "default_stage"])
 @pytest.mark.parametrize("stage_key", ["detector", "default_stage"])
 def test_explicit_stage_key_is_preserved(name: str | None, stage_key: str):
