@@ -26,6 +26,7 @@ from modelconverter.utils.config import (
     Config,
     InputConfig,
     OutputConfig,
+    RandomCalibrationConfig,
     RVC2Config,
     RVC3Config,
     RVC4Config,
@@ -214,7 +215,7 @@ def test_archive_name_override_preserves_main_stage_lookup(
     assert config.get_stage_config("dummy_model") is config.stages[main_stage]
     if name == "custom.v1":
         for inp in config.stages[main_stage].inputs:
-            assert inp.calibration is not None
+            assert isinstance(inp.calibration, RandomCalibrationConfig)
             assert inp.calibration.max_images == 16
 
     # Exercise the downstream lookup that previously raised KeyError.
@@ -226,6 +227,48 @@ def test_archive_name_override_preserves_main_stage_lookup(
         "output0",
         "output1",
     ]
+
+
+@pytest.mark.parametrize("explicit_stage", [False, True])
+def test_single_stage_archive_field_overrides(
+    work_dir: Path, explicit_stage: bool
+):
+    tar = _pack_single_input(
+        work_dir, {"mean": [10, 20, 30], "scale": [2, 3, 4]}
+    )
+    prefix = "stages.dummy_model." if explicit_stage else ""
+    config, archive_cfg, main_stage = get_configs(
+        Platform.RVC4,
+        str(tar),
+        [
+            "name",
+            "custom.v1",
+            "rich_logging",
+            "False",
+            f"{prefix}inputs.0.mean_values",
+            "[1, 2, 3]",
+            f"{prefix}inputs.0.scale_values",
+            "[4, 5, 6]",
+            f"{prefix}outputs.0.layout",
+            "NC",
+            f"{prefix}calibration.max_images",
+            "16",
+        ],
+    )
+    assert config.name == "custom.v1"
+    assert config.rich_logging is False
+    assert main_stage == "dummy_model"
+    assert set(config.stages) == {main_stage}
+    stage = config.stages[main_stage]
+    inp = stage.inputs[0]
+    assert inp.name == "input0"
+    assert inp.mean_values == [1, 2, 3]
+    assert inp.scale_values == [4, 5, 6]
+    assert isinstance(inp.calibration, RandomCalibrationConfig)
+    assert inp.calibration.max_images == 16
+    assert stage.outputs[0].layout == "NC"
+    assert archive_cfg is not None
+    assert archive_cfg.model.inputs[0].preprocessing.mean == [10, 20, 30]
 
 
 @pytest.mark.parametrize(

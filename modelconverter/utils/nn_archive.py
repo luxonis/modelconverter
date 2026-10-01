@@ -292,9 +292,19 @@ def process_nn_archive(
         },
     }
 
+    root_overrides: Params = {}
+    stage_overrides: Params = {}
+    for key, value in (overrides or {}).items():
+        if not stages and key.split(".", 1)[0] not in Config.model_fields:
+            stage_overrides[key] = value
+        else:
+            root_overrides[key] = value
+    # Single-stage shorthand must update the imported inputs/outputs, not
+    # become root defaults that are ignored for fields already in the stage.
+    Config._merge_overrides(main_stage_config, stage_overrides)
+    Config._merge_overrides(config, root_overrides)
     # Resolve the archive default after overrides have been parsed, so
     # omitted names and null values follow the same fallback.
-    Config._merge_overrides(config, overrides or {})
     if config.get("name") is None:
         config["name"] = package_name
     cfg = Config.model_validate(config)
