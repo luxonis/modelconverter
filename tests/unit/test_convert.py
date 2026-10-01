@@ -87,6 +87,8 @@ class _FakeMultiStageExporter:
         ("flat", "custom", "destination"),
         ("archive", None, "destination"),
         ("archive", "custom", None),
+        ("train_archive", None, None),
+        ("train_archive", "custom.onnx", None),
         ("unpacked", None, None),
         ("unpacked", "default_stage", "destination"),
     ],
@@ -111,10 +113,15 @@ def test_convert_uses_resolved_package_name(
         archive_dir.mkdir()
         model = archive_dir / dummy_onnx.name
         model.write_bytes(dummy_onnx.read_bytes())
-        archive = pack_archive(
-            archive_dir / "bundle.v1.tar", model, default_archive_config()
+        archive_filename = (
+            "bundle.v1.onnx.tar"
+            if input_kind == "train_archive"
+            else "bundle.v1.tar"
         )
-        path = str(archive if input_kind == "archive" else archive_dir)
+        archive = pack_archive(
+            archive_dir / archive_filename, model, default_archive_config()
+        )
+        path = str(archive_dir if input_kind == "unpacked" else archive)
         overrides = []
         default_name = "bundle.v1"
     if name is not None:

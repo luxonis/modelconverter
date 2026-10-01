@@ -228,6 +228,64 @@ def test_archive_name_override_preserves_main_stage_lookup(
     ]
 
 
+@pytest.mark.parametrize(
+    ("filename", "mode", "expected_name"),
+    [
+        ("bundle.v1.tar", "w", "bundle.v1"),
+        ("bundle.v1.tar.xz", "w:xz", "bundle.v1"),
+        ("bundle.v1.tar.gz", "w:gz", "bundle.v1"),
+        ("bundle.v1.tar.bz2", "w:bz2", "bundle.v1"),
+        ("bundle.v1.tgz", "w:gz", "bundle.v1"),
+        ("bundle.v1.txz", "w:xz", "bundle.v1"),
+        ("bundle.v1.tbz2", "w:bz2", "bundle.v1"),
+        ("Bundle.v1.TAR.XZ", "w:xz", "Bundle.v1"),
+        ("Bundle.v1.TGZ", "w:gz", "Bundle.v1"),
+        ("bundle.v1.onnx.tar.xz", "w:xz", "bundle.v1"),
+        ("Bundle.v1.ONNX.TXZ", "w:xz", "Bundle.v1"),
+        ("bundle.v1.tflite.tar.gz", "w:gz", "bundle.v1"),
+        ("bundle.v1.rvc4.tar.xz", "w:xz", "bundle.v1.rvc4"),
+        ("bundle.v1", "w", "bundle.v1"),
+    ],
+)
+def test_archive_package_suffixes(
+    work_dir: Path,
+    filename: str,
+    mode: Literal["w", "w:xz", "w:gz", "w:bz2"],
+    expected_name: str,
+):
+    onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
+    archive = pack_archive(
+        work_dir / filename, onnx, default_archive_config(), mode=mode
+    )
+    config, _, main_stage = get_configs(Platform.RVC4, str(archive))
+    assert config.name == expected_name
+    assert main_stage == "dummy_model"
+
+
+@pytest.mark.parametrize("name", [None, "custom.ONNX.TAR.XZ"])
+@pytest.mark.parametrize("packed", [False, True])
+def test_archive_suffix_normalization_respects_name_source(
+    work_dir: Path, name: str | None, packed: bool
+):
+    directory = work_dir / "bundle.onnx"
+    directory.mkdir()
+    onnx = standard_dummy_onnx(directory / "dummy_model.onnx")
+    archive = pack_archive(
+        directory / "bundle.onnx.tar.xz",
+        onnx,
+        default_archive_config(),
+        mode="w:xz",
+    )
+    config, _, _ = get_configs(
+        Platform.RVC4,
+        str(archive if packed else directory),
+        {"name": name},
+    )
+    assert config.name == (
+        name if name is not None else "bundle" if packed else "bundle.onnx"
+    )
+
+
 def test_process_tar_xz(work_dir: Path):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     tar = pack_archive(

@@ -47,6 +47,7 @@ from modelconverter.utils.metadata import Metadata, get_metadata
 from modelconverter.utils.types import (
     DataType,
     Encoding,
+    InputFileType,
     Platform,
     QuantizationMode,
 )
@@ -124,12 +125,26 @@ def process_nn_archive(
     with open(untar_path / "config.json") as f:
         archive_config = NNArchiveConfig(**json.load(f))
 
-    # Strip only the archive extension, preserving dots in package names.
+    # Strip recognized archive/model suffixes, preserving other package dots.
     package_name = path.resolve().name if path.is_dir() else path.name
     if not path.is_dir():
-        for suffix in (".tar.xz", ".tar.gz", ".tar.bz2", ".tar"):
-            if package_name.endswith(suffix):
-                package_name = package_name.removesuffix(suffix)
+        for suffix in (
+            ".tar.xz",
+            ".tar.gz",
+            ".tar.bz2",
+            ".tar",
+            ".tgz",
+            ".txz",
+            ".tbz2",
+        ):
+            if package_name.lower().endswith(suffix):
+                package_name = package_name[: -len(suffix)]
+                try:
+                    InputFileType.from_path(package_name.lower())
+                except ValueError:
+                    pass
+                else:
+                    package_name = Path(package_name).stem
                 break
 
     main_stage_key = archive_config.model.metadata.name
