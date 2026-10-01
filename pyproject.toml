@@ -68,6 +68,8 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.uv]
+exclude-newer = "7 days"
+exclude-newer-package = { luxonis-ml = false }
 # albumentations (a luxonis-ml[data] dependency) pulls opencv-python-headless
 # in next to the opencv-python that luxonis-ml already requires. Both packages
 # ship the same `cv2` module and overwrite each other, so keep the headless
