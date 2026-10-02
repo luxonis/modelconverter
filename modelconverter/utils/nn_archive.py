@@ -9,6 +9,7 @@ packed back into a new archive whose config this module builds.
 """
 
 import json
+import os
 import tarfile
 from itertools import pairwise
 from pathlib import Path
@@ -126,7 +127,7 @@ def process_nn_archive(
         archive_config = NNArchiveConfig(**json.load(f))
 
     # Strip recognized archive/model suffixes, preserving other package dots.
-    package_name = path.resolve().name if path.is_dir() else path.name
+    package_name = Path(os.path.abspath(path)).name  # noqa: PTH100
     if not path.is_dir():
         for suffix in (
             ".tar.xz",
