@@ -22,7 +22,7 @@ from typing import Annotated, Literal
 
 from cyclopts import App, Group, Parameter
 from loguru import logger
-from luxonis_ml.nn_archive import ArchiveGenerator, is_nn_archive
+from luxonis_ml.nn_archive import ArchiveGenerator
 from luxonis_ml.typing import ParamValue
 from luxonis_ml.utils import LuxonisFileSystem, setup_logging
 from rich import box
@@ -160,14 +160,18 @@ def convert(
             file.
         path: A URL or a path to the configuration file, NN Archive
             or a standalone model file.
-        output_dir: Name of the directory where the exported model will
-            be saved.
+        output_dir: Directory under ``output/`` for all conversion results
+            when running through Docker. Defaults to
+            ``<name>_to_<platform>_<YYYY_MM_DD_HH_MM_SS>`` (UTC),
+            with the package name sanitized for the directory.
         to: Whether to export the model to a simple model file or a
             Luxonis NN Archive.
         main_stage: Name of the stage with the main model.
             Only needed for multistage configs and when converting to
-            NN Archive. When converting from NN Archive, the stage names
-            are named the same as the model files without the suffix.
+            NN Archive. When converting from NN Archive, the main stage
+            uses ``model.metadata.name``; postprocessor stages use their
+            model filenames without the suffix. The package ``name``
+            does not rename archive stages.
         archive_preprocess: Force preprocessing into NN Archive metadata
             instead of embedding it in the model. Only valid with
             ``to="nn_archive"``. Without this option, preprocessing is first
@@ -390,16 +394,6 @@ def convert(
         if not isinstance(out_models, list):
             out_models = [out_models]
         if to == "nn_archive":
-            archive_name = None
-            if original_path is not None and is_nn_archive(original_path):
-                archive_filename = Path(original_path).name
-                archive_suffix = "".join(Path(original_path).suffixes)
-                archive_name = (
-                    archive_filename.removesuffix(archive_suffix)
-                    if archive_suffix
-                    else archive_filename
-                )
-
             assert main_stage is not None
             out_models = [
                 generate_archive(
@@ -418,7 +412,6 @@ def convert(
                             main_stage
                         ].inference_model_path
                     ),
-                    archive_name=archive_name,
                 )
             ]
 

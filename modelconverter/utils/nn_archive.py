@@ -9,6 +9,7 @@ packed back into a new archive whose config this module builds.
 """
 
 import json
+import os
 import tarfile
 from itertools import pairwise
 from pathlib import Path
@@ -47,6 +48,7 @@ from modelconverter.utils.metadata import Metadata, get_metadata
 from modelconverter.utils.types import (
     DataType,
     Encoding,
+    InputFileType,
     Platform,
     QuantizationMode,
 )
@@ -124,9 +126,30 @@ def process_nn_archive(
     with open(untar_path / "config.json") as f:
         archive_config = NNArchiveConfig(**json.load(f))
 
+    # Strip recognized archive/model suffixes, preserving other package dots.
+    package_name = Path(os.path.abspath(path)).name  # noqa: PTH100
+    if not path.is_dir():
+        for suffix in (
+            ".tar.xz",
+            ".tar.gz",
+            ".tar.bz2",
+            ".tar",
+            ".tgz",
+            ".txz",
+            ".tbz2",
+        ):
+            if package_name.lower().endswith(suffix):
+                package_name = package_name[: -len(suffix)]
+                try:
+                    InputFileType.from_path(package_name.lower())
+                except ValueError:
+                    pass
+                else:
+                    package_name = Path(package_name).stem
+                break
+
     main_stage_key = archive_config.model.metadata.name
     main_stage_config: Params = {
-        "name": main_stage_key,
         "input_model": str(untar_path / archive_config.model.metadata.path),
     }
 
@@ -262,18 +285,31 @@ def process_nn_archive(
             }
             stages[input_model_path.stem] = head_stage_config
 
-    config: Params = main_stage_config
-    if stages:
-        del main_stage_config["name"]
-        config = {
-            "name": main_stage_key,
-            "stages": {
-                main_stage_key: main_stage_config,
-                **stages,
-            },
-        }
+    # Archive stages already have identities independent of the package name.
+    config: Params = {
+        "stages": {
+            main_stage_key: main_stage_config,
+            **stages,
+        },
+    }
 
-    return Config.get_config(config, overrides), archive_config, main_stage_key
+    root_overrides: Params = {}
+    stage_overrides: Params = {}
+    for key, value in (overrides or {}).items():
+        if not stages and key.split(".", 1)[0] not in Config.model_fields:
+            stage_overrides[key] = value
+        else:
+            root_overrides[key] = value
+    # Single-stage shorthand must update the imported inputs/outputs, not
+    # become root defaults that are ignored for fields already in the stage.
+    Config._merge_overrides(main_stage_config, stage_overrides)
+    Config._merge_overrides(config, root_overrides)
+    # Resolve the archive default after overrides have been parsed, so
+    # omitted names and null values follow the same fallback.
+    if config.get("name") is None:
+        config["name"] = package_name
+    cfg = Config.model_validate(config)
+    return cfg, archive_config, main_stage_key
 
 
 def modelconverter_config_to_nn(
@@ -791,7 +827,6 @@ def generate_archive(
     archive_cfg: NNArchiveConfig | None,
     preprocessing: dict[str, PreprocessingBlock],
     inference_model_path: Path,
-    archive_name: str | None,
     preprocessing_input_types: dict[str, Literal["raw", "image"]]
     | None = None,
 ) -> Path:
@@ -814,8 +849,6 @@ def generate_archive(
             name.
         inference_model_path: Path to the model whose metadata the
             shapes and data types are read from.
-        archive_name: Base name for the archive. If ``None``, the
-            config's name is used.
         preprocessing_input_types: Original input types captured before
             externalizing preprocessing from the conversion config.
 
@@ -839,7 +872,7 @@ def generate_archive(
         preprocessing_input_types=preprocessing_input_types,
     )
     generator = ArchiveGenerator(
-        archive_name=f"{archive_name or cfg.name}.{platform.value.lower()}",
+        archive_name=f"{cfg.name}.{platform.value.lower()}",
         save_path=str(output_path),
         cfg_dict=nn_archive.model_dump(),
         executables_paths=[

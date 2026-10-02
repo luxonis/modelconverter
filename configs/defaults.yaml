@@ -1,4 +1,6 @@
-# Name of the model. Will be the stem of the input model if undefined.
+# Package name for NN Archive files and default output directories.
+# If not set, uses the archive basename, model stem, or joined explicit stage keys.
+# Also names the implicit stage; explicit stage keys and model files stay unchanged.
 name: ~
 
 # Whether to enable rich formatting for the log messages.

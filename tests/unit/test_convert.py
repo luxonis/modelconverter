@@ -6,6 +6,7 @@ from typing import Literal, NoReturn
 
 import numpy as np
 import pytest
+from luxonis_ml.nn_archive import Config as NNArchiveConfig
 from luxonis_ml.typing import Params
 
 import modelconverter.__main__ as main_module
@@ -17,6 +18,7 @@ from modelconverter.utils.config import (
     SingleStageConfig,
 )
 from modelconverter.utils.types import Platform
+from tests.helpers.archive_factory import default_archive_config, pack_archive
 
 
 class _FakeTelemetry:
@@ -76,6 +78,109 @@ class _FakeMultiStageExporter:
             self.output_dir / "first.dlc",
             self.output_dir / "second.dlc",
         ]
+
+
+@pytest.mark.parametrize(
+    ("input_kind", "name", "explicit_dir"),
+    [
+        ("flat", None, None),
+        ("flat", "custom", "destination"),
+        ("archive", None, "destination"),
+        ("archive", "custom", None),
+        ("train_archive", None, None),
+        ("train_archive", "custom.onnx", None),
+        ("unpacked", None, None),
+        ("unpacked", "default_stage", "destination"),
+    ],
+)
+@pytest.mark.parametrize("output_mode", ["native", "nn_archive"])
+def test_convert_uses_resolved_package_name(
+    dummy_onnx: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str | None,
+    input_kind: str,
+    output_mode: Literal["native", "nn_archive"],
+    explicit_dir: str | None,
+) -> None:
+    """Resolve names through config loading and both output modes."""
+    path = None
+    overrides = ["input_model", str(dummy_onnx)]
+    default_name = dummy_onnx.stem
+    if input_kind != "flat":
+        # Keep model metadata and package names deliberately different.
+        archive_dir = tmp_path / "bundle.v1"
+        archive_dir.mkdir()
+        model = archive_dir / dummy_onnx.name
+        model.write_bytes(dummy_onnx.read_bytes())
+        archive_filename = (
+            "bundle.v1.onnx.tar"
+            if input_kind == "train_archive"
+            else "bundle.v1.tar"
+        )
+        archive = pack_archive(
+            archive_dir / archive_filename, model, default_archive_config()
+        )
+        path = str(archive_dir if input_kind == "unpacked" else archive)
+        overrides = []
+        default_name = "bundle.v1"
+    if name is not None:
+        # The last override wins, including the literal default_stage.
+        overrides += ["name", "discarded", "name", name]
+    expected_name = name if name is not None else default_name
+    expected_stage = expected_name if input_kind == "flat" else "dummy_model"
+    get_configs = main_module.get_configs
+
+    def checked_get_configs(
+        platform: Platform,
+        path: str | None,
+        opts: list[str] | Params | None = None,
+    ) -> tuple[Config, NNArchiveConfig | None, str | None]:
+        result = get_configs(platform, path, opts)
+        cfg, _, stage_key = result
+        assert cfg.name == expected_name
+        assert stage_key == expected_stage
+        assert set(cfg.stages) == {expected_stage}
+        return result
+
+    _patch_convert(
+        monkeypatch,
+        exporter=lambda _platform, config, output_dir: _FakeExporter(
+            config, output_dir
+        ),
+    )
+    monkeypatch.setattr(main_module, "get_configs", checked_get_configs)
+    archive_names: list[str] = []
+
+    def generate_archive(**kwargs: object) -> Path:
+        resolved = kwargs["cfg"]
+        assert isinstance(resolved, Config)
+        assert resolved.name == expected_name
+        assert kwargs["main_stage"] == expected_stage
+        archive_names.append(resolved.name)
+        output_path = kwargs["output_path"]
+        assert isinstance(output_path, Path)
+        return output_path / f"{resolved.name}.rvc4.tar.xz"
+
+    monkeypatch.setattr(main_module, "generate_archive", generate_archive)
+    main_module.convert(
+        Platform.RVC4,
+        *overrides,
+        path=path,
+        to=output_mode,
+        output_dir=explicit_dir,
+        main_stage=expected_stage if name is not None else None,
+    )
+    assert archive_names == (
+        [expected_name] if output_mode == "nn_archive" else []
+    )
+    directories = list((tmp_path / "output").iterdir())
+    assert len(directories) == 1
+    if explicit_dir is not None:
+        assert directories[0].name == explicit_dir
+    else:
+        directory_name = expected_name.replace(".", "_")
+        assert directories[0].name.startswith(f"{directory_name}_to_rvc4_")
 
 
 @pytest.mark.parametrize(
@@ -536,25 +641,27 @@ def test_invalid_preprocessing_is_rejected_before_fallback(
 def _patch_convert(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    cfg: Config,
-    main_stage: str,
-    output_dir: Path,
+    cfg: Config | None = None,
+    main_stage: str | None = None,
+    output_dir: Path | None = None,
     exporter: Callable[[Platform, SingleStageConfig, Path], Exporter],
     telemetry: Callable[[], _FakeTelemetry] = _FakeTelemetry,
 ) -> None:
     """Replace everything `convert` reaches outside the code under test."""
     monkeypatch.setattr(main_module.signal, "signal", lambda *_args: None)
     monkeypatch.setattr(main_module, "init_dirs", lambda: None)
-    monkeypatch.setattr(
-        main_module,
-        "get_configs",
-        lambda *_args, **_kwargs: (cfg, None, main_stage),
-    )
-    monkeypatch.setattr(
-        main_module,
-        "get_output_dir_name",
-        lambda *_args, **_kwargs: output_dir,
-    )
+    if cfg is not None:
+        monkeypatch.setattr(
+            main_module,
+            "get_configs",
+            lambda *_args, **_kwargs: (cfg, None, main_stage),
+        )
+    if output_dir is not None:
+        monkeypatch.setattr(
+            main_module,
+            "get_output_dir_name",
+            lambda *_args, **_kwargs: output_dir,
+        )
     monkeypatch.setattr(main_module, "setup_logging", lambda **_kwargs: None)
     monkeypatch.setattr(main_module, "get_exporter", exporter)
     monkeypatch.setattr(main_module, "get_component_telemetry", telemetry)
@@ -562,4 +669,3 @@ def _patch_convert(
         main_module, "get_conversion_run_id", lambda: "test-run"
     )
     monkeypatch.setattr(main_module, "peak_ram_usage_bytes", lambda: 0)
-    monkeypatch.setattr(main_module, "is_nn_archive", lambda _path: False)
