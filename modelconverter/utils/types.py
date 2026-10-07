@@ -509,16 +509,20 @@ class DataType(Enum):
 
 
 class ResizeMethod(Enum):
-    """Way of fitting a calibration image to the model input size.
+    """Way of fitting a calibration or inference image to the input size.
 
-    ``CROP`` cuts out the center of the image, ``RESIZE`` stretches it
-    to the requested size, and ``PAD`` scales it while keeping its
-    aspect ratio and pads the rest with black.
+    ``CROP`` preserves aspect ratio, resizing to fill the requested size
+    and center-cropping the excess.
+    ``CENTER_CROP_NO_RESIZE`` extracts a target-sized center patch without
+    resampling, padding with black outside the source. ``RESIZE`` stretches
+    to the requested size, and ``PAD`` preserves aspect ratio while scaling
+    to fit and padding the rest with black.
     """
 
     CROP = "CROP"
     PAD = "PAD"
     RESIZE = "RESIZE"
+    CENTER_CROP_NO_RESIZE = "CENTER_CROP_NO_RESIZE"
 
 
 class PotDevice(Enum):

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 from luxonis_ml.typing import PathType
-from PIL import Image
+from PIL import Image, ImageOps
 
 from modelconverter.utils.exceptions import ModelconverterException
 from modelconverter.utils.types import DataType, Encoding, ResizeMethod
@@ -107,6 +107,8 @@ def read_image(
     elif encoding == Encoding.GRAY:
         img = img.convert("L")
     if resize_method == ResizeMethod.CROP:
+        img = ImageOps.fit(img, (w, h), method=Image.Resampling.BICUBIC)
+    elif resize_method == ResizeMethod.CENTER_CROP_NO_RESIZE:
         left = int(img.size[0] / 2 - w / 2)
         upper = int(img.size[1] / 2 - h / 2)
         right = left + w
