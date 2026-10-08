@@ -22,7 +22,7 @@ stages:
 
     # Configuration for the calibration dataset.
     # Required for Hailo and RVC4, optional for RVC3, ignored for RVC2.
-    # Without a path or a linked stage, random calibration is used.
+    # For random calibration, omit `calibration` or set it to `random`.
     calibration:
       # Path to the calibration dataset. It can be either a local directory,
       # an S3 url, or an LDF identifier in a form <dataset_name>:<split>.
