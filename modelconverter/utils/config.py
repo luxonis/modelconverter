@@ -35,6 +35,7 @@ from pydantic import (
     ModelWrapValidatorHandler,
     PositiveInt,
     PrivateAttr,
+    SerializerFunctionWrapHandler,
     field_serializer,
     field_validator,
     model_serializer,
@@ -81,7 +82,39 @@ TRUSTWORTHY_INFERRED_CHANNEL_LAYOUTS = frozenset(
 )
 
 
-class LinkCalibrationConfig(BaseModelExtraForbid):
+class BaseCalibrationConfig(BaseModelExtraForbid):
+    """Resize policy shared by image, random and linked calibration.
+
+    ``resize_method`` defaults to ``RESIZE`` at runtime. An omitted policy
+    remains omitted during serialization so it cannot override archive
+    metadata or become an explicit deployment requirement on reload.
+    """
+
+    resize_method: ResizeMethod = ResizeMethod.RESIZE
+
+    @property
+    def has_resize_method(self) -> bool:
+        """Whether a resize policy was configured or inherited from an archive."""
+        return "resize_method" in self.model_fields_set
+
+    @model_serializer(mode="wrap")
+    def _serialize_resize_policy(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> Params:
+        data = handler(self)
+        if not self.has_resize_method:
+            data.pop("resize_method", None)
+        return data
+
+    def to_image_calibration(self, path: Path) -> "ImageCalibrationConfig":
+        """Retain resize policy when generated calibration becomes files."""
+        calibration = ImageCalibrationConfig(path=path)
+        if self.has_resize_method:
+            calibration.resize_method = self.resize_method
+        return calibration
+
+
+class LinkCalibrationConfig(BaseCalibrationConfig):
     """Calibration data produced by another stage of the conversion.
 
     Used for multi-stage models, where the calibration data of one stage
@@ -95,6 +128,8 @@ class LinkCalibrationConfig(BaseModelExtraForbid):
             Either the source code itself or a path to a ``.py`` file,
             whose contents are read during validation. Either ``output``
             or ``script`` must be provided.
+        resize_method: Image resize policy, also retained for inference
+            and output archive metadata. Prepared tensors are not resized.
 
     """
 
@@ -121,7 +156,7 @@ class LinkCalibrationConfig(BaseModelExtraForbid):
         return script
 
 
-class ImageCalibrationConfig(BaseModelExtraForbid):
+class ImageCalibrationConfig(BaseCalibrationConfig):
     """Calibration data read from a directory of files.
 
     Attributes:
@@ -131,13 +166,13 @@ class ImageCalibrationConfig(BaseModelExtraForbid):
             validation and stored as a local path.
         max_images: Number of files to use from the calibration data.
             A negative value means all of them.
-        resize_method: How to resize the images to the input shape.
+        resize_method: How to resize images for calibration and inference.
+            Explicit values also define the output archive's resize mode.
 
     """
 
     path: Path
     max_images: int = -1
-    resize_method: ResizeMethod = ResizeMethod.RESIZE
     _generated_from_random: bool = PrivateAttr(default=False)
     _generated_layout: str = PrivateAttr(default="")
 
@@ -159,7 +194,7 @@ class ImageCalibrationConfig(BaseModelExtraForbid):
         return download_calibration_data(str(value))
 
 
-class RandomCalibrationConfig(BaseModelExtraForbid):
+class RandomCalibrationConfig(BaseCalibrationConfig):
     """Calibration data generated from a normal distribution.
 
     Used when no calibration data is provided. The generated values are
@@ -172,6 +207,8 @@ class RandomCalibrationConfig(BaseModelExtraForbid):
         mean: Mean of the normal distribution.
         std: Standard deviation of the normal distribution.
         data_type: Data type the generated samples are cast to.
+        resize_method: Image resize policy retained for inference and
+            output archive metadata. Random samples already have input size.
 
     """
 
@@ -1279,7 +1316,13 @@ class SingleStageConfig(BaseModelExtraForbid):
             if not inp_calibration and not top_level_calibration:
                 inp["calibration"] = None
             elif top_level_calibration == "random":
-                inp["calibration"] = "random"
+                # Random calibration data still keeps specified resize_method
+                inp["calibration"] = (
+                    {"resize_method": inp_calibration["resize_method"]}
+                    if isinstance(inp_calibration, dict)
+                    and "resize_method" in inp_calibration
+                    else "random"
+                )
             else:
                 inp["calibration"] = {
                     **_as_dict(top_level_calibration, "calibration"),

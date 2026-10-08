@@ -146,8 +146,8 @@ class MultiStageExporter:
             logger.debug(f"Initialized inferer {inferer}.")
             inferer.run()
             if stage_output is not None:
-                inp_config.calibration = ImageCalibrationConfig(
-                    path=dest_dir / stage_output
+                inp_config.calibration = calib.to_image_calibration(
+                    dest_dir / stage_output
                 )
             elif script is not None:
                 # One directory per model output. The inferer also leaves a
@@ -190,4 +190,4 @@ class MultiStageExporter:
                     arr = run_script(outputs)
                     np.save(dest / f"{i}.npy", arr)
 
-                inp_config.calibration = ImageCalibrationConfig(path=dest)
+                inp_config.calibration = calib.to_image_calibration(dest)

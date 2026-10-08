@@ -19,10 +19,7 @@ from loguru import logger
 from typing_extensions import Self
 
 from modelconverter.utils import ModelconverterException, resolve_path
-from modelconverter.utils.config import (
-    ImageCalibrationConfig,
-    SingleStageConfig,
-)
+from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.constants import INFERENCE_MARKER
 from modelconverter.utils.types import DataType, Encoding, ResizeMethod
 
@@ -153,8 +150,6 @@ class Inferer(ABC):
             out_dtypes={out.name: out.data_type for out in config.outputs},
             resize_method={
                 inp.name: inp.calibration.resize_method
-                if isinstance(inp.calibration, ImageCalibrationConfig)
-                else ResizeMethod.RESIZE
                 for inp in config.inputs
             },
             encoding={inp.name: inp.encoding.to for inp in config.inputs},
