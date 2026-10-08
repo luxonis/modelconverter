@@ -36,7 +36,10 @@ stages:
       max_images: -1
 
       # What method to use for resizing. Options are:
-      #  - CROP: center crop the image to the specified size.
+      #  - CROP: resize to fill while preserving aspect ratio, then center crop
+      #    to the specified size.
+      #  - CENTER_CROP_NO_RESIZE: take a center patch without resizing, padding
+      #    with black outside the source.
       #  - PAD: resize and pad the image to the specified size.
       #  - RESIZE: resize the image to the specified size, ignoring aspect ratio.
       resize_method: RESIZE

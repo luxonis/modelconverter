@@ -96,6 +96,20 @@ def test_resize_method_defaults_without_image_calibration(work_dir: Path):
     assert inferer.resize_method == {"input0": ResizeMethod.RESIZE}
 
 
+@pytest.mark.parametrize("method", list(ResizeMethod))
+def test_resize_method_from_image_calibration(
+    work_dir: Path, method: ResizeMethod
+):
+    calib = work_dir / "calibration"
+    calib.mkdir()
+    inferer = _build(
+        work_dir,
+        [1, 3, 64, 64],
+        calibration={"path": str(calib), "resize_method": method.value},
+    )
+    assert inferer.resize_method == {"input0": method}
+
+
 def test_shapes_and_dtypes_are_mapped(work_dir: Path):
     inferer = _build(work_dir, [1, 3, 64, 64])
     assert inferer.in_shapes == {"input0": [1, 3, 64, 64]}

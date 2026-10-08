@@ -49,7 +49,7 @@ def _make_img(
     [
         ("resized.png", Encoding.RGB, ResizeMethod.RESIZE),
         ("resized_bgr.png", Encoding.BGR, ResizeMethod.RESIZE),
-        ("crop.png", Encoding.RGB, ResizeMethod.CROP),
+        ("crop.png", Encoding.RGB, ResizeMethod.CENTER_CROP_NO_RESIZE),
         ("pad.png", Encoding.RGB, ResizeMethod.PAD),
     ],
 )
@@ -61,10 +61,14 @@ def test_golden_rgb(golden: str, encoding: Encoding, resize: ResizeMethod):
     assert np.allclose(img, expected)
 
 
-def test_golden_gray_crop():
+def test_golden_gray_crop_no_resize():
     expected = _golden("crop_gray.png", "L").reshape(256, 256, 1)
     img = read_image(
-        ORIG, [256, 256, 1], Encoding.GRAY, ResizeMethod.CROP, transpose=False
+        ORIG,
+        [256, 256, 1],
+        Encoding.GRAY,
+        ResizeMethod.CENTER_CROP_NO_RESIZE,
+        transpose=False,
     )
     assert img.shape == expected.shape
     assert np.allclose(img, expected)
@@ -106,6 +110,75 @@ def test_pad_tall_image(work_dir: Path):
     # Tall image -> left/right columns are the black padding.
     assert np.all(img[:, 0] == 0)
     assert np.all(img[:, -1] == 0)
+
+
+@pytest.mark.parametrize(
+    ("source", "target"),
+    [
+        ((192, 108), (64, 64)),  # wide source, downscale
+        ((108, 192), (64, 64)),  # tall source, downscale
+        ((32, 18), (64, 64)),  # upscale instead of padding
+        ((18, 32), (64, 64)),
+        ((90, 60), (30, 60)),  # non-square target
+        ((91, 57), (34, 26)),  # fractional crop boundaries
+        ((32, 24), (64, 48)),  # same aspect ratio
+    ],
+)
+def test_crop_matches_centered_resize_to_fill_geometry(
+    work_dir: Path, source: tuple[int, int], target: tuple[int, int]
+):
+    """Coordinate ramps verify scale and field of view, not just shape."""
+    src_w, src_h = source
+    width, height = target
+    y, x = np.indices((src_h, src_w))
+    pattern = np.stack([x, y, np.full_like(x, 127)], axis=-1).astype(np.uint8)
+    src = work_dir / "coordinates.png"
+    Image.fromarray(pattern).save(src)
+
+    img = read_image(
+        src,
+        [height, width, 3],
+        Encoding.RGB,
+        ResizeMethod.CROP,
+        transpose=False,
+    )
+
+    # DepthAI fills the destination using the larger scale factor and
+    # centers the excess. Sample at pixel centers; allow uint8 resampling
+    # rounding rather than requiring a particular hardware filter.
+    scale = max(width / src_w, height / src_h)
+    left = (src_w - width / scale) / 2
+    top = (src_h - height / scale) / 2
+    expected_x = np.clip(
+        left + (np.arange(width) + 0.5) / scale - 0.5, 0, src_w - 1
+    )
+    expected_y = np.clip(
+        top + (np.arange(height) + 0.5) / scale - 0.5, 0, src_h - 1
+    )
+    assert img.shape == (height, width, 3)
+    np.testing.assert_allclose(
+        img[..., 0], np.broadcast_to(expected_x, (height, width)), atol=1
+    )
+    np.testing.assert_allclose(
+        img[..., 1],
+        np.broadcast_to(expected_y[:, None], (height, width)),
+        atol=1,
+    )
+    assert np.all(img[..., 2] == 127)
+
+
+def test_crop_no_resize_pads_when_source_is_smaller(work_dir: Path):
+    src = _make_img(work_dir / "small.png", size=(2, 2))
+    img = read_image(
+        src,
+        [4, 4, 3],
+        Encoding.RGB,
+        ResizeMethod.CENTER_CROP_NO_RESIZE,
+        transpose=False,
+    )
+    source = np.array(Image.open(src))
+    expected = np.pad(source, ((1, 1), (1, 1), (0, 0)))
+    assert np.array_equal(img, expected)
 
 
 @pytest.mark.parametrize(
@@ -232,7 +305,7 @@ def test_read_calib_dir_empty(work_dir: Path):
 
 
 # Calibration data is fed to the vendor quantizers as a raw buffer, so a
-# single off-by-one in any of the three resize paths corrupts every sample
+# single off-by-one in any of the resize paths corrupts every sample
 # without raising anything. The properties below fix the output geometry for
 # arbitrary source and target sizes.
 
@@ -346,10 +419,10 @@ def test_pad_centres_the_image_and_keeps_its_aspect_ratio(
 
 @reuses_function_fixtures
 @given(source=image_sizes, target=image_sizes)
-def test_crop_takes_the_centre_of_the_source(
+def test_crop_no_resize_takes_the_centre_of_the_source(
     work_dir: Path, source: tuple[int, int], target: tuple[int, int]
 ):
-    """``CROP`` copies pixels through untouched, no resampling."""
+    """``CENTER_CROP_NO_RESIZE`` copies pixels through untouched."""
     src_w, src_h = source
     height, width = target
     # A crop wider or taller than the source would be black-padded by
@@ -366,7 +439,7 @@ def test_crop_takes_the_centre_of_the_source(
         src,
         [height, width, 3],
         Encoding.RGB,
-        ResizeMethod.CROP,
+        ResizeMethod.CENTER_CROP_NO_RESIZE,
         transpose=False,
     )
 

@@ -750,6 +750,19 @@ def test_image_calibration_none_path_rejected():
         ImageCalibrationConfig.model_validate({"path": None})
 
 
+@pytest.mark.parametrize("method", list(ResizeMethod))
+def test_image_calibration_resize_method_roundtrip(
+    tmp_path: Path, method: ResizeMethod
+):
+    cal = ImageCalibrationConfig.model_validate(
+        {"path": str(tmp_path), "resize_method": method.value}
+    )
+    restored = ImageCalibrationConfig.model_validate(
+        json.loads(cal.model_dump_json())
+    )
+    assert restored.resize_method is method
+
+
 def test_link_requires_output_or_script():
     with pytest.raises(ValueError, match="Either `output` or `script`"):
         LinkCalibrationConfig(stage="s")
