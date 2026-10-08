@@ -266,12 +266,14 @@ def extract_preprocessing(
 
         if inp.is_raw_input:
             if mean is not None or scale is not None:
-                preprocessing[inp.name] = PreprocessingBlock(
-                    mean=mean,
-                    scale=scale,
-                    reverse_channels=None,
-                    interleaved_to_planar=None,
-                    dai_type=None,
+                preprocessing[inp.name] = PreprocessingBlock.model_validate(
+                    {
+                        "mean": mean,
+                        "scale": scale,
+                        "reverse_channels": None,
+                        "interleaved_to_planar": None,
+                        "dai_type": None,
+                    }
                 )
         else:
             # Once preprocessing is externalized, the converted model is fed
@@ -279,18 +281,20 @@ def extract_preprocessing(
             dai_type = make_dai_type(encoding.from_, inp.data_type, layout)
             identity_value_count = 1 if encoding.from_ == Encoding.GRAY else 3
 
-            preprocessing[inp.name] = PreprocessingBlock(
-                mean=(
-                    mean if mean is not None else [0.0] * identity_value_count
-                ),
-                scale=(
-                    scale
+            preprocessing[inp.name] = PreprocessingBlock.model_validate(
+                {
+                    "mean": mean
+                    if mean is not None
+                    else [0.0] * identity_value_count,
+                    "scale": scale
                     if scale is not None
-                    else [1.0] * identity_value_count
-                ),
-                reverse_channels=encoding.from_ == Encoding.RGB,
-                interleaved_to_planar=is_interleaved_image_layout(layout),
-                dai_type=dai_type,
+                    else [1.0] * identity_value_count,
+                    "reverse_channels": encoding.from_ == Encoding.RGB,
+                    "interleaved_to_planar": is_interleaved_image_layout(
+                        layout
+                    ),
+                    "dai_type": dai_type,
+                }
             )
 
         inp.mean_values = None
