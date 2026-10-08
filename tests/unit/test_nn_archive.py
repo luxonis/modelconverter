@@ -1014,12 +1014,14 @@ def test_input_default_layout_when_shape_has_zero(dummy_onnx: Path):
 
 def test_preprocessing_override_applied(dummy_onnx: Path):
     config = _config_from_overrides(dummy_onnx)
-    block = PreprocessingBlock(
-        mean=[1, 2, 3],
-        scale=[4, 5, 6],
-        reverse_channels=True,
-        interleaved_to_planar=False,
-        dai_type="RGB888p",
+    block = PreprocessingBlock.model_validate(
+        {
+            "mean": [1, 2, 3],
+            "scale": [4, 5, 6],
+            "reverse_channels": True,
+            "interleaved_to_planar": False,
+            "dai_type": "RGB888p",
+        }
     )
     nn = _config_to_nn(config, dummy_onnx, preprocessing={"input0": block})
     in0 = next(i for i in nn.model.inputs if i.name == "input0")
@@ -1119,12 +1121,14 @@ def test_embedded_raw_preprocessing_is_identity_in_archive(
     )
     orig = archive_from_model(dummy_onnx)
     orig.model.inputs[0].input_type = InputType.RAW
-    orig.model.inputs[0].preprocessing = PreprocessingBlock(
-        mean=[9, 9, 9],
-        scale=[2, 2, 2],
-        reverse_channels=None,
-        interleaved_to_planar=None,
-        dai_type=None,
+    orig.model.inputs[0].preprocessing = PreprocessingBlock.model_validate(
+        {
+            "mean": [9, 9, 9],
+            "scale": [2, 2, 2],
+            "reverse_channels": None,
+            "interleaved_to_planar": None,
+            "dai_type": None,
+        }
     )
 
     nn = _config_to_nn(config, dummy_onnx, orig=orig)
@@ -1150,12 +1154,14 @@ def test_externalized_raw_preprocessing_is_kept_in_archive(
     orig = archive_from_model(dummy_onnx)
     orig.model.inputs[0].input_type = InputType.RAW
     preprocessing = {
-        "input0": PreprocessingBlock(
-            mean=[9, 9, 9],
-            scale=[2, 2, 2],
-            reverse_channels=None,
-            interleaved_to_planar=None,
-            dai_type=None,
+        "input0": PreprocessingBlock.model_validate(
+            {
+                "mean": [9, 9, 9],
+                "scale": [2, 2, 2],
+                "reverse_channels": None,
+                "interleaved_to_planar": None,
+                "dai_type": None,
+            }
         )
     }
 

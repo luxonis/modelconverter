@@ -10,7 +10,7 @@ Lite, and SNPE.
 
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Literal, TypeVar
 
 import numpy as np
 from luxonis_ml.typing import PathType
@@ -523,6 +523,28 @@ class ResizeMethod(Enum):
     PAD = "PAD"
     RESIZE = "RESIZE"
     CENTER_CROP_NO_RESIZE = "CENTER_CROP_NO_RESIZE"
+
+    @classmethod
+    def from_nn_archive(cls, mode: str) -> "ResizeMethod":
+        """Translate an NN Archive image resize mode."""
+        mapping = {
+            "CROP": cls.CROP,
+            "STRETCH": cls.RESIZE,
+            "LETTERBOX": cls.PAD,
+        }
+        if mode not in mapping:
+            raise ValueError(f"Unsupported NN Archive resize_mode: {mode!r}")
+        return mapping[mode]
+
+    def as_nn_archive(self) -> Literal["CROP", "STRETCH", "LETTERBOX"] | None:
+        """Translate resize geometry; None means the archive cannot express it."""
+        if self is ResizeMethod.CROP:
+            return "CROP"
+        if self is ResizeMethod.RESIZE:
+            return "STRETCH"
+        if self is ResizeMethod.PAD:
+            return "LETTERBOX"
+        return None
 
 
 class PotDevice(Enum):

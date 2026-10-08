@@ -51,6 +51,7 @@ from modelconverter.utils.types import (
     InputFileType,
     Platform,
     QuantizationMode,
+    ResizeMethod,
 )
 
 
@@ -309,6 +310,23 @@ def process_nn_archive(
     if config.get("name") is None:
         config["name"] = package_name
     cfg = Config.model_validate(config)
+    # Apply archive defaults after all root/stage/input overrides have been resolved.
+    original_inputs = {inp.name: inp for inp in archive_config.model.inputs}
+    for inp in cfg.stages[main_stage_key].inputs:
+        original = original_inputs.get(inp.name)
+        resize_mode = (
+            getattr(original.preprocessing, "resize_mode", None)
+            if original is not None
+            else None
+        )
+        if (
+            not inp.is_raw_input
+            and not inp.calibration.has_resize_method
+            and resize_mode is not None
+        ):
+            inp.calibration.resize_method = ResizeMethod.from_nn_archive(
+                resize_mode
+            )
     return cfg, archive_config, main_stage_key
 
 
@@ -332,7 +350,8 @@ def modelconverter_config_to_nn(
     are derived from the effective conversion config, or restored from the
     values captured before preprocessing was externalized. Archive
     preprocessing is identity unless supplied explicitly through
-    ``preprocessing``.
+    ``preprocessing``. When supported, ``resize_mode`` uses the configured
+    policy, falling back to supplied preprocessing or the input archive.
 
     Args:
         config: Config the conversion was run with.
@@ -467,6 +486,30 @@ def modelconverter_config_to_nn(
                     preprocessing_block, layout
                 )
             preprocessing_cfg = preprocessing_block.model_dump(mode="json")
+
+        if (
+            input_type == "image"
+            and "resize_mode" in PreprocessingBlock.model_fields
+        ):
+            if inp.calibration.has_resize_method:
+                preprocessing_cfg["resize_mode"] = (
+                    inp.calibration.resize_method.as_nn_archive()
+                )
+                if preprocessing_cfg["resize_mode"] is None:
+                    logger.warning(
+                        f"Input '{inp.name}' uses CENTER_CROP_NO_RESIZE, "
+                        "which NN Archive resize_mode cannot express. "
+                        "Exporting null (unspecified);"
+                    )
+            elif preprocessing_cfg.get("resize_mode") is None and orig_nn:
+                original = next(
+                    (i for i in orig_nn.model.inputs if i.name == inp.name),
+                    None,
+                )
+                if original is not None:
+                    preprocessing_cfg["resize_mode"] = getattr(
+                        original.preprocessing, "resize_mode", None
+                    )
 
         archive_cfg["model"]["inputs"].append(
             {

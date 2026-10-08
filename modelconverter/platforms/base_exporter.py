@@ -405,7 +405,7 @@ class Exporter(ABC):
                 else:
                     np.save(dest / f"{i}.npy", arr)
 
-            calibration = ImageCalibrationConfig(path=dest)
+            calibration = calib.to_image_calibration(dest)
             calibration._generated_from_random = True
             assert inp.layout is not None
             calibration._generated_layout = inp.layout

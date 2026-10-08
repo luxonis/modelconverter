@@ -634,6 +634,11 @@ calibration uses the numeric domain that the model gets at runtime.
 
 LDF datasets are also supported as calibration data by setting `calibration.path` to `<dataset_name>:<split>`, or `<dataset_name>:<split>:<loader_plugin>` when using a custom loader.
 
+For image calibration, use the correct resize method. When converting an NNArchive,
+ModelConverter inherits each input's `preprocessing.resize_mode`, if present.
+Set `calibration.resize_method` in `config.yaml` or through a CLI override to
+select a method or override the archive's value.
+
 > [!NOTE]
 > Multi-input LDF datasets are not currently supported for calibration data.
 
