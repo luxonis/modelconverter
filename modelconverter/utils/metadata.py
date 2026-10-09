@@ -132,13 +132,9 @@ def _dlc_section(content: str, typ: str) -> str | None:
         if typ == "input"
         else ["Unconsumed Tensor Name", "Total parameters:"]
     )
-    endings = [
-        index
-        for marker in end_markers
-        if (index := content.find(marker, start_index + len(header_pattern)))
-        != -1
-    ]
-    end_index = min(endings, default=len(content))
+    search_from = start_index + len(header_pattern)
+    endings = [content.find(marker, search_from) for marker in end_markers]
+    end_index = min((i for i in endings if i != -1), default=len(content))
     return content[line_start:end_index].strip()
 
 

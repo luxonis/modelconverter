@@ -547,18 +547,8 @@ class RVC4Benchmark(Benchmark):
         The input specs come from the DLC, or from the archive when
         the DLC cannot be read.
         """
-        if isinstance(model_path, str):
-            model_archive = dai.getModelFromZoo(
-                dai.NNModelDescription(
-                    model_path,
-                    platform=dai.Platform.RVC4.name,
-                ),
-                apiKey=environ.HUBAI_API_KEY or "",
-            )
-        else:
-            model_archive = model_path
-
-        tmp_dir = Path(model_archive).parent / "tmp"
+        model_archive = _resolve_archive(model_path)
+        tmp_dir = model_archive.parent / "tmp"
         shutil.unpack_archive(model_archive, tmp_dir)
 
         dlc_model_name = json.loads((tmp_dir / "config.json").read_text())[
@@ -618,7 +608,7 @@ class RVC4Benchmark(Benchmark):
         input_fps: float,
         device_ip: str | None = None,
     ) -> Result:
-        resolved_model_path = _resolve_dai_model(model_path)
+        resolved_model_path = _resolve_archive(model_path)
         model_archive = dai.NNArchive(resolved_model_path)
         try:
             logger.info("Trying to get input specs from the DLC file...")
@@ -818,8 +808,8 @@ class RVC4Benchmark(Benchmark):
         return f"{value:.2f}"
 
 
-def _resolve_dai_model(model_path: PathType) -> Path:
-    """Find the NN Archive of a path or a HubAI slug for DepthAI."""
+def _resolve_archive(model_path: PathType) -> Path:
+    """Find the NN Archive of a path or a HubAI slug."""
     if isinstance(model_path, str):
         return Path(
             dai.getModelFromZoo(

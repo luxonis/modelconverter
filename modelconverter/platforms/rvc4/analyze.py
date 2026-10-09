@@ -674,7 +674,7 @@ class RVC4Analyzer(Analyzer):
         if verbose:
             logger.info("Flattening SNPE results.")
         for result_path in dlc_matcher.values():
-            self._copy_flat(Path(result_path), base=Path(result_path))
+            self._copy_flat(result_path, base=result_path)
 
             with os.scandir(result_path) as entries:
                 for entry in entries:

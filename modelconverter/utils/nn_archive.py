@@ -276,8 +276,9 @@ def _archive_image_encoding(
     ``reverse_channels`` flag decides the encoding. An input with one
     channel is gray in either case.
     """
-    if inp.preprocessing.dai_type is not None:
-        encoding, layout = _dai_type_encoding(inp)
+    dai_type = inp.preprocessing.dai_type
+    if dai_type is not None:
+        encoding, layout = _dai_type_encoding(inp, dai_type)
     else:
         encoding, layout = _legacy_encoding(inp.preprocessing), inp.layout
     channels = (
@@ -289,7 +290,7 @@ def _archive_image_encoding(
 
 
 def _dai_type_encoding(
-    inp: NNArchiveInput,
+    inp: NNArchiveInput, dai_type: str
 ) -> tuple[str | dict[str, str], str | None]:
     """Derive the encoding and the layout of an input from its ``dai_type``.
 
@@ -298,8 +299,6 @@ def _dai_type_encoding(
     against ``dai_type``, with a warning.
     """
     preprocessing = inp.preprocessing
-    dai_type = preprocessing.dai_type
-    assert dai_type is not None
     reverse = preprocessing.reverse_channels
     if (reverse and dai_type.startswith("BGR")) or (
         reverse is False and dai_type.startswith("RGB")
@@ -418,31 +417,29 @@ def _archive_precision(
 ) -> DataType:
     """Derive the precision of a converted model from its platform config."""
     # TODO: This might be more complicated for Hailo
-    quantization_mode = getattr(platform_cfg, "quantization_mode", None)
-    if (
-        quantization_mode is None
-        or quantization_mode == QuantizationMode.CUSTOM
-    ):
-        compress_to_fp16 = _custom_compress_to_fp16(platform_cfg)
-    else:
-        compress_to_fp16 = quantization_mode == QuantizationMode.FP16_STD
-
     if platform is Platform.HAILO:
         return DataType.INT8
+    quantization_mode = getattr(platform_cfg, "quantization_mode", None)
     # RVC2 does not quantize, and RVC3 and RVC4 keep floats when calibration
     # is off.
     if platform is Platform.RVC2 or platform_cfg.disable_calibration:
-        return DataType.FLOAT16 if compress_to_fp16 else DataType.FLOAT32
+        if quantization_mode in {None, QuantizationMode.CUSTOM}:
+            fp16 = _compress_to_fp16(platform_cfg)
+        else:
+            fp16 = quantization_mode == QuantizationMode.FP16_STD
+        return DataType.FLOAT16 if fp16 else DataType.FLOAT32
     if quantization_mode == QuantizationMode.INT16_STD:
         return DataType.INT16
     return DataType.INT8
 
 
-def _custom_compress_to_fp16(platform_cfg: PlatformConfig) -> bool:
-    """Tell whether the custom arguments make a model run in FP16.
+def _compress_to_fp16(platform_cfg: PlatformConfig) -> bool:
+    """Tell whether a config without a preset quantization mode keeps
+    FP16.
 
-    SNPE runs in FP16 with ``--float_bitwidth 16`` for the conversion
-    and ``--use_float_io`` for the graph preparation.
+    The ``compress_to_fp16`` option decides it. SNPE also runs in FP16
+    with ``--float_bitwidth 16`` for the conversion and
+    ``--use_float_io`` for the graph preparation.
     """
     onnx_args = getattr(platform_cfg, "snpe_onnx_to_dlc_args", [])
     prep_args = getattr(platform_cfg, "snpe_dlc_graph_prepare_args", [])
@@ -460,12 +457,14 @@ def _custom_compress_to_fp16(platform_cfg: PlatformConfig) -> bool:
     )
 
 
-def _input_layout(inp: InputConfig, new_shape: list[int]) -> str:
-    """Guess the layout of a converted input from its configured layout."""
-    if inp.shape is None or any(s == 0 for s in inp.shape):
+def _converted_layout(
+    tensor: InputConfig | OutputConfig, new_shape: list[int]
+) -> str:
+    """Guess the layout of a converted tensor from its configured layout."""
+    if tensor.shape is None or any(s == 0 for s in tensor.shape):
         return make_default_layout(new_shape)
-    assert inp.layout is not None
-    return guess_new_layout(inp.layout, inp.shape, new_shape)
+    assert tensor.layout is not None
+    return guess_new_layout(tensor.layout, tensor.shape, new_shape)
 
 
 def _output_layout(out: OutputConfig, new_shape: list[int]) -> str:
@@ -474,11 +473,8 @@ def _output_layout(out: OutputConfig, new_shape: list[int]) -> str:
     When the configured shape does not fit the converted one, the
     output gets the default layout, with a warning.
     """
-    if out.shape is None or any(s == 0 for s in out.shape):
-        return make_default_layout(new_shape)
-    assert out.layout is not None
     try:
-        return guess_new_layout(out.layout, out.shape, new_shape)
+        return _converted_layout(out, new_shape)
     except ValueError as e:
         layout = make_default_layout(new_shape)
         logger.warning(
@@ -587,78 +583,6 @@ def _attach_postprocessor(
     head.metadata.postprocessor_path = f"{post_stage_key}{model_name.suffix}"
 
 
-def _match_by_unique_shape(
-    configured: list[InputConfig] | list[OutputConfig],
-    converted_shapes: dict[str, list[int]],
-    *,
-    kind: Literal["input", "output"],
-) -> dict[str, str]:
-    """Pair configured and converted tensors that alone have one shape.
-
-    Raises:
-        ValueError: If another configured tensor has the same
-            dimensions in a different order.
-    """
-    configured_by_shape: dict[
-        tuple[int, ...], list[InputConfig | OutputConfig]
-    ] = {}
-    for tensor in configured:
-        if tensor.shape is not None:
-            configured_by_shape.setdefault(tuple(tensor.shape), []).append(
-                tensor
-            )
-
-    converted_by_shape: dict[tuple[int, ...], list[str]] = {}
-    for name, shape in converted_shapes.items():
-        converted_by_shape.setdefault(tuple(shape), []).append(name)
-
-    matches = {}
-    for shape, tensors in configured_by_shape.items():
-        converted_names = converted_by_shape.get(shape, [])
-        if not len(tensors) == len(converted_names) == 1:
-            continue
-        permutation_candidates = [
-            tensor.name
-            for tensor in configured
-            if tensor.shape is not None
-            and sorted(tensor.shape) == sorted(shape)
-        ]
-        if len(permutation_candidates) > 1:
-            raise ValueError(
-                f"Unable to unambiguously match renamed model {kind}s by "
-                f"shape: converted tensor '{converted_names[0]}' with shape "
-                f"{list(shape)} could correspond to any of "
-                f"{permutation_candidates} after an axis permutation."
-            )
-        matches[tensors[0].name] = converted_names[0]
-    return matches
-
-
-def _match_remaining_pair(
-    configured: list[InputConfig] | list[OutputConfig],
-    converted_shapes: dict[str, list[int]],
-    *,
-    kind: Literal["input", "output"],
-) -> dict[str, str]:
-    """Pair the one configured tensor left with the one converted tensor left.
-
-    Raises:
-        ValueError: If more than one tensor is left on a side, or a
-            tensor is left on one side only.
-    """
-    if len(configured) == len(converted_shapes) == 1:
-        return {configured[0].name: next(iter(converted_shapes))}
-    if configured or converted_shapes:
-        configured_shapes = {
-            tensor.name: tensor.shape for tensor in configured
-        }
-        raise ValueError(
-            f"Unable to unambiguously match renamed model {kind}s by shape: "
-            f"configured={configured_shapes}, converted={converted_shapes}."
-        )
-    return {}
-
-
 def _warn_if_renamed(
     kind: Literal["input", "output"], configured_name: str, converted_name: str
 ) -> None:
@@ -668,33 +592,6 @@ def _warn_if_renamed(
             f"Converted model {kind} '{configured_name}' was renamed to "
             f"'{converted_name}'. Using the converted name in the NN Archive."
         )
-
-
-def _compile_tool_dtype(
-    args: list[str], name: str, *, mode: Literal["input", "output"]
-) -> str | None:
-    """Read the precision that ``compile_tool`` arguments set for a tensor.
-
-    ``-iop "<name1>:<dtype1>,<name2>:<dtype2>"`` sets it per tensor, and
-    wins over ``-ip`` and ``-op``, which set it for every input or every
-    output. A name that ``-iop`` does not list leaves its whole value,
-    which `DataType.from_ir_ie_dtype` refuses.
-
-    Returns:
-        The precision in upper case, or ``None`` when no argument sets
-        it.
-    """
-    if "-iop" in args:
-        value = args[args.index("-iop") + 1]
-        for item in value.split(","):
-            tensor_name, dtype = item.strip().split(":")
-            if tensor_name == name:
-                return dtype.upper()
-        return value.upper()
-    flag = "-ip" if mode == "input" else "-op"
-    if flag in args:
-        return args[args.index(flag) + 1].upper()
-    return None
 
 
 def modelconverter_config_to_nn(
@@ -770,7 +667,7 @@ def modelconverter_config_to_nn(
         metadata_name = input_name_map[inp.name]
         _warn_if_renamed("input", inp.name, metadata_name)
         new_shape = model_metadata.input_shapes[metadata_name]
-        layout = _input_layout(inp, new_shape)
+        layout = _converted_layout(inp, new_shape)
         dtype = _get_io_dtype(
             platform,
             metadata_name,
@@ -884,23 +781,12 @@ def _match_tensor_names(
         for name, shape in converted_shapes.items()
         if name not in configured_names
     }
-    matches |= _match_by_unique_shape(
-        [
-            tensor
-            for tensor in configured_tensors
-            if tensor.name not in matches
-        ],
-        renamed_shapes,
-        kind=kind,
-    )
+    unmatched = [t for t in configured_tensors if t.name not in matches]
+    matches |= _match_by_unique_shape(unmatched, renamed_shapes, kind=kind)
 
     matched = set(matches.values())
     matches |= _match_remaining_pair(
-        [
-            tensor
-            for tensor in configured_tensors
-            if tensor.name not in matches
-        ],
+        [t for t in unmatched if t.name not in matches],
         {
             name: shape
             for name, shape in renamed_shapes.items()
@@ -909,6 +795,78 @@ def _match_tensor_names(
         kind=kind,
     )
     return matches
+
+
+def _match_by_unique_shape(
+    configured: list[InputConfig] | list[OutputConfig],
+    converted_shapes: dict[str, list[int]],
+    *,
+    kind: Literal["input", "output"],
+) -> dict[str, str]:
+    """Pair configured and converted tensors that alone have one shape.
+
+    Raises:
+        ValueError: If another configured tensor has the same
+            dimensions in a different order.
+    """
+    configured_by_shape: dict[
+        tuple[int, ...], list[InputConfig | OutputConfig]
+    ] = {}
+    for tensor in configured:
+        if tensor.shape is not None:
+            configured_by_shape.setdefault(tuple(tensor.shape), []).append(
+                tensor
+            )
+
+    converted_by_shape: dict[tuple[int, ...], list[str]] = {}
+    for name, shape in converted_shapes.items():
+        converted_by_shape.setdefault(tuple(shape), []).append(name)
+
+    matches = {}
+    for shape, tensors in configured_by_shape.items():
+        converted_names = converted_by_shape.get(shape, [])
+        if not len(tensors) == len(converted_names) == 1:
+            continue
+        permutation_candidates = [
+            tensor.name
+            for tensor in configured
+            if tensor.shape is not None
+            and sorted(tensor.shape) == sorted(shape)
+        ]
+        if len(permutation_candidates) > 1:
+            raise ValueError(
+                f"Unable to unambiguously match renamed model {kind}s by "
+                f"shape: converted tensor '{converted_names[0]}' with shape "
+                f"{list(shape)} could correspond to any of "
+                f"{permutation_candidates} after an axis permutation."
+            )
+        matches[tensors[0].name] = converted_names[0]
+    return matches
+
+
+def _match_remaining_pair(
+    configured: list[InputConfig] | list[OutputConfig],
+    converted_shapes: dict[str, list[int]],
+    *,
+    kind: Literal["input", "output"],
+) -> dict[str, str]:
+    """Pair the one configured tensor left with the one converted tensor left.
+
+    Raises:
+        ValueError: If more than one tensor is left on a side, or a
+            tensor is left on one side only.
+    """
+    if len(configured) == len(converted_shapes) == 1:
+        return {configured[0].name: next(iter(converted_shapes))}
+    if configured or converted_shapes:
+        configured_shapes = {
+            tensor.name: tensor.shape for tensor in configured
+        }
+        raise ValueError(
+            f"Unable to unambiguously match renamed model {kind}s by shape: "
+            f"configured={configured_shapes}, converted={converted_shapes}."
+        )
+    return {}
 
 
 def _replace_names(value: object, name_map: dict[str, str]) -> object:
@@ -1155,3 +1113,30 @@ def _get_io_dtype(
     if blob_dtype is None:
         return dtypes[name].as_nn_archive_dtype()
     return DataType.from_ir_ie_dtype(blob_dtype).as_nn_archive_dtype()
+
+
+def _compile_tool_dtype(
+    args: list[str], name: str, *, mode: Literal["input", "output"]
+) -> str | None:
+    """Read the precision that ``compile_tool`` arguments set for a tensor.
+
+    ``-iop "<name1>:<dtype1>,<name2>:<dtype2>"`` sets it per tensor, and
+    wins over ``-ip`` and ``-op``, which set it for every input or every
+    output. A name that ``-iop`` does not list leaves its whole value,
+    which `DataType.from_ir_ie_dtype` refuses.
+
+    Returns:
+        The precision in upper case, or ``None`` when no argument sets
+        it.
+    """
+    if "-iop" in args:
+        value = args[args.index("-iop") + 1]
+        for item in value.split(","):
+            tensor_name, dtype = item.strip().split(":")
+            if tensor_name == name:
+                return dtype.upper()
+        return value.upper()
+    flag = "-ip" if mode == "input" else "-op"
+    if flag in args:
+        return args[args.index(flag) + 1].upper()
+    return None

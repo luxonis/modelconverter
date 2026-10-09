@@ -844,7 +844,15 @@ class ONNXModifier:
         connections_to_fix = []
 
         for node in self._onnx_gs.nodes:
-            if node.op != source_node or self._feeds_erf(node, target_node):
+            if node.op != source_node:
+                continue
+            if self._feeds_erf(node):
+                logger.warning(
+                    f"Skipping the `{source_node} -> {target_node}` "
+                    f"substitution optimization for node '{node.name}' "
+                    f"with op '{node.op}' because it is followed by an "
+                    "'Erf' node."
+                )
                 continue
             constant = self._get_constant_value(node, constant_map)
             if constant is None:
@@ -867,23 +875,17 @@ class ONNXModifier:
             nothing_found="No applicable Sub-Add or Div-Mul pattern found for substitution.",
         )
 
-    def _feeds_erf(self, node: gs.Node, target_node: str) -> bool:
+    def _feeds_erf(self, node: gs.Node) -> bool:
         """Tell whether an ``Erf`` node reads the output of ``node``.
 
         Such a node is not substituted, because SNPE 2.32.6 fails to
         convert the result.
         """
-        next_nodes = [
-            n for n in self._onnx_gs.nodes if node.outputs[0] in n.inputs
-        ]
-        if not any(n.op == "Erf" for n in next_nodes):
-            return False
-        logger.warning(
-            f"Skipping the `{node.op} -> {target_node}` substitution "
-            f"optimization for node '{node.name}' with op '{node.op}' "
-            "because it is followed by an 'Erf' node."
+        return any(
+            n.op == "Erf"
+            for n in self._onnx_gs.nodes
+            if node.outputs[0] in n.inputs
         )
-        return True
 
     def _take_over_graph_output(
         self, node: gs.Node, new_node: gs.Node
@@ -923,12 +925,11 @@ class ONNXModifier:
             self._find_sequences(_BN_FUSION_PATTERNS)
         )
         for sequence in sequences:
+            conv_node = sequence[0]
             folded = self._fold_sequence(sequence, constant_map)
-            if folded is None:
+            if folded is None or len(conv_node.outputs[0].outputs) > 1:
                 continue
-            conv_node, scale, bias = folded
-            if len(conv_node.outputs[0].outputs) > 1:
-                continue
+            scale, bias = folded
 
             bn_node = _batch_norm_node(
                 f"BatchNorm_{conv_node.name.replace('/', '', 1)}",
@@ -938,15 +939,10 @@ class ONNXModifier:
                 dtype=self._dtype,
             )
             nodes_to_add.append(bn_node)
-
-            if sequence[0].op == "Conv":
-                connections_to_fix.append(
-                    (sequence[-1].outputs[0], bn_node.outputs[0])
-                )
-
-            nodes_to_remove.extend(
-                seq_node for seq_node in sequence if seq_node.op != "Conv"
+            connections_to_fix.append(
+                (sequence[-1].outputs[0], bn_node.outputs[0])
             )
+            nodes_to_remove.extend(sequence[1:])
 
         self._commit_graph_edits(
             nodes_to_add,
@@ -997,20 +993,16 @@ class ONNXModifier:
 
     def _fold_sequence(
         self, sequence: list[gs.Node], constant_map: dict[str, np.ndarray]
-    ) -> tuple[gs.Node, float | np.ndarray, float | np.ndarray] | None:
-        """Fold the constants after a Conv into one scale and one bias.
+    ) -> tuple[float | np.ndarray, float | np.ndarray] | None:
+        """Fold the constants after the leading Conv into a scale and a
+        bias.
 
         Returns:
-            The Conv node, the scale and the bias, or ``None`` when the
-            chain has no Conv, or a node without a constant input.
+            The scale and the bias, or ``None`` when a node after the
+            Conv has no constant input.
         """
         scale, bias = 1.0, 0.0
-        conv_node = None
-        for seq_node in sequence:
-            if seq_node.op == "Conv":
-                conv_node = seq_node
-                continue
-
+        for seq_node in sequence[1:]:
             constant = self._get_constant_value(seq_node, constant_map)
             if constant is None:
                 return None
@@ -1021,10 +1013,7 @@ class ONNXModifier:
                 bias -= constant_val
             elif seq_node.op == "Mul":
                 scale *= constant_val
-
-        if conv_node is None:
-            return None
-        return conv_node, scale, bias
+        return scale, bias
 
     def _fuse_single_add_mul_to_conv(self) -> None:
         """Fuse Add and Mul nodes that precede a Conv node directly into
@@ -1487,35 +1476,25 @@ def _split_concat_conv(
 ) -> tuple[gs.Node, list[gs.Node]] | None:
     """Find the chain from a ``Split`` through a ``Concat`` to a Conv.
 
+    After the ``Concat``, the chain follows the first reader of each
+    first output.
+
     Returns:
         The ``Concat`` node and the nodes after it up to the Conv, or
-        ``None`` when the chain does not reach a Conv.
+        ``None`` when the chain ends before a Conv.
     """
     concat_node = _next_node(split_node, "Concat")
     if concat_node is None:
         return None
-    intermediate_nodes = _path_to_conv(concat_node)
-    if not intermediate_nodes or intermediate_nodes[-1].op != "Conv":
-        return None
-    return concat_node, intermediate_nodes
-
-
-def _path_to_conv(node: gs.Node) -> list[gs.Node]:
-    """Follow the first reader of each first output until a Conv.
-
-    Returns:
-        The nodes after ``node``, up to the Conv or up to a node whose
-        output nothing reads.
-    """
     path = []
-    current_node = node
+    current_node = concat_node
     while current_node.op != "Conv":
         next_node = next(iter(current_node.outputs[0].outputs), None)
         if next_node is None:
-            break
+            return None
         current_node = next_node
         path.append(current_node)
-    return path
+    return concat_node, path
 
 
 def _output_names(graph: gs.Graph) -> list[str]:

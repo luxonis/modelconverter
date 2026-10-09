@@ -101,19 +101,19 @@ class RVC2Benchmark(Benchmark):
             raise ValueError(
                 f"Found {device.getPlatformAsString()}, expected RVC2 platform."
             )
-        model_file, archive = _load_model(model_path, device)
+        model = _load_model(model_path, device)
 
         def configure_network(network: dai.node.NeuralNetwork) -> None:
             """Load the archive or the blob into the network node."""
-            if archive is not None:
-                network.setNNArchive(archive)
+            if isinstance(model, dai.NNArchive):
+                network.setNNArchive(model)
             else:
-                network.setBlobPath(model_file)
+                network.setBlobPath(model)
 
         # RVC2 reports per-inference latency at TRACE level.
         return run_dai_benchmark(
             device,
-            _random_input_data(model_file, archive),
+            _random_input_data(model),
             configure_network,
             latency_pattern=RVC2_INFERENCE_LATENCY_RE,
             log_level=dai.LogLevel.TRACE,
@@ -127,43 +127,37 @@ class RVC2Benchmark(Benchmark):
 
 def _load_model(
     model_path: PathType, device: dai.Device
-) -> tuple[Path, dai.NNArchive | None]:
-    """Find the model file of an NN Archive, a blob or a HubAI slug.
-
-    Returns:
-        The model file, and the loaded archive unless the model is a
-        blob.
-    """
+) -> dai.NNArchive | Path:
+    """Load the NN Archive of a path or a HubAI slug, or keep a blob path."""
     if isinstance(model_path, str):
-        model_file = Path(
-            dai.getModelFromZoo(
-                dai.NNModelDescription(
-                    model_path, platform=device.getPlatformAsString()
-                ),
-                apiKey=environ.HUBAI_API_KEY or "",
+        return dai.NNArchive(
+            Path(
+                dai.getModelFromZoo(
+                    dai.NNModelDescription(
+                        model_path, platform=device.getPlatformAsString()
+                    ),
+                    apiKey=environ.HUBAI_API_KEY or "",
+                )
             )
         )
-        return model_file, dai.NNArchive(model_file)
     if str(model_path).endswith(".tar.xz"):
-        return model_path, dai.NNArchive(model_path)
+        return dai.NNArchive(model_path)
     if model_path.suffix == ".blob":
-        return model_path, None
+        return model_path
     raise ValueError(
         "Unsupported model format. Supported formats: .tar.xz, .blob, or HubAI model slug."
     )
 
 
-def _random_input_data(
-    model_file: Path, archive: dai.NNArchive | None
-) -> dai.NNData:
+def _random_input_data(model: dai.NNArchive | Path) -> dai.NNData:
     """Build a random 8-bit HWC image for each input of the model."""
-    if archive is not None:
+    if isinstance(model, dai.NNArchive):
         sizes = [
             (archive_input.name, archive_input.shape[::-1])
-            for archive_input in archive.getConfig().model.inputs
+            for archive_input in model.getConfig().model.inputs
         ]
     else:
-        blob = dai.OpenVINO.Blob(model_file)
+        blob = dai.OpenVINO.Blob(model)
         sizes = [
             (name, blob.networkInputs[name].dims)
             for name in blob.networkInputs

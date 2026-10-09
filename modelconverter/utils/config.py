@@ -1504,7 +1504,6 @@ def _input_calibration(
     if not inp_calibration and not top_level_calibration:
         return None
     if top_level_calibration == "random":
-        # Random calibration data still keeps specified resize_method
         if (
             isinstance(inp_calibration, dict)
             and "resize_method" in inp_calibration
@@ -1681,7 +1680,7 @@ def _get_onnx_tensor_info(
     model = onnx.load(str(model_path))
     for tensor in chain(model.graph.input, model.graph.output):
         if tensor.name == tensor_name:
-            return _onnx_tensor_info(tensor.type.tensor_type, tensor_name)
+            return _tensor_type_info(tensor.type.tensor_type, tensor_name)
 
     if not any(
         tensor_name in chain(node.input, node.output)
@@ -1690,13 +1689,13 @@ def _get_onnx_tensor_info(
         raise NameError(f"Tensor '{tensor_name}' not found in the ONNX model.")
     for value_info in model.graph.value_info:
         if value_info.name == tensor_name:
-            return _onnx_tensor_info(value_info.type.tensor_type, tensor_name)
+            return _tensor_type_info(value_info.type.tensor_type, tensor_name)
     raise ValueError(
         f"Tensor '{tensor_name}' does not have shape/type information."
     )
 
 
-def _onnx_tensor_info(
+def _tensor_type_info(
     tensor_type: TypeProto.Tensor, tensor_name: str
 ) -> tuple[list[int], DataType]:
     """Read the static shape and the data type of an ONNX tensor."""

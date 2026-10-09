@@ -196,14 +196,14 @@ def _maybe_stage_token(
     # A config override (`<key> <value>`). The schema knows what the value is,
     # which beats guessing from its shape: a bare directory name is staged when
     # the key calls for a path, and a destination is never staged at all.
-    kind = None if prev is None else _override_key_kind(prev)
-    if kind == "output":
-        return None
-    if kind == "path":
-        return _stage_value(token, inputs_dir)
-    if kind == "args":
-        assert prev is not None
-        return _stage_arg_list_token(token, prev, inputs_dir)
+    if prev is not None:
+        kind = _override_key_kind(prev)
+        if kind == "output":
+            return None
+        if kind == "path":
+            return _stage_value(token, inputs_dir)
+        if kind == "args":
+            return _stage_arg_list_token(token, prev, inputs_dir)
 
     # A bare positional token (platform, unknown override value, ...).
     # Only stage it when it clearly looks like an existing local path.
@@ -634,15 +634,13 @@ def _stage_arg(
     """Stage one item of a raw argument list, if a path flag introduces it."""
     if previous in path_flags:
         return _stage_config_reference(item, config_dir, inputs_dir)
-    flag, _, value = item.partition("=")
     # The `--flag=value` spelling carries the path in the same token as the
     # flag.
-    if "=" not in item or flag not in path_flags:
+    flag, sep, value = item.partition("=")
+    if not sep or flag not in path_flags:
         return None
-    staged_value = _stage_config_reference(value, config_dir, inputs_dir)
-    if staged_value is None:
-        return None
-    return f"{flag}={staged_value}"
+    staged = _stage_config_reference(value, config_dir, inputs_dir)
+    return f"{flag}={staged}" if staged is not None else None
 
 
 def _is_path_field(key: str | None, parent: str | None) -> bool:

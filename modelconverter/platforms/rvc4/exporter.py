@@ -46,6 +46,31 @@ from modelconverter.utils.types import (
     QuantizationMode,
 )
 
+_SNPE_LAYOUTS: Final = frozenset(
+    {
+        "NCDHW",
+        "NDHWC",
+        "NCHW",
+        "NHWC",
+        "NFC",
+        "NCF",
+        "NTF",
+        "TNF",
+        "NF",
+        "NC",
+        "F",
+        "NONTRIVIAL",
+    }
+)
+
+
+class _CalibrationEntry(NamedTuple):
+    """One calibration file of one input."""
+
+    path: Path
+    inp: InputConfig
+    calib: ImageCalibrationConfig
+
 
 class RVC4Exporter(Exporter):
     """Exporter producing a DLC model for the RVC4 platform."""
@@ -312,7 +337,7 @@ class RVC4Exporter(Exporter):
                 f.write(line + "\n")
         return self._input_list_path
 
-    def _calibration_entries(self) -> list[list["_CalibrationEntry"]]:
+    def _calibration_entries(self) -> list[list[_CalibrationEntry]]:
         """List the calibration files of each input.
 
         Terminates the process if an input has no shape or a dynamic
@@ -338,9 +363,7 @@ class RVC4Exporter(Exporter):
             )
         return entries
 
-    def _write_raw_sample(
-        self, entry: "_CalibrationEntry", index: int
-    ) -> Path:
+    def _write_raw_sample(self, entry: _CalibrationEntry, index: int) -> Path:
         """Write one calibration sample as a raw file for SNPE.
 
         A ``.raw`` file of the user is used as it is.
@@ -635,32 +658,6 @@ class RVC4Exporter(Exporter):
             self._quantization_override_payload(self._encodings),
             self._input_model,
         )
-
-
-_SNPE_LAYOUTS: Final = frozenset(
-    {
-        "NCDHW",
-        "NDHWC",
-        "NCHW",
-        "NHWC",
-        "NFC",
-        "NCF",
-        "NTF",
-        "TNF",
-        "NF",
-        "NC",
-        "F",
-        "NONTRIVIAL",
-    }
-)
-
-
-class _CalibrationEntry(NamedTuple):
-    """One calibration file of one input."""
-
-    path: Path
-    inp: InputConfig
-    calib: ImageCalibrationConfig
 
 
 def _per_input_args(flag: str, values: dict[str, str]) -> list[str]:

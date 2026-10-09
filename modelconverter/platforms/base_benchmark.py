@@ -364,7 +364,7 @@ class Benchmark(ABC):
 
         """
         logger.info(f"Running benchmarking for {self.model_name}")
-        kwargs = self._cast_overrides(kwargs)
+        self._cast_overrides(kwargs)
         if not full:
             configurations = [{**self.default_configuration, **kwargs}]
         else:
@@ -388,9 +388,7 @@ class Benchmark(ABC):
         if save:
             self.save_results(results)
 
-    def _cast_overrides(
-        self, kwargs: dict[str, ConfigValue]
-    ) -> dict[str, ConfigValue]:
+    def _cast_overrides(self, overrides: Configuration) -> None:
         """Fill the overrides with the defaults and cast them to their type.
 
         `all_configurations` names only the options it varies, so the
@@ -398,7 +396,7 @@ class Benchmark(ABC):
         null.
         """
         for key, default in self.default_configuration.items():
-            value = kwargs.get(key, default)
+            value = overrides.get(key, default)
             # `bool` accepts any object, so it turns the string "false"
             # into `True`. A boolean option keeps its value and
             # `get_option` refuses a value of the wrong type.
@@ -408,5 +406,4 @@ class Benchmark(ABC):
                 and not isinstance(default, bool)
             ):
                 value = type(default)(value)
-            kwargs[key] = value
-        return kwargs
+            overrides[key] = value

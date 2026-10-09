@@ -54,13 +54,12 @@ def _save_random_sample(
 ) -> None:
     """Save one random calibration sample as an image or an array.
 
-    An image input with a 2D or 3D sample, or a 3D or 4D sample with a
-    batch of one, is written as a channels-last PNG. Any other sample
-    is written as a NumPy array.
+    An image input with a 2D or 3D sample, or a 4D sample with a batch
+    of one, is written as a channels-last PNG. Any other sample is
+    written as a NumPy array.
     """
-    ndim = len(arr.shape)
     is_image = not inp.is_raw_input and (
-        ndim in {2, 3} or (ndim in {3, 4} and arr.shape[0] == 1)
+        arr.ndim in {2, 3} or (arr.ndim == 4 and arr.shape[0] == 1)
     )
     if is_image:
         cv2.imwrite(

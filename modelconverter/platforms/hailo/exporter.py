@@ -218,9 +218,7 @@ class HailoExporter(Exporter):
             calib_dataset = np.zeros((len(images), *shape), dtype=np.float32)
 
             for idx, img_path in enumerate(images):
-                img = self._read_hailo_sample(
-                    orig_name, inp, calib, img_path, shape
-                )
+                img = self._read_hailo_sample(inp, calib, img_path, shape)
                 if img.shape != tuple(shape):
                     raise ModelconverterException(
                         f"Calibration data for input '{orig_name}' has shape "
@@ -235,7 +233,6 @@ class HailoExporter(Exporter):
 
     def _read_hailo_sample(
         self,
-        name: str,
         inp: InputConfig,
         calib: ImageCalibrationConfig,
         path: Path,
@@ -244,7 +241,10 @@ class HailoExporter(Exporter):
         """Read one calibration sample in the sample shape of Hailo."""
         if is_user_calibration_tensor(path, calib):
             img = read_user_calibration_tensor(
-                path, raw_shape=shape, data_type=inp.data_type, input_name=name
+                path,
+                raw_shape=shape,
+                data_type=inp.data_type,
+                input_name=inp.name,
             )
             if path.suffix.lower() == ".npy" and img.shape == (1, *shape):
                 return img[0]

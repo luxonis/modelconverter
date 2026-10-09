@@ -214,9 +214,6 @@ class RVC2Exporter(Exporter):
         layout_mappings: list[str] = []
 
         for name, inp in self._inputs.items():
-            if not inp.layout or not inp.shape:  # pragma: no cover
-                continue
-
             source_shape = source_shapes.get(name)
             converted_shape = converted_shapes.get(name)
             if source_shape is None or converted_shape is None:
@@ -512,7 +509,6 @@ def _mo_preprocessing_args(inputs: dict[str, InputConfig]) -> list[str]:
     }
     if scales:
         args += ["--scale_values", _per_input_values(scales)]
-    # Append reverse_input_channels flag only once if needed
     if any(inp.encoding_mismatch for inp in inputs.values()):
         args.append("--reverse_input_channels")
     return args
@@ -539,12 +535,10 @@ def _follow_onnx_layout(
         The ``--layout`` mapping of the input, or ``None`` when the
         input keeps its layout.
     """
-    assert inp.layout is not None
-    assert inp.shape is not None
-    layout = inp.layout
-    if len(source_shape) != len(layout) or len(converted_shape) != len(layout):
+    layout, shape = inp.layout, inp.shape
+    if not layout or not shape or layout[-1] != "C":
         return None
-    if layout[-1] != "C":
+    if len(source_shape) != len(layout) or len(converted_shape) != len(layout):
         return None
     if len(layout) == 4 and layout[0] == "N":
         order, mapping = (0, 3, 1, 2), "nchw->nhwc"
@@ -554,7 +548,7 @@ def _follow_onnx_layout(
         return None
     if converted_shape != [source_shape[i] for i in order]:
         return None
-    inp.shape = [inp.shape[i] for i in order]
+    inp.shape = [shape[i] for i in order]
     inp.layout = "".join(layout[i] for i in order)
     return mapping
 
