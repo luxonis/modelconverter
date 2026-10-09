@@ -75,10 +75,11 @@ env:
   LUXONIS_TELEMETRY_ENABLED: "false"
 
 jobs:
-  # `pre-commit` and `docs` gate every test job below. Lint, formatting and a
-  # docstring pydoctor cannot render are all cheap failures to find, and
-  # finding them here keeps them out of a test log -- and off a self-hosted
-  # runner with a device attached.
+  # `pre-commit` gates `docs` and `typecheck`, and those two run in parallel.
+  # Both gate `unit`, and `unit` gates `integration`. Lint, formatting, a
+  # docstring pydoctor cannot render and a type error are all cheap failures
+  # to find, and finding them here keeps them out of a test log -- and off a
+  # self-hosted runner with a device attached.
   pre-commit:
     name: Pre-commit
     runs-on: ubuntu-latest
@@ -135,7 +136,7 @@ jobs:
 
   typecheck:
     name: Type check
-    needs: docs
+    needs: pre-commit
     runs-on: ubuntu-latest
     env:
       GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
@@ -191,7 +192,7 @@ jobs:
 
   unit:
     name: Unit tests
-    needs: typecheck
+    needs: [docs, typecheck]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
