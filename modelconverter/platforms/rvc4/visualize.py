@@ -101,7 +101,7 @@ class RVC4Visualizer(Visualizer):
         _add_metric_buttons(
             fig,
             metrics,
-            {model: traces_data[model] for model in self._layer_csvs},
+            traces_data,
             title="CPU Cycles per Layer by Model",
         )
         return fig
