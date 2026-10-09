@@ -220,6 +220,7 @@ omit = [
   "modelconverter/utils/onnx_tools.py",
   "modelconverter/utils/onnx_compatibility.py",
   "modelconverter/platforms/base_benchmark.py",
+  "modelconverter/platforms/dai_benchmark.py",
   "modelconverter/platforms/*/benchmark.py",
   "modelconverter/platforms/base_analyze.py",
   "modelconverter/platforms/*/analyze.py",

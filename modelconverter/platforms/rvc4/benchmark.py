@@ -35,6 +35,7 @@ from modelconverter.platforms.base_benchmark import (
     get_option,
     get_optional_option,
 )
+from modelconverter.platforms.dai_benchmark import run_dai_benchmark
 from modelconverter.platforms.rvc4.utils import (
     device_id_to_adb_id,
     get_device_info,
@@ -47,10 +48,7 @@ from modelconverter.utils import (
     subprocess_run,
 )
 from modelconverter.utils.hubai_utils import create_hubai_client
-from modelconverter.utils.log_latency import (
-    RVC4_INFERENCE_LATENCY_RE,
-    run_dai_benchmark,
-)
+from modelconverter.utils.log_latency import RVC4_INFERENCE_LATENCY_RE
 
 
 class InputSpec(BaseModelExtraForbid):

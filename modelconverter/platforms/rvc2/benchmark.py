@@ -19,11 +19,9 @@ from modelconverter.platforms.base_benchmark import (
     get_input_fps,
     get_option,
 )
+from modelconverter.platforms.dai_benchmark import run_dai_benchmark
 from modelconverter.utils import environ
-from modelconverter.utils.log_latency import (
-    RVC2_INFERENCE_LATENCY_RE,
-    run_dai_benchmark,
-)
+from modelconverter.utils.log_latency import RVC2_INFERENCE_LATENCY_RE
 
 
 class RVC2Benchmark(Benchmark):
