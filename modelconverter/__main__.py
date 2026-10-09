@@ -26,7 +26,6 @@ from typing import Annotated, Literal
 from cyclopts import App, Group, Parameter
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator
-from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
 from luxonis_ml.telemetry import Telemetry
 from luxonis_ml.typing import ParamValue
@@ -290,7 +289,6 @@ class _ConversionPlan:
 
     platform: Platform
     cfg: Config
-    archive_cfg: NNArchiveConfig | None
     to: Literal["native", "nn_archive"]
     config_source: ConfigSource
     main_stage_provided: bool
@@ -492,7 +490,6 @@ def _convert(
     plan = _ConversionPlan(
         platform=platform,
         cfg=cfg,
-        archive_cfg=archive_cfg,
         to=to,
         config_source=detect_config_source(
             original_path, overrides, archive_cfg
