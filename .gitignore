@@ -153,3 +153,4 @@ apidocs/
 .build
 
 .DS_Store
+.pi/*
