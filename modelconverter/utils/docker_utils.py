@@ -29,6 +29,7 @@ from docker.utils import parse_repository_tag
 from loguru import logger
 from luxonis_ml.typing import Params
 from luxonis_ml.utils import environ
+from pydantic import SecretStr
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 import docker
@@ -172,12 +173,8 @@ def generate_compose_config(
 
     """
     environment = {
-        "AWS_ACCESS_KEY_ID": environ.AWS_ACCESS_KEY_ID.get_secret_value()
-        if environ.AWS_ACCESS_KEY_ID
-        else "",
-        "AWS_SECRET_ACCESS_KEY": environ.AWS_SECRET_ACCESS_KEY.get_secret_value()
-        if environ.AWS_SECRET_ACCESS_KEY
-        else "",
+        "AWS_ACCESS_KEY_ID": _secret_value(environ.AWS_ACCESS_KEY_ID),
+        "AWS_SECRET_ACCESS_KEY": _secret_value(environ.AWS_SECRET_ACCESS_KEY),
         "AWS_S3_ENDPOINT_URL": environ.AWS_S3_ENDPOINT_URL or "",
         "LUXONISML_BUCKET": environ.LUXONISML_BUCKET or "",
         "TF_CPP_MIN_LOG_LEVEL": "3",
@@ -185,24 +182,8 @@ def generate_compose_config(
         # Forwarded so the in-container test suite can fetch model-zoo
         # archives from HubAI.
         "HUBAI_API_KEY": os.getenv("HUBAI_API_KEY", ""),
+        **_host_identity(),
     }
-    # Pass the host user's identity so the container can chown the outputs and
-    # cache back to the invoking user on exit (see docker/*/entrypoint.sh).
-    # `getuid`/`getgid` are POSIX-only; on other platforms chowning is neither
-    # possible nor necessary. Under a user-namespace daemon it is either
-    # unnecessary (rootless: container root already *is* the host user) or
-    # impossible (userns remap: the host user is not mapped into the
-    # container), and doing it anyway hands the files to an unmapped sub-uid.
-    namespace_mode = docker_user_namespace_mode()
-    if namespace_mode == "unknown":
-        logger.warning(
-            "Could not determine the Docker daemon's user-namespace mode; "
-            "assuming a rootful daemon. If the outputs come out owned by "
-            "another user, unset HOST_UID/HOST_GID and check `docker info`."
-        )
-    if hasattr(os, "getuid") and namespace_mode in {"rootful", "unknown"}:
-        environment["HOST_UID"] = str(os.getuid())
-        environment["HOST_GID"] = str(os.getgid())
     if extra_environment:
         environment.update(extra_environment)
 
@@ -212,30 +193,8 @@ def generate_compose_config(
     volumes = [
         f"{get_cache_dir()}:{CONTAINER_SHARED_DIR}",
         f"{host_output_dir}:/app/output",
+        *_project_volumes(cwd, is_dev=image.endswith("-dev")),
     ]
-    is_dev = image.endswith("-dev")
-    # Mount the test suite (excluded from the image via .dockerignore) so a
-    # dev container can run it, e.g.
-    # `modelconverter shell <t> --dev -c "pytest -m <t>"`. Only for dev images:
-    # a plain conversion has no use for it, and the entrypoint hands the mount
-    # back to the invoking user on exit -- which has no business touching an
-    # unrelated `tests/` that merely happens to sit in the working directory.
-    if is_dev and (cwd / "tests").exists():
-        volumes.append(f"{cwd / 'tests'}:/app/tests")
-    # Same reasoning: the image carries its own pyproject.toml, and in-container
-    # tooling reading /app/pyproject.toml must not pick up whatever Python
-    # project the user happens to convert from.
-    if is_dev and (cwd / "pyproject.toml").exists():
-        volumes.append(f"{cwd / 'pyproject.toml'}:/app/pyproject.toml")
-    # The conversion tests convert some of the example configs by their
-    # repository-relative path, so those have to be reachable too.
-    if (cwd / "configs").exists():
-        volumes.append(f"{cwd / 'configs'}:/app/configs")
-    # In dev images the package is baked in (`pip install -e .`), so a source
-    # change would otherwise need an image rebuild to take effect. Mount the
-    # host source over it so edits to modelconverter are live in the container.
-    if is_dev and (cwd / "modelconverter").exists():
-        volumes.append(f"{cwd / 'modelconverter'}:/app/modelconverter")
 
     service: Params = {
         "environment": environment,
@@ -263,14 +222,69 @@ def generate_compose_config(
         "services": {"modelconverter": service},
         "secrets": {
             "gcp-credentials": {
-                "file": environ.GOOGLE_APPLICATION_CREDENTIALS.get_secret_value()
-                if environ.GOOGLE_APPLICATION_CREDENTIALS
-                else tempfile.NamedTemporaryFile(delete=False).name,  # noqa: SIM115
+                "file": _secret_value(environ.GOOGLE_APPLICATION_CREDENTIALS)
+                or tempfile.NamedTemporaryFile(delete=False).name,  # noqa: SIM115
             }
         },
     }
 
     return yaml.dump(config)
+
+
+def _secret_value(secret: SecretStr | None) -> str:
+    """Return the value of a secret, or an empty string without one."""
+    return secret.get_secret_value() if secret else ""
+
+
+def _host_identity() -> dict[str, str]:
+    """Return the uid and gid of the host user for a rootful daemon.
+
+    The container uses them to chown the outputs and the cache back to
+    the invoking user on exit (see ``docker/*/entrypoint.sh``).
+    """
+    # `getuid`/`getgid` are POSIX-only; on other platforms chowning is neither
+    # possible nor necessary. Under a user-namespace daemon it is either
+    # unnecessary (rootless: container root already *is* the host user) or
+    # impossible (userns remap: the host user is not mapped into the
+    # container), and doing it anyway hands the files to an unmapped sub-uid.
+    namespace_mode = docker_user_namespace_mode()
+    if namespace_mode == "unknown":
+        logger.warning(
+            "Could not determine the Docker daemon's user-namespace mode; "
+            "assuming a rootful daemon. If the outputs come out owned by "
+            "another user, unset HOST_UID/HOST_GID and check `docker info`."
+        )
+    if hasattr(os, "getuid") and namespace_mode in {"rootful", "unknown"}:
+        return {"HOST_UID": str(os.getuid()), "HOST_GID": str(os.getgid())}
+    return {}
+
+
+def _project_volumes(cwd: Path, *, is_dev: bool) -> list[str]:
+    """Mount the parts of a modelconverter checkout in ``cwd``."""
+    volumes = []
+    # Mount the test suite (excluded from the image via .dockerignore) so a
+    # dev container can run it, e.g.
+    # `modelconverter shell <t> --dev -c "pytest -m <t>"`. Only for dev images:
+    # a plain conversion has no use for it, and the entrypoint hands the mount
+    # back to the invoking user on exit -- which has no business touching an
+    # unrelated `tests/` that merely happens to sit in the working directory.
+    if is_dev and (cwd / "tests").exists():
+        volumes.append(f"{cwd / 'tests'}:/app/tests")
+    # Same reasoning: the image carries its own pyproject.toml, and in-container
+    # tooling reading /app/pyproject.toml must not pick up whatever Python
+    # project the user happens to convert from.
+    if is_dev and (cwd / "pyproject.toml").exists():
+        volumes.append(f"{cwd / 'pyproject.toml'}:/app/pyproject.toml")
+    # The conversion tests convert some of the example configs by their
+    # repository-relative path, so those have to be reachable too.
+    if (cwd / "configs").exists():
+        volumes.append(f"{cwd / 'configs'}:/app/configs")
+    # In dev images the package is baked in (`pip install -e .`), so a source
+    # change would otherwise need an image rebuild to take effect. Mount the
+    # host source over it so edits to modelconverter are live in the container.
+    if is_dev and (cwd / "modelconverter").exists():
+        volumes.append(f"{cwd / 'modelconverter'}:/app/modelconverter")
+    return volumes
 
 
 def check_docker() -> None:

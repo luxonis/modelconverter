@@ -179,11 +179,7 @@ def _maybe_stage_token(
     ``None``.
     """
     if token.startswith("--") and "=" in token:
-        flag, _, value = token.partition("=")
-        if flag in path_flags:
-            staged = _stage_value(value, inputs_dir)
-            return f"{flag}={staged}" if staged is not None else None
-        return None
+        return _stage_inline_flag(token, inputs_dir, path_flags)
 
     if _is_flag(token):
         return None
@@ -200,14 +196,14 @@ def _maybe_stage_token(
     # A config override (`<key> <value>`). The schema knows what the value is,
     # which beats guessing from its shape: a bare directory name is staged when
     # the key calls for a path, and a destination is never staged at all.
-    if prev is not None:
-        kind = _override_key_kind(prev)
-        if kind == "output":
-            return None
-        if kind == "path":
-            return _stage_value(token, inputs_dir)
-        if kind == "args":
-            return _stage_arg_list_token(token, prev, inputs_dir)
+    kind = None if prev is None else _override_key_kind(prev)
+    if kind == "output":
+        return None
+    if kind == "path":
+        return _stage_value(token, inputs_dir)
+    if kind == "args":
+        assert prev is not None
+        return _stage_arg_list_token(token, prev, inputs_dir)
 
     # A bare positional token (platform, unknown override value, ...).
     # Only stage it when it clearly looks like an existing local path.
@@ -226,6 +222,17 @@ def _is_flag(token: str) -> bool:
     if len(token) <= 1 or token[0] != "-" or token[1].isdigit():
         return False
     return not (token[1] == "." and len(token) > 2 and token[2].isdigit())
+
+
+def _stage_inline_flag(
+    token: str, inputs_dir: Path, path_flags: Collection[str]
+) -> str | None:
+    """Stage the value of a ``--flag=value`` token of a path flag."""
+    flag, _, value = token.partition("=")
+    if flag not in path_flags:
+        return None
+    staged = _stage_value(value, inputs_dir)
+    return f"{flag}={staged}" if staged is not None else None
 
 
 def _override_key_kind(key: str) -> str | None:
@@ -606,23 +613,36 @@ def _rewrite_arg_list(
         previous = args[index - 1] if index else None
         staged = None
         if isinstance(item, str):
-            if previous in path_flags:
-                staged = _stage_config_reference(item, config_dir, inputs_dir)
-            elif "=" in item and item.partition("=")[0] in path_flags:
-                # The `--flag=value` spelling carries the path in the same
-                # token as the flag.
-                flag, _, value = item.partition("=")
-                staged_value = _stage_config_reference(
-                    value, config_dir, inputs_dir
-                )
-                if staged_value is not None:
-                    staged = f"{flag}={staged_value}"
+            staged = _stage_arg(
+                item, previous, path_flags, config_dir, inputs_dir
+            )
         if staged is None:
             rewritten.append(item)
         else:
             rewritten.append(staged)
             changed = True
     return rewritten, changed
+
+
+def _stage_arg(
+    item: str,
+    previous: ParamValue,
+    path_flags: frozenset[str],
+    config_dir: Path,
+    inputs_dir: Path,
+) -> str | None:
+    """Stage one item of a raw argument list, if a path flag introduces it."""
+    if previous in path_flags:
+        return _stage_config_reference(item, config_dir, inputs_dir)
+    flag, _, value = item.partition("=")
+    # The `--flag=value` spelling carries the path in the same token as the
+    # flag.
+    if "=" not in item or flag not in path_flags:
+        return None
+    staged_value = _stage_config_reference(value, config_dir, inputs_dir)
+    if staged_value is None:
+        return None
+    return f"{flag}={staged_value}"
 
 
 def _is_path_field(key: str | None, parent: str | None) -> bool:
@@ -773,31 +793,54 @@ def _iter_input_files(src: Path) -> Iterator[_InputFile]:
     for root, dir_names, file_names in os.walk(src, followlinks=True):
         root_path = Path(root)
         ancestors = chains.pop(root_path, frozenset())
-        kept = []
-        for name in dir_names:
-            if name in _IGNORED_DIR_NAMES:
-                continue
-            directory = root_path / name
-            if directory.resolve() in excluded:
-                continue
-            key = _dir_key(directory)
-            if key is None or key in ancestors:
-                continue
-            chains[directory] = ancestors | {key}
-            kept.append(name)
-        dir_names[:] = kept
+        dir_names[:] = _dirs_to_enter(
+            root_path, dir_names, ancestors, excluded, chains
+        )
         for name in file_names:
             path = root_path / name
-            try:
-                st = path.stat()
-            except OSError:
-                continue
-            if not stat.S_ISREG(st.st_mode):
-                continue
-            if not os.access(path, os.R_OK):
-                logger.warning(f"Skipping unreadable file {path}")
-                continue
-            yield _InputFile(path.relative_to(src).as_posix(), path, st)
+            st = _readable_file_stat(path)
+            if st is not None:
+                yield _InputFile(path.relative_to(src).as_posix(), path, st)
+
+
+def _dirs_to_enter(
+    root_path: Path,
+    dir_names: list[str],
+    ancestors: frozenset[tuple[int, int]],
+    excluded: set[Path],
+    chains: dict[Path, frozenset[tuple[int, int]]],
+) -> list[str]:
+    """Pick the subdirectories that the walk enters.
+
+    The chain of each picked directory goes into ``chains``.
+    """
+    kept = []
+    for name in dir_names:
+        if name in _IGNORED_DIR_NAMES:
+            continue
+        directory = root_path / name
+        if directory.resolve() in excluded:
+            continue
+        key = _dir_key(directory)
+        if key is None or key in ancestors:
+            continue
+        chains[directory] = ancestors | {key}
+        kept.append(name)
+    return kept
+
+
+def _readable_file_stat(path: Path) -> os.stat_result | None:
+    """Return the stat of a regular file that this process can read."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    if not stat.S_ISREG(st.st_mode):
+        return None
+    if not os.access(path, os.R_OK):
+        logger.warning(f"Skipping unreadable file {path}")
+        return None
+    return st
 
 
 def _dir_key(directory: Path) -> tuple[int, int] | None:

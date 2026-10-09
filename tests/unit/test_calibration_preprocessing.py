@@ -82,6 +82,22 @@ def test_normalizing_to_integer_model_input_is_rejected():
         )
 
 
+def test_normalizing_without_channel_axis_is_rejected():
+    preprocessing = CalibrationPreprocessing(
+        encoding_from=Encoding.NONE,
+        encoding_to=Encoding.NONE,
+        mean_values=(1.0,),
+        scale_values=(2.0,),
+        data_type=DataType.FLOAT32,
+        is_image=False,
+    )
+
+    with pytest.raises(ModelconverterException, match="channel axis"):
+        apply_calibration_preprocessing(
+            np.ones((1, 2), dtype=np.float32), preprocessing, layout="NF"
+        )
+
+
 def test_reorder_layout_adds_and_removes_only_singleton_batch():
     hwc = np.arange(24).reshape(2, 4, 3)
     nchw = reorder_layout(hwc, "HWC", "NCHW")

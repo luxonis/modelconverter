@@ -19,10 +19,10 @@ from modelconverter.platforms.base_benchmark import (
     get_input_fps,
     get_option,
 )
-from modelconverter.utils import create_progress_handler, environ
+from modelconverter.utils import environ
 from modelconverter.utils.log_latency import (
     RVC2_INFERENCE_LATENCY_RE,
-    parse_inference_latency,
+    run_dai_benchmark,
 )
 
 
@@ -101,111 +101,76 @@ class RVC2Benchmark(Benchmark):
             raise ValueError(
                 f"Found {device.getPlatformAsString()}, expected RVC2 platform."
             )
+        model_file, archive = _load_model(model_path, device)
 
-        if isinstance(model_path, str):
-            modelPath = Path(
-                dai.getModelFromZoo(
-                    dai.NNModelDescription(
-                        model_path,
-                        platform=device.getPlatformAsString(),
-                    ),
-                    apiKey=environ.HUBAI_API_KEY or "",
-                )
+        def configure_network(network: dai.node.NeuralNetwork) -> None:
+            """Load the archive or the blob into the network node."""
+            if archive is not None:
+                network.setNNArchive(archive)
+            else:
+                network.setBlobPath(model_file)
+
+        # RVC2 reports per-inference latency at TRACE level.
+        return run_dai_benchmark(
+            device,
+            _random_input_data(model_file, archive),
+            configure_network,
+            latency_pattern=RVC2_INFERENCE_LATENCY_RE,
+            log_level=dai.LogLevel.TRACE,
+            input_fps=input_fps,
+            num_threads=num_threads,
+            num_messages=num_messages,
+            benchmark_time=benchmark_time,
+            repetitions=repetitions,
+        )
+
+
+def _load_model(
+    model_path: PathType, device: dai.Device
+) -> tuple[Path, dai.NNArchive | None]:
+    """Find the model file of an NN Archive, a blob or a HubAI slug.
+
+    Returns:
+        The model file, and the loaded archive unless the model is a
+        blob.
+    """
+    if isinstance(model_path, str):
+        model_file = Path(
+            dai.getModelFromZoo(
+                dai.NNModelDescription(
+                    model_path, platform=device.getPlatformAsString()
+                ),
+                apiKey=environ.HUBAI_API_KEY or "",
             )
-        elif (
-            str(model_path).endswith(".tar.xz") or model_path.suffix == ".blob"
-        ):
-            modelPath = model_path
-        else:
-            raise ValueError(
-                "Unsupported model format. Supported formats: .tar.xz, .blob, or HubAI model slug."
-            )
+        )
+        return model_file, dai.NNArchive(model_file)
+    if str(model_path).endswith(".tar.xz"):
+        return model_path, dai.NNArchive(model_path)
+    if model_path.suffix == ".blob":
+        return model_path, None
+    raise ValueError(
+        "Unsupported model format. Supported formats: .tar.xz, .blob, or HubAI model slug."
+    )
 
-        inputSizes = []
-        inputNames = []
-        if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            modelArchive = dai.NNArchive(modelPath)
-            for archive_input in modelArchive.getConfig().model.inputs:
-                inputSizes.append(archive_input.shape[::-1])
-                inputNames.append(archive_input.name)
-        elif str(model_path).endswith(".blob"):
-            blob_model = dai.OpenVINO.Blob(modelPath)
-            for input_name in blob_model.networkInputs:
-                inputSizes.append(blob_model.networkInputs[input_name].dims)
-                inputNames.append(input_name)
 
-        inputData = dai.NNData()
-        for name, inputSize in zip(inputNames, inputSizes, strict=True):
-            img = np.random.randint(
-                0, 255, (inputSize[1], inputSize[0], 3), np.uint8
-            )
-            inputData.addTensor(name, img)
+def _random_input_data(
+    model_file: Path, archive: dai.NNArchive | None
+) -> dai.NNData:
+    """Build a random 8-bit HWC image for each input of the model."""
+    if archive is not None:
+        sizes = [
+            (archive_input.name, archive_input.shape[::-1])
+            for archive_input in archive.getConfig().model.inputs
+        ]
+    else:
+        blob = dai.OpenVINO.Blob(model_file)
+        sizes = [
+            (name, blob.networkInputs[name].dims)
+            for name in blob.networkInputs
+        ]
 
-        latencies: list[float] = []
-
-        def on_log_message(log_message: dai.LogMessage) -> None:
-            latency = parse_inference_latency(
-                log_message, RVC2_INFERENCE_LATENCY_RE
-            )
-            if latency is not None:
-                latencies.append(latency)
-
-        callback_id = device.addLogCallback(on_log_message)
-        # RVC2 reports per-inference latency at TRACE level.  Keep TRACE logs
-        # out of stdout; the callback still receives the messages.
-        device.setLogLevel(dai.LogLevel.TRACE)
-        device.setLogOutputLevel(dai.LogLevel.WARN)
-
-        fps_list = []
-        try:
-            with dai.Pipeline(device) as pipeline:
-                benchmarkOut = pipeline.create(dai.node.BenchmarkOut)
-                benchmarkOut.setRunOnHost(False)
-                benchmarkOut.setFps(input_fps)
-
-                neuralNetwork = pipeline.create(dai.node.NeuralNetwork)
-                if isinstance(model_path, str) or str(model_path).endswith(
-                    ".tar.xz"
-                ):
-                    neuralNetwork.setNNArchive(modelArchive)
-                elif str(model_path).endswith(".blob"):
-                    neuralNetwork.setBlobPath(modelPath)
-                neuralNetwork.setNumInferenceThreads(num_threads)
-
-                benchmarkIn = pipeline.create(dai.node.BenchmarkIn)
-                benchmarkIn.setRunOnHost(False)
-                benchmarkIn.sendReportEveryNMessages(num_messages)
-                benchmarkIn.logReportsAsWarnings(False)
-
-                benchmarkOut.out.link(neuralNetwork.input)
-                neuralNetwork.out.link(benchmarkIn.input)
-
-                outputQueue = benchmarkIn.report.createOutputQueue()
-                inputQueue = benchmarkOut.input.createInputQueue()
-
-                pipeline.start()
-                inputQueue.send(inputData)
-
-                progress, on_tick, should_continue = create_progress_handler(
-                    benchmark_time, repetitions
-                )
-
-                with progress:
-                    while pipeline.isRunning() and should_continue():
-                        benchmarkReport = outputQueue.get()
-                        if not isinstance(
-                            benchmarkReport, dai.BenchmarkReport
-                        ):
-                            raise TypeError(
-                                f"Expected BenchmarkReport, got {type(benchmarkReport)}"
-                            )
-
-                        fps_list.append(benchmarkReport.fps)
-                        on_tick()
-        finally:
-            device.removeLogCallback(callback_id)
-
-        return {
-            "fps": float(np.mean(fps_list)),
-            "latency": float(np.mean(latencies)) if latencies else "N/A",
-        }
+    input_data = dai.NNData()
+    for name, size in sizes:
+        img = np.random.randint(0, 255, (size[1], size[0], 3), np.uint8)
+        input_data.addTensor(name, img)
+    return input_data

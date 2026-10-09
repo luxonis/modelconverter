@@ -112,39 +112,7 @@ def apply_calibration_preprocessing(
         result = np.flip(result, axis=channel_axis)
 
     if preprocessing.normalization_required:
-        target_dtype = preprocessing.data_type.as_numpy_dtype()
-        if not np.issubdtype(target_dtype, np.floating):
-            raise ModelconverterException(
-                "Externalized mean/scale calibration requires a floating-point "
-                f"model input, but the input data type is "
-                f"'{preprocessing.data_type.value}'."
-            )
-        if channel_axis < 0:
-            raise ModelconverterException(
-                "Externalized mean/scale calibration requires a layout with a "
-                f"channel axis, got '{layout}'."
-            )
-
-        # A float16 model input still normalizes in float32; only a float64
-        # one needs the wider accumulator.
-        calculation_dtype = (
-            np.float64 if target_dtype == np.float64 else np.float32
-        )
-        channels = result.shape[channel_axis]
-        mean = _per_channel(
-            preprocessing.mean_values, channels, "mean", calculation_dtype
-        )
-        scale = _per_channel(
-            preprocessing.scale_values, channels, "scale", calculation_dtype
-        )
-        broadcast_shape = [1] * result.ndim
-        broadcast_shape[channel_axis] = channels
-
-        result = result.astype(calculation_dtype, copy=False)
-        if mean is not None:
-            result = result - mean.reshape(broadcast_shape)
-        if scale is not None:
-            result = result / scale.reshape(broadcast_shape)
+        result = _normalize(result, preprocessing, layout=layout)
 
     return result.astype(preprocessing.data_type.as_numpy_dtype(), copy=False)
 
@@ -233,6 +201,47 @@ def read_user_calibration_tensor(
             f"elements, expected {expected_size} for shape {list(raw_shape)}."
         )
     return array.reshape(raw_shape)
+
+
+def _normalize(
+    array: np.ndarray, preprocessing: CalibrationPreprocessing, *, layout: str
+) -> np.ndarray:
+    """Subtract the mean and divide by the scale along the channel axis."""
+    target_dtype = preprocessing.data_type.as_numpy_dtype()
+    if not np.issubdtype(target_dtype, np.floating):
+        raise ModelconverterException(
+            "Externalized mean/scale calibration requires a floating-point "
+            f"model input, but the input data type is "
+            f"'{preprocessing.data_type.value}'."
+        )
+    channel_axis = layout.find("C")
+    if channel_axis < 0:
+        raise ModelconverterException(
+            "Externalized mean/scale calibration requires a layout with a "
+            f"channel axis, got '{layout}'."
+        )
+
+    # A float16 model input still normalizes in float32; only a float64
+    # one needs the wider accumulator.
+    calculation_dtype = (
+        np.float64 if target_dtype == np.float64 else np.float32
+    )
+    channels = array.shape[channel_axis]
+    mean = _per_channel(
+        preprocessing.mean_values, channels, "mean", calculation_dtype
+    )
+    scale = _per_channel(
+        preprocessing.scale_values, channels, "scale", calculation_dtype
+    )
+    broadcast_shape = [1] * array.ndim
+    broadcast_shape[channel_axis] = channels
+
+    result = array.astype(calculation_dtype, copy=False)
+    if mean is not None:
+        result = result - mean.reshape(broadcast_shape)
+    if scale is not None:
+        result = result / scale.reshape(broadcast_shape)
+    return result
 
 
 def _per_channel(

@@ -993,6 +993,18 @@ def test_renamed_tensors_with_permuted_shapes_raise():
     ) == {"camera": "camera", "tokens": "tokens"}
 
 
+def test_last_renamed_tensor_matches_despite_a_new_shape():
+    configured = [
+        OutputConfig(name="boxes", shape=[1, 4, 100]),
+        OutputConfig(name="scores", shape=[1, 100]),
+    ]
+    converted_shapes = {"boxes": [1, 4, 100], "scores_sink": [1, 1, 100]}
+
+    assert _match_tensor_names(
+        configured, converted_shapes, kind="output"
+    ) == {"boxes": "boxes", "scores": "scores_sink"}
+
+
 def test_input_default_layout_when_shape_has_zero(dummy_onnx: Path):
     # A zero in a spatial dim forces the make_default_layout branch.
     config = Config.get_config(

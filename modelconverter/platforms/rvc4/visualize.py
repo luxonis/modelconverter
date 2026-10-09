@@ -7,6 +7,7 @@ per-layer inference times. Both are saved as HTML files that load
 ``plotly.js`` from a CDN.
 """
 
+from collections import deque
 from pathlib import Path
 
 import plotly.graph_objects as go
@@ -63,192 +64,80 @@ class RVC4Visualizer(Visualizer):
         fig_cycles.show()
 
     def _visualize_cycles(self) -> go.Figure:
-        layer_lists = []
-        for model_name, csv_path in self._cycle_csvs.items():
-            df = pl.read_csv(csv_path)
-            df = df.with_columns(pl.lit(model_name).alias("model_name"))
-            df.columns = df.columns
-            new_columns = {col: col.strip() for col in df.columns}
-            df = df.rename(new_columns)
-            layer_lists.append(df["layer_name"].to_list())
-
-        x_labels = self._create_x_labels(layer_lists)
+        frames = {
+            model_name: _read_csv(csv_path)
+            for model_name, csv_path in self._cycle_csvs.items()
+        }
+        x_labels = self._create_x_labels(
+            [df["layer_name"].to_list() for df in frames.values()]
+        )
 
         metrics = ["time_mean", "Percentage_of_Total_Time"]
-        initial_metric = metrics[0]
-
-        traces_data = {}
-        for model_name, csv_path in self._cycle_csvs.items():
-            df = pl.read_csv(csv_path)
-            new_columns = {col: col.strip() for col in df.columns}
-            df = df.rename(new_columns)
-            df = df.with_columns(
-                (
-                    pl.col("Percentage_of_Total_Time").cast(pl.Float32()) * 100
-                ).alias("Percentage_of_Total_Time")
+        traces_data = {
+            model_name: _align_metrics(
+                df.with_columns(
+                    (
+                        pl.col("Percentage_of_Total_Time").cast(pl.Float32())
+                        * 100
+                    ).alias("Percentage_of_Total_Time")
+                ),
+                metrics,
+                x_labels,
             )
-            metric_maps = {
-                metric: dict(
-                    zip(
-                        df["layer_name"].to_list(),
-                        df[metric].to_list(),
-                        strict=True,
-                    )
-                )
-                for metric in metrics
-            }
-            model_data = {"x_axis": x_labels}
-            for metric in metrics:
-                model_data[metric] = [
-                    metric_maps[metric].get(layer, None) for layer in x_labels
-                ]
-            traces_data[model_name] = model_data
+            for model_name, df in frames.items()
+        }
 
         fig = go.Figure()
-
         for model, data in traces_data.items():
             fig.add_trace(
                 go.Bar(
                     x=data["x_axis"],
-                    y=data[initial_metric],
+                    y=data[metrics[0]],
                     name=model,
-                    hovertemplate=f"Model: {model}<br>Layer: %{{x}}<br>{initial_metric}: %{{y}}<extra></extra>",
+                    hovertemplate=_hover_template(model, metrics[0]),
                     visible=True,
                 )
             )
-
-        buttons = []
-        for metric in metrics:
-            new_y = []
-            new_hovertemplates = []
-            for model in self._layer_csvs:
-                new_y.append(traces_data[model][metric])
-                new_hovertemplates.append(
-                    f"Model: {model}<br>Layer: %{{x}}<br>{metric}: %{{y}}<extra></extra>"
-                )
-
-            button = {
-                "label": metric,
-                "method": "update",
-                "args": [
-                    {"y": new_y, "hovertemplate": new_hovertemplates},
-                    {"yaxis": {"title": metric}},
-                ],
-            }
-            buttons.append(button)
-
-        fig.update_layout(
-            updatemenus=[
-                {
-                    "type": "buttons",
-                    "buttons": buttons,
-                    "direction": "right",
-                    "showactive": True,
-                    "x": 0.5,
-                    "xanchor": "center",
-                    "y": 1.15,
-                    "yanchor": "top",
-                    "pad": {"r": 10, "t": 10},
-                }
-            ],
-            xaxis_title="Layer",
-            yaxis_title=initial_metric,
+        _add_metric_buttons(
+            fig,
+            metrics,
+            {model: traces_data[model] for model in self._layer_csvs},
             title="CPU Cycles per Layer by Model",
-            hoverlabel={
-                "font": {"size": 16},
-            },
-            xaxis={"tickfont": {"size": 16}, "tickangle": 45},
         )
-
         return fig
 
     def _visualize_layer_outputs(self) -> go.Figure:
-        layer_lists = []
-        for csv_path in self._layer_csvs.values():
-            df = pl.read_csv(csv_path)
-            new_columns = {col: col.strip() for col in df.columns}
-            df = df.rename(new_columns)
-            layer_lists.append(df["layer_name"].to_list())
-
-        x_labels = self._create_x_labels(layer_lists)
-
-        metrics = ["max_abs_diff", "MSE", "cos_sim"]
-        initial_metric = metrics[0]
-
-        traces_data = {}
-        for model_name, csv_path in self._layer_csvs.items():
-            df = pl.read_csv(csv_path)
-            new_columns = {col: col.strip() for col in df.columns}
-            df = df.rename(new_columns)
-            metric_maps = {
-                metric: dict(
-                    zip(
-                        df["layer_name"].to_list(),
-                        df[metric].to_list(),
-                        strict=True,
-                    )
-                )
-                for metric in metrics
-            }
-            model_data = {"x_axis": x_labels}
-            for metric in metrics:
-                model_data[metric] = [
-                    metric_maps[metric].get(layer, None) for layer in x_labels
-                ]
-            traces_data[model_name] = model_data
-
-        fig = go.Figure()
-        for model in self._layer_csvs:
-            fig.add_trace(
-                go.Scatter(
-                    x=traces_data[model]["x_axis"],
-                    y=traces_data[model][initial_metric],
-                    mode="markers",
-                    name=model,
-                    hovertemplate=f"Model: {model}<br>Layer: %{{x}}<br>{initial_metric}: %{{y}}<extra></extra>",
-                )
-            )
-        buttons = []
-        for metric in metrics:
-            new_y = []
-            new_hovertemplates = []
-            for model in self._layer_csvs:
-                new_y.append(traces_data[model][metric])
-                new_hovertemplates.append(
-                    f"Model: {model}<br>Layer: %{{x}}<br>{metric}: %{{y}}<extra></extra>"
-                )
-
-            button = {
-                "label": metric,
-                "method": "update",
-                "args": [
-                    {"y": new_y, "hovertemplate": new_hovertemplates},
-                    {"yaxis": {"title": metric}},
-                ],
-            }
-            buttons.append(button)
-
-        fig.update_layout(
-            updatemenus=[
-                {
-                    "type": "buttons",
-                    "buttons": buttons,
-                    "direction": "right",
-                    "showactive": True,
-                    "x": 0.5,
-                    "xanchor": "center",
-                    "y": 1.15,
-                    "yanchor": "top",
-                    "pad": {"r": 10, "t": 10},
-                }
-            ],
-            xaxis_title="Layer",
-            yaxis_title=initial_metric,
-            title="Layer Performance Metrics by Model",
-            hoverlabel={"font": {"size": 16}},
-            xaxis={"tickfont": {"size": 16}, "tickangle": 45},
+        frames = {
+            model_name: _read_csv(csv_path)
+            for model_name, csv_path in self._layer_csvs.items()
+        }
+        x_labels = self._create_x_labels(
+            [df["layer_name"].to_list() for df in frames.values()]
         )
 
+        metrics = ["max_abs_diff", "MSE", "cos_sim"]
+        traces_data = {
+            model_name: _align_metrics(df, metrics, x_labels)
+            for model_name, df in frames.items()
+        }
+
+        fig = go.Figure()
+        for model, data in traces_data.items():
+            fig.add_trace(
+                go.Scatter(
+                    x=data["x_axis"],
+                    y=data[metrics[0]],
+                    mode="markers",
+                    name=model,
+                    hovertemplate=_hover_template(model, metrics[0]),
+                )
+            )
+        _add_metric_buttons(
+            fig,
+            metrics,
+            traces_data,
+            title="Layer Performance Metrics by Model",
+        )
         return fig
 
     def _get_csv_paths(
@@ -262,49 +151,112 @@ class RVC4Visualizer(Visualizer):
 
         return csv_paths
 
-    def _create_x_labels(self, layer_lists: list) -> list:
-        pointers = [0] * len(layer_lists)
-        x_labels = []
+    def _create_x_labels(self, layer_lists: list[list[str]]) -> list[str]:
+        """Merge the layer orders of several models into one order.
 
-        while any(
-            pointers[i] < len(layer_lists[i]) for i in range(len(layer_lists))
-        ):
-            layer_lists = [
-                layer_lists[i]
-                for i in range(len(layer_lists))
-                if pointers[i] < len(layer_lists[i])
-            ]
-            pointers = [
-                pointers[i]
-                for i in range(len(layer_lists))
-                if pointers[i] < len(layer_lists[i])
-            ]
-
-            current_candidates = [
-                layer_lists[i][pointers[i]] for i in range(len(layer_lists))
-            ]
-
-            if len(set(current_candidates)) == 1:
-                x_labels.append(current_candidates[0])
-                pointers = [p + 1 for p in pointers]
-                continue
-
-            candidate_is_insertion = [False] * len(current_candidates)
-            for i, candidate in enumerate(current_candidates):
-                candidate_is_insertion[i] = any(
-                    candidate not in layer_lists[j][pointers[j] :]
-                    for j in range(len(layer_lists))
-                )
-                # true if any model list of layers does not contain the candidate layer
-
-            for i in range(len(current_candidates)):
-                if (
-                    candidate_is_insertion[i]
-                    and current_candidates[i] not in x_labels
-                ):
-                    x_labels.append(candidate)  # is insertion, not added yet
-
-                if candidate_is_insertion[i]:
-                    pointers[i] += 1  # increase index for all insertions
-
+        When all models agree on the next layer, the layer is taken
+        once. Otherwise, a next layer that another model does not hold
+        further on is an insertion: it is taken, and its model moves
+        on.
+        """
+        queues = [deque(layers) for layers in layer_lists if layers]
+        x_labels: list[str] = []
+        while queues:
+            _take_next_layers(queues, x_labels)
+            queues = [queue for queue in queues if queue]
         return x_labels
+
+
+def _take_next_layers(queues: list[deque[str]], x_labels: list[str]) -> None:
+    """Take the next layers into ``x_labels`` and advance their queues."""
+    if len({queue[0] for queue in queues}) == 1:
+        x_labels.append(queues[0][0])
+        moving = queues
+    else:
+        moving = [
+            queue
+            for queue in queues
+            if any(queue[0] not in other for other in queues)
+        ]
+        for queue in moving:
+            if queue[0] not in x_labels:
+                x_labels.append(queue[0])
+    for queue in moving:
+        queue.popleft()
+
+
+def _read_csv(csv_path: Path) -> pl.DataFrame:
+    """Read a CSV report and strip the spaces around its column names."""
+    df = pl.read_csv(csv_path)
+    return df.rename({col: col.strip() for col in df.columns})
+
+
+def _align_metrics(
+    df: pl.DataFrame, metrics: list[str], x_labels: list[str]
+) -> dict[str, list]:
+    """Line up the metric values of a model with the x labels.
+
+    A layer that the model does not hold gets ``None``.
+    """
+    layer_names = df["layer_name"].to_list()
+    data: dict[str, list] = {"x_axis": x_labels}
+    for metric in metrics:
+        values = dict(zip(layer_names, df[metric].to_list(), strict=True))
+        data[metric] = [values.get(layer) for layer in x_labels]
+    return data
+
+
+def _hover_template(model: str, metric: str) -> str:
+    """Format the hover text of the points of one model."""
+    return (
+        f"Model: {model}<br>Layer: %{{x}}<br>{metric}: %{{y}}<extra></extra>"
+    )
+
+
+def _add_metric_buttons(
+    fig: go.Figure,
+    metrics: list[str],
+    traces_data: dict[str, dict[str, list]],
+    *,
+    title: str,
+) -> None:
+    """Add buttons that switch the plotted metric, and lay out the figure.
+
+    The figure first shows the first metric.
+    """
+    buttons = [
+        {
+            "label": metric,
+            "method": "update",
+            "args": [
+                {
+                    "y": [data[metric] for data in traces_data.values()],
+                    "hovertemplate": [
+                        _hover_template(model, metric) for model in traces_data
+                    ],
+                },
+                {"yaxis": {"title": metric}},
+            ],
+        }
+        for metric in metrics
+    ]
+    fig.update_layout(
+        updatemenus=[
+            {
+                "type": "buttons",
+                "buttons": buttons,
+                "direction": "right",
+                "showactive": True,
+                "x": 0.5,
+                "xanchor": "center",
+                "y": 1.15,
+                "yanchor": "top",
+                "pad": {"r": 10, "t": 10},
+            }
+        ],
+        xaxis_title="Layer",
+        yaxis_title=metrics[0],
+        title=title,
+        hoverlabel={"font": {"size": 16}},
+        xaxis={"tickfont": {"size": 16}, "tickangle": 45},
+    )

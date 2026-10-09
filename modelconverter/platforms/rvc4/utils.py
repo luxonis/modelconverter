@@ -77,20 +77,27 @@ def get_device_info(
         return None, None
 
     if device_id:
-        if device_id.isdecimal():
-            adb_id = device_id_to_adb_id(device_id)
-        else:
-            adb_id = device_id
-            device_id = adb_id_to_device_id(adb_id)
+        device_id, adb_id = _device_and_adb_id(device_id)
         for info in dai.Device.getAllAvailableDevices():
-            if device_id == info.getDeviceId():
-                if device_ip and device_ip != info.name:
-                    logger.warning(
-                        f"Both device_id and device_ip provided, but they refer to different devices. Using device with device_id: {device_id} and device_ip: {info.name}."
-                    )
-                return info.name, adb_id
+            if device_id != info.getDeviceId():
+                continue
+            if device_ip and device_ip != info.name:
+                logger.warning(
+                    f"Both device_id and device_ip provided, but they refer to different devices. Using device with device_id: {device_id} and device_ip: {info.name}."
+                )
+            return info.name, adb_id
     if device_ip:
         with dai.Device(device_ip) as device:
             inferred_device_id = device.getDeviceId()
             return device_ip, device_id_to_adb_id(inferred_device_id)
     return None, None
+
+
+def _device_and_adb_id(device_id: str) -> tuple[str, str]:
+    """Return the device ID and the ADB serial of a device ID or serial.
+
+    A decimal value is a device ID; any other value is an ADB serial.
+    """
+    if device_id.isdecimal():
+        return device_id, device_id_to_adb_id(device_id)
+    return adb_id_to_device_id(device_id), device_id

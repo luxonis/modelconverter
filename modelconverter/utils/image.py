@@ -73,74 +73,10 @@ def read_image(
             shape
         )
 
-    if (
-        layout is not None
-        and len(layout) == len(shape)
-        and "H" in layout
-        and "W" in layout
-    ):
-        # The layout tells us which axes are spatial vs. channel, so a
-        # channels-last (e.g. TFLite NHWC) shape is read correctly.
-        h = shape[layout.index("H")]
-        w = shape[layout.index("W")]
-        c = shape[layout.index("C")] if "C" in layout else 1
-    elif len(shape) == 2:
-        h, w, c = *shape, 1
-    elif len(shape) == 3:
-        if shape[0] == 1:
-            _, h, w, c = *shape, 1
-        else:
-            h, w, c = shape
-    elif len(shape) == 4:
-        _, c, h, w = shape
-    else:
-        raise ModelconverterException(
-            f"Input shape `{shape}` is invalid for an image. "
-            "Use `.npy` or `.raw` files as calibration data instead."
-        )
-    img = Image.open(path)
-    if encoding == Encoding.BGR:
-        img = img.convert("RGB")
-        img = Image.fromarray(np.array(img)[..., ::-1])
-    elif encoding == Encoding.RGB:
-        img = img.convert("RGB")
-    elif encoding == Encoding.GRAY:
-        img = img.convert("L")
-    if resize_method == ResizeMethod.CROP:
-        img = ImageOps.fit(img, (w, h), method=Image.Resampling.BICUBIC)
-    elif resize_method == ResizeMethod.CENTER_CROP_NO_RESIZE:
-        left = int(img.size[0] / 2 - w / 2)
-        upper = int(img.size[1] / 2 - h / 2)
-        right = left + w
-        lower = upper + h
-        img = img.crop((left, upper, right, lower))
-    elif resize_method == ResizeMethod.RESIZE:
-        img = img.resize((w, h))
-    elif resize_method == ResizeMethod.PAD:  # pragma: no branch
-        orig_ratio = img.size[0] / img.size[1]
-
-        # Calculate aspect ratio of new size
-        new_ratio = w / h
-
-        # Compare aspects
-        if orig_ratio > new_ratio:
-            # If original image is wider, resize by width
-            scale_factor = w / img.size[0]
-            new_height = round(img.size[1] * scale_factor)
-            resized_img = img.resize((w, new_height))
-        else:
-            # If original image is taller, resize by height
-            scale_factor = h / img.size[1]
-            new_width = round(img.size[0] * scale_factor)
-            resized_img = img.resize((new_width, h))
-
-        # Create a new, blank image with padding color
-        new_img = Image.new(img.mode, (w, h), "black")
-
-        # Paste resized image into center of new, blank image
-        ulc = ((w - resized_img.size[0]) // 2, (h - resized_img.size[1]) // 2)
-        new_img.paste(resized_img, ulc)
-        img = new_img
+    h, w, c = _image_size(shape, layout)
+    img = _fit_image(
+        _convert_color(Image.open(path), encoding), w, h, resize_method
+    )
     img_arr = np.array(img)
     if data_type is not None:
         img_arr = img_arr.astype(data_type.as_numpy_dtype())
@@ -178,3 +114,87 @@ def read_calib_dir(path: Path) -> list[Path]:
             ]
         )
     )
+
+
+def _image_size(shape: list[int], layout: str | None) -> tuple[int, int, int]:
+    """Read the height, width and channel count from an input shape.
+
+    Without a usable layout, the axes are guessed from the number of
+    dimensions.
+    """
+    if (
+        layout is not None
+        and len(layout) == len(shape)
+        and "H" in layout
+        and "W" in layout
+    ):
+        # The layout tells us which axes are spatial vs. channel, so a
+        # channels-last (e.g. TFLite NHWC) shape is read correctly.
+        c = shape[layout.index("C")] if "C" in layout else 1
+        return shape[layout.index("H")], shape[layout.index("W")], c
+    if len(shape) == 2:
+        return shape[0], shape[1], 1
+    if len(shape) == 3 and shape[0] == 1:
+        return shape[1], shape[2], 1
+    if len(shape) == 3:
+        return shape[0], shape[1], shape[2]
+    if len(shape) == 4:
+        return shape[2], shape[3], shape[1]
+    raise ModelconverterException(
+        f"Input shape `{shape}` is invalid for an image. "
+        "Use `.npy` or `.raw` files as calibration data instead."
+    )
+
+
+def _convert_color(img: Image.Image, encoding: Encoding) -> Image.Image:
+    """Convert an image to the channel order of ``encoding``.
+
+    Any other encoding keeps the image as it is.
+    """
+    if encoding == Encoding.BGR:
+        return Image.fromarray(np.array(img.convert("RGB"))[..., ::-1])
+    if encoding == Encoding.RGB:
+        return img.convert("RGB")
+    if encoding == Encoding.GRAY:
+        return img.convert("L")
+    return img
+
+
+def _fit_image(
+    img: Image.Image, w: int, h: int, resize_method: ResizeMethod
+) -> Image.Image:
+    """Fit an image to a width and height with ``resize_method``.
+
+    ``PAD`` is the remaining method.
+    """
+    if resize_method == ResizeMethod.CROP:
+        return ImageOps.fit(img, (w, h), method=Image.Resampling.BICUBIC)
+    if resize_method == ResizeMethod.CENTER_CROP_NO_RESIZE:
+        left = int(img.size[0] / 2 - w / 2)
+        upper = int(img.size[1] / 2 - h / 2)
+        return img.crop((left, upper, left + w, upper + h))
+    if resize_method == ResizeMethod.RESIZE:
+        return img.resize((w, h))
+    return _pad_image(img, w, h)
+
+
+def _pad_image(img: Image.Image, w: int, h: int) -> Image.Image:
+    """Resize an image to fit inside ``w`` by ``h`` and pad it with black.
+
+    The image keeps its aspect ratio and sits in the center.
+    """
+    orig_ratio = img.size[0] / img.size[1]
+    new_ratio = w / h
+    if orig_ratio > new_ratio:
+        # If original image is wider, resize by width
+        scale_factor = w / img.size[0]
+        resized_img = img.resize((w, round(img.size[1] * scale_factor)))
+    else:
+        # If original image is taller, resize by height
+        scale_factor = h / img.size[1]
+        resized_img = img.resize((round(img.size[0] * scale_factor), h))
+
+    new_img = Image.new(img.mode, (w, h), "black")
+    ulc = ((w - resized_img.size[0]) // 2, (h - resized_img.size[1]) // 2)
+    new_img.paste(resized_img, ulc)
+    return new_img

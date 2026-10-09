@@ -8,9 +8,9 @@ graph, and simplifying, optimizing and fusing the graph with
 """
 
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 import numpy as np
 import onnx
@@ -127,9 +127,6 @@ def onnx_attach_normalization_to_inputs(
     model_has_external_data = has_external_data(model_path)
 
     graph = model.graph
-
-    new_nodes = []
-    new_initializers = []
     input_names = [input_tensor.name for input_tensor in graph.input]
     output_names = {output_tensor.name for output_tensor in graph.output}
     if not all(name in input_names for name in input_configs):
@@ -140,13 +137,13 @@ def onnx_attach_normalization_to_inputs(
             "Either use an actual input name, or modify your network."
         )
 
+    new_initializers = []
     for input_tensor in graph.input:
         input_name = input_tensor.name
-        input_dtype = input_tensor.type.tensor_type.elem_type
-        if input_name not in input_configs:
-            continue
-        cfg = input_configs[input_name]
-        if not cfg.requires_input_preprocessing(reverse_only=reverse_only):
+        cfg = input_configs.get(input_name)
+        if cfg is None or not cfg.requires_input_preprocessing(
+            reverse_only=reverse_only
+        ):
             continue
 
         if input_name in output_names:
@@ -155,162 +152,14 @@ def onnx_attach_normalization_to_inputs(
                 "the same tensor is exposed directly as a graph output."
             )
 
-        try:
-            n_channels = cfg.validate_preprocessing(reverse_only=reverse_only)
-        except ValueError as e:
-            raise ONNXException(str(e)) from e
-
-        layout = cfg.layout
-        if layout not in ["NCHW", "NHWC"]:
-            raise PreprocessingEmbeddingError(
-                f"Cannot embed preprocessing for input '{input_name}' with "
-                f"layout '{layout}'; only 'NCHW' and 'NHWC' are supported."
-            )
-
-        mean_values = (
-            None
-            if reverse_only or cfg.mean_values is None
-            else broadcast_preprocessing_values(cfg.mean_values, n_channels)
+        new_nodes, last_output = _preprocessing_nodes(
+            model,
+            input_tensor,
+            cfg,
+            new_initializers,
+            reverse_only=reverse_only,
         )
-        scale_values = (
-            None
-            if reverse_only or cfg.scale_values is None
-            else broadcast_preprocessing_values(cfg.scale_values, n_channels)
-        )
-
-        normalization_requested = normalization_required(
-            mean_values, scale_values
-        )
-        if (
-            normalization_requested
-            and input_dtype not in FLOATING_TENSOR_TYPES
-        ):
-            dtype_name = TensorProto.DataType.Name(input_dtype)
-            raise PreprocessingEmbeddingError(
-                f"Cannot embed mean/scale preprocessing for input "
-                f"'{input_name}' with ONNX data type '{dtype_name}'; "
-                "normalization requires a floating-point input."
-            )
-
-        last_output = input_name
-
-        # 1. Reverse channels if needed
-        if cfg.encoding_mismatch:
-            try:
-                opset = get_opset_version(model)
-            except ONNXException as e:
-                raise PreprocessingEmbeddingError(
-                    f"Cannot embed channel reversal for input '{input_name}': "
-                    f"{e}"
-                ) from e
-            split_names = [f"split_{i}_{input_name}" for i in range(3)]
-            axis = 1 if layout == "NCHW" else 3
-
-            if opset < 13:
-                split_node = helper.make_node(
-                    "Split",
-                    inputs=[last_output],
-                    outputs=split_names,
-                    axis=axis,
-                    split=[1] * n_channels,
-                    name=f"split_{input_name}",
-                )
-            else:
-                split_lengths_name = f"split_{input_name}_lengths"
-                split_lengths_tensor = helper.make_tensor(
-                    name=split_lengths_name,
-                    data_type=TensorProto.INT64,
-                    dims=[n_channels],
-                    vals=[1] * n_channels,
-                )
-                new_initializers.append(split_lengths_tensor)
-                split_node = helper.make_node(
-                    "Split",
-                    inputs=[last_output, split_lengths_name],
-                    outputs=split_names,
-                    axis=axis,
-                    name=f"split_{input_name}",
-                )
-            new_nodes.append(split_node)
-
-            concat_node = helper.make_node(
-                "Concat",
-                inputs=split_names[::-1],
-                outputs=[f"normalized_{input_name}"],
-                axis=axis,
-                name=f"concat_{input_name}",
-            )
-            new_nodes.append(concat_node)
-            last_output = f"normalized_{input_name}"
-
-        # 2. Subtract (mean) if mean_values is not None and not all 0
-        if mean_values is not None and any(v != 0 for v in mean_values):
-            sub_out = f"sub_out_{input_name}"
-            sub_node = helper.make_node(
-                "Sub",
-                inputs=[last_output, f"mean_{input_name}"],
-                outputs=[sub_out],
-                name=f"sub_out_{input_name}",
-            )
-            new_nodes.append(sub_node)
-            last_output = sub_out
-
-            mean_tensor = helper.make_tensor(
-                f"mean_{input_name}",
-                input_dtype,
-                [1, len(mean_values), 1, 1]
-                if layout == "NCHW"
-                else [1, 1, 1, len(mean_values)],
-                mean_values,
-            )
-            new_initializers.append(mean_tensor)
-
-        # 3. Divide (scale) if scale_values is not None and not all 1
-        if scale_values is not None and any(v != 1 for v in scale_values):
-            div_out = f"div_out_{input_name}"
-            div_node = helper.make_node(
-                "Mul",
-                inputs=[last_output, f"scale_{input_name}"],
-                outputs=[div_out],
-                name=f"div_out_{input_name}",
-            )
-            new_nodes.append(div_node)
-            last_output = div_out
-
-            scale_tensor = helper.make_tensor(
-                f"scale_{input_name}",
-                input_dtype,
-                [1, len(scale_values), 1, 1]
-                if layout == "NCHW"
-                else [1, 1, 1, len(scale_values)],
-                [1 / v for v in scale_values],
-            )
-            new_initializers.append(scale_tensor)
-
-        # Update input of other nodes to use the last output
-        for node in graph.node:
-            new_inputs = [
-                last_output if inp == input_name else inp for inp in node.input
-            ]
-            del node.input[:]
-            node.input.extend(new_inputs)
-
-        # Insert the new nodes into the graph at the appropriate position
-        idx = next(
-            (
-                i
-                for i, node in enumerate(graph.node)
-                if last_output in node.input
-            ),
-            0,
-        )
-
-        nodes_as_list = list(graph.node)
-        nodes_as_list[idx:idx] = new_nodes
-        del graph.node[:]
-        graph.node.extend(nodes_as_list)
-
-        new_nodes.clear()
+        _insert_before_consumers(graph, input_name, last_output, new_nodes)
 
     graph.initializer.extend(new_initializers)
 
@@ -330,6 +179,248 @@ def onnx_attach_normalization_to_inputs(
         ) from e
 
     return save_path
+
+
+def _preprocessing_nodes(
+    model: onnx.ModelProto,
+    input_tensor: onnx.ValueInfoProto,
+    cfg: InputConfig,
+    initializers: list[onnx.TensorProto],
+    *,
+    reverse_only: bool,
+) -> tuple[list[onnx.NodeProto], str]:
+    """Build the nodes that preprocess one input of the graph.
+
+    The nodes reverse the channels, subtract the mean and multiply by
+    the reciprocal of the scale, in this order, each only when needed.
+    The constants they use are appended to ``initializers``.
+
+    Returns:
+        The new nodes and the name of the preprocessed tensor.
+    """
+    input_name = input_tensor.name
+    input_dtype = input_tensor.type.tensor_type.elem_type
+    n_channels, mean_values, scale_values = _normalization_values(
+        cfg, input_name, input_dtype, reverse_only=reverse_only
+    )
+    layout = cfg.layout
+    assert layout is not None
+
+    nodes = []
+    last_output = input_name
+    if cfg.encoding_mismatch:
+        nodes += _reverse_channel_nodes(
+            model, input_name, layout, n_channels, initializers
+        )
+        last_output = nodes[-1].output[0]
+
+    if mean_values is not None and any(v != 0 for v in mean_values):
+        node, tensor = _channel_op(
+            "Sub",
+            f"sub_out_{input_name}",
+            f"mean_{input_name}",
+            last_output,
+            mean_values,
+            layout=layout,
+            dtype=input_dtype,
+        )
+        nodes.append(node)
+        initializers.append(tensor)
+        last_output = node.output[0]
+
+    if scale_values is not None and any(v != 1 for v in scale_values):
+        node, tensor = _channel_op(
+            "Mul",
+            f"div_out_{input_name}",
+            f"scale_{input_name}",
+            last_output,
+            [1 / v for v in scale_values],
+            layout=layout,
+            dtype=input_dtype,
+        )
+        nodes.append(node)
+        initializers.append(tensor)
+        last_output = node.output[0]
+
+    return nodes, last_output
+
+
+def _normalization_values(
+    cfg: InputConfig, input_name: str, input_dtype: int, *, reverse_only: bool
+) -> tuple[int, list[float] | None, list[float] | None]:
+    """Check that the preprocessing of an input can go into the graph.
+
+    Returns:
+        The channel count, and the mean and scale values broadcast to
+        it. With ``reverse_only``, both value lists are ``None``.
+    """
+    try:
+        n_channels = cfg.validate_preprocessing(reverse_only=reverse_only)
+    except ValueError as e:
+        raise ONNXException(str(e)) from e
+
+    if cfg.layout not in ["NCHW", "NHWC"]:
+        raise PreprocessingEmbeddingError(
+            f"Cannot embed preprocessing for input '{input_name}' with "
+            f"layout '{cfg.layout}'; only 'NCHW' and 'NHWC' are supported."
+        )
+    if reverse_only:
+        return n_channels, None, None
+
+    mean_values = (
+        None
+        if cfg.mean_values is None
+        else broadcast_preprocessing_values(cfg.mean_values, n_channels)
+    )
+    scale_values = (
+        None
+        if cfg.scale_values is None
+        else broadcast_preprocessing_values(cfg.scale_values, n_channels)
+    )
+    if (
+        normalization_required(mean_values, scale_values)
+        and input_dtype not in FLOATING_TENSOR_TYPES
+    ):
+        dtype_name = TensorProto.DataType.Name(input_dtype)
+        raise PreprocessingEmbeddingError(
+            f"Cannot embed mean/scale preprocessing for input "
+            f"'{input_name}' with ONNX data type '{dtype_name}'; "
+            "normalization requires a floating-point input."
+        )
+    return n_channels, mean_values, scale_values
+
+
+def _reverse_channel_nodes(
+    model: onnx.ModelProto,
+    input_name: str,
+    layout: str,
+    n_channels: int,
+    initializers: list[onnx.TensorProto],
+) -> list[onnx.NodeProto]:
+    """Build the ``Split`` and ``Concat`` nodes that reverse the channels.
+
+    From opset 13, the split lengths are an input, which is appended to
+    ``initializers``.
+    """
+    try:
+        opset = get_opset_version(model)
+    except ONNXException as e:
+        raise PreprocessingEmbeddingError(
+            f"Cannot embed channel reversal for input '{input_name}': {e}"
+        ) from e
+    split_names = [f"split_{i}_{input_name}" for i in range(3)]
+    axis = 1 if layout == "NCHW" else 3
+
+    if opset < 13:
+        split_node = helper.make_node(
+            "Split",
+            inputs=[input_name],
+            outputs=split_names,
+            axis=axis,
+            split=[1] * n_channels,
+            name=f"split_{input_name}",
+        )
+    else:
+        split_lengths_name = f"split_{input_name}_lengths"
+        initializers.append(
+            helper.make_tensor(
+                name=split_lengths_name,
+                data_type=TensorProto.INT64,
+                dims=[n_channels],
+                vals=[1] * n_channels,
+            )
+        )
+        split_node = helper.make_node(
+            "Split",
+            inputs=[input_name, split_lengths_name],
+            outputs=split_names,
+            axis=axis,
+            name=f"split_{input_name}",
+        )
+
+    concat_node = helper.make_node(
+        "Concat",
+        inputs=split_names[::-1],
+        outputs=[f"normalized_{input_name}"],
+        axis=axis,
+        name=f"concat_{input_name}",
+    )
+    return [split_node, concat_node]
+
+
+def _channel_op(
+    op: str,
+    output_name: str,
+    constant_name: str,
+    input_name: str,
+    values: list[float],
+    *,
+    layout: str,
+    dtype: int,
+) -> tuple[onnx.NodeProto, onnx.TensorProto]:
+    """Build a node that applies per-channel ``values`` with ``op``.
+
+    Returns:
+        The node, named after its output, and its constant.
+    """
+    node = helper.make_node(
+        op,
+        inputs=[input_name, constant_name],
+        outputs=[output_name],
+        name=output_name,
+    )
+    shape = (
+        [1, len(values), 1, 1] if layout == "NCHW" else [1, 1, 1, len(values)]
+    )
+    return node, helper.make_tensor(constant_name, dtype, shape, values)
+
+
+def _insert_before_consumers(
+    graph: onnx.GraphProto,
+    input_name: str,
+    last_output: str,
+    new_nodes: list[onnx.NodeProto],
+) -> None:
+    """Feed the consumers of an input from ``last_output``.
+
+    The new nodes go in front of the first node that reads
+    ``last_output``.
+    """
+    for node in graph.node:
+        new_inputs = [
+            last_output if inp == input_name else inp for inp in node.input
+        ]
+        del node.input[:]
+        node.input.extend(new_inputs)
+
+    idx = next(
+        (i for i, node in enumerate(graph.node) if last_output in node.input),
+        0,
+    )
+    nodes_as_list = list(graph.node)
+    nodes_as_list[idx:idx] = new_nodes
+    del graph.node[:]
+    graph.node.extend(nodes_as_list)
+
+
+_ORT_INPUT_TYPES: Final[dict[str, type[np.generic] | str]] = {
+    "tensor(float64)": np.float64,
+    "tensor(float32)": np.float32,
+    "tensor(float)": np.float32,
+    "tensor(float16)": np.float16,
+    "tensor(int64)": np.int64,
+    "tensor(int32)": np.int32,
+    "tensor(int16)": np.int16,
+    "tensor(int8)": np.int8,
+    "tensor(bool)": "bool",
+}
+
+_BN_FUSION_PATTERNS: Final = (
+    ("Conv", "Add", "Mul"),
+    ("Conv", "Mul", "Add"),
+    ("Conv", "Mul"),
+    ("Conv", "Add"),
+)
 
 
 class ONNXModifier:
@@ -477,28 +568,12 @@ class ONNXModifier:
         ort_session_1 = ort.InferenceSession(onnx_model_1)
         ort_session_2 = ort.InferenceSession(onnx_model_2)
 
-        inputs = {}
-        for input in ort_session_1.get_inputs():
-            if input.type == "tensor(float64)":
-                input_type = np.float64
-            elif input.type in {"tensor(float32)", "tensor(float)"}:
-                input_type = np.float32
-            elif input.type == "tensor(float16)":
-                input_type = np.float16
-            elif input.type == "tensor(int64)":
-                input_type = np.int64
-            elif input.type == "tensor(int32)":
-                input_type = np.int32
-            elif input.type == "tensor(int16)":
-                input_type = np.int16
-            elif input.type == "tensor(int8)":
-                input_type = np.int8
-            elif input.type == "tensor(bool)":
-                input_type = "bool"
-
-            inputs[input.name] = np.random.rand(*input.shape).astype(
-                input_type
+        inputs = {
+            input.name: np.random.rand(*input.shape).astype(
+                _ORT_INPUT_TYPES[input.type]
             )
+            for input in ort_session_1.get_inputs()
+        }
 
         outputs_1 = ort_session_1.run(None, inputs)
 
@@ -757,122 +832,76 @@ class ONNXModifier:
                 "Invalid source or target node type. Valid source types: Sub, Div. Valid target types: Add, Mul."
             )
 
-        if (source_node == "Sub" and target_node == "Mul") or (
-            source_node == "Div" and target_node == "Add"
-        ):
+        if (source_node, target_node) not in {("Sub", "Add"), ("Div", "Mul")}:
             raise ValueError(
                 "Invalid substitution. Available substitutions: Sub -> Add, Div -> Mul"
             )
 
         constant_map = self._get_constant_map(self._onnx_gs)
 
-        def create_new_node(
-            node: gs.Node, target_node: str, const_idx: int
-        ) -> gs.Node | None:
-            if const_idx == 0:
-                return None
-
-            first_input = node.inputs[0]
-            second_input = node.inputs[const_idx]
-            if target_node == "Add":
-                new_cost_val = -second_input.values
-                return gs.Node(
-                    op="Add",
-                    inputs=[
-                        first_input,
-                        gs.Constant(
-                            name=f"{node.name}_{second_input.name}/Substitute",
-                            values=np.array(
-                                new_cost_val, dtype=second_input.dtype
-                            ),
-                        ),
-                    ],
-                    outputs=[gs.Variable(name=f"{node.name}/Add_output")],
-                    name=f"{node.name}/To_Add",
-                )
-            if target_node == "Mul":
-                new_cost_val = 1.0 / second_input.values
-                if second_input.dtype not in [
-                    np.float16,
-                    np.float32,
-                    np.float64,
-                ]:
-                    return None
-                return gs.Node(
-                    op="Mul",
-                    inputs=[
-                        first_input,
-                        gs.Constant(
-                            name=f"{node.name}_{second_input.name}/Substitute",
-                            values=np.array(
-                                new_cost_val, dtype=second_input.dtype
-                            ),
-                        ),
-                    ],
-                    outputs=[gs.Variable(name=f"{node.name}/Mul_output")],
-                    name=f"{node.name}/To_Mul",
-                )
-
         nodes_to_add = []
         nodes_to_remove = []
         connections_to_fix = []
 
-        graph_output_names = set(_output_names(self._onnx_gs))
-
         for node in self._onnx_gs.nodes:
-            if node.op == source_node:
-                next_nodes = [
-                    n
-                    for n in self._onnx_gs.nodes
-                    if node.outputs[0] in n.inputs
-                ]
-                # Skip optimization for nodes followed by Erf operations due to conversion compatibility issues with SNPE 2.32.6.
-                if any(n.op == "Erf" for n in next_nodes):
-                    logger.warning(
-                        f"Skipping the `{source_node} -> {target_node}` substitution "
-                        f"optimization for node '{node.name}' with op '{node.op}' "
-                        "because it is followed by an 'Erf' node."
-                    )
-                    continue
-                constant = self._get_constant_value(node, constant_map)
-                if constant is not None:
-                    _, const_idx = constant
-                    new_node = create_new_node(node, target_node, const_idx)
-                    if new_node is not None:
-                        nodes_to_add.append(new_node)
-                        connections_to_fix.append(
-                            (
-                                node.outputs[0],
-                                new_node.outputs[0],
-                            )
-                        )
-
-                        if node.outputs[0].name in graph_output_names:
-                            for i, graph_output_name in enumerate(
-                                _output_names(self._onnx_gs)
-                            ):
-                                if graph_output_name == node.outputs[0].name:
-                                    new_output_var = gs.Variable(
-                                        name=node.outputs[0].name,
-                                        dtype=node.outputs[0].dtype,
-                                        shape=node.outputs[0].shape,
-                                    )
-                                    new_node.outputs[0] = new_output_var
-                                    self._onnx_gs.outputs[i] = new_output_var
-                                    break
-
-                        nodes_to_remove.append(node)
-
-        if not any([nodes_to_add, nodes_to_remove, connections_to_fix]):
-            logger.warning(
-                "No applicable Sub-Add or Div-Mul pattern found for substitution."
+            if node.op != source_node or self._feeds_erf(node, target_node):
+                continue
+            constant = self._get_constant_value(node, constant_map)
+            if constant is None:
+                continue
+            new_node = _substitute_node(
+                node, target_node, const_idx=constant[1]
             )
-            return
+            if new_node is None:
+                continue
 
-        self._graph_cleanup(nodes_to_add, nodes_to_remove, connections_to_fix)
-        self._onnx_model = gs.export_onnx(self._onnx_gs)
+            nodes_to_add.append(new_node)
+            connections_to_fix.append((node.outputs[0], new_node.outputs[0]))
+            self._take_over_graph_output(node, new_node)
+            nodes_to_remove.append(node)
 
-        self._optimize_onnx()
+        self._commit_graph_edits(
+            nodes_to_add,
+            nodes_to_remove,
+            connections_to_fix,
+            nothing_found="No applicable Sub-Add or Div-Mul pattern found for substitution.",
+        )
+
+    def _feeds_erf(self, node: gs.Node, target_node: str) -> bool:
+        """Tell whether an ``Erf`` node reads the output of ``node``.
+
+        Such a node is not substituted, because SNPE 2.32.6 fails to
+        convert the result.
+        """
+        next_nodes = [
+            n for n in self._onnx_gs.nodes if node.outputs[0] in n.inputs
+        ]
+        if not any(n.op == "Erf" for n in next_nodes):
+            return False
+        logger.warning(
+            f"Skipping the `{node.op} -> {target_node}` substitution "
+            f"optimization for node '{node.name}' with op '{node.op}' "
+            "because it is followed by an 'Erf' node."
+        )
+        return True
+
+    def _take_over_graph_output(
+        self, node: gs.Node, new_node: gs.Node
+    ) -> None:
+        """Make ``new_node`` produce the graph output of ``node``.
+
+        The output keeps its name. Nothing changes when ``node`` does
+        not produce a graph output.
+        """
+        output = node.outputs[0]
+        for i, graph_output_name in enumerate(_output_names(self._onnx_gs)):
+            if graph_output_name == output.name:
+                new_output_var = gs.Variable(
+                    name=output.name, dtype=output.dtype, shape=output.shape
+                )
+                new_node.outputs[0] = new_output_var
+                self._onnx_gs.outputs[i] = new_output_var
+                return
 
     def _fuse_add_mul_to_bn(self) -> None:
         """Fuse Add/Sub and Mul nodes that come immediately after a Conv
@@ -884,159 +913,118 @@ class ONNXModifier:
         3. Conv -> Mul
         4. Conv -> Add
         """
-        FUSION_PATTERNS = [
-            ("Conv", "Add", "Mul"),
-            ("Conv", "Mul", "Add"),
-            ("Conv", "Mul"),
-            ("Conv", "Add"),
-        ]
-
         constant_map = self._get_constant_map(self._onnx_gs)
-
-        def create_batch_norm_node(
-            name: str,
-            input_tensor: gs.Variable,
-            scale: float | np.ndarray,
-            bias: float | np.ndarray,
-        ) -> gs.Node:
-            assert input_tensor.shape is not None
-            conv_channels = int(input_tensor.shape[1])
-            scale_values = np.array(
-                [scale] * conv_channels, dtype=self._dtype
-            ).squeeze()
-            bias_values = np.array(
-                [bias] * conv_channels, dtype=self._dtype
-            ).squeeze()
-            mean_values = np.zeros_like(scale_values)
-            var_values = np.ones_like(scale_values)
-            scale_tensor = gs.Constant(
-                name=f"{name}_scale",
-                values=scale_values,
-            )
-            bias_tensor = gs.Constant(
-                name=f"{name}_bias",
-                values=bias_values,
-            )
-            mean_tensor = gs.Constant(
-                name=f"{name}_mean",
-                values=mean_values,
-            )
-            var_tensor = gs.Constant(
-                name=f"{name}_var",
-                values=var_values,
-            )
-            return gs.Node(
-                op="BatchNormalization",
-                inputs=[
-                    input_tensor,
-                    scale_tensor,
-                    bias_tensor,
-                    mean_tensor,
-                    var_tensor,
-                ],
-                outputs=[gs.Variable(name=f"{name}_output")],
-                name=name,
-            )
-
-        all_sequences = []
-
-        for pattern in FUSION_PATTERNS:
-            for node in self._onnx_gs.nodes:
-                if node.op != pattern[0]:
-                    continue
-
-                sequence = [node]
-                current_node = node
-                for op_type in pattern[1:]:
-                    next_nodes = [
-                        n
-                        for n in self._onnx_gs.nodes
-                        if n.inputs
-                        and current_node.outputs[0] in n.inputs
-                        and n.op == op_type
-                    ]
-                    if not next_nodes:
-                        break
-                    current_node = next_nodes[0]
-                    sequence.append(current_node)
-
-                if len(sequence) == len(pattern):
-                    all_sequences.append(sequence)
-
-        longest_sequences = []
-        for seq in all_sequences:
-            is_subset = any(
-                all(node in longer_seq for node in seq)
-                and len(seq) < len(longer_seq)
-                for longer_seq in all_sequences
-            )
-            if not is_subset:
-                longest_sequences.append(seq)
 
         nodes_to_add = []
         nodes_to_remove = []
         connections_to_fix = []
 
-        for sequence in longest_sequences:
-            valid_fusion = True
-            scale, bias = 1.0, 0.0
-
-            conv_node = None
-            for seq_node in sequence:
-                if seq_node.op == "Conv":
-                    conv_node = seq_node
-                    continue
-
-                constant = self._get_constant_value(seq_node, constant_map)
-                if constant is None:
-                    valid_fusion = False
-                    break
-
-                constant_val, _ = constant
-
-                if seq_node.op == "Add":
-                    bias += constant_val
-                elif seq_node.op == "Sub":
-                    bias -= constant_val
-                elif seq_node.op == "Mul":
-                    scale *= constant_val
-
-            if (
-                not valid_fusion
-                or not conv_node
-                or len(conv_node.outputs[0].outputs) > 1
-            ):
+        sequences = _longest_sequences(
+            self._find_sequences(_BN_FUSION_PATTERNS)
+        )
+        for sequence in sequences:
+            folded = self._fold_sequence(sequence, constant_map)
+            if folded is None:
+                continue
+            conv_node, scale, bias = folded
+            if len(conv_node.outputs[0].outputs) > 1:
                 continue
 
-            bn_name = f"BatchNorm_{conv_node.name.replace('/', '', 1)}"
-
-            bn_node = create_batch_norm_node(
-                bn_name, conv_node.outputs[0], scale, bias
+            bn_node = _batch_norm_node(
+                f"BatchNorm_{conv_node.name.replace('/', '', 1)}",
+                conv_node.outputs[0],
+                scale,
+                bias,
+                dtype=self._dtype,
             )
             nodes_to_add.append(bn_node)
 
             if sequence[0].op == "Conv":
                 connections_to_fix.append(
-                    (
-                        sequence[-1].outputs[0],
-                        bn_node.outputs[0],
-                    )
+                    (sequence[-1].outputs[0], bn_node.outputs[0])
                 )
 
             nodes_to_remove.extend(
                 seq_node for seq_node in sequence if seq_node.op != "Conv"
             )
 
-        if not any([nodes_to_add, nodes_to_remove, connections_to_fix]):
-            logger.warning(
-                "No applicable Conv-Add-Mul pattern found for batch normalization fusion."
-            )
-            return
+        self._commit_graph_edits(
+            nodes_to_add,
+            nodes_to_remove,
+            connections_to_fix,
+            nothing_found="No applicable Conv-Add-Mul pattern found for batch normalization fusion.",
+        )
 
-        self._graph_cleanup(nodes_to_add, nodes_to_remove, connections_to_fix)
-        self._onnx_model = gs.export_onnx(self._onnx_gs)
+    def _find_sequences(
+        self, patterns: Iterable[tuple[str, ...]]
+    ) -> list[list[gs.Node]]:
+        """Find the node chains whose operations follow a pattern.
 
-        self._optimize_onnx()
+        Each node of a chain reads the first output of the node before.
+        """
+        sequences = []
+        for pattern in patterns:
+            for node in self._onnx_gs.nodes:
+                if node.op != pattern[0]:
+                    continue
+                sequence = self._follow_ops(node, pattern[1:])
+                if len(sequence) == len(pattern):
+                    sequences.append(sequence)
+        return sequences
+
+    def _follow_ops(
+        self, node: gs.Node, ops: tuple[str, ...]
+    ) -> list[gs.Node]:
+        """Follow ``node`` through consumers of the operations in ``ops``.
+
+        Returns:
+            ``node`` and the consumers found, up to the first operation
+            without a consumer.
+        """
+        sequence = [node]
+        for op_type in ops:
+            next_nodes = [
+                n
+                for n in self._onnx_gs.nodes
+                if n.inputs
+                and sequence[-1].outputs[0] in n.inputs
+                and n.op == op_type
+            ]
+            if not next_nodes:
+                break
+            sequence.append(next_nodes[0])
+        return sequence
+
+    def _fold_sequence(
+        self, sequence: list[gs.Node], constant_map: dict[str, np.ndarray]
+    ) -> tuple[gs.Node, float | np.ndarray, float | np.ndarray] | None:
+        """Fold the constants after a Conv into one scale and one bias.
+
+        Returns:
+            The Conv node, the scale and the bias, or ``None`` when the
+            chain has no Conv, or a node without a constant input.
+        """
+        scale, bias = 1.0, 0.0
+        conv_node = None
+        for seq_node in sequence:
+            if seq_node.op == "Conv":
+                conv_node = seq_node
+                continue
+
+            constant = self._get_constant_value(seq_node, constant_map)
+            if constant is None:
+                return None
+            constant_val, _ = constant
+            if seq_node.op == "Add":
+                bias += constant_val
+            elif seq_node.op == "Sub":
+                bias -= constant_val
+            elif seq_node.op == "Mul":
+                scale *= constant_val
+
+        if conv_node is None:
+            return None
+        return conv_node, scale, bias
 
     def _fuse_single_add_mul_to_conv(self) -> None:
         """Fuse Add and Mul nodes that precede a Conv node directly into
@@ -1049,124 +1037,62 @@ class ONNXModifier:
 
         for node in self._onnx_gs.nodes:
             if node.op == "Mul":
-                mul_node = node
-                if len(mul_node.outputs[0].outputs) > 1:
-                    continue
+                fused = self._fuse_mul_into_next_conv(node, constant_map)
+            elif node.op == "Add":
+                fused = self._fuse_add_into_next_conv(node, constant_map)
+            else:
+                continue
+            if fused:
+                nodes_to_remove.append(node)
+                connections_to_fix.append((node.outputs[0], node.inputs[0]))
 
-                conv_node = next(
-                    (n for n in mul_node.outputs[0].outputs if n.op == "Conv"),
-                    None,
-                )
-                if conv_node is None:
-                    continue
+        self._commit_graph_edits(
+            [],
+            nodes_to_remove,
+            connections_to_fix,
+            nothing_found="No applicable Add-Mul-Conv pattern found for fusion.",
+        )
 
-                constant = self._get_constant_value(mul_node, constant_map)
-                if constant is None:
-                    continue
+    def _fuse_mul_into_next_conv(
+        self, mul_node: gs.Node, constant_map: dict[str, np.ndarray]
+    ) -> bool:
+        """Fold a constant ``Mul`` into the weights of the Conv after it.
 
-                mul_value, _ = constant
+        Returns:
+            Whether the Conv took over the ``Mul``.
+        """
+        if len(mul_node.outputs[0].outputs) > 1:
+            return False
+        conv_node = _next_node(mul_node, "Conv")
+        if conv_node is None:
+            return False
+        constant = self._get_constant_value(mul_node, constant_map)
+        if constant is None:
+            return False
+        _scale_conv_weights(conv_node, constant[0])
+        return True
 
-                conv_weights = conv_node.inputs[1]
+    def _fuse_add_into_next_conv(
+        self, add_node: gs.Node, constant_map: dict[str, np.ndarray]
+    ) -> bool:
+        """Fold a constant ``Add`` into the bias of the Conv after it.
 
-                new_weights = conv_weights.values * mul_value
+        A Conv with padding does not take the ``Add``, because the
+        padded border would not get the added value.
 
-                conv_node.inputs[1] = gs.Constant(
-                    name=conv_weights.name,
-                    values=new_weights,
-                )
-
-                nodes_to_remove.append(mul_node)
-
-                connections_to_fix.append(
-                    (
-                        mul_node.outputs[0],
-                        mul_node.inputs[0],
-                    )
-                )
-
-            if node.op == "Add":
-                add_node = node
-                if len(add_node.outputs[0].outputs) > 1:
-                    continue
-
-                conv_node = next(
-                    (n for n in add_node.outputs[0].outputs if n.op == "Conv"),
-                    None,
-                )
-                if (
-                    conv_node is None
-                    or (
-                        "pads" in conv_node.attrs
-                        and any(conv_node.attrs["pads"])
-                    )
-                    or (
-                        "auto_pad" in conv_node.attrs
-                        and conv_node.attrs["auto_pad"]
-                        in ["SAME_UPPER", "SAME_LOWER"]
-                    )
-                ):
-                    continue
-
-                constant = self._get_constant_value(add_node, constant_map)
-                if constant is None:
-                    continue
-
-                add_value, _ = constant
-
-                conv_weights = conv_node.inputs[1]
-                conv_bias = (
-                    conv_node.inputs[2] if len(conv_node.inputs) > 2 else None
-                )
-
-                if conv_bias is not None:
-                    new_bias = conv_bias.values + np.sum(
-                        add_value * conv_weights.values, axis=(1, 2, 3)
-                    )
-                    if new_bias.shape != conv_bias.values.shape:
-                        raise ValueError(
-                            f"New bias shape: {new_bias.shape} != Old bias shape: {conv_bias.values.shape}"
-                        )
-                else:
-                    new_bias = np.sum(
-                        add_value * conv_weights.values, axis=(1, 2, 3)
-                    )
-                    if new_bias.shape != conv_weights.shape[0]:
-                        raise ValueError(
-                            f"New bias shape: {new_bias.shape} != Conv weights shape: {conv_weights.shape[0]}"
-                        )
-
-                if conv_bias is not None:
-                    conv_node.inputs[2] = gs.Constant(
-                        name=conv_bias.name,
-                        values=new_bias,
-                    )
-                else:
-                    conv_node.inputs.append(
-                        gs.Constant(
-                            name=f"{conv_node.name}_bias",
-                            values=new_bias,
-                        )
-                    )
-
-                nodes_to_remove.append(add_node)
-
-                connections_to_fix.append(
-                    (
-                        add_node.outputs[0],
-                        add_node.inputs[0],
-                    )
-                )
-
-        if not any([nodes_to_remove, connections_to_fix]):
-            logger.warning(
-                "No applicable Add-Mul-Conv pattern found for fusion."
-            )
-            return
-
-        self._graph_cleanup([], nodes_to_remove, connections_to_fix)
-        self._onnx_model = gs.export_onnx(self._onnx_gs)
-
-        self._optimize_onnx()
+        Returns:
+            Whether the Conv took over the ``Add``.
+        """
+        if len(add_node.outputs[0].outputs) > 1:
+            return False
+        conv_node = _next_node(add_node, "Conv")
+        if conv_node is None or _has_padding(conv_node):
+            return False
+        constant = self._get_constant_value(add_node, constant_map)
+        if constant is None:
+            return False
+        _shift_conv_bias(conv_node, constant[0], conv_node.inputs[1])
+        return True
 
     def _fuse_comb_add_mul_to_conv(self) -> None:
         """Fuse combinations of Add and Mul nodes preceding a Conv node
@@ -1183,200 +1109,79 @@ class ONNXModifier:
 
         for node in self._onnx_gs.nodes:
             if node.op == "Mul":
-                mul_node = node
+                second = self._fuse_mul_add_into_conv(node, constant_map)
+            elif node.op == "Add":
+                second = self._fuse_add_mul_into_conv(node, constant_map)
+            else:
+                continue
+            if second is None:
+                continue
 
-                add_node = next(
-                    (n for n in mul_node.outputs[0].outputs if n.op == "Add"),
-                    None,
-                )
-                if add_node is None:
-                    continue
-
-                conv_node = next(
-                    (n for n in add_node.outputs[0].outputs if n.op == "Conv"),
-                    None,
-                )
-                if (
-                    conv_node is None
-                    or (
-                        "pads" in conv_node.attrs
-                        and any(conv_node.attrs["pads"])
-                    )
-                    or (
-                        "auto_pad" in conv_node.attrs
-                        and conv_node.attrs["auto_pad"]
-                        in ["SAME_UPPER", "SAME_LOWER"]
-                    )
-                ):
-                    continue
-
-                constant = self._get_constant_value(mul_node, constant_map)
-                if constant is None:
-                    continue
-                mul_value, _ = constant
-
-                constant = self._get_constant_value(add_node, constant_map)
-                if constant is None:
-                    continue
-                add_value, _ = constant
-
-                conv_weights = conv_node.inputs[1]
-                conv_bias = (
-                    conv_node.inputs[2] if len(conv_node.inputs) > 2 else None
-                )
-
-                new_weights = conv_weights.values * mul_value
-
-                conv_node.inputs[1] = gs.Constant(
-                    name=conv_weights.name,
-                    values=new_weights,
-                )
-
-                if conv_bias is not None:
-                    new_bias = conv_bias.values + np.sum(
-                        add_value * conv_weights.values, axis=(1, 2, 3)
-                    )
-                    if new_bias.shape != conv_bias.values.shape:
-                        raise ValueError(
-                            f"New bias shape: {new_bias.shape} != Old bias shape: {conv_bias.values.shape}"
-                        )
-                    conv_node.inputs[2] = gs.Constant(
-                        name=conv_bias.name,
-                        values=new_bias,
-                    )
-                else:
-                    new_bias = np.sum(
-                        add_value * conv_weights.values, axis=(1, 2, 3)
-                    )
-                    if new_bias.shape != conv_weights.shape[0]:
-                        raise ValueError(
-                            f"New bias shape: {new_bias.shape} != Conv weights shape: {conv_weights.shape[0]}"
-                        )
-                    conv_node.inputs.append(
-                        gs.Constant(
-                            name=f"{conv_node.name}_bias",
-                            values=new_bias,
-                        )
-                    )
-
-                variable = self._get_variable_input(mul_node)
-                if variable is None:
-                    continue
-                _, mul_idx = variable
-
-                nodes_to_remove.append(mul_node)
-                nodes_to_remove.append(add_node)
-
-                connections_to_fix.append(
-                    (
-                        add_node.outputs[0],
-                        mul_node.inputs[mul_idx],
-                    )
-                )
-
-            if node.op == "Add":
-                add_node = node
-
-                mul_node = next(
-                    (n for n in add_node.outputs[0].outputs if n.op == "Mul"),
-                    None,
-                )
-                if mul_node is None:
-                    continue
-
-                conv_node = next(
-                    (n for n in mul_node.outputs[0].outputs if n.op == "Conv"),
-                    None,
-                )
-                if (
-                    conv_node is None
-                    or (
-                        "pads" in conv_node.attrs
-                        and any(conv_node.attrs["pads"])
-                    )
-                    or (
-                        "auto_pad" in conv_node.attrs
-                        and conv_node.attrs["auto_pad"]
-                        in ["SAME_UPPER", "SAME_LOWER"]
-                    )
-                ):
-                    continue
-
-                constant = self._get_constant_value(add_node, constant_map)
-                if constant is None:
-                    continue
-                add_value, _ = constant
-
-                constant = self._get_constant_value(mul_node, constant_map)
-                if constant is None:
-                    continue
-                mul_value, _ = constant
-
-                add_value *= mul_value
-
-                conv_weights = conv_node.inputs[1]
-                conv_bias = (
-                    conv_node.inputs[2] if len(conv_node.inputs) > 2 else None
-                )
-
-                if conv_bias is not None:
-                    new_bias = conv_bias.values + np.sum(
-                        add_value * conv_weights.values, axis=(1, 2, 3)
-                    )
-                    if new_bias.shape != conv_bias.values.shape:
-                        raise ValueError(
-                            f"New bias shape: {new_bias.shape} != Old bias shape: {conv_bias.values.shape}"
-                        )
-                    conv_node.inputs[2] = gs.Constant(
-                        name=conv_bias.name,
-                        values=new_bias,
-                    )
-                else:
-                    new_bias = np.sum(
-                        add_value * conv_weights.values, axis=(1, 2, 3)
-                    )
-                    if new_bias.shape != conv_weights.shape[0]:
-                        raise ValueError(
-                            f"New bias shape: {new_bias.shape} != Conv weights shape: {conv_weights.shape[0]}"
-                        )
-                    conv_node.inputs.append(
-                        gs.Constant(
-                            name=f"{conv_node.name}_bias",
-                            values=new_bias,
-                        )
-                    )
-
-                new_weights = conv_weights.values * mul_value
-
-                conv_node.inputs[1] = gs.Constant(
-                    name=conv_weights.name,
-                    values=new_weights,
-                )
-
-                variable = self._get_variable_input(add_node)
-                if variable is None:
-                    continue
-                _, add_idx = variable
-
-                nodes_to_remove.append(add_node)
-                nodes_to_remove.append(mul_node)
-
-                connections_to_fix.append(
-                    (
-                        mul_node.outputs[0],
-                        add_node.inputs[add_idx],
-                    )
-                )
-
-        if not any([nodes_to_remove, connections_to_fix]):
-            logger.warning(
-                "No applicable Add-Mul-Conv pattern found for fusion."
+            variable = self._get_variable_input(node)
+            if variable is None:
+                continue
+            nodes_to_remove += [node, second]
+            connections_to_fix.append(
+                (second.outputs[0], node.inputs[variable[1]])
             )
-            return
-        self._graph_cleanup([], nodes_to_remove, connections_to_fix)
-        self._onnx_model = gs.export_onnx(self._onnx_gs)
 
-        self._optimize_onnx()
+        self._commit_graph_edits(
+            [],
+            nodes_to_remove,
+            connections_to_fix,
+            nothing_found="No applicable Add-Mul-Conv pattern found for fusion.",
+        )
+
+    def _fuse_mul_add_into_conv(
+        self, mul_node: gs.Node, constant_map: dict[str, np.ndarray]
+    ) -> gs.Node | None:
+        """Fold a constant ``Mul -> Add`` into the Conv after it.
+
+        Returns:
+            The ``Add`` node, or ``None`` when the chain does not fit.
+        """
+        found = _conv_after(mul_node, "Add")
+        if found is None:
+            return None
+        add_node, conv_node = found
+        mul_constant = self._get_constant_value(mul_node, constant_map)
+        if mul_constant is None:
+            return None
+        add_constant = self._get_constant_value(add_node, constant_map)
+        if add_constant is None:
+            return None
+
+        conv_weights = conv_node.inputs[1]
+        _scale_conv_weights(conv_node, mul_constant[0])
+        _shift_conv_bias(conv_node, add_constant[0], conv_weights)
+        return add_node
+
+    def _fuse_add_mul_into_conv(
+        self, add_node: gs.Node, constant_map: dict[str, np.ndarray]
+    ) -> gs.Node | None:
+        """Fold a constant ``Add -> Mul`` into the Conv after it.
+
+        Returns:
+            The ``Mul`` node, or ``None`` when the chain does not fit.
+        """
+        found = _conv_after(add_node, "Mul")
+        if found is None:
+            return None
+        mul_node, conv_node = found
+        add_constant = self._get_constant_value(add_node, constant_map)
+        if add_constant is None:
+            return None
+        mul_constant = self._get_constant_value(mul_node, constant_map)
+        if mul_constant is None:
+            return None
+
+        add_value, _ = add_constant
+        mul_value, _ = mul_constant
+        add_value *= mul_value
+        conv_weights = conv_node.inputs[1]
+        _shift_conv_bias(conv_node, add_value, conv_weights)
+        _scale_conv_weights(conv_node, mul_value)
+        return mul_node
 
     def _fuse_split_concat_to_conv(self) -> None:
         """Fuse Split and Concat nodes that come before a Conv node into
@@ -1391,99 +1196,106 @@ class ONNXModifier:
         for node in self._onnx_gs.nodes:
             if node.op == "Conv":
                 break
+            if node.op != "Split":
+                continue
 
-            if node.op == "Split":
-                split_node = node
-
-                concat_node = next(
-                    (
-                        n
-                        for n in split_node.outputs[0].outputs
-                        if n.op == "Concat"
-                    ),
-                    None,
-                )
-                if concat_node is None:
-                    continue
-
-                intermediate_nodes = []
-                current_node = concat_node
-                while current_node.op != "Conv":
-                    next_node = next(
-                        iter(current_node.outputs[0].outputs), None
-                    )
-                    if next_node is None:
-                        break
-                    current_node = next_node
-                    intermediate_nodes.append(current_node)
-
-                if not intermediate_nodes:
-                    continue
-
-                conv_node = intermediate_nodes[-1]
-                if conv_node.op != "Conv":
-                    continue
-
-                conv_weights = conv_node.inputs[1]
-
-                if split_node.attrs["axis"] != concat_node.attrs["axis"]:
-                    raise ValueError(
-                        f"Split and Concat axis mismatch: {split_node.attrs['axis']} != {concat_node.attrs['axis']}"
-                    )
-
-                channels_axis = split_node.attrs["axis"]
-                if not isinstance(channels_axis, int):
-                    raise ValueError(
-                        f"Split node axis must be an integer, got: {channels_axis}"
-                    )
-                if conv_weights.shape[channels_axis] not in [1, 3]:
-                    break
-
-                for inter_node in intermediate_nodes[:-1]:
-                    constant = self._get_constant_value(
-                        inter_node, self._get_constant_map(self._onnx_gs)
-                    )
-                    if constant is None:
-                        continue
-                    constant_value, constant_idx = constant
-                    if constant_value.ndim == 1:
-                        continue
-
-                    if (
-                        constant_value.shape[channels_axis]
-                        != conv_weights.values.shape[1]
-                    ):
-                        logger.warning(
-                            f"Spatial dimensions mismatch between Conv and intermediate node {inter_node.name}: {constant_value.shape[channels_axis]} != {conv_weights.values.shape[1]}, discarding this step."
-                        )
-
-                    inter_node.inputs[constant_idx].values = np.flip(
-                        constant_value, axis=channels_axis
-                    )
-
-                conv_weights.values = np.flip(
-                    conv_weights.values, axis=channels_axis
-                )
-
-                nodes_to_remove.append(split_node)
-                nodes_to_remove.append(concat_node)
-
-                connections_to_fix.append(
-                    (
-                        concat_node.outputs[0],
-                        split_node.inputs[0],
-                    )
-                )
-
+            found = _split_concat_conv(node)
+            if found is None:
+                continue
+            concat_node, intermediate_nodes = found
+            if not self._reverse_conv_channels(
+                node, concat_node, intermediate_nodes
+            ):
                 break
 
-        if not any([nodes_to_remove, connections_to_fix]):
-            logger.warning(
-                "No applicable Split-Conv-Concat pattern found for fusion."
+            nodes_to_remove += [node, concat_node]
+            connections_to_fix.append((concat_node.outputs[0], node.inputs[0]))
+            break
+
+        self._commit_graph_edits(
+            [],
+            nodes_to_remove,
+            connections_to_fix,
+            nothing_found="No applicable Split-Conv-Concat pattern found for fusion.",
+        )
+
+    def _reverse_conv_channels(
+        self,
+        split_node: gs.Node,
+        concat_node: gs.Node,
+        intermediate_nodes: list[gs.Node],
+    ) -> bool:
+        """Reverse the channels of the Conv weights and the constants before.
+
+        The last of ``intermediate_nodes`` is the Conv.
+
+        Returns:
+            ``False`` when the Conv does not have 1 or 3 channels on the
+            axis of the split.
+        """
+        conv_weights = intermediate_nodes[-1].inputs[1]
+
+        if split_node.attrs["axis"] != concat_node.attrs["axis"]:
+            raise ValueError(
+                f"Split and Concat axis mismatch: {split_node.attrs['axis']} != {concat_node.attrs['axis']}"
             )
+
+        channels_axis = split_node.attrs["axis"]
+        if not isinstance(channels_axis, int):
+            raise TypeError(
+                f"Split node axis must be an integer, got: {channels_axis}"
+            )
+        if conv_weights.shape[channels_axis] not in [1, 3]:
+            return False
+
+        for inter_node in intermediate_nodes[:-1]:
+            self._flip_constant(inter_node, channels_axis, conv_weights)
+
+        conv_weights.values = np.flip(conv_weights.values, axis=channels_axis)
+        return True
+
+    def _flip_constant(
+        self, node: gs.Node, channels_axis: int, conv_weights: gs.Constant
+    ) -> None:
+        """Reverse the channels of the constant input of a node.
+
+        A node without a constant, or with a 1D constant, keeps it.
+        """
+        constant = self._get_constant_value(
+            node, self._get_constant_map(self._onnx_gs)
+        )
+        if constant is None:
+            return
+        constant_value, constant_idx = constant
+        if constant_value.ndim == 1:
             return
 
-        self._graph_cleanup([], nodes_to_remove, connections_to_fix)
+        if constant_value.shape[channels_axis] != conv_weights.values.shape[1]:
+            logger.warning(
+                f"Spatial dimensions mismatch between Conv and intermediate node {node.name}: {constant_value.shape[channels_axis]} != {conv_weights.values.shape[1]}, discarding this step."
+            )
+
+        node.inputs[constant_idx].values = np.flip(
+            constant_value, axis=channels_axis
+        )
+
+    def _commit_graph_edits(
+        self,
+        nodes_to_add: list[gs.Node],
+        nodes_to_remove: list[gs.Node],
+        connections_to_fix: list[tuple[gs.Variable, gs.Variable]],
+        *,
+        nothing_found: str,
+    ) -> None:
+        """Apply the edits of an optimization step and optimize the result.
+
+        A step without edits only logs ``nothing_found``.
+        """
+        if not any([nodes_to_add, nodes_to_remove, connections_to_fix]):
+            logger.warning(nothing_found)
+            return
+
+        self._graph_cleanup(nodes_to_add, nodes_to_remove, connections_to_fix)
         self._onnx_model = gs.export_onnx(self._onnx_gs)
 
         self._optimize_onnx()
@@ -1519,6 +1331,191 @@ class ONNXModifier:
                 f"Failed: {step_name} with error: {e}, reverting changes..."
             )
             self._revert_changes()
+
+
+def _substitute_node(
+    node: gs.Node, target_node: str, *, const_idx: int
+) -> gs.Node | None:
+    """Build the ``Add`` or ``Mul`` node that replaces a ``Sub`` or ``Div``.
+
+    The ``Add`` adds the negated constant, and the ``Mul`` multiplies by
+    its reciprocal.
+
+    Returns:
+        ``None`` when the constant is the first input, or when the
+        constant of a ``Div`` is not a floating-point tensor.
+    """
+    if const_idx == 0:
+        return None
+
+    first_input = node.inputs[0]
+    second_input = node.inputs[const_idx]
+    if target_node == "Add":
+        new_value = -second_input.values
+    elif second_input.dtype in [np.float16, np.float32, np.float64]:
+        new_value = 1.0 / second_input.values
+    else:
+        return None
+    return gs.Node(
+        op=target_node,
+        inputs=[
+            first_input,
+            gs.Constant(
+                name=f"{node.name}_{second_input.name}/Substitute",
+                values=np.array(new_value, dtype=second_input.dtype),
+            ),
+        ],
+        outputs=[gs.Variable(name=f"{node.name}/{target_node}_output")],
+        name=f"{node.name}/To_{target_node}",
+    )
+
+
+def _longest_sequences(
+    sequences: list[list[gs.Node]],
+) -> list[list[gs.Node]]:
+    """Drop each node chain that a longer chain contains."""
+    return [
+        seq
+        for seq in sequences
+        if not any(
+            all(node in longer_seq for node in seq)
+            and len(seq) < len(longer_seq)
+            for longer_seq in sequences
+        )
+    ]
+
+
+def _batch_norm_node(
+    name: str,
+    input_tensor: gs.Variable,
+    scale: float | np.ndarray,
+    bias: float | np.ndarray,
+    *,
+    dtype: np.dtype,
+) -> gs.Node:
+    """Build a ``BatchNormalization`` node that computes ``x * scale + bias``.
+
+    The mean is zero and the variance is one on every channel.
+    """
+    assert input_tensor.shape is not None
+    conv_channels = int(input_tensor.shape[1])
+    scale_values = np.array([scale] * conv_channels, dtype=dtype).squeeze()
+    bias_values = np.array([bias] * conv_channels, dtype=dtype).squeeze()
+    return gs.Node(
+        op="BatchNormalization",
+        inputs=[
+            input_tensor,
+            gs.Constant(name=f"{name}_scale", values=scale_values),
+            gs.Constant(name=f"{name}_bias", values=bias_values),
+            gs.Constant(
+                name=f"{name}_mean", values=np.zeros_like(scale_values)
+            ),
+            gs.Constant(name=f"{name}_var", values=np.ones_like(scale_values)),
+        ],
+        outputs=[gs.Variable(name=f"{name}_output")],
+        name=name,
+    )
+
+
+def _next_node(node: gs.Node, op: str) -> gs.Node | None:
+    """Return the first ``op`` node that reads the first output of ``node``."""
+    return next((n for n in node.outputs[0].outputs if n.op == op), None)
+
+
+def _has_padding(conv_node: gs.Node) -> bool:
+    """Tell whether a Conv pads its input."""
+    pads = cast("list[int]", conv_node.attrs.get("pads", []))
+    return any(pads) or conv_node.attrs.get("auto_pad") in [
+        "SAME_UPPER",
+        "SAME_LOWER",
+    ]
+
+
+def _conv_after(node: gs.Node, op: str) -> tuple[gs.Node, gs.Node] | None:
+    """Find the chain ``node -> op -> Conv``, with a Conv that does not pad.
+
+    Returns:
+        The ``op`` node and the Conv, or ``None``.
+    """
+    second = _next_node(node, op)
+    if second is None:
+        return None
+    conv_node = _next_node(second, "Conv")
+    if conv_node is None or _has_padding(conv_node):
+        return None
+    return second, conv_node
+
+
+def _scale_conv_weights(conv_node: gs.Node, mul_value: np.ndarray) -> None:
+    """Fold the value of a ``Mul`` before a Conv into the Conv weights."""
+    conv_weights = conv_node.inputs[1]
+    conv_node.inputs[1] = gs.Constant(
+        name=conv_weights.name, values=conv_weights.values * mul_value
+    )
+
+
+def _shift_conv_bias(
+    conv_node: gs.Node, add_value: np.ndarray, weights: gs.Constant
+) -> None:
+    """Fold the value of an ``Add`` before a Conv into the Conv bias.
+
+    ``weights`` are the Conv weights that the added value passes
+    through. A Conv without a bias gets one.
+    """
+    shift = np.sum(add_value * weights.values, axis=(1, 2, 3))
+    if len(conv_node.inputs) > 2:
+        conv_bias = conv_node.inputs[2]
+        new_bias = conv_bias.values + shift
+        if new_bias.shape != conv_bias.values.shape:
+            raise ValueError(
+                f"New bias shape: {new_bias.shape} != Old bias shape: {conv_bias.values.shape}"
+            )
+        conv_node.inputs[2] = gs.Constant(name=conv_bias.name, values=new_bias)
+        return
+
+    if shift.shape != weights.shape[0]:
+        raise ValueError(
+            f"New bias shape: {shift.shape} != Conv weights shape: {weights.shape[0]}"
+        )
+    conv_node.inputs.append(
+        gs.Constant(name=f"{conv_node.name}_bias", values=shift)
+    )
+
+
+def _split_concat_conv(
+    split_node: gs.Node,
+) -> tuple[gs.Node, list[gs.Node]] | None:
+    """Find the chain from a ``Split`` through a ``Concat`` to a Conv.
+
+    Returns:
+        The ``Concat`` node and the nodes after it up to the Conv, or
+        ``None`` when the chain does not reach a Conv.
+    """
+    concat_node = _next_node(split_node, "Concat")
+    if concat_node is None:
+        return None
+    intermediate_nodes = _path_to_conv(concat_node)
+    if not intermediate_nodes or intermediate_nodes[-1].op != "Conv":
+        return None
+    return concat_node, intermediate_nodes
+
+
+def _path_to_conv(node: gs.Node) -> list[gs.Node]:
+    """Follow the first reader of each first output until a Conv.
+
+    Returns:
+        The nodes after ``node``, up to the Conv or up to a node whose
+        output nothing reads.
+    """
+    path = []
+    current_node = node
+    while current_node.op != "Conv":
+        next_node = next(iter(current_node.outputs[0].outputs), None)
+        if next_node is None:
+            break
+        current_node = next_node
+        path.append(current_node)
+    return path
 
 
 def _output_names(graph: gs.Graph) -> list[str]:

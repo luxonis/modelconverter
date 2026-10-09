@@ -413,46 +413,13 @@ class InputConfig(OutputConfig):
     def _validate_encoding(cls, data: Params) -> Params:
         encoding = data.get("encoding")
         if encoding is None or encoding == {}:
-            shape = data.get("shape")
-            layout = data.get("layout")
-            if (
-                isinstance(shape, list)
-                and all(isinstance(dim, int) for dim in shape)
-                and (layout is None or isinstance(layout, str))
-            ):
-                int_shape = [dim for dim in shape if isinstance(dim, int)]
-                resolved_layout = (
-                    make_default_layout(int_shape)
-                    if layout is None
-                    else layout.upper()
-                )
-                if not is_image_input_shape(int_shape, resolved_layout):
-                    if len(int_shape) == 3 and resolved_layout in {
-                        "CHW",
-                        "HWC",
-                    }:
-                        channels = int_shape[resolved_layout.index("C")]
-                        if channels <= 0 or channels in {1, 3}:
-                            name = data.get("name", "<unnamed>")
-                            logger.warning(
-                                f"Input '{name}' uses batchless image layout "
-                                f"'{resolved_layout}' but has no explicit "
-                                "encoding; treating it as a raw tensor. Set "
-                                "`encoding` explicitly to enable image color "
-                                "handling."
-                            )
-                    data["encoding"] = {
-                        "from": "NONE",
-                        "to": "NONE",
-                    }
-                    return data
-            data["encoding"] = {"from": "RGB", "to": "BGR"}
+            data["encoding"] = _default_encoding(data)
             return data
         if isinstance(encoding, str):
             data["encoding"] = {"from": encoding, "to": encoding}
-        if isinstance(encoding, dict) and (
-            ("from" in encoding and encoding["from"] == "GRAY")
-            or ("to" in encoding and encoding["to"] == "GRAY")
+        if isinstance(encoding, dict) and "GRAY" in (
+            encoding.get("from"),
+            encoding.get("to"),
         ):
             data["encoding"] = {"from": "GRAY", "to": "GRAY"}
         return data
@@ -515,23 +482,11 @@ class InputConfig(OutputConfig):
 
         channels = self.channel_count
         encodings = {self.encoding.from_, self.encoding.to}
-        image_encodings = {Encoding.RGB, Encoding.BGR, Encoding.GRAY}
         if channels is not None:
-            if encodings & {Encoding.RGB, Encoding.BGR} and channels != 3:
-                raise ValueError(
-                    f"Input '{self.name}' has {channels} channels and cannot "
-                    "use RGB/BGR encoding; use `encoding: NONE` for a packed "
-                    "or non-image tensor input."
-                )
-            if Encoding.GRAY in encodings and channels != 1:
-                raise ValueError(
-                    f"Input '{self.name}' has {channels} channels and cannot "
-                    "use GRAY encoding; grayscale image inputs require "
-                    "exactly one channel."
-                )
+            self._check_encoding_channels(encodings, channels)
 
         if (
-            encodings & image_encodings
+            encodings & {Encoding.RGB, Encoding.BGR, Encoding.GRAY}
             and self.shape is not None
             and self.layout is not None
             and not is_image_input_shape(
@@ -544,21 +499,39 @@ class InputConfig(OutputConfig):
                 "or non-image tensor input."
             )
 
-        if channels is None:
-            return
+        if channels is not None and validate_values:
+            self._check_value_counts(channels)
 
-        if validate_values:
-            for values_name, values in (
-                ("mean_values", self.mean_values),
-                ("scale_values", self.scale_values),
-            ):
-                if values is not None and len(values) not in {1, channels}:
-                    raise ValueError(
-                        f"Input '{self.name}' has {channels} channels, but "
-                        f"'{values_name}' contains {len(values)} values; "
-                        "provide one value to broadcast or one value per "
-                        "channel."
-                    )
+    def _check_encoding_channels(
+        self, encodings: set[Encoding], channels: int
+    ) -> None:
+        """Reject a color encoding that does not fit the channel count."""
+        if encodings & {Encoding.RGB, Encoding.BGR} and channels != 3:
+            raise ValueError(
+                f"Input '{self.name}' has {channels} channels and cannot "
+                "use RGB/BGR encoding; use `encoding: NONE` for a packed "
+                "or non-image tensor input."
+            )
+        if Encoding.GRAY in encodings and channels != 1:
+            raise ValueError(
+                f"Input '{self.name}' has {channels} channels and cannot "
+                "use GRAY encoding; grayscale image inputs require "
+                "exactly one channel."
+            )
+
+    def _check_value_counts(self, channels: int) -> None:
+        """Require one mean and scale value, or one per channel."""
+        for values_name, values in (
+            ("mean_values", self.mean_values),
+            ("scale_values", self.scale_values),
+        ):
+            if values is not None and len(values) not in {1, channels}:
+                raise ValueError(
+                    f"Input '{self.name}' has {channels} channels, but "
+                    f"'{values_name}' contains {len(values)} values; "
+                    "provide one value to broadcast or one value per "
+                    "channel."
+                )
 
     def requires_input_preprocessing(
         self, *, reverse_only: bool = False
@@ -1227,45 +1200,22 @@ class SingleStageConfig(BaseModelExtraForbid):
     @model_validator(mode="before")
     @classmethod
     def _validate_model(cls, data: Params) -> Params:
-        mean_values = data.pop("mean_values", None)
-        scale_values = data.pop("scale_values", None)
-        encoding = data.pop("encoding", {})
-        data_type = data.pop("data_type", None)
-        shape = data.pop("shape", None)
-        layout = data.pop("layout", None)
-        top_level_calibration = data.pop("calibration", {})
+        defaults: Params = {
+            "mean_values": data.pop("mean_values", None),
+            "scale_values": data.pop("scale_values", None),
+            "encoding": data.pop("encoding", {}),
+            "data_type": data.pop("data_type", None),
+            "shape": data.pop("shape", None),
+            "layout": data.pop("layout", None),
+            "calibration": data.pop("calibration", {}),
+        }
 
         model_path = Path(_as_path_type(data["input_model"], "input_model"))
 
         input_file_type = InputFileType.from_path(model_path)
         data["input_file_type"] = input_file_type.value
         if input_file_type == InputFileType.PYTORCH:
-            logger.info(
-                "Detected PyTorch model. Only YOLO models are supported."
-            )
-            raw_shape = data.pop("yolo_input_shape", [640, 640])
-            if isinstance(raw_shape, str):
-                input_shape = (
-                    [int(size) for size in raw_shape.split(" ")]
-                    if " " in raw_shape
-                    else [int(raw_shape)] * 2
-                )
-            else:
-                logger.warning(
-                    "yolo_input_shape is not provided. Using default shape [640, 640]."
-                )
-                input_shape = _as_shape(raw_shape, "yolo_input_shape")
-            input_shapes = {"images": input_shape[::-1]}
-            input_dtypes = {"images": DataType.FLOAT32}
-            output_shapes = {"dummy": [0]}
-            output_dtypes = {"dummy": DataType.FLOAT32}
-
-            metadata = Metadata(
-                input_shapes=input_shapes,
-                input_dtypes=input_dtypes,
-                output_shapes=output_shapes,
-                output_dtypes=output_dtypes,
-            )
+            metadata = _yolo_metadata(data)
         else:
             metadata = get_metadata(model_path)
 
@@ -1277,77 +1227,9 @@ class SingleStageConfig(BaseModelExtraForbid):
             outputs = [{"name": name} for name in metadata.output_shapes]
 
         for inp in inputs:
-            if "name" not in inp:
-                raise ValueError(
-                    f"Unable to determine name for input: `{inp}`."
-                )
-            inp_name = str(inp["name"])
-            if inp_name in metadata.input_shapes:
-                onnx_shape, onnx_dtype = (
-                    metadata.input_shapes[inp_name],
-                    metadata.input_dtypes[inp_name],
-                )
-            else:
-                onnx_shape, onnx_dtype = _get_onnx_inter_info(
-                    model_path, inp_name
-                )
-                logger.warning(
-                    f"Input `{inp_name}` is not present in inputs of the ONNX model. "
-                    f"Assuming it is an intermediate node."
-                )
-            inp["shape"] = inp.get("shape") or shape or onnx_shape
-            inp["layout"] = inp.get("layout") or layout
-            inp["data_type"] = (
-                inp.get("data_type") or data_type or _dtype_name(onnx_dtype)
-            )
-            inp["encoding"] = inp.get("encoding") or encoding
-            inp["mean_values"] = (
-                inp.get("mean_values")
-                if inp.get("mean_values") is not None
-                else mean_values
-            )
-            inp["scale_values"] = (
-                inp.get("scale_values")
-                if inp.get("scale_values") is not None
-                else scale_values
-            )
-
-            inp_calibration = inp.get("calibration", {})
-            if not inp_calibration and not top_level_calibration:
-                inp["calibration"] = None
-            elif top_level_calibration == "random":
-                # Random calibration data still keeps specified resize_method
-                inp["calibration"] = (
-                    {"resize_method": inp_calibration["resize_method"]}
-                    if isinstance(inp_calibration, dict)
-                    and "resize_method" in inp_calibration
-                    else "random"
-                )
-            else:
-                inp["calibration"] = {
-                    **_as_dict(top_level_calibration, "calibration"),
-                    **_as_dict(inp_calibration, "calibration"),
-                }
-
+            _fill_input(inp, defaults, metadata, model_path)
         for out in outputs:
-            out_name = str(out["name"])
-            if (
-                out_name not in metadata.output_shapes
-                and out.get("data_type") is None
-                and out.get("shape") is None
-            ):
-                onnx_shape, onnx_dtype = _get_onnx_inter_info(
-                    model_path, out_name
-                )
-            elif out_name in metadata.output_shapes:
-                onnx_shape, onnx_dtype = (
-                    metadata.output_shapes[out_name],
-                    metadata.output_dtypes[out_name],
-                )
-            else:
-                onnx_shape, onnx_dtype = None, None
-            out["shape"] = out.get("shape") or onnx_shape
-            out["data_type"] = out.get("data_type") or _dtype_name(onnx_dtype)
+            _fill_output(out, metadata, model_path)
 
         data["inputs"] = inputs
         data["outputs"] = outputs
@@ -1457,25 +1339,7 @@ class Config(LuxonisConfig):
             return handler(data)
         data = data.copy()
         if "stages" not in data:
-            name = data.pop("name", None)
-            if name is not None and not isinstance(name, str):
-                raise TypeError("`name` must be a string.")
-            rich_logging = data.pop("rich_logging", True)
-            # An unnamed flat stage needs validation before its resolved
-            # input path can supply the model stem.
-            stage_key = name if name is not None else "default_stage"
-            config = handler(
-                {
-                    "name": stage_key,
-                    "rich_logging": rich_logging,
-                    "stages": {stage_key: data},
-                }
-            )
-            if name is None:
-                stage = config.stages[stage_key]
-                config.name = stage.input_model.stem
-                config.stages = {config.name: stage}
-            return config
+            return cls._validate_flat_config(data, handler)
 
         extra: Params = {}
         for key in list(data.keys()):
@@ -1485,9 +1349,37 @@ class Config(LuxonisConfig):
         for stage_name, stage in stages.items():
             stage_data = _as_dict(stage, f"stages.{stage_name}")
             for key, value in extra.items():
-                if key not in stage_data:
-                    stage_data[key] = value
+                stage_data.setdefault(key, value)
         return handler(data)
+
+    @classmethod
+    def _validate_flat_config(
+        cls, data: Params, handler: ModelWrapValidatorHandler[Self]
+    ) -> Self:
+        """Validate a config without ``stages`` as one stage.
+
+        The stage takes the ``name`` of the config, or the stem of its
+        input model.
+        """
+        name = data.pop("name", None)
+        if name is not None and not isinstance(name, str):
+            raise TypeError("`name` must be a string.")
+        rich_logging = data.pop("rich_logging", True)
+        # An unnamed flat stage needs validation before its resolved
+        # input path can supply the model stem.
+        stage_key = name if name is not None else "default_stage"
+        config = handler(
+            {
+                "name": stage_key,
+                "rich_logging": rich_logging,
+                "stages": {stage_key: data},
+            }
+        )
+        if name is None:
+            stage = config.stages[stage_key]
+            config.name = stage.input_model.stem
+            config.stages = {config.name: stage}
+        return config
 
 
 def broadcast_preprocessing_values(
@@ -1497,6 +1389,150 @@ def broadcast_preprocessing_values(
     if len(values) == 1 and channels is not None:
         return values * channels
     return list(values)
+
+
+def _default_encoding(data: Params) -> dict[str, str]:
+    """Pick the encoding of an input that does not set one.
+
+    An input with a static shape that does not describe an image is a
+    raw tensor. Any other input is an RGB image that the model takes
+    as BGR.
+    """
+    shape = data.get("shape")
+    layout = data.get("layout")
+    if not (
+        isinstance(shape, list)
+        and all(isinstance(dim, int) for dim in shape)
+        and (layout is None or isinstance(layout, str))
+    ):
+        return {"from": "RGB", "to": "BGR"}
+
+    int_shape = [dim for dim in shape if isinstance(dim, int)]
+    resolved_layout = (
+        make_default_layout(int_shape) if layout is None else layout.upper()
+    )
+    if is_image_input_shape(int_shape, resolved_layout):
+        return {"from": "RGB", "to": "BGR"}
+
+    if len(int_shape) == 3 and resolved_layout in {"CHW", "HWC"}:
+        channels = int_shape[resolved_layout.index("C")]
+        if channels <= 0 or channels in {1, 3}:
+            name = data.get("name", "<unnamed>")
+            logger.warning(
+                f"Input '{name}' uses batchless image layout "
+                f"'{resolved_layout}' but has no explicit "
+                "encoding; treating it as a raw tensor. Set "
+                "`encoding` explicitly to enable image color "
+                "handling."
+            )
+    return {"from": "NONE", "to": "NONE"}
+
+
+def _yolo_metadata(data: Params) -> Metadata:
+    """Build the metadata of a YOLO PyTorch model.
+
+    The input shape comes from ``yolo_input_shape``: two sizes split
+    by a space, one size for a square input, or 640 by 640 by default.
+    """
+    logger.info("Detected PyTorch model. Only YOLO models are supported.")
+    raw_shape = data.pop("yolo_input_shape", [640, 640])
+    if isinstance(raw_shape, str):
+        input_shape = (
+            [int(size) for size in raw_shape.split(" ")]
+            if " " in raw_shape
+            else [int(raw_shape)] * 2
+        )
+    else:
+        logger.warning(
+            "yolo_input_shape is not provided. Using default shape [640, 640]."
+        )
+        input_shape = _as_shape(raw_shape, "yolo_input_shape")
+    return Metadata(
+        input_shapes={"images": input_shape[::-1]},
+        input_dtypes={"images": DataType.FLOAT32},
+        output_shapes={"dummy": [0]},
+        output_dtypes={"dummy": DataType.FLOAT32},
+    )
+
+
+def _fill_input(
+    inp: Params, defaults: Params, metadata: Metadata, model_path: Path
+) -> None:
+    """Fill the unset fields of an input.
+
+    A field takes the top-level value from ``defaults`` first, and then
+    the value that the model holds. An input that is not an input of
+    the model is read as an intermediate tensor.
+    """
+    if "name" not in inp:
+        raise ValueError(f"Unable to determine name for input: `{inp}`.")
+    inp_name = str(inp["name"])
+    if inp_name in metadata.input_shapes:
+        onnx_shape = metadata.input_shapes[inp_name]
+        onnx_dtype = metadata.input_dtypes[inp_name]
+    else:
+        onnx_shape, onnx_dtype = _get_onnx_inter_info(model_path, inp_name)
+        logger.warning(
+            f"Input `{inp_name}` is not present in inputs of the ONNX model. "
+            f"Assuming it is an intermediate node."
+        )
+    inp["shape"] = inp.get("shape") or defaults["shape"] or onnx_shape
+    inp["layout"] = inp.get("layout") or defaults["layout"]
+    inp["data_type"] = (
+        inp.get("data_type")
+        or defaults["data_type"]
+        or _dtype_name(onnx_dtype)
+    )
+    inp["encoding"] = inp.get("encoding") or defaults["encoding"]
+    for key in ("mean_values", "scale_values"):
+        if inp.get(key) is None:
+            inp[key] = defaults[key]
+    inp["calibration"] = _input_calibration(
+        inp.get("calibration", {}), defaults["calibration"]
+    )
+
+
+def _input_calibration(
+    inp_calibration: ParamValue, top_level_calibration: ParamValue
+) -> ParamValue:
+    """Merge the calibration of an input into the top-level one.
+
+    Returns:
+        ``None`` when neither sets a calibration. Random top-level
+        calibration keeps only the ``resize_method`` of the input.
+    """
+    if not inp_calibration and not top_level_calibration:
+        return None
+    if top_level_calibration == "random":
+        # Random calibration data still keeps specified resize_method
+        if (
+            isinstance(inp_calibration, dict)
+            and "resize_method" in inp_calibration
+        ):
+            return {"resize_method": inp_calibration["resize_method"]}
+        return "random"
+    return {
+        **_as_dict(top_level_calibration, "calibration"),
+        **_as_dict(inp_calibration, "calibration"),
+    }
+
+
+def _fill_output(out: Params, metadata: Metadata, model_path: Path) -> None:
+    """Fill the unset shape and data type of an output from the model.
+
+    An output that is not an output of the model is read as an
+    intermediate tensor, unless it sets its shape or data type.
+    """
+    out_name = str(out["name"])
+    if out_name in metadata.output_shapes:
+        onnx_shape = metadata.output_shapes[out_name]
+        onnx_dtype = metadata.output_dtypes[out_name]
+    elif out.get("data_type") is None and out.get("shape") is None:
+        onnx_shape, onnx_dtype = _get_onnx_inter_info(model_path, out_name)
+    else:
+        onnx_shape, onnx_dtype = None, None
+    out["shape"] = out.get("shape") or onnx_shape
+    out["data_type"] = out.get("data_type") or _dtype_name(onnx_dtype)
 
 
 def _dtype_name(dtype: DataType | None) -> str | None:
@@ -1643,28 +1679,29 @@ def _get_onnx_tensor_info(
     model_path: PathType, tensor_name: str
 ) -> tuple[list[int], DataType]:
     model = onnx.load(str(model_path))
-
-    def extract_tensor_info(
-        tensor_type: TypeProto.Tensor,
-    ) -> tuple[list[int], DataType]:
-        shape = _get_static_onnx_shape(tensor_type, f"tensor '{tensor_name}'")
-        return shape, DataType.from_onnx_dtype(tensor_type.elem_type)
-
     for tensor in chain(model.graph.input, model.graph.output):
         if tensor.name == tensor_name:
-            return extract_tensor_info(tensor.type.tensor_type)
+            return _onnx_tensor_info(tensor.type.tensor_type, tensor_name)
 
-    for node in model.graph.node:
-        for tensor in chain(node.input, node.output):
-            if tensor == tensor_name:
-                for value_info in model.graph.value_info:
-                    if value_info.name == tensor_name:
-                        return extract_tensor_info(value_info.type.tensor_type)
-                raise ValueError(
-                    f"Tensor '{tensor_name}' does not have shape/type information."
-                )
+    if not any(
+        tensor_name in chain(node.input, node.output)
+        for node in model.graph.node
+    ):
+        raise NameError(f"Tensor '{tensor_name}' not found in the ONNX model.")
+    for value_info in model.graph.value_info:
+        if value_info.name == tensor_name:
+            return _onnx_tensor_info(value_info.type.tensor_type, tensor_name)
+    raise ValueError(
+        f"Tensor '{tensor_name}' does not have shape/type information."
+    )
 
-    raise NameError(f"Tensor '{tensor_name}' not found in the ONNX model.")
+
+def _onnx_tensor_info(
+    tensor_type: TypeProto.Tensor, tensor_name: str
+) -> tuple[list[int], DataType]:
+    """Read the static shape and the data type of an ONNX tensor."""
+    shape = _get_static_onnx_shape(tensor_type, f"tensor '{tensor_name}'")
+    return shape, DataType.from_onnx_dtype(tensor_type.elem_type)
 
 
 def _get_static_onnx_shape(

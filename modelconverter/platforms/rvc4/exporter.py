@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, Final, NamedTuple
 
 from loguru import logger
 from luxonis_ml.typing import Params
@@ -21,7 +21,6 @@ from luxonis_ml.typing import Params
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
     ModelconverterException,
-    ONNXModifier,
     PreprocessingEmbeddingError,
     exit_with,
     onnx_attach_normalization_to_inputs,
@@ -121,34 +120,8 @@ class RVC4Exporter(Exporter):
                 self._attach_suffix(self._input_model, "modified.onnx"),
                 self._inputs,
             )
-
             if not self._onnx_optimizations.all_disabled():
-                onnx_modifier = ONNXModifier(
-                    model_path=self._input_model,
-                    output_path=self._attach_suffix(
-                        self._input_model, "modified_optimized.onnx"
-                    ),
-                )
-
-                try:
-                    if (
-                        onnx_modifier.modify_onnx(
-                            **self._onnx_optimizations.model_dump()
-                        )
-                        and onnx_modifier.compare_outputs()
-                    ):
-                        logger.info("ONNX model has been optimized for RVC4.")
-                        shutil.move(
-                            onnx_modifier.output_path, self._input_model
-                        )
-                except Exception as e:  # pragma: no cover
-                    logger.warning(
-                        f"Failed to optimize ONNX model: {e}. "
-                        "Proceeding with unoptimized model."
-                    )
-                finally:
-                    if onnx_modifier.output_path.exists():  # pragma: no cover
-                        onnx_modifier.output_path.unlink()
+                self._optimize_onnx()
         elif requested_inputs:
             names = ", ".join(requested_inputs)
             raise PreprocessingEmbeddingError(
@@ -320,13 +293,32 @@ class RVC4Exporter(Exporter):
 
         """
 
-        class Entry(NamedTuple):
-            path: Path
-            inp: InputConfig
-            calib: ImageCalibrationConfig
+        entries = self._calibration_entries()
+        if self._raw_img_dir.exists():  # pragma: no cover
+            logger.warning("Removing existing raw_images directory.")
+            shutil.rmtree(self._raw_img_dir)
+        self._raw_img_dir.mkdir(exist_ok=True)
+        i = 0
+        with open(self._input_list_path, "w") as f:
+            for sample_idx, sample in enumerate(zip(*entries, strict=True)):
+                parts = []
+                for entry in sample:
+                    i += 1
+                    raw_path = self._write_raw_sample(entry, i)
+                    parts.append(f"{entry.inp.name}:={raw_path}")
+                line = " ".join(parts)
+                if sample_idx == 0:
+                    logger.debug(f"Image list entry: {line}")
+                f.write(line + "\n")
+        return self._input_list_path
 
-        entries: list[list[Entry]] = []
+    def _calibration_entries(self) -> list[list["_CalibrationEntry"]]:
+        """List the calibration files of each input.
 
+        Terminates the process if an input has no shape or a dynamic
+        one.
+        """
+        entries = []
         for name, inp in self._inputs.items():
             calib = inp.calibration
             assert isinstance(calib, ImageCalibrationConfig)
@@ -338,56 +330,47 @@ class RVC4Exporter(Exporter):
                 exit_with(ValueError(f"Input `{name}` has dynamic shape."))
             entries.append(
                 [
-                    Entry(path=path, inp=inp, calib=calib)
+                    _CalibrationEntry(path=path, inp=inp, calib=calib)
                     for path in self._read_img_dir(
                         calib.path, calib.max_images
                     )
                 ]
             )
+        return entries
 
-        if self._raw_img_dir.exists():  # pragma: no cover
-            logger.warning("Removing existing raw_images directory.")
-            shutil.rmtree(self._raw_img_dir)
-        self._raw_img_dir.mkdir(exist_ok=True)
-        i = 0
-        with open(self._input_list_path, "w") as f:
-            log = True
-            for entry in zip(*entries, strict=True):
-                entry_str = ""
-                for e in entry:
-                    i += 1
-                    if is_user_calibration_tensor(e.path, e.calib):
-                        if e.path.suffix.lower() == ".raw":
-                            entry_str += f"{e.inp.name}:={e.path} "
-                            continue
-                        img = read_user_calibration_tensor(
-                            e.path,
-                            data_type=e.inp.data_type,
-                            input_name=e.inp.name,
-                        )
-                    else:
-                        img, layout = self._read_calibration_file(
-                            e.inp, e.calib, e.path
-                        )
-                        if e.calib.generated_from_random and _was_image_input(
-                            e.inp
-                        ):
-                            target_layout = channels_last_image_layout(layout)
-                            # A layout with a repeated letter is returned
-                            # unchanged, and cannot be transposed either.
-                            if target_layout != layout:
-                                img = reorder_layout(
-                                    img, layout, target_layout
-                                )
-                    raw_path = self._raw_img_dir / f"{i}.raw"
-                    img.tofile(raw_path)
-                    entry_str += f"{e.inp.name}:={raw_path} "
-                entry_str = entry_str.strip()
-                if log:
-                    logger.debug(f"Image list entry: {entry_str}")
-                    log = False
-                f.write(entry_str + "\n")
-        return self._input_list_path
+    def _write_raw_sample(
+        self, entry: "_CalibrationEntry", index: int
+    ) -> Path:
+        """Write one calibration sample as a raw file for SNPE.
+
+        A ``.raw`` file of the user is used as it is.
+
+        Returns:
+            Path to the raw file.
+        """
+        if is_user_calibration_tensor(entry.path, entry.calib):
+            if entry.path.suffix.lower() == ".raw":
+                return entry.path
+            img = read_user_calibration_tensor(
+                entry.path,
+                data_type=entry.inp.data_type,
+                input_name=entry.inp.name,
+            )
+        else:
+            img, layout = self._read_calibration_file(
+                entry.inp, entry.calib, entry.path
+            )
+            if entry.calib.generated_from_random and _was_image_input(
+                entry.inp
+            ):
+                target_layout = channels_last_image_layout(layout)
+                # A layout with a repeated letter is returned unchanged, and
+                # cannot be transposed either.
+                if target_layout != layout:
+                    img = reorder_layout(img, layout, target_layout)
+        raw_path = self._raw_img_dir / f"{index}.raw"
+        img.tofile(raw_path)
+        return raw_path
 
     def _generate_io_encodings(
         self, encodings: QuantizationOverrides | Encodings
@@ -443,26 +426,7 @@ class RVC4Exporter(Exporter):
         exposed_names = list(self._inputs.keys()) + list(self._outputs.keys())
 
         if isinstance(activation_encodings, list):
-            seen = set()
-            for item in activation_encodings:
-                if not isinstance(item, dict):
-                    self._raise_io_normalization_error(
-                        "activation_encodings list entries must be dicts"
-                    )
-                name = item.get("name")
-                if not isinstance(name, str) or not name:
-                    self._raise_io_normalization_error(
-                        "activation_encodings list entries must have a "
-                        "nonempty string `name`"
-                    )
-                if name in exposed_names:
-                    self._normalize_io_encoding_item(item)
-                    seen.add(name)
-            for name in exposed_names:
-                if name not in seen:
-                    activation_encodings.append(
-                        {"name": name, "bitwidth": 8, "dtype": "int"}
-                    )
+            self._normalize_encoding_list(activation_encodings, exposed_names)
             return
 
         if not isinstance(activation_encodings, dict):
@@ -471,31 +435,64 @@ class RVC4Exporter(Exporter):
             )
 
         for name in exposed_names:
-            if name not in activation_encodings:
+            if name in activation_encodings:
+                self._normalize_encoding_entry(
+                    name, activation_encodings[name]
+                )
+            else:
                 activation_encodings[name] = [{"bitwidth": 8, "dtype": "int"}]
-                continue
 
-            entry = activation_encodings[name]
-            if isinstance(entry, dict):
-                self._normalize_io_encoding_item(entry)
-                continue
+    def _normalize_encoding_list(
+        self, encodings: list[Any], exposed_names: list[str]
+    ) -> None:
+        """Normalize activation encodings in the list form.
 
-            if isinstance(entry, list):
-                if not entry:
-                    entry.append({"bitwidth": 8, "dtype": "int"})
-                    continue
-                for item in entry:
-                    if not isinstance(item, dict):
-                        self._raise_io_normalization_error(
-                            f"`activation_encodings.{name}` list entries "
-                            "must be dicts"
-                        )
-                    self._normalize_io_encoding_item(item)
-                continue
+        Each list item names its tensor with a ``name`` key. An exposed
+        tensor without an item gets an 8-bit one appended.
+        """
+        seen = set()
+        for item in encodings:
+            if not isinstance(item, dict):
+                self._raise_io_normalization_error(
+                    "activation_encodings list entries must be dicts"
+                )
+            name = item.get("name")
+            if not isinstance(name, str) or not name:
+                self._raise_io_normalization_error(
+                    "activation_encodings list entries must have a "
+                    "nonempty string `name`"
+                )
+            if name in exposed_names:
+                self._normalize_io_encoding_item(item)
+                seen.add(name)
+        encodings.extend(
+            {"name": name, "bitwidth": 8, "dtype": "int"}
+            for name in exposed_names
+            if name not in seen
+        )
 
+    def _normalize_encoding_entry(self, name: str, entry: Any) -> None:
+        """Normalize the encodings of one exposed tensor in the dict form.
+
+        The entry is one encoding or a list of them. An empty list gets
+        an 8-bit encoding.
+        """
+        if isinstance(entry, dict):
+            self._normalize_io_encoding_item(entry)
+            return
+        if not isinstance(entry, list):
             self._raise_io_normalization_error(
                 f"`activation_encodings.{name}` must be a dict or list"
             )
+        if not entry:
+            entry.append({"bitwidth": 8, "dtype": "int"})
+            return
+        for item in entry:
+            if not isinstance(item, dict):
+                self._raise_io_normalization_error(
+                    f"`activation_encodings.{name}` list entries must be dicts"
+                )
+            self._normalize_io_encoding_item(item)
 
     @staticmethod
     def _normalize_io_encoding_item(item: dict[str, Any]) -> None:
@@ -511,6 +508,73 @@ class RVC4Exporter(Exporter):
             "normalization with `rvc4.normalize_io_encodings=False` to pass "
             "the raw overrides through to SNPE."
         )
+
+    def _snpe_layouts(self) -> dict[str, str]:
+        """Map each input to its SNPE layout.
+
+        An input with a layout that SNPE does not know is left out,
+        with a warning.
+        """
+        layouts = {}
+        for name, inp in self._inputs.items():
+            layout = inp.layout
+            # A converting input always has a shape (read from the model),
+            # and the config derives a layout from any shape, so `layout`
+            # is only ever None for a shapeless input that can't convert.
+            if layout is None:  # pragma: no cover
+                continue
+            if layout in {"NCD", "NDC", "D"}:
+                layout = layout.replace("D", "F")
+            if layout in _SNPE_LAYOUTS:
+                layouts[name] = layout
+            else:
+                logger.warning(
+                    f"Layout '{layout}' not supported by snpe for input '{name}'. "
+                    "Proceeding without specifying layout."
+                )
+        return layouts
+
+    def _add_io_args(self, args: list) -> None:
+        """Add the input and output flags that ``args`` does not set.
+
+        The flags are the input shapes, data types and layouts and the
+        output names.
+        """
+        if "--input_dim" not in args:
+            args += _per_input_args(
+                "--input_dim",
+                {
+                    name: ",".join(str(x) for x in inp.shape)
+                    for name, inp in self._inputs.items()
+                    if inp.shape is not None
+                },
+            )
+        if "--input_dtype" not in args:
+            args += _per_input_args(
+                "--input_dtype",
+                {
+                    name: inp.data_type.as_snpe_dtype()
+                    for name, inp in self._inputs.items()
+                    if inp.data_type is not None
+                },
+            )
+        if "--out_name" not in args:
+            for name in self._outputs:
+                args.extend(["--out_name", name])
+        if "--input_layout" not in args:
+            args += _per_input_args("--input_layout", self._snpe_layouts())
+
+    def _add_quantization_args(self, args: list) -> None:
+        """Add the float bit width or the quantization overrides."""
+        if self._quantization_mode == QuantizationMode.FP16_STD:
+            self._add_args(args, ["--float_bitwidth", "16"])
+            return
+        self._validate_quantization_overrides()
+        if self._encodings is not None:
+            io_encodings_file = self._generate_io_encodings(self._encodings)
+            self._add_args(
+                args, ["--quantization_overrides", str(io_encodings_file)]
+            )
 
     def _onnx_to_dlc(self) -> Path:
         """Convert the input model to the DLC format.
@@ -529,72 +593,9 @@ class RVC4Exporter(Exporter):
         logger.info("Exporting for RVC4")
         args = self._snpe_onnx_to_dlc
         self._add_args(args, ["-i", self._input_model])
-        if "--input_dim" not in args:
-            for name, inp in self._inputs.items():
-                if inp.shape is not None:
-                    args.extend(
-                        [
-                            "--input_dim",
-                            name,
-                            ",".join(str(x) for x in inp.shape),
-                        ]
-                    )
-        if "--input_dtype" not in args:
-            for name, inp in self._inputs.items():
-                if inp.data_type is not None:
-                    args.extend(
-                        ["--input_dtype", name, inp.data_type.as_snpe_dtype()]
-                    )
-        if "--out_name" not in args:
-            for name in self._outputs:
-                args.extend(["--out_name", name])
+        self._add_io_args(args)
 
-        if "--input_layout" not in args:
-            for name, inp in self._inputs.items():
-                layout = inp.layout
-                # A converting input always has a shape (read from the model),
-                # and the config derives a layout from any shape, so `layout`
-                # is only ever None for a shapeless input that can't convert.
-                if layout is None:  # pragma: no cover
-                    continue
-                if layout in ["NCD", "NDC", "D"]:
-                    layout = layout.replace("D", "F")
-                if layout in [
-                    "NCDHW",
-                    "NDHWC",
-                    "NCHW",
-                    "NHWC",
-                    "NFC",
-                    "NCF",
-                    "NTF",
-                    "TNF",
-                    "NF",
-                    "NC",
-                    "F",
-                    "NONTRIVIAL",
-                ]:
-                    args.extend(["--input_layout", name, layout])
-                else:
-                    logger.warning(
-                        f"Layout '{layout}' not supported by snpe for input '{name}'. "
-                        "Proceeding without specifying layout."
-                    )
-
-        if self._quantization_mode == QuantizationMode.FP16_STD:
-            self._add_args(args, ["--float_bitwidth", "16"])
-        else:
-            self._validate_quantization_overrides()
-            if self._encodings is not None:
-                io_encodings_file = self._generate_io_encodings(
-                    self._encodings
-                )
-                self._add_args(
-                    args,
-                    [
-                        "--quantization_overrides",
-                        f"{io_encodings_file}",
-                    ],
-                )
+        self._add_quantization_args(args)
 
         if self._is_tflite:
             command = "snpe-tflite-to-dlc"
@@ -634,6 +635,40 @@ class RVC4Exporter(Exporter):
             self._quantization_override_payload(self._encodings),
             self._input_model,
         )
+
+
+_SNPE_LAYOUTS: Final = frozenset(
+    {
+        "NCDHW",
+        "NDHWC",
+        "NCHW",
+        "NHWC",
+        "NFC",
+        "NCF",
+        "NTF",
+        "TNF",
+        "NF",
+        "NC",
+        "F",
+        "NONTRIVIAL",
+    }
+)
+
+
+class _CalibrationEntry(NamedTuple):
+    """One calibration file of one input."""
+
+    path: Path
+    inp: InputConfig
+    calib: ImageCalibrationConfig
+
+
+def _per_input_args(flag: str, values: dict[str, str]) -> list[str]:
+    """Repeat ``flag name value`` for each input."""
+    args = []
+    for name, value in values.items():
+        args += [flag, name, value]
+    return args
 
 
 def _transforms_calibration(inp: InputConfig) -> bool:

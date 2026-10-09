@@ -1261,6 +1261,21 @@ def test_random_top_level():
     assert isinstance(stage.inputs[0].calibration, RandomCalibrationConfig)
 
 
+def test_random_top_level_keeps_input_resize_method():
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(_dummy()),
+            "calibration": "random",
+            "inputs.0.name": "input0",
+            "inputs.0.calibration.resize_method": "PAD",
+        },
+    )
+    calibration = _single_stage(config).inputs[0].calibration
+    assert isinstance(calibration, RandomCalibrationConfig)
+    assert calibration.resize_method == ResizeMethod.PAD
+
+
 def test_top_level_and_input_calibration_merged(tmp_path: Path):
     data_dir = tmp_path / "calib"
     data_dir.mkdir()

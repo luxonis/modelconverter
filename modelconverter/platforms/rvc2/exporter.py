@@ -7,7 +7,6 @@ a fixed number of SHAVE cores. Optionally, a blob is compiled for every
 SHAVE count and the results are packed into a single ``.superblob``.
 """
 
-import shutil
 import subprocess
 import tempfile
 import time
@@ -25,7 +24,6 @@ from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
-    ONNXModifier,
     PreprocessingEmbeddingError,
     SubprocessHandle,
     get_container_memory_available,
@@ -33,6 +31,7 @@ from modelconverter.utils import (
     onnx_attach_normalization_to_inputs,
 )
 from modelconverter.utils.config import (
+    InputConfig,
     SingleStageConfig,
     broadcast_preprocessing_values,
 )
@@ -114,124 +113,25 @@ class RVC2Exporter(Exporter):
                 self._add_args(args, ["--compress_to_fp16"])
 
         if "--input" not in args:
-            inp_str = ""
-            for name, inp in self._inputs.items():
-                if inp_str:
-                    inp_str += ","
-                inp_str += name
-                if inp.shape is not None:
-                    inp_str += f"{_lst_join(inp.shape, sep=' ')}"
-                if inp.data_type is not None:
-                    if OV_2021 and self._compress_to_fp16:
-                        data_type = DataType("float16")
-                    else:
-                        data_type = inp.data_type
-                    inp_str += f"{{{data_type.as_openvino_dtype()}}}"
-                if inp.frozen_value is not None:
-                    if len(inp.frozen_value) == 1:
-                        value = inp.frozen_value[0]
-                    else:
-                        sep = " " if OV_2021 else ","
-                        value = f"{_lst_join(inp.frozen_value, sep)}"
-                    inp_str += f"->{value}"
-            args.extend(["--input", inp_str])
+            fp16 = OV_2021 and self._compress_to_fp16
+            args.extend(
+                [
+                    "--input",
+                    ",".join(
+                        _mo_input_spec(name, inp, fp16=fp16)
+                        for name, inp in self._inputs.items()
+                    ),
+                ]
+            )
 
         self._validate_requested_preprocessing()
 
         if not self._check_reverse_channels():
-            logger.warning(
-                "The model optimizer does not support reversing "
-                "input channels for only some inputs. "
-                "Attempting to modify the ONNX model."
-            )
-            self._input_model = onnx_attach_normalization_to_inputs(
-                self._input_model,
-                self._attach_suffix(self._input_model, "modified.onnx"),
-                self._inputs,
-                reverse_only=True,
-            )
-            for inp in self._inputs.values():
-                if inp.mean_values is not None and inp.encoding_mismatch:
-                    inp.mean_values = inp.mean_values[::-1]
-                if inp.scale_values is not None and inp.encoding_mismatch:
-                    inp.scale_values = inp.scale_values[::-1]
-                # Only colour inputs get their channels reversed in the ONNX;
-                # after that, the exposed input still expects the configured
-                # runtime encoding (`to`).
-                if inp.is_color_input and inp.encoding_mismatch:
-                    runtime_encoding = inp.encoding.to
-                    inp.encoding.from_ = runtime_encoding
-                    inp.encoding.to = runtime_encoding
-
+            self._reverse_channels_in_onnx()
         if not self._onnx_optimizations.all_disabled():
-            onnx_modifier = ONNXModifier(
-                model_path=self._input_model,
-                output_path=self._attach_suffix(
-                    self._input_model, "modified_optimized.onnx"
-                ),
-                skip_optimization=True,
-            )
+            self._optimize_onnx(skip_optimization=True)
 
-            try:
-                if (
-                    onnx_modifier.modify_onnx(
-                        **self._onnx_optimizations.model_dump()
-                    )
-                    and onnx_modifier.compare_outputs()
-                ):
-                    logger.info("ONNX model has been optimized for RVC2.")
-                    shutil.move(onnx_modifier.output_path, self._input_model)
-            except Exception as e:  # pragma: no cover
-                logger.warning(
-                    f"Failed to optimize ONNX model: {e}. "
-                    "Proceeding with unoptimized model."
-                )
-            finally:  # pragma: no cover
-                if onnx_modifier.output_path.exists():
-                    onnx_modifier.output_path.unlink()
-
-        mean_values_str = ""
-        scale_values_str = ""
-        for name, inp in self._inputs.items():
-            channels = inp.channel_count
-
-            # Append mean values in a similar style
-            if inp.mean_values is not None and any(
-                value != 0 for value in inp.mean_values
-            ):
-                if mean_values_str:
-                    mean_values_str += ","
-                mean_values = broadcast_preprocessing_values(
-                    inp.mean_values, channels
-                )
-                mean_values_str += (
-                    f"{name}[{','.join(str(v) for v in mean_values)}]"
-                )
-
-            # Append scale values in a similar style
-            if inp.scale_values is not None and any(
-                value != 1 for value in inp.scale_values
-            ):
-                if scale_values_str:
-                    scale_values_str += ","
-                scale_values = broadcast_preprocessing_values(
-                    inp.scale_values, channels
-                )
-                scale_values_str += (
-                    f"{name}[{','.join(str(v) for v in scale_values)}]"
-                )
-        # Extend args with mean and scale values if they were collected
-        if mean_values_str:
-            args.extend(["--mean_values", mean_values_str])
-        if scale_values_str:
-            args.extend(["--scale_values", scale_values_str])
-
-        # Append reverse_input_channels flag only once if needed
-        reverse_input_flag = any(
-            inp.encoding_mismatch for inp in self._inputs.values()
-        )
-        if reverse_input_flag:
-            args.append("--reverse_input_channels")
+        args.extend(_mo_preprocessing_args(self._inputs))
 
         self._add_args(args, ["--input_model", self._input_model])
 
@@ -267,6 +167,39 @@ class RVC2Exporter(Exporter):
             conf.write(b"MYRIAD_THROUGHPUT_STREAMS 1\n")
         return conf.name
 
+    def _reverse_channels_in_onnx(self) -> None:
+        """Reverse the input channels in the ONNX model itself.
+
+        The model optimizer reverses the channels of every input or of
+        none, so a model that needs it for only some inputs gets the
+        reversal attached to the graph.
+        """
+        logger.warning(
+            "The model optimizer does not support reversing "
+            "input channels for only some inputs. "
+            "Attempting to modify the ONNX model."
+        )
+        self._input_model = onnx_attach_normalization_to_inputs(
+            self._input_model,
+            self._attach_suffix(self._input_model, "modified.onnx"),
+            self._inputs,
+            reverse_only=True,
+        )
+        for inp in self._inputs.values():
+            if not inp.encoding_mismatch:
+                continue
+            if inp.mean_values is not None:
+                inp.mean_values = inp.mean_values[::-1]
+            if inp.scale_values is not None:
+                inp.scale_values = inp.scale_values[::-1]
+            # Only colour inputs get their channels reversed in the ONNX;
+            # after that, the exposed input still expects the configured
+            # runtime encoding (`to`).
+            if inp.is_color_input:
+                runtime_encoding = inp.encoding.to
+                inp.encoding.from_ = runtime_encoding
+                inp.encoding.to = runtime_encoding
+
     def _transform_tflite_to_onnx(self) -> None:
         logger.info("Converting TFLite model to ONNX.")
         logger.warning("The TFLite to ONNX conversion is experimental.")
@@ -284,42 +217,13 @@ class RVC2Exporter(Exporter):
             if not inp.layout or not inp.shape:  # pragma: no cover
                 continue
 
-            lt = inp.layout
-            sh = inp.shape
             source_shape = source_shapes.get(name)
             converted_shape = converted_shapes.get(name)
             if source_shape is None or converted_shape is None:
                 continue
-            if len(source_shape) != len(lt) or len(converted_shape) != len(lt):
-                continue
-
-            if lt[-1] == "C":
-                if len(lt) == 4 and lt[0] == "N":
-                    converted_source_shape = [
-                        source_shape[0],
-                        source_shape[3],
-                        source_shape[1],
-                        source_shape[2],
-                    ]
-                    if converted_shape != converted_source_shape:
-                        continue
-                    if not OV_2021:
-                        layout_mappings.append(f"{name}(nchw->nhwc)")
-                    inp.shape = [sh[0], sh[3], sh[1], sh[2]]
-                    inp.layout = f"{lt[0]}{lt[3]}{lt[1]}{lt[2]}"
-
-                elif len(inp.layout) == 3:
-                    converted_source_shape = [
-                        source_shape[2],
-                        source_shape[0],
-                        source_shape[1],
-                    ]
-                    if converted_shape != converted_source_shape:
-                        continue
-                    if not OV_2021:
-                        layout_mappings.append(f"{name}(chw->hwc)")
-                    inp.shape = [sh[2], sh[0], sh[1]]
-                    inp.layout = f"{lt[2]}{lt[0]}{lt[1]}"
+            mapping = _follow_onnx_layout(inp, source_shape, converted_shape)
+            if mapping is not None and not OV_2021:
+                layout_mappings.append(f"{name}({mapping})")
 
         if layout_mappings:
             self._add_args(
@@ -404,6 +308,30 @@ class RVC2Exporter(Exporter):
         logger.info(f"Blob compiled to {blob_output_path}")
         return CompileResult(blob_output_path, result)
 
+    def _superblob_workers(self, base_peak_mem: float) -> int:
+        """Pick how many SHAVE variants compile in parallel.
+
+        The default fits the available RAM. A count that the user sets
+        wins, with a warning when it exceeds the default.
+        """
+        avail_ram = _get_available_memory()
+        n_workers = int(
+            max(1, min(cpu_count(), 15, avail_ram // base_peak_mem - 1))
+        )
+        if self._n_workers is not None:  # pragma: no cover
+            if self._n_workers > n_workers:
+                logger.warning(
+                    f"Requested {self._n_workers} workers, which is "
+                    f"more than the recommended {n_workers} based on "
+                    "available RAM. This may lead to out-of-memory errors."
+                )
+            n_workers = self._n_workers
+
+        logger.info(f"Available RAM: {avail_ram // 1e9} GB")
+        logger.info(f"Base compile peak: {base_peak_mem // 1e6} MB")
+        logger.info(f"Using {n_workers} workers for superblob compilation")
+        return n_workers
+
     def _compile_superblob(self, args: list[str]) -> Path:
         """Compile a blob per SHAVE count and pack them into one file.
 
@@ -451,22 +379,7 @@ class RVC2Exporter(Exporter):
         base_peak_mem = result.peak_memory * 1.5
         peaks = [base_peak_mem]
 
-        avail_ram = _get_available_memory()
-        n_workers = int(
-            max(1, min(cpu_count(), 15, avail_ram // base_peak_mem - 1))
-        )
-        if self._n_workers is not None:  # pragma: no cover
-            if self._n_workers > n_workers:
-                logger.warning(
-                    f"Requested {self._n_workers} workers, which is "
-                    f"more than the recommended {n_workers} based on "
-                    "available RAM. This may lead to out-of-memory errors."
-                )
-            n_workers = self._n_workers
-
-        logger.info(f"Available RAM: {avail_ram // 1e9} GB")
-        logger.info(f"Base compile peak: {base_peak_mem // 1e6} MB")
-        logger.info(f"Using {n_workers} workers for superblob compilation")
+        n_workers = self._superblob_workers(base_peak_mem)
 
         # Order to compile patches to minimize RAM usage spikes
         shave_list = [1, 16, 2, 15, 3, 14, 4, 13, 5, 12, 6, 11, 7, 10, 9]
@@ -476,48 +389,22 @@ class RVC2Exporter(Exporter):
         def _superblob_compile_step(shaves: int) -> None:
             import bsdiff4
 
-            args = orig_args.copy()
-            args += ["-c", RVC2Exporter._write_config(shaves, shaves)]
             blob_path = (
                 blobs_directory / f"{self._model_name}_{shaves}shave.blob"
             )
-            default_blob_path = (
-                blobs_directory
-                / f"{self._model_name}_{DEFAULT_SUPER_SHAVES}shave.blob"
-            )
-            args += ["-o", str(blob_path)]
+            args = [
+                *orig_args,
+                "-c",
+                RVC2Exporter._write_config(shaves, shaves),
+                "-o",
+                str(blob_path),
+            ]
 
             logger.info(f"Compiling {shaves}-shave patch...")
             with SubprocessHandle(
                 ["compile_tool", *args], silent=True
             ) as handle:  # pragma: no cover
-                while handle.poll() is None:
-                    if handle.is_suspended():
-                        with lock:
-                            avail_ram = _get_available_memory()
-                            if avail_ram > max(peaks):
-                                handle.resume()
-                                # Give it a moment to ramp up so other
-                                # threads don't all resume at once
-                                # causing possible OOM
-                                logger.info(
-                                    f"Resuming {shaves}-shave compile, "
-                                    f"available RAM is now "
-                                    f"{avail_ram // 1e6} MB > "
-                                    f"{max(peaks) // 1e6} MB"
-                                )
-                                time.sleep(5)
-                    else:
-                        with lock:
-                            avail_ram = _get_available_memory()
-                        if avail_ram < max(peaks):
-                            logger.warning(
-                                f"Suspending {shaves}-shave compile due to "
-                                f"low available RAM ({avail_ram // 1e6} MB < "
-                                f"{max(peaks) // 1e6} MB)"
-                            )
-                            handle.suspend()
-                        time.sleep(0.5)
+                _throttle_on_low_memory(handle, shaves, peaks, lock)
                 res = handle.result()
 
             patch_file = blob_path.with_suffix(".patch")
@@ -543,34 +430,7 @@ class RVC2Exporter(Exporter):
 
         superblob_path = self.output_dir / f"{self._model_name}.superblob"
 
-        idx2patch = {
-            int(patch_name.stem.split("_")[-1][:-5]): patch_name
-            for patch_name in blobs_directory.glob("*.patch")
-        }
-
-        patch2idx = {patch: idx for idx, patch in idx2patch.items()}
-
-        with open(superblob_path, "wb") as superblob_file:
-            header = default_blob_path.stat().st_size.to_bytes(8, "big")
-            for patch_idx in range(1, 17):
-                patchsize = (
-                    idx2patch[patch_idx].stat().st_size
-                    if patch_idx in idx2patch
-                    else 0
-                )
-                header += patchsize.to_bytes(8, "big")
-            superblob_file.write(header)
-
-            with open(default_blob_path, "rb") as default_blob_file:
-                superblob_file.write(default_blob_file.read())
-
-            patches = sorted(patch2idx.keys(), key=lambda x: patch2idx[x])
-            if not patches:  # pragma: no cover
-                raise RuntimeError("No patches found.")
-
-            for patch_path in patches:
-                with open(patch_path, "rb") as patch_file:
-                    superblob_file.write(patch_file.read())
+        _write_superblob(superblob_path, default_blob_path, blobs_directory)
 
         logger.info(f"Superblob compiled to {superblob_path}")
         return superblob_path
@@ -607,6 +467,161 @@ class RVC2Exporter(Exporter):
             "target_devices": [self._device],
             **self._device_specific_buildinfo,
         }
+
+
+def _mo_input_spec(name: str, inp: InputConfig, *, fp16: bool) -> str:
+    """Describe one input in the ``--input`` syntax of the model optimizer."""
+    spec = name
+    if inp.shape is not None:
+        spec += _lst_join(inp.shape, sep=" ")
+    if inp.data_type is not None:
+        data_type = DataType("float16") if fp16 else inp.data_type
+        spec += f"{{{data_type.as_openvino_dtype()}}}"
+    if inp.frozen_value is not None:
+        if len(inp.frozen_value) == 1:
+            value = inp.frozen_value[0]
+        else:
+            value = _lst_join(inp.frozen_value, " " if OV_2021 else ",")
+        spec += f"->{value}"
+    return spec
+
+
+def _mo_preprocessing_args(inputs: dict[str, InputConfig]) -> list[str]:
+    """Build the mean, scale and channel reversal flags of the model optimizer.
+
+    Mean values of all zeros and scale values of all ones are left out.
+    """
+    args = []
+    means = {
+        name: broadcast_preprocessing_values(
+            inp.mean_values, inp.channel_count
+        )
+        for name, inp in inputs.items()
+        if inp.mean_values is not None
+        and any(value != 0 for value in inp.mean_values)
+    }
+    if means:
+        args += ["--mean_values", _per_input_values(means)]
+    scales = {
+        name: broadcast_preprocessing_values(
+            inp.scale_values, inp.channel_count
+        )
+        for name, inp in inputs.items()
+        if inp.scale_values is not None
+        and any(value != 1 for value in inp.scale_values)
+    }
+    if scales:
+        args += ["--scale_values", _per_input_values(scales)]
+    # Append reverse_input_channels flag only once if needed
+    if any(inp.encoding_mismatch for inp in inputs.values()):
+        args.append("--reverse_input_channels")
+    return args
+
+
+def _per_input_values(values: dict[str, list[float]]) -> str:
+    """Format per-input values as ``name[v1,v2,...]`` joined by commas."""
+    return ",".join(
+        f"{name}[{','.join(str(v) for v in input_values)}]"
+        for name, input_values in values.items()
+    )
+
+
+def _follow_onnx_layout(
+    inp: InputConfig, source_shape: list[int], converted_shape: list[int]
+) -> str | None:
+    """Move the channel axis of a channels-last input to the front.
+
+    tflite2onnx turns an ``NHWC`` or ``HWC`` input into ``NCHW`` or
+    ``CHW``. The input config follows only when the converted shape
+    shows that move.
+
+    Returns:
+        The ``--layout`` mapping of the input, or ``None`` when the
+        input keeps its layout.
+    """
+    assert inp.layout is not None
+    assert inp.shape is not None
+    layout = inp.layout
+    if len(source_shape) != len(layout) or len(converted_shape) != len(layout):
+        return None
+    if layout[-1] != "C":
+        return None
+    if len(layout) == 4 and layout[0] == "N":
+        order, mapping = (0, 3, 1, 2), "nchw->nhwc"
+    elif len(layout) == 3:
+        order, mapping = (2, 0, 1), "chw->hwc"
+    else:
+        return None
+    if converted_shape != [source_shape[i] for i in order]:
+        return None
+    inp.shape = [inp.shape[i] for i in order]
+    inp.layout = "".join(layout[i] for i in order)
+    return mapping
+
+
+def _throttle_on_low_memory(
+    handle: SubprocessHandle, shaves: int, peaks: list[float], lock: Lock
+) -> None:  # pragma: no cover
+    """Suspend a compile while RAM runs low, until the compile ends.
+
+    A compile is suspended when the available RAM drops below the
+    largest peak seen so far, and resumed when it rises above it.
+    """
+    while handle.poll() is None:
+        if handle.is_suspended():
+            with lock:
+                avail_ram = _get_available_memory()
+                if avail_ram > max(peaks):
+                    handle.resume()
+                    # Give it a moment to ramp up so other threads don't
+                    # all resume at once causing possible OOM
+                    logger.info(
+                        f"Resuming {shaves}-shave compile, "
+                        f"available RAM is now "
+                        f"{avail_ram // 1e6} MB > "
+                        f"{max(peaks) // 1e6} MB"
+                    )
+                    time.sleep(5)
+            continue
+
+        with lock:
+            avail_ram = _get_available_memory()
+        if avail_ram < max(peaks):
+            logger.warning(
+                f"Suspending {shaves}-shave compile due to "
+                f"low available RAM ({avail_ram // 1e6} MB < "
+                f"{max(peaks) // 1e6} MB)"
+            )
+            handle.suspend()
+        time.sleep(0.5)
+
+
+def _write_superblob(
+    superblob_path: Path, default_blob_path: Path, blobs_directory: Path
+) -> None:
+    """Pack the reference blob and the SHAVE patches into one file.
+
+    The header holds the size of the reference blob and one size per
+    SHAVE count from 1 to 16, zero where no patch exists.
+    """
+    idx2patch = {
+        int(patch_name.stem.split("_")[-1][:-5]): patch_name
+        for patch_name in blobs_directory.glob("*.patch")
+    }
+
+    with open(superblob_path, "wb") as superblob_file:
+        header = default_blob_path.stat().st_size.to_bytes(8, "big")
+        for patch_idx in range(1, 17):
+            patch = idx2patch.get(patch_idx)
+            patchsize = 0 if patch is None else patch.stat().st_size
+            header += patchsize.to_bytes(8, "big")
+        superblob_file.write(header)
+        superblob_file.write(default_blob_path.read_bytes())
+
+        if not idx2patch:  # pragma: no cover
+            raise RuntimeError("No patches found.")
+        for patch_idx in sorted(idx2patch):
+            superblob_file.write(idx2patch[patch_idx].read_bytes())
 
 
 def _lst_join(args: Iterable[int | float], sep: str = ",") -> str:
