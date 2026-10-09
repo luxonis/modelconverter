@@ -5,7 +5,10 @@ from pathlib import Path
 import pytest
 from onnx import TensorProto
 
-from modelconverter.platforms.rvc2.exporter import RVC2Exporter
+from modelconverter.platforms.rvc2.exporter import (
+    RVC2Exporter,
+    _follow_onnx_layout,
+)
 from modelconverter.platforms.rvc3.exporter import RVC3Exporter
 from modelconverter.utils import (
     Metadata,
@@ -43,6 +46,31 @@ def _mock_tflite_metadata(
 
 def test_scalar_preprocessing_is_expanded_to_resolved_channels():
     assert broadcast_preprocessing_values([127.0], 2) == [127.0, 127.0]
+
+
+@pytest.mark.parametrize(
+    ("layout", "shape", "source_shape"),
+    [
+        ("NCHW", [1, 4, 8, 8], [1, 4, 8, 8]),
+        ("NHWC", [1, 8, 8, 4], [8, 8, 4]),
+        ("NC", [1, 4], [1, 4]),
+    ],
+    ids=["channels-first", "rank-mismatch", "unsupported-rank"],
+)
+def test_tflite_input_keeps_layout_without_channel_move(
+    layout: str, shape: list[int], source_shape: list[int]
+):
+    inp = InputConfig(
+        name="input0",
+        shape=shape,
+        layout=layout,
+        encoding=EncodingConfig.model_validate(
+            {"from": Encoding.NONE, "to": Encoding.NONE}
+        ),
+    )
+
+    assert _follow_onnx_layout(inp, source_shape, source_shape) is None
+    assert (inp.layout, inp.shape) == (layout, shape)
 
 
 @pytest.mark.parametrize(

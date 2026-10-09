@@ -37,6 +37,7 @@ from modelconverter.utils.nn_archive import (
     _default_archive_preprocessing,
     _get_io_dtype,
     _match_tensor_names,
+    _set_resize_mode,
     archive_from_model,
     default_archive_input_type,
     generate_archive,
@@ -45,7 +46,12 @@ from modelconverter.utils.nn_archive import (
     modelconverter_config_to_nn,
     process_nn_archive,
 )
-from modelconverter.utils.types import DataType, Encoding, Platform
+from modelconverter.utils.types import (
+    DataType,
+    Encoding,
+    Platform,
+    ResizeMethod,
+)
 from tests.helpers.archive_factory import (
     default_archive_config,
     pack_archive,
@@ -1003,6 +1009,25 @@ def test_last_renamed_tensor_matches_despite_a_new_shape():
     assert _match_tensor_names(
         configured, converted_shapes, kind="output"
     ) == {"boxes": "boxes", "scores": "scores_sink"}
+
+
+@pytest.mark.parametrize(
+    ("resize_method", "resize_mode"),
+    [
+        (ResizeMethod.PAD, "LETTERBOX"),
+        (ResizeMethod.CENTER_CROP_NO_RESIZE, None),
+    ],
+)
+def test_configured_resize_method_replaces_the_resize_mode(
+    resize_method: ResizeMethod, resize_mode: str | None
+):
+    inp = InputConfig(name="input0", shape=[1, 3, 4, 4])
+    inp.calibration = RandomCalibrationConfig(resize_method=resize_method)
+    preprocessing: Params = {"resize_mode": "STRETCH"}
+
+    _set_resize_mode(preprocessing, inp, None)
+
+    assert preprocessing == {"resize_mode": resize_mode}
 
 
 def test_input_default_layout_when_shape_has_zero(dummy_onnx: Path):

@@ -325,6 +325,28 @@ def test_generated_non_image_tensor_uses_hailo_channel_last_layout(
     np.testing.assert_array_equal(actual, generated.transpose(0, 2, 3, 1)[0])
 
 
+def test_generated_2d_tensor_drops_its_batch_axis(
+    hailo_exporter_module: ModuleType, tmp_path: Path
+) -> None:
+    inp = InputConfig.model_validate(
+        {"name": "input0", "shape": [1, 4], "encoding": "NONE"}
+    )
+    inp.calibration = RandomCalibrationConfig(max_images=1)
+    exporter: HailoExporter = object.__new__(
+        hailo_exporter_module.HailoExporter
+    )
+    exporter._inputs = {inp.name: inp}
+    exporter.intermediate_outputs_dir = tmp_path
+    exporter._prepare_random_calibration_data()
+
+    calibration = inp.calibration
+    assert isinstance(calibration, ImageCalibrationConfig)
+    generated = np.load(calibration.path / "0.npy")
+    actual = exporter._get_calibration_data(_Runner([1, 4]))["hailo_input"]
+
+    np.testing.assert_array_equal(actual, generated)
+
+
 def test_disabled_calibration_accepts_archive_preprocessing_retry(
     hailo_exporter_module: ModuleType, tmp_path: Path
 ) -> None:
