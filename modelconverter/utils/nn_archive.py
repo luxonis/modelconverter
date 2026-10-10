@@ -577,7 +577,7 @@ def _attach_postprocessor(
     )
     if not archive.model.heads:
         raise ValueError(
-            "Multistage NN Archives must sxpecify 1 head in the archive config"
+            "Multistage NN Archives must specify 1 head in the archive config"
         )
     head = archive.model.heads[0]
     head.metadata.postprocessor_path = f"{post_stage_key}{model_name.suffix}"
