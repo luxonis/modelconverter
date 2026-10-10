@@ -9,6 +9,7 @@ present inside that platform's container, so they are imported lazily.
 """
 
 import io
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -83,107 +84,100 @@ def get_metadata(model_path: Path) -> Metadata:
 
 
 def _get_metadata_dlc(path: Path) -> Metadata:
+    content = _dlc_info_csv(path).read_text()
+    metadata = {}
+    for typ in ["input", "output"]:
+        section = _dlc_section(content, typ)
+        if section is None:
+            continue
+        metadata |= _dlc_tensor_metadata(_table_to_csv(section), typ)
+    return Metadata(**metadata)
+
+
+def _dlc_info_csv(path: Path) -> Path:
+    """Return the ``snpe-dlc-info`` CSV of a DLC, refreshed when stale.
+
+    A ``.csv`` path is taken as the CSV itself.
+    """
+    if path.suffix == ".csv":
+        return path
+    csv_path = path.with_suffix(".info.csv")
+    if (
+        not csv_path.exists()
+        or csv_path.stat().st_mtime < path.stat().st_mtime
+    ):
+        subprocess_run(
+            ["snpe-dlc-info", "-i", path, "-s", csv_path], silent=True
+        )
+    return csv_path
+
+
+def _dlc_section(content: str, typ: str) -> str | None:
+    """Cut the input or the output table out of ``snpe-dlc-info`` output.
+
+    Returns:
+        The table, or ``None`` when the output has no such table.
+    """
+    header_pattern = f"{typ.capitalize()} Name"
+    start_index = content.find(header_pattern)
+    if start_index == -1:
+        return None
+
+    line_start = content.rfind("\n", 0, start_index) + 1
+    end_markers = (
+        ["Output Name"]
+        if typ == "input"
+        else ["Unconsumed Tensor Name", "Total parameters:"]
+    )
+    search_from = start_index + len(header_pattern)
+    endings = [content.find(marker, search_from) for marker in end_markers]
+    end_index = min((i for i in endings if i != -1), default=len(content))
+    return content[line_start:end_index].strip()
+
+
+def _table_to_csv(section: str) -> str:
+    """Turn a table drawn with ``|``, ``-`` and ``+`` into CSV lines."""
+    cleaned_lines = []
+    for line in section.split("\n"):
+        cleaned_line = line.strip()
+        if not cleaned_line or all(c in "-|+= " for c in cleaned_line):
+            continue
+        if cleaned_line.startswith("|") and cleaned_line.endswith("|"):
+            cleaned_line = re.sub(r"\s*\|\s*", ",", cleaned_line[1:-1].strip())
+        cleaned_lines.append(cleaned_line)
+    return "\n".join(cleaned_lines)
+
+
+def _dlc_tensor_metadata(csv_text: str, typ: str) -> dict[str, dict]:
+    """Read the shapes and the data types of the tensors of a table."""
     import polars as pl
 
-    if path.suffix == ".csv":
-        csv_path = path
-    else:
-        csv_path = path.with_suffix(".info.csv")
-        if (
-            not csv_path.exists()
-            or csv_path.stat().st_mtime < path.stat().st_mtime
-        ):
-            subprocess_run(
-                ["snpe-dlc-info", "-i", path, "-s", csv_path], silent=True
-            )
-    content = csv_path.read_text()
-
-    metadata = {}
-
-    for typ in ["input", "output"]:
-        header_pattern = f"{typ.capitalize()} Name"
-
-        start_index = content.find(header_pattern)
-        if start_index == -1:
-            continue
-
-        line_start = content.rfind("\n", 0, start_index) + 1
-        possible_endings = []
-
-        if typ == "input":
-            output_idx = content.find(
-                "Output Name", start_index + len(header_pattern)
-            )
-            if output_idx != -1:
-                possible_endings.append(output_idx)
-        else:
-            unconsumed_idx = content.find(
-                "Unconsumed Tensor Name", start_index + len(header_pattern)
-            )
-            total_idx = content.find(
-                "Total parameters:", start_index + len(header_pattern)
-            )
-
-            if unconsumed_idx != -1:
-                possible_endings.append(unconsumed_idx)
-            if total_idx != -1:
-                possible_endings.append(total_idx)
-
-        if possible_endings:
-            end_index = min(possible_endings)
-        else:
-            end_index = len(content)
-
-        section = content[line_start:end_index].strip()
-        if not section:  # pragma: no cover
-            continue
-
-        lines = section.split("\n")
-        cleaned_lines = []
-
-        for line in lines:
-            stripped = line.strip()
-            if stripped and not all(c in "-|+= " for c in stripped):
-                cleaned_line = line.strip()
-                if cleaned_line.startswith("|") and cleaned_line.endswith("|"):
-                    cleaned_line = cleaned_line[1:-1].strip()
-                    import re
-
-                    cleaned_line = re.sub(r"\s*\|\s*", ",", cleaned_line)
-                cleaned_lines.append(cleaned_line)
-
-        relevant_csv_part = "\n".join(cleaned_lines)
-
-        if not relevant_csv_part.strip():  # pragma: no cover
-            continue
-
-        df = pl.read_csv(io.StringIO(relevant_csv_part))
-
-        shapes = df.select(
-            [
-                pl.col(f"{typ.capitalize()} Name"),
-                pl.col("Dimensions").str.split(",").cast(pl.List(pl.Int64)),
-            ]
-        ).to_dict(as_series=False)
-        metadata[f"{typ}_shapes"] = dict(
+    name_column = f"{typ.capitalize()} Name"
+    df = pl.read_csv(io.StringIO(csv_text))
+    shapes = df.select(
+        [
+            pl.col(name_column),
+            pl.col("Dimensions").str.split(",").cast(pl.List(pl.Int64)),
+        ]
+    ).to_dict(as_series=False)
+    dtypes = df.select([pl.col(name_column), pl.col("Type")]).to_dict(
+        as_series=False
+    )
+    return {
+        f"{typ}_shapes": dict(
             zip(
-                map(str, shapes[f"{typ.capitalize()} Name"]),
+                map(str, shapes[name_column]),
                 shapes["Dimensions"],
                 strict=True,
             )
-        )
-
-        dtypes = df.select(
-            [pl.col(f"{typ.capitalize()} Name"), pl.col("Type")]
-        ).to_dict(as_series=False)
-        metadata[f"{typ}_dtypes"] = {
+        ),
+        f"{typ}_dtypes": {
             str(name): DataType.from_dlc_dtype(dtype)
             for name, dtype in zip(
-                dtypes[f"{typ.capitalize()} Name"], dtypes["Type"], strict=True
+                dtypes[name_column], dtypes["Type"], strict=True
             )
-        }
-
-    return Metadata(**metadata)
+        },
+    }
 
 
 def _get_metadata_ir(bin_path: Path, xml_path: Path) -> Metadata:

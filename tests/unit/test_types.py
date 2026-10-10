@@ -23,7 +23,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from onnx.onnx_pb import TensorProto
 
-from modelconverter.utils.types import DataType, InputFileType
+from modelconverter.utils.types import DataType, InputFileType, ResizeMethod
 
 # A vendor's spelling of a dtype: a protobuf/tflite enum value, a name
 # string, or a numpy scalar type.
@@ -501,3 +501,23 @@ def test_input_file_type_depends_only_on_the_suffix(
     assert (
         InputFileType.from_path(Path(parent) / f"{stem}{suffix}") is expected
     )
+
+
+@pytest.mark.parametrize(
+    ("method", "mode"),
+    [
+        (ResizeMethod.CROP, "CROP"),
+        (ResizeMethod.RESIZE, "STRETCH"),
+        (ResizeMethod.PAD, "LETTERBOX"),
+    ],
+)
+def test_resize_method_round_trips_through_nn_archive(
+    method: ResizeMethod, mode: str
+):
+    assert method.as_nn_archive() == mode
+    assert ResizeMethod.from_nn_archive(mode) is method
+
+
+def test_unknown_nn_archive_resize_mode_is_rejected():
+    with pytest.raises(ValueError, match="Unsupported NN Archive resize_mode"):
+        ResizeMethod.from_nn_archive("FIT")

@@ -283,22 +283,6 @@ def build_conversion_summary(
 
     """
     stages = list(cfg.stages.values())
-    inputs = [inp for stage in stages for inp in stage.inputs]
-    outputs = [out for stage in stages for out in stage.outputs]
-    input_formats = [stage.input_file_type for stage in stages]
-    input_format_values = [
-        file_type.value.lower() for file_type in input_formats
-    ]
-    platform_configs = [
-        stage.get_platform_config(platform) for stage in stages
-    ]
-    disable_calibration = any(
-        platform_cfg.disable_calibration for platform_cfg in platform_configs
-    )
-    calibration_sources = {
-        _calibration_source(inp.calibration) for inp in inputs
-    }
-
     return _drop_none(
         {
             # Pre-rename property key, kept for analytics continuity.
@@ -309,24 +293,7 @@ def build_conversion_summary(
             "main_stage_provided": main_stage_provided,
             "archive_output_mode": archive_output_mode.value,
             "archive_preprocess": archive_preprocess,
-            "input_model_format": (
-                input_format_values[0] if input_format_values else None
-            ),
-            "multiple_input_model_formats": (
-                len(set(input_formats)) > 1 if input_formats else None
-            ),
-            "input_count_bucket": bucket_count(len(inputs))
-            if inputs
-            else None,
-            "output_count_bucket": (
-                bucket_count(len(outputs)) if outputs else None
-            ),
-            "calibration_source": (
-                next(iter(calibration_sources))
-                if len(calibration_sources) == 1 and not disable_calibration
-                else None
-            ),
-            "disable_calibration": disable_calibration,
+            **_io_summary(stages, platform),
             "keep_intermediate_outputs": any(
                 stage.keep_intermediate_outputs for stage in stages
             ),
@@ -653,6 +620,39 @@ def peak_ram_usage_bytes() -> int:
     if sys.platform == "darwin":
         return int(peak)
     return int(peak * 1024)
+
+
+def _io_summary(
+    stages: list[SingleStageConfig], platform: Platform
+) -> dict[str, ParamValue]:
+    """Summarize the models, the tensors and the calibration of stages."""
+    inputs = [inp for stage in stages for inp in stage.inputs]
+    outputs = [out for stage in stages for out in stage.outputs]
+    input_formats = [stage.input_file_type for stage in stages]
+    disable_calibration = any(
+        stage.get_platform_config(platform).disable_calibration
+        for stage in stages
+    )
+    calibration_sources = {
+        _calibration_source(inp.calibration) for inp in inputs
+    }
+    single_source = len(calibration_sources) == 1 and not disable_calibration
+    return {
+        "input_model_format": (
+            input_formats[0].value.lower() if input_formats else None
+        ),
+        "multiple_input_model_formats": (
+            len(set(input_formats)) > 1 if input_formats else None
+        ),
+        "input_count_bucket": bucket_count(len(inputs)) if inputs else None,
+        "output_count_bucket": (
+            bucket_count(len(outputs)) if outputs else None
+        ),
+        "calibration_source": (
+            next(iter(calibration_sources)) if single_source else None
+        ),
+        "disable_calibration": disable_calibration,
+    }
 
 
 def _platform_configuration(

@@ -43,6 +43,7 @@ docs = ["pydoctor~=25.10"]
 dev = [
   { include-group = "lint" },
   { include-group = "docs" },
+  "complexipy~=8.0",
   "depthai>=3.8.0,<4",
   # Lets the tests emit tiny .tflite fixtures directly (no TensorFlow needed).
   "flatbuffers~=25.12",
@@ -219,6 +220,7 @@ omit = [
   "modelconverter/utils/onnx_tools.py",
   "modelconverter/utils/onnx_compatibility.py",
   "modelconverter/platforms/base_benchmark.py",
+  "modelconverter/platforms/dai_benchmark.py",
   "modelconverter/platforms/*/benchmark.py",
   "modelconverter/platforms/base_analyze.py",
   "modelconverter/platforms/*/analyze.py",

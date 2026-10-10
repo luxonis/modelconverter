@@ -95,18 +95,12 @@ def _normalize_encoding_group(
     entries: ParamValue,
 ) -> dict[str, list[dict[str, ParamValue]]]:
     if isinstance(entries, dict):
-        normalized = {}
-        for name, value in entries.items():
-            values = value if isinstance(value, list) else [value]
-            items = []
-            for item in values:
-                if not isinstance(item, dict):
-                    raise TypeError(
-                        f"Expected dict encoding entry, got {type(item).__name__}."
-                    )
-                items.extend(_expand_encoding_item(item))
-            normalized[name] = items
-        return normalized
+        return {
+            name: _expand_entries(
+                value if isinstance(value, list) else [value]
+            )
+            for name, value in entries.items()
+        }
 
     if not isinstance(entries, list):
         raise TypeError(
@@ -114,11 +108,8 @@ def _normalize_encoding_group(
         )
 
     normalized = {}
-    for item in entries:
-        if not isinstance(item, dict):
-            raise TypeError(
-                f"Expected dict encoding entry, got {type(item).__name__}."
-            )
+    for entry in entries:
+        item = _as_entry(entry)
         name = item.get("name")
         if not isinstance(name, str) or not name:
             raise ValueError(
@@ -126,6 +117,24 @@ def _normalize_encoding_group(
             )
         normalized.setdefault(name, []).extend(_expand_encoding_item(item))
     return normalized
+
+
+def _expand_entries(items: list[ParamValue]) -> list[dict[str, ParamValue]]:
+    """Expand the encoding entries of one tensor."""
+    return [
+        expanded
+        for item in items
+        for expanded in _expand_encoding_item(_as_entry(item))
+    ]
+
+
+def _as_entry(item: ParamValue) -> dict[str, ParamValue]:
+    """Return an encoding entry, which must be a dict."""
+    if not isinstance(item, dict):
+        raise TypeError(
+            f"Expected dict encoding entry, got {type(item).__name__}."
+        )
+    return item
 
 
 def parse_encodings(value: "ParamValue | Encodings") -> "Encodings":
@@ -198,11 +207,8 @@ def _encoding_group_names(entries: ParamValue) -> set[str]:
         )
 
     names = set()
-    for item in entries:
-        if not isinstance(item, dict):
-            raise TypeError(
-                f"Expected dict encoding entry, got {type(item).__name__}."
-            )
+    for entry in entries:
+        item = _as_entry(entry)
         name = item.get("name")
         if not isinstance(name, str) or not name:
             raise ValueError(

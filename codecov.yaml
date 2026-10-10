@@ -1,0 +1,24 @@
+# Mark a line that no test can reach with `# pragma: no cover`, or list its
+# file in `[tool.coverage.run] omit` of pyproject.toml.
+coverage:
+  status:
+    project:
+      default:
+        target: 100%
+    patch:
+      default:
+        target: 100%
+
+# A pull request runs the conversion tests only for the platforms whose code it
+# changes. Codecov carries the last report of each skipped platform forward, so
+# a partial run still measures the coverage of the whole project.
+flag_management:
+  individual_flags:
+    - name: conversion-rvc2
+      carryforward: true
+    - name: conversion-rvc3
+      carryforward: true
+    - name: conversion-rvc4
+      carryforward: true
+    - name: conversion-hailo
+      carryforward: true

@@ -96,58 +96,13 @@ def process_nn_archive(
             or if the archive holds no ``config.json``.
 
     """
-    untar_path = MISC_DIR / path.stem
-    if path.is_dir():
-        untar_path = path
-    elif tarfile.is_tarfile(path):
-        if untar_path.suffix == ".tar":
-            untar_path = MISC_DIR / untar_path.stem
-
-        def safe_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
-            """Filter members to prevent path traversal attacks."""
-            safe_files = []
-            for member in tar.getmembers():
-                # Normalize path and ensure it's within the extraction folder
-                if not member.name.startswith("/") and ".." not in member.name:
-                    safe_files.append(member)
-                else:
-                    logger.warning(f"Skipping unsafe file: {member.name}")
-            return safe_files
-
-        with tarfile.open(path, mode="r") as tf:
-            for member in safe_members(tf):
-                tf.extract(member, path=untar_path)
-
-    else:
-        raise RuntimeError(f"Unknown NN Archive path: `{path}`")
-
+    untar_path = _unpack_archive(path)
     if not (untar_path / "config.json").exists():
         raise RuntimeError(f"NN Archive config not found in `{untar_path}`")
 
     with open(untar_path / "config.json") as f:
         archive_config = NNArchiveConfig(**json.load(f))
-
-    # Strip recognized archive/model suffixes, preserving other package dots.
-    package_name = Path(os.path.abspath(path)).name  # noqa: PTH100
-    if not path.is_dir():
-        for suffix in (
-            ".tar.xz",
-            ".tar.gz",
-            ".tar.bz2",
-            ".tar",
-            ".tgz",
-            ".txz",
-            ".tbz2",
-        ):
-            if package_name.lower().endswith(suffix):
-                package_name = package_name[: -len(suffix)]
-                try:
-                    InputFileType.from_path(package_name.lower())
-                except ValueError:
-                    pass
-                else:
-                    package_name = Path(package_name).stem
-                break
+    package_name = _package_name(path)
 
     main_stage_key = archive_config.model.metadata.name
     main_stage_config: Params = {
@@ -163,103 +118,10 @@ def process_nn_archive(
             "encodings": json.loads(p.read_text()),
         }
 
-    inputs: list[Params] = []
-    for inp in archive_config.model.inputs:
-        reverse = inp.preprocessing.reverse_channels
-        interleaved_to_planar = inp.preprocessing.interleaved_to_planar
-        dai_type = inp.preprocessing.dai_type
-
-        layout = inp.layout
-        encoding = "NONE"
-        if inp.input_type == InputType.IMAGE and is_image_input_shape(
-            inp.shape, layout, allow_batchless=True
-        ):
-            if dai_type is not None:
-                if (reverse and dai_type.startswith("BGR")) or (
-                    reverse is False and dai_type.startswith("RGB")
-                ):
-                    logger.warning(
-                        "'reverse_channels' and 'dai_type' are conflicting, using dai_type"
-                    )
-
-                if dai_type.startswith("RGB"):
-                    encoding = {"from": "RGB", "to": "BGR"}
-                elif dai_type.startswith("BGR"):
-                    encoding = "BGR"
-                elif dai_type.startswith("GRAY"):
-                    encoding = "GRAY"
-                else:
-                    logger.warning("unknown dai_type, using RGB888p")
-                    encoding = {"from": "RGB", "to": "BGR"}
-
-                if (interleaved_to_planar and dai_type.endswith("p")) or (
-                    interleaved_to_planar is False and dai_type.endswith("i")
-                ):
-                    logger.warning(
-                        "'interleaved_to_planar' and 'dai_type' are conflicting, using dai_type"
-                    )
-                if dai_type.endswith("i"):
-                    dai_layout = "NHWC"
-                    if is_image_input_shape(inp.shape, dai_layout):
-                        layout = dai_layout
-                elif dai_type.endswith("p"):
-                    dai_layout = "NCHW"
-                    if is_image_input_shape(inp.shape, dai_layout):
-                        layout = dai_layout
-            else:
-                if reverse is not None:
-                    logger.warning(
-                        "'reverse_channels' flag is deprecated and will be removed in the future, use 'dai_type' instead"
-                    )
-                    if reverse:
-                        encoding = {"from": "RGB", "to": "BGR"}
-                    else:
-                        encoding = "BGR"
-                else:
-                    encoding = {"from": "RGB", "to": "BGR"}
-
-                if interleaved_to_planar is not None:
-                    logger.warning(
-                        "'interleaved_to_planar' flag is deprecated and will be removed in the future, use 'dai_type' instead"
-                    )
-            channels = (
-                inp.shape[layout.index("C")]
-                if layout and "C" in layout
-                else None
-            )
-            if channels and channels == 1:
-                encoding = "GRAY"
-
-        _enc = encoding if isinstance(encoding, str) else encoding["from"]
-        mean = inp.preprocessing.mean
-        if mean is None:
-            if _enc in {"RGB", "BGR"}:
-                mean = [0, 0, 0]
-            elif _enc == "GRAY":
-                mean = [0]
-
-        scale = inp.preprocessing.scale
-        if scale is None:
-            if _enc in {"RGB", "BGR"}:
-                scale = [1, 1, 1]
-            elif _enc == "GRAY":
-                scale = [1]
-
-        inputs.append(
-            {
-                "name": inp.name,
-                "shape": inp.shape,
-                "layout": layout,
-                "data_type": inp.dtype.value,
-                "mean_values": mean,
-                "scale_values": scale,
-                "encoding": encoding
-                if isinstance(encoding, dict)
-                else {"from": encoding, "to": encoding},
-            }
-        )
-
-    outputs: list[Params] = [
+    main_stage_config["inputs"] = [
+        _archive_input_config(inp) for inp in archive_config.model.inputs
+    ]
+    main_stage_config["outputs"] = [
         {
             "name": out.name,
             "shape": out.shape,
@@ -268,23 +130,7 @@ def process_nn_archive(
         }
         for out in archive_config.model.outputs
     ]
-
-    main_stage_config["inputs"] = inputs
-    main_stage_config["outputs"] = outputs
-
-    stages = {}
-
-    for head in archive_config.model.heads or []:
-        postprocessor_path = getattr(head.metadata, "postprocessor_path", None)
-        if postprocessor_path is not None:
-            input_model_path = untar_path / postprocessor_path
-            head_stage_config = {
-                "input_model": str(input_model_path),
-                "inputs": [],
-                "outputs": [],
-                "encoding": {"from": "NONE", "to": "NONE"},
-            }
-            stages[input_model_path.stem] = head_stage_config
+    stages = _postprocessor_stages(archive_config, untar_path)
 
     # Archive stages already have identities independent of the package name.
     config: Params = {
@@ -294,13 +140,9 @@ def process_nn_archive(
         },
     }
 
-    root_overrides: Params = {}
-    stage_overrides: Params = {}
-    for key, value in (overrides or {}).items():
-        if not stages and key.split(".", 1)[0] not in Config.model_fields:
-            stage_overrides[key] = value
-        else:
-            root_overrides[key] = value
+    root_overrides, stage_overrides = _split_overrides(
+        overrides, single_stage=not stages
+    )
     # Single-stage shorthand must update the imported inputs/outputs, not
     # become root defaults that are ignored for fields already in the stage.
     Config._merge_overrides(main_stage_config, stage_overrides)
@@ -311,23 +153,445 @@ def process_nn_archive(
         config["name"] = package_name
     cfg = Config.model_validate(config)
     # Apply archive defaults after all root/stage/input overrides have been resolved.
-    original_inputs = {inp.name: inp for inp in archive_config.model.inputs}
-    for inp in cfg.stages[main_stage_key].inputs:
-        original = original_inputs.get(inp.name)
-        resize_mode = (
-            getattr(original.preprocessing, "resize_mode", None)
-            if original is not None
-            else None
+    _apply_archive_resize_modes(
+        cfg.stages[main_stage_key].inputs, archive_config
+    )
+    return cfg, archive_config, main_stage_key
+
+
+_ARCHIVE_SUFFIXES = (
+    ".tar.xz",
+    ".tar.gz",
+    ".tar.bz2",
+    ".tar",
+    ".tgz",
+    ".txz",
+    ".tbz2",
+)
+
+
+def _unpack_archive(path: Path) -> Path:
+    """Return the directory of an archive.
+
+    A tar file is unpacked into `MISC_DIR` first. A directory is taken
+    as an unpacked archive.
+    """
+    if path.is_dir():
+        return path
+    if not tarfile.is_tarfile(path):
+        raise RuntimeError(f"Unknown NN Archive path: `{path}`")
+
+    untar_path = MISC_DIR / path.stem
+    if untar_path.suffix == ".tar":
+        untar_path = MISC_DIR / untar_path.stem
+    with tarfile.open(path, mode="r") as tf:
+        for member in _safe_members(tf):
+            tf.extract(member, path=untar_path)
+    return untar_path
+
+
+def _safe_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
+    """Filter members to prevent path traversal attacks."""
+    safe_files = []
+    for member in tar.getmembers():
+        # Normalize path and ensure it's within the extraction folder
+        if not member.name.startswith("/") and ".." not in member.name:
+            safe_files.append(member)
+        else:
+            logger.warning(f"Skipping unsafe file: {member.name}")
+    return safe_files
+
+
+def _package_name(path: Path) -> str:
+    """Name the package after the archive.
+
+    Strip recognized archive/model suffixes, preserving other package
+    dots.
+    """
+    package_name = Path(os.path.abspath(path)).name  # noqa: PTH100
+    if path.is_dir():
+        return package_name
+    suffix = next(
+        (s for s in _ARCHIVE_SUFFIXES if package_name.lower().endswith(s)),
+        None,
+    )
+    if suffix is None:
+        return package_name
+    package_name = package_name[: -len(suffix)]
+    try:
+        InputFileType.from_path(package_name.lower())
+    except ValueError:
+        return package_name
+    return Path(package_name).stem
+
+
+def _archive_input_config(inp: NNArchiveInput) -> Params:
+    """Turn an input of an archive into a modelconverter input config.
+
+    An image input without mean or scale values gets identity values.
+    """
+    layout = inp.layout
+    encoding: str | dict[str, str] = "NONE"
+    if inp.input_type == InputType.IMAGE and is_image_input_shape(
+        inp.shape, layout, allow_batchless=True
+    ):
+        encoding, layout = _archive_image_encoding(inp)
+
+    color = encoding if isinstance(encoding, str) else encoding["from"]
+    mean = inp.preprocessing.mean
+    if mean is None:
+        mean = _identity_values(color, 0)
+    scale = inp.preprocessing.scale
+    if scale is None:
+        scale = _identity_values(color, 1)
+
+    return {
+        "name": inp.name,
+        "shape": inp.shape,
+        "layout": layout,
+        "data_type": inp.dtype.value,
+        "mean_values": mean,
+        "scale_values": scale,
+        "encoding": encoding
+        if isinstance(encoding, dict)
+        else {"from": encoding, "to": encoding},
+    }
+
+
+def _identity_values(encoding: str, value: int) -> list[int] | None:
+    """Repeat ``value`` once per channel of a color or a gray encoding."""
+    if encoding in {"RGB", "BGR"}:
+        return [value] * 3
+    if encoding == "GRAY":
+        return [value]
+    return None
+
+
+def _archive_image_encoding(
+    inp: NNArchiveInput,
+) -> tuple[str | dict[str, str], str | None]:
+    """Derive the encoding and the layout of an image input of an archive.
+
+    ``dai_type`` decides both. Without it, the deprecated
+    ``reverse_channels`` flag decides the encoding. An input with one
+    channel is gray in either case.
+    """
+    dai_type = inp.preprocessing.dai_type
+    if dai_type is not None:
+        encoding, layout = _dai_type_encoding(inp, dai_type)
+    else:
+        encoding, layout = _legacy_encoding(inp.preprocessing), inp.layout
+    channels = (
+        inp.shape[layout.index("C")] if layout and "C" in layout else None
+    )
+    if channels == 1:
+        encoding = "GRAY"
+    return encoding, layout
+
+
+def _dai_type_encoding(
+    inp: NNArchiveInput, dai_type: str
+) -> tuple[str | dict[str, str], str | None]:
+    """Derive the encoding and the layout of an input from its ``dai_type``.
+
+    The layout follows the ``i`` (interleaved) or ``p`` (planar) suffix
+    when the shape of the input fits it. The deprecated flags lose
+    against ``dai_type``, with a warning.
+    """
+    preprocessing = inp.preprocessing
+    reverse = preprocessing.reverse_channels
+    if (reverse and dai_type.startswith("BGR")) or (
+        reverse is False and dai_type.startswith("RGB")
+    ):
+        logger.warning(
+            "'reverse_channels' and 'dai_type' are conflicting, using dai_type"
         )
+    encoding = _dai_type_color(dai_type)
+
+    interleaved_to_planar = preprocessing.interleaved_to_planar
+    if (interleaved_to_planar and dai_type.endswith("p")) or (
+        interleaved_to_planar is False and dai_type.endswith("i")
+    ):
+        logger.warning(
+            "'interleaved_to_planar' and 'dai_type' are conflicting, using dai_type"
+        )
+    dai_layout = {"i": "NHWC", "p": "NCHW"}.get(dai_type[-1:])
+    if dai_layout is not None and is_image_input_shape(inp.shape, dai_layout):
+        return encoding, dai_layout
+    return encoding, inp.layout
+
+
+def _dai_type_color(dai_type: str) -> str | dict[str, str]:
+    """Map the color order of a ``dai_type`` to an input encoding."""
+    if dai_type.startswith("RGB"):
+        return {"from": "RGB", "to": "BGR"}
+    if dai_type.startswith("BGR"):
+        return "BGR"
+    if dai_type.startswith("GRAY"):
+        return "GRAY"
+    logger.warning("unknown dai_type, using RGB888p")
+    return {"from": "RGB", "to": "BGR"}
+
+
+def _legacy_encoding(
+    preprocessing: PreprocessingBlock,
+) -> str | dict[str, str]:
+    """Derive the encoding of an input from the deprecated flags."""
+    reverse = preprocessing.reverse_channels
+    if reverse is None:
+        encoding: str | dict[str, str] = {"from": "RGB", "to": "BGR"}
+    else:
+        logger.warning(
+            "'reverse_channels' flag is deprecated and will be removed in the future, use 'dai_type' instead"
+        )
+        encoding = {"from": "RGB", "to": "BGR"} if reverse else "BGR"
+    if preprocessing.interleaved_to_planar is not None:
+        logger.warning(
+            "'interleaved_to_planar' flag is deprecated and will be removed in the future, use 'dai_type' instead"
+        )
+    return encoding
+
+
+def _postprocessor_stages(
+    archive_config: NNArchiveConfig, untar_path: Path
+) -> Params:
+    """Make a stage for the postprocessor model of each head."""
+    stages: Params = {}
+    for head in archive_config.model.heads or []:
+        postprocessor_path = getattr(head.metadata, "postprocessor_path", None)
+        if postprocessor_path is None:
+            continue
+        input_model_path = untar_path / postprocessor_path
+        stages[input_model_path.stem] = {
+            "input_model": str(input_model_path),
+            "inputs": [],
+            "outputs": [],
+            "encoding": {"from": "NONE", "to": "NONE"},
+        }
+    return stages
+
+
+def _split_overrides(
+    overrides: Params | None, *, single_stage: bool
+) -> tuple[Params, Params]:
+    """Split the overrides between the root config and the main stage.
+
+    In a single-stage config, a key that is not a field of `Config`
+    belongs to the stage.
+
+    Returns:
+        The root overrides and the stage overrides.
+    """
+    root_overrides: Params = {}
+    stage_overrides: Params = {}
+    for key, value in (overrides or {}).items():
+        if single_stage and key.split(".", 1)[0] not in Config.model_fields:
+            stage_overrides[key] = value
+        else:
+            root_overrides[key] = value
+    return root_overrides, stage_overrides
+
+
+def _apply_archive_resize_modes(
+    inputs: list[InputConfig], archive_config: NNArchiveConfig
+) -> None:
+    """Take the archive resize mode for image inputs that set none."""
+    original_inputs = {inp.name: inp for inp in archive_config.model.inputs}
+    for inp in inputs:
+        original = original_inputs.get(inp.name)
         if (
-            not inp.is_raw_input
-            and not inp.calibration.has_resize_method
-            and resize_mode is not None
+            original is None
+            or inp.is_raw_input
+            or inp.calibration.has_resize_method
         ):
+            continue
+        resize_mode = getattr(original.preprocessing, "resize_mode", None)
+        if resize_mode is not None:
             inp.calibration.resize_method = ResizeMethod.from_nn_archive(
                 resize_mode
             )
-    return cfg, archive_config, main_stage_key
+
+
+def _archive_precision(
+    platform: Platform, platform_cfg: PlatformConfig
+) -> DataType:
+    """Derive the precision of a converted model from its platform config."""
+    # TODO: This might be more complicated for Hailo
+    if platform is Platform.HAILO:
+        return DataType.INT8
+    quantization_mode = getattr(platform_cfg, "quantization_mode", None)
+    # RVC2 does not quantize, and RVC3 and RVC4 keep floats when calibration
+    # is off.
+    if platform is Platform.RVC2 or platform_cfg.disable_calibration:
+        if quantization_mode in {None, QuantizationMode.CUSTOM}:
+            fp16 = _compress_to_fp16(platform_cfg)
+        else:
+            fp16 = quantization_mode == QuantizationMode.FP16_STD
+        return DataType.FLOAT16 if fp16 else DataType.FLOAT32
+    if quantization_mode == QuantizationMode.INT16_STD:
+        return DataType.INT16
+    return DataType.INT8
+
+
+def _compress_to_fp16(platform_cfg: PlatformConfig) -> bool:
+    """Tell whether a config without a preset quantization mode keeps
+    FP16.
+
+    The ``compress_to_fp16`` option decides it. SNPE also runs in FP16
+    with ``--float_bitwidth 16`` for the conversion and
+    ``--use_float_io`` for the graph preparation.
+    """
+    onnx_args = getattr(platform_cfg, "snpe_onnx_to_dlc_args", [])
+    prep_args = getattr(platform_cfg, "snpe_dlc_graph_prepare_args", [])
+    fb16 = any(
+        a == "--float_bitwidth" and str(b) == "16"
+        for a, b in pairwise(onnx_args)
+    ) or any(
+        isinstance(x, str)
+        and x.startswith("--float_bitwidth=")
+        and x.split("=", 1)[1] == "16"
+        for x in onnx_args
+    )
+    return getattr(platform_cfg, "compress_to_fp16", False) or (
+        fb16 and "--use_float_io" in prep_args
+    )
+
+
+def _converted_layout(
+    tensor: InputConfig | OutputConfig, new_shape: list[int]
+) -> str:
+    """Guess the layout of a converted tensor from its configured layout."""
+    if tensor.shape is None or any(s == 0 for s in tensor.shape):
+        return make_default_layout(new_shape)
+    assert tensor.layout is not None
+    return guess_new_layout(tensor.layout, tensor.shape, new_shape)
+
+
+def _output_layout(out: OutputConfig, new_shape: list[int]) -> str:
+    """Guess the layout of a converted output from its configured layout.
+
+    When the configured shape does not fit the converted one, the
+    output gets the default layout, with a warning.
+    """
+    try:
+        return _converted_layout(out, new_shape)
+    except ValueError as e:
+        layout = make_default_layout(new_shape)
+        logger.warning(
+            f"Unable to infer layout for layer '{out.name}': {e}. "
+            f"The original shape was `{out.shape}`, which is incompatible "
+            f"with the shape of the converted model: `{new_shape}`. "
+            f"Changing the layout of the converted model to `{layout}`. "
+        )
+        return layout
+
+
+def _archive_input_type(
+    inp: InputConfig,
+    preprocessing_input_types: dict[str, Literal["raw", "image"]] | None,
+) -> Literal["raw", "image"]:
+    """Return the input type captured before externalization, or derive it."""
+    if (
+        preprocessing_input_types is not None
+        and inp.name in preprocessing_input_types
+    ):
+        return preprocessing_input_types[inp.name]
+    return default_archive_input_type(is_raw_input=inp.is_raw_input)
+
+
+def _archive_input_preprocessing(
+    inp: InputConfig,
+    layout: str,
+    input_type: Literal["raw", "image"],
+    block: PreprocessingBlock | None,
+    orig_nn: NNArchiveConfig | None,
+) -> Params:
+    """Build the archive preprocessing of an input.
+
+    Without a supplied block, the preprocessing is identity. An image
+    input also gets a ``resize_mode`` where the archive supports it.
+    """
+    if block is None:
+        preprocessing_cfg = _default_archive_preprocessing(
+            inp, layout, input_type=input_type
+        )
+    else:
+        if input_type == "image":
+            block = _adapt_preprocessing_to_layout(block, layout)
+        preprocessing_cfg = block.model_dump(mode="json")
+
+    if (
+        input_type == "image"
+        and "resize_mode" in PreprocessingBlock.model_fields
+    ):
+        _set_resize_mode(preprocessing_cfg, inp, orig_nn)
+    return preprocessing_cfg
+
+
+def _set_resize_mode(
+    preprocessing_cfg: Params,
+    inp: InputConfig,
+    orig_nn: NNArchiveConfig | None,
+) -> None:
+    """Set ``resize_mode`` from the calibration config or the old archive.
+
+    The configured resize method wins. Otherwise, a ``resize_mode`` that
+    the preprocessing does not set comes from the original archive.
+    """
+    if inp.calibration.has_resize_method:
+        preprocessing_cfg["resize_mode"] = (
+            inp.calibration.resize_method.as_nn_archive()
+        )
+        if preprocessing_cfg["resize_mode"] is None:
+            logger.warning(
+                f"Input '{inp.name}' uses CENTER_CROP_NO_RESIZE, "
+                "which NN Archive resize_mode cannot express. "
+                "Exporting null (unspecified);"
+            )
+        return
+    if preprocessing_cfg.get("resize_mode") is not None or not orig_nn:
+        return
+    original = next(
+        (i for i in orig_nn.model.inputs if i.name == inp.name),
+        None,
+    )
+    if original is not None:
+        preprocessing_cfg["resize_mode"] = getattr(
+            original.preprocessing, "resize_mode", None
+        )
+
+
+def _attach_postprocessor(
+    archive: NNArchiveConfig,
+    config: Config,
+    main_stage_key: str,
+    model_name: Path,
+) -> None:
+    """Point the first head of the archive to the second stage model."""
+    if len(config.stages) > 2:
+        raise NotImplementedError(
+            "Only 2-stage models are supported with NN Archive for now."
+        )
+    post_stage_key = next(
+        key for key in config.stages if key != main_stage_key
+    )
+    if not archive.model.heads:
+        raise ValueError(
+            "Multistage NN Archives must specify 1 head in the archive config"
+        )
+    head = archive.model.heads[0]
+    head.metadata.postprocessor_path = f"{post_stage_key}{model_name.suffix}"
+
+
+def _warn_if_renamed(
+    kind: Literal["input", "output"], configured_name: str, converted_name: str
+) -> None:
+    """Warn when the conversion renamed a tensor."""
+    if converted_name != configured_name:
+        logger.warning(
+            f"Converted model {kind} '{configured_name}' was renamed to "
+            f"'{converted_name}'. Using the converted name in the NN Archive."
+        )
 
 
 def modelconverter_config_to_nn(
@@ -377,58 +641,10 @@ def modelconverter_config_to_nn(
         ValueError: If a multi-stage config's archive declares no head.
 
     """
-    is_multistage = len(config.stages) > 1
     model_metadata = get_metadata(model_path)
 
     cfg = config.stages[main_stage_key]
     platform_cfg = cfg.get_platform_config(platform)
-
-    # TODO: This might be more complicated for Hailo
-    quantization_mode = getattr(platform_cfg, "quantization_mode", None)
-    if (
-        quantization_mode is None
-        or quantization_mode == QuantizationMode.CUSTOM
-    ):
-        onnx_args = getattr(platform_cfg, "snpe_onnx_to_dlc_args", [])
-        prep_args = getattr(platform_cfg, "snpe_dlc_graph_prepare_args", [])
-        fb16 = any(
-            a == "--float_bitwidth" and str(b) == "16"
-            for a, b in pairwise(onnx_args)
-        ) or any(
-            isinstance(x, str)
-            and x.startswith("--float_bitwidth=")
-            and x.split("=", 1)[1] == "16"
-            for x in onnx_args
-        )
-        compress_to_fp16 = getattr(
-            platform_cfg, "compress_to_fp16", False
-        ) or (fb16 and "--use_float_io" in prep_args)
-    else:
-        compress_to_fp16 = quantization_mode == QuantizationMode.FP16_STD
-    disable_calibration = platform_cfg.disable_calibration
-
-    match platform, compress_to_fp16, disable_calibration:
-        case Platform.RVC2, True, _:
-            precision = DataType.FLOAT16
-
-        case Platform.RVC2, False, _:
-            precision = DataType.FLOAT32
-
-        case Platform.RVC3 | Platform.RVC4, True, True:
-            precision = DataType.FLOAT16
-
-        case Platform.RVC3 | Platform.RVC4, False, True:
-            precision = DataType.FLOAT32
-
-        case Platform.RVC3 | Platform.RVC4, _, False:
-            precision = (
-                DataType.INT16
-                if quantization_mode == QuantizationMode.INT16_STD
-                else DataType.INT8
-            )
-
-        case Platform.HAILO, _, _:  # pragma: no branch
-            precision = DataType.INT8
 
     archive_cfg = {
         "config_version": CONFIG_VERSION,
@@ -436,7 +652,7 @@ def modelconverter_config_to_nn(
             "metadata": {
                 "name": model_name.stem,
                 "path": str(model_name),
-                "precision": precision.value,
+                "precision": _archive_precision(platform, platform_cfg).value,
             },
             "inputs": [],
             "outputs": [],
@@ -449,18 +665,9 @@ def modelconverter_config_to_nn(
     )
     for inp in cfg.inputs:
         metadata_name = input_name_map[inp.name]
-        if metadata_name != inp.name:
-            logger.warning(
-                f"Converted model input '{inp.name}' was renamed to "
-                f"'{metadata_name}'. Using the converted name in the NN Archive."
-            )
+        _warn_if_renamed("input", inp.name, metadata_name)
         new_shape = model_metadata.input_shapes[metadata_name]
-        if inp.shape is not None and not any(s == 0 for s in inp.shape):
-            assert inp.layout is not None
-            layout = guess_new_layout(inp.layout, inp.shape, new_shape)
-        else:
-            layout = make_default_layout(new_shape)
-
+        layout = _converted_layout(inp, new_shape)
         dtype = _get_io_dtype(
             platform,
             metadata_name,
@@ -468,49 +675,7 @@ def modelconverter_config_to_nn(
             platform_cfg,
             mode="input",
         )
-
-        input_type = (
-            preprocessing_input_types[inp.name]
-            if preprocessing_input_types is not None
-            and inp.name in preprocessing_input_types
-            else default_archive_input_type(is_raw_input=inp.is_raw_input)
-        )
-        preprocessing_block = preprocessing.get(inp.name)
-        if preprocessing_block is None:
-            preprocessing_cfg = _default_archive_preprocessing(
-                inp, layout, input_type=input_type
-            )
-        else:
-            if input_type == "image":
-                preprocessing_block = _adapt_preprocessing_to_layout(
-                    preprocessing_block, layout
-                )
-            preprocessing_cfg = preprocessing_block.model_dump(mode="json")
-
-        if (
-            input_type == "image"
-            and "resize_mode" in PreprocessingBlock.model_fields
-        ):
-            if inp.calibration.has_resize_method:
-                preprocessing_cfg["resize_mode"] = (
-                    inp.calibration.resize_method.as_nn_archive()
-                )
-                if preprocessing_cfg["resize_mode"] is None:
-                    logger.warning(
-                        f"Input '{inp.name}' uses CENTER_CROP_NO_RESIZE, "
-                        "which NN Archive resize_mode cannot express. "
-                        "Exporting null (unspecified);"
-                    )
-            elif preprocessing_cfg.get("resize_mode") is None and orig_nn:
-                original = next(
-                    (i for i in orig_nn.model.inputs if i.name == inp.name),
-                    None,
-                )
-                if original is not None:
-                    preprocessing_cfg["resize_mode"] = getattr(
-                        original.preprocessing, "resize_mode", None
-                    )
-
+        input_type = _archive_input_type(inp, preprocessing_input_types)
         archive_cfg["model"]["inputs"].append(
             {
                 "name": metadata_name,
@@ -518,7 +683,13 @@ def modelconverter_config_to_nn(
                 "layout": layout,
                 "dtype": dtype,
                 "input_type": input_type,
-                "preprocessing": preprocessing_cfg,
+                "preprocessing": _archive_input_preprocessing(
+                    inp,
+                    layout,
+                    input_type,
+                    preprocessing.get(inp.name),
+                    orig_nn,
+                ),
             }
         )
     metadata_output_names = list(model_metadata.output_shapes)
@@ -544,41 +715,21 @@ def modelconverter_config_to_nn(
         )
     for out in cfg.outputs:
         metadata_name = output_name_map[out.name]
-        if metadata_name != out.name:
-            logger.warning(
-                f"Converted model output '{out.name}' was renamed to "
-                f"'{metadata_name}'. Using the converted name in the NN Archive."
-            )
+        _warn_if_renamed("output", out.name, metadata_name)
 
         new_shape = model_metadata.output_shapes[metadata_name]
-        if out.shape is not None and not any(s == 0 for s in out.shape):
-            assert out.layout is not None
-            try:
-                layout = guess_new_layout(out.layout, out.shape, new_shape)
-            except ValueError as e:
-                layout = make_default_layout(new_shape)
-                logger.warning(
-                    f"Unable to infer layout for layer '{out.name}': {e}. "
-                    f"The original shape was `{out.shape}`, which is incompatible "
-                    f"with the shape of the converted model: `{new_shape}`. "
-                    f"Changing the layout of the converted model to `{layout}`. "
-                )
-        else:
-            layout = make_default_layout(new_shape)
-
-        dtype = _get_io_dtype(
-            platform,
-            metadata_name,
-            model_metadata,
-            platform_cfg,
-            mode="output",
-        )
         archive_cfg["model"]["outputs"].append(
             {
                 "name": metadata_name,
                 "shape": new_shape,
-                "layout": layout,
-                "dtype": dtype,
+                "layout": _output_layout(out, new_shape),
+                "dtype": _get_io_dtype(
+                    platform,
+                    metadata_name,
+                    model_metadata,
+                    platform_cfg,
+                    mode="output",
+                ),
             }
         )
 
@@ -589,23 +740,8 @@ def modelconverter_config_to_nn(
         raise ValueError(f"Preprocessing input(s) not found: {names}")
 
     archive = NNArchiveConfig(**archive_cfg)
-
-    if is_multistage:
-        if len(config.stages) > 2:
-            raise NotImplementedError(
-                "Only 2-stage models are supported with NN Archive for now."
-            )
-        post_stage_key = next(
-            key for key in config.stages if key != main_stage_key
-        )
-        if not archive.model.heads:
-            raise ValueError(
-                "Multistage NN Archives must sxpecify 1 head in the archive config"
-            )
-        head = archive.model.heads[0]
-        head.metadata.postprocessor_path = (
-            f"{post_stage_key}{model_name.suffix}"
-        )
+    if len(config.stages) > 1:
+        _attach_postprocessor(archive, config, main_stage_key, model_name)
     return archive
 
 
@@ -634,70 +770,103 @@ def _match_tensor_names(
         ValueError: If renamed tensors cannot be paired unambiguously.
 
     """
-    configured_names = {tensor.name for tensor in configured_tensors}
     matches = {
         tensor.name: tensor.name
         for tensor in configured_tensors
         if tensor.name in converted_shapes
     }
-    unmatched_configured = [
-        tensor for tensor in configured_tensors if tensor.name not in matches
-    ]
-    unmatched_converted = [
-        name for name in converted_shapes if name not in configured_names
-    ]
+    configured_names = {tensor.name for tensor in configured_tensors}
+    renamed_shapes = {
+        name: shape
+        for name, shape in converted_shapes.items()
+        if name not in configured_names
+    }
+    unmatched = [t for t in configured_tensors if t.name not in matches]
+    matches |= _match_by_unique_shape(unmatched, renamed_shapes, kind=kind)
 
+    matched = set(matches.values())
+    matches |= _match_remaining_pair(
+        [t for t in unmatched if t.name not in matches],
+        {
+            name: shape
+            for name, shape in renamed_shapes.items()
+            if name not in matched
+        },
+        kind=kind,
+    )
+    return matches
+
+
+def _match_by_unique_shape(
+    configured: list[InputConfig] | list[OutputConfig],
+    converted_shapes: dict[str, list[int]],
+    *,
+    kind: Literal["input", "output"],
+) -> dict[str, str]:
+    """Pair configured and converted tensors that alone have one shape.
+
+    Raises:
+        ValueError: If another configured tensor has the same
+            dimensions in a different order.
+    """
     configured_by_shape: dict[
         tuple[int, ...], list[InputConfig | OutputConfig]
     ] = {}
-    for out in unmatched_configured:
-        if out.shape is not None:
-            configured_by_shape.setdefault(tuple(out.shape), []).append(out)
+    for tensor in configured:
+        if tensor.shape is not None:
+            configured_by_shape.setdefault(tuple(tensor.shape), []).append(
+                tensor
+            )
 
     converted_by_shape: dict[tuple[int, ...], list[str]] = {}
-    for name in unmatched_converted:
-        converted_by_shape.setdefault(
-            tuple(converted_shapes[name]), []
-        ).append(name)
+    for name, shape in converted_shapes.items():
+        converted_by_shape.setdefault(tuple(shape), []).append(name)
 
-    for shape, outputs in configured_by_shape.items():
+    matches = {}
+    for shape, tensors in configured_by_shape.items():
         converted_names = converted_by_shape.get(shape, [])
-        if len(outputs) == len(converted_names) == 1:
-            permutation_candidates = [
-                tensor.name
-                for tensor in unmatched_configured
-                if tensor.shape is not None
-                and sorted(tensor.shape) == sorted(shape)
-            ]
-            if len(permutation_candidates) > 1:
-                raise ValueError(
-                    f"Unable to unambiguously match renamed model {kind}s by "
-                    f"shape: converted tensor '{converted_names[0]}' with shape "
-                    f"{list(shape)} could correspond to any of "
-                    f"{permutation_candidates} after an axis permutation."
-                )
-            matches[outputs[0].name] = converted_names[0]
+        if not len(tensors) == len(converted_names) == 1:
+            continue
+        permutation_candidates = [
+            tensor.name
+            for tensor in configured
+            if tensor.shape is not None
+            and sorted(tensor.shape) == sorted(shape)
+        ]
+        if len(permutation_candidates) > 1:
+            raise ValueError(
+                f"Unable to unambiguously match renamed model {kind}s by "
+                f"shape: converted tensor '{converted_names[0]}' with shape "
+                f"{list(shape)} could correspond to any of "
+                f"{permutation_candidates} after an axis permutation."
+            )
+        matches[tensors[0].name] = converted_names[0]
+    return matches
 
-    unmatched_configured = [
-        out for out in unmatched_configured if out.name not in matches
-    ]
-    matched_converted = set(matches.values())
-    unmatched_converted = [
-        name for name in unmatched_converted if name not in matched_converted
-    ]
-    if len(unmatched_configured) == len(unmatched_converted) == 1:
-        matches[unmatched_configured[0].name] = unmatched_converted[0]
-    elif unmatched_configured or unmatched_converted:
-        configured = {out.name: out.shape for out in unmatched_configured}
-        converted = {
-            name: converted_shapes[name] for name in unmatched_converted
+
+def _match_remaining_pair(
+    configured: list[InputConfig] | list[OutputConfig],
+    converted_shapes: dict[str, list[int]],
+    *,
+    kind: Literal["input", "output"],
+) -> dict[str, str]:
+    """Pair the one configured tensor left with the one converted tensor left.
+
+    Raises:
+        ValueError: If more than one tensor is left on a side, or a
+            tensor is left on one side only.
+    """
+    if len(configured) == len(converted_shapes) == 1:
+        return {configured[0].name: next(iter(converted_shapes))}
+    if configured or converted_shapes:
+        configured_shapes = {
+            tensor.name: tensor.shape for tensor in configured
         }
         raise ValueError(
             f"Unable to unambiguously match renamed model {kind}s by shape: "
-            f"configured={configured}, converted={converted}."
+            f"configured={configured_shapes}, converted={converted_shapes}."
         )
-
-    return matches
+    return {}
 
 
 def _replace_names(value: object, name_map: dict[str, str]) -> object:
@@ -934,33 +1103,40 @@ def _get_io_dtype(
     *,
     mode: Literal["input", "output"],
 ) -> str:
-    if mode == "input":
-        dtypes = metadata.input_dtypes
-    else:
-        dtypes = metadata.output_dtypes
-    if platform in {Platform.RVC2, Platform.RVC3}:
-        compile_tool_args: list[str] = getattr(cfg, "compile_tool_args", [])
-        assert isinstance(cfg, BlobBaseConfig)
-        # -iop is in a form of '-iop "<name1>:<dtype>,<name2>:<dtype2>"'
-        if "-iop" in compile_tool_args:
-            idx = compile_tool_args.index("-iop")
-            for value in compile_tool_args[idx + 1].split(","):
-                value = value.strip()
-                n, d = value.split(":")
-                if n == name:
-                    blob_dtype = d.upper()
-                    return DataType.from_ir_ie_dtype(
-                        blob_dtype
-                    ).as_nn_archive_dtype()
+    dtypes = (
+        metadata.input_dtypes if mode == "input" else metadata.output_dtypes
+    )
+    if platform not in {Platform.RVC2, Platform.RVC3}:
+        return dtypes[name].as_nn_archive_dtype()
+    assert isinstance(cfg, BlobBaseConfig)
+    blob_dtype = _compile_tool_dtype(cfg.compile_tool_args, name, mode=mode)
+    if blob_dtype is None:
+        return dtypes[name].as_nn_archive_dtype()
+    return DataType.from_ir_ie_dtype(blob_dtype).as_nn_archive_dtype()
 
-        elif mode == "input" and "-ip" in compile_tool_args:
-            idx = compile_tool_args.index("-ip")
-        elif mode == "output" and "-op" in compile_tool_args:
-            idx = compile_tool_args.index("-op")
-        else:
-            return dtypes[name].as_nn_archive_dtype()
 
-        blob_dtype = compile_tool_args[idx + 1].upper()
-        return DataType.from_ir_ie_dtype(blob_dtype).as_nn_archive_dtype()
+def _compile_tool_dtype(
+    args: list[str], name: str, *, mode: Literal["input", "output"]
+) -> str | None:
+    """Read the precision that ``compile_tool`` arguments set for a tensor.
 
-    return dtypes[name].as_nn_archive_dtype()
+    ``-iop "<name1>:<dtype1>,<name2>:<dtype2>"`` sets it per tensor, and
+    wins over ``-ip`` and ``-op``, which set it for every input or every
+    output. A name that ``-iop`` does not list leaves its whole value,
+    which `DataType.from_ir_ie_dtype` refuses.
+
+    Returns:
+        The precision in upper case, or ``None`` when no argument sets
+        it.
+    """
+    if "-iop" in args:
+        value = args[args.index("-iop") + 1]
+        for item in value.split(","):
+            tensor_name, dtype = item.strip().split(":")
+            if tensor_name == name:
+                return dtype.upper()
+        return value.upper()
+    flag = "-ip" if mode == "input" else "-op"
+    if flag in args:
+        return args[args.index(flag) + 1].upper()
+    return None

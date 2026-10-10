@@ -23,6 +23,7 @@ from luxonis_ml.typing import Params, PathType
 
 from modelconverter.utils import (
     ModelconverterException,
+    ONNXModifier,
     exit_with,
     read_calib_dir,
     read_image,
@@ -46,6 +47,46 @@ from modelconverter.utils.preprocessing import (
 )
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import InputFileType, Platform
+
+
+def _save_random_sample(
+    arr: np.ndarray, inp: InputConfig, dest: Path, index: int
+) -> None:
+    """Save one random calibration sample as an image or an array.
+
+    An image input with a 2D or 3D sample, or a 4D sample with a batch
+    of one, is written as a channels-last PNG. Any other sample is
+    written as a NumPy array.
+    """
+    is_image = not inp.is_raw_input and (
+        arr.ndim in {2, 3} or (arr.ndim == 4 and arr.shape[0] == 1)
+    )
+    if is_image:
+        cv2.imwrite(
+            str(dest / f"{index}.png"), _channels_last(arr, inp.layout)
+        )
+    else:
+        np.save(dest / f"{index}.npy", arr)
+
+
+def _channels_last(arr: np.ndarray, layout: str | None) -> np.ndarray:
+    """Drop a batch of one and move the channel axis last.
+
+    Without a channel axis in ``layout``, a first axis of 1 or 3 is
+    taken for the channels.
+    """
+    if arr.shape[0] == 1 and arr.ndim > 2:
+        arr = arr.squeeze(0)
+        if layout is not None:
+            layout = layout[1:]
+
+    if layout is not None and "C" in layout:
+        channels_first = layout.index("C") == 0
+    else:
+        channels_first = arr.shape[0] in {1, 3}
+    if channels_first and arr.ndim == 3:
+        return arr.transpose(1, 2, 0)
+    return arr
 
 
 class Exporter(ABC):
@@ -383,27 +424,8 @@ class Exporter(ABC):
                     calib.mean, calib.std, inp.shape
                 )
                 arr = np.clip(arr, calib.min_value, calib.max_value)
-
                 arr = arr.astype(calib.data_type.as_numpy_dtype())
-                if not inp.is_raw_input and (
-                    len(arr.shape) in {2, 3}
-                    or (len(arr.shape) in {3, 4} and arr.shape[0] == 1)
-                ):
-                    layout = inp.layout
-                    if arr.shape[0] == 1 and len(arr.shape) > 2:
-                        arr = arr.squeeze(0)
-                        if layout is not None:
-                            layout = layout[1:]
-
-                    if layout is not None and "C" in layout:
-                        channel_dim = layout.index("C")
-                        if channel_dim == 0 and len(arr.shape) == 3:
-                            arr = arr.transpose(1, 2, 0)
-                    elif len(arr.shape) == 3 and arr.shape[0] in {1, 3}:
-                        arr = arr.transpose(1, 2, 0)
-                    cv2.imwrite(str(dest / f"{i}.png"), arr)
-                else:
-                    np.save(dest / f"{i}.npy", arr)
+                _save_random_sample(arr, inp, dest, i)
 
             calibration = calib.to_image_calibration(dest)
             calibration._generated_from_random = True
@@ -464,6 +486,44 @@ class Exporter(ABC):
     @staticmethod
     def _attach_suffix(path: PathType, suffix: str) -> Path:
         return Path(str(Path(path).with_suffix("")) + f"-{suffix.lstrip('-')}")
+
+    def _optimize_onnx(self, *, skip_optimization: bool = False) -> None:
+        """Replace the input model with its optimized form.
+
+        The optimized model is kept only when its outputs match those
+        of the original. A failed optimization keeps the original.
+
+        Args:
+            skip_optimization: Skip the graph optimization that
+                `ONNXModifier` runs when it loads and exports the model.
+        """
+        onnx_modifier = ONNXModifier(
+            model_path=self._input_model,
+            output_path=self._attach_suffix(
+                self._input_model, "modified_optimized.onnx"
+            ),
+            skip_optimization=skip_optimization,
+        )
+
+        try:
+            if (
+                onnx_modifier.modify_onnx(
+                    **self._onnx_optimizations.model_dump()
+                )
+                and onnx_modifier.compare_outputs()
+            ):
+                logger.info(
+                    f"ONNX model has been optimized for {self.platform.name}."
+                )
+                shutil.move(onnx_modifier.output_path, self._input_model)
+        except Exception as e:  # pragma: no cover
+            logger.warning(
+                f"Failed to optimize ONNX model: {e}. "
+                "Proceeding with unoptimized model."
+            )
+        finally:
+            if onnx_modifier.output_path.exists():  # pragma: no cover
+                onnx_modifier.output_path.unlink()
 
     @staticmethod
     def _add_args(args: list, new_args: list, index: int = 0) -> None:

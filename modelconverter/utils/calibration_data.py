@@ -53,26 +53,31 @@ def read_img_dir(path: Path, max_images: int) -> list[Path]:
     return imgs
 
 
-def _find_content_root(path: Path) -> Path:
-    ignored_entries = {"__MACOSX", "Thumbs.db", "desktop.ini"}
+_IGNORED_ENTRIES = frozenset({"__MACOSX", "Thumbs.db", "desktop.ini"})
 
+
+def _find_content_root(path: Path) -> Path:
+    """Descend through directories that hold only one subdirectory.
+
+    Hidden entries and the clutter that archivers and file browsers
+    leave behind do not count.
+    """
     current = path
     while True:
-        contents = [
-            p
-            for p in current.iterdir()
-            if p.name not in ignored_entries and not p.name.startswith(".")
-        ]
+        contents = [p for p in current.iterdir() if not _is_clutter(p)]
+        if any(p.is_file() for p in contents):
+            return current
         subdirs = [p for p in contents if p.is_dir()]
-        files = [p for p in contents if p.is_file()]
+        if len(subdirs) != 1:
+            # Multiple subdirectories and no files. Return current and let
+            # read_img_dir raise an error
+            return current
+        current = subdirs[0]
 
-        if files:
-            return current
-        if len(subdirs) == 1:
-            current = subdirs[0]
-        else:
-            # Multiple subdirectories and no files. Return current and let read_img_dir raise an error
-            return current
+
+def _is_clutter(path: Path) -> bool:
+    """Tell whether an entry is hidden, or clutter of an archiver."""
+    return path.name in _IGNORED_ENTRIES or path.name.startswith(".")
 
 
 def _get_from_remote(string: str, dest: Path, max_images: int = -1) -> Path:

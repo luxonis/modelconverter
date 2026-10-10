@@ -21,8 +21,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Required by codecov-action, it builds the path-fixing file network
-      # from the checked out repository.
+      # The upload action is in the repository, and codecov-action builds
+      # its path-fixing file network from the checkout.
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -92,49 +92,9 @@ jobs:
           merge_multiple: true
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Collect coverage files
+      - name: Upload coverage to Codecov
         if: ${{ steps.ci-run.outputs.upload == 'true' }}
-        id: coverage-files
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # `download-artifact` leaves the directory out entirely when nothing
-          # matched, and a bare `find` failure hides why.
-          mkdir -p coverage
-
-          unit=$(find coverage -type f -name 'coverage-unit.xml' | sort | paste -sd, -)
-          if [[ -z "$unit" ]]; then
-            echo "No unit coverage report found" >&2
-            exit 1
-          fi
-
-          # Whatever is left comes from a `tests/conversion` run inside one of
-          # the platform images. Empty when the integration tests were skipped.
-          conversion=$(find coverage -type f -name 'coverage-*.xml' \
-            ! -name 'coverage-unit.xml' | sort | paste -sd, -)
-
-          echo "unit=$unit" >> "$GITHUB_OUTPUT"
-          echo "conversion=$conversion" >> "$GITHUB_OUTPUT"
-
-      - name: Upload unit coverage to Codecov
-        if: ${{ steps.ci-run.outputs.upload == 'true' }}
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        uses: ./.github/actions/upload-coverage
         with:
+          directory: coverage
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ${{ steps.coverage-files.outputs.unit }}
-          flags: unit
-          name: unit
-          fail_ci_if_error: false
-          disable_search: true
-
-      - name: Upload conversion coverage to Codecov
-        if: ${{ steps.ci-run.outputs.upload == 'true' && steps.coverage-files.outputs.conversion != '' }}
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ${{ steps.coverage-files.outputs.conversion }}
-          flags: conversion
-          name: conversion
-          fail_ci_if_error: false
-          disable_search: true

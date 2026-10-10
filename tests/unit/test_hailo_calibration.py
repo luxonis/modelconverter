@@ -295,6 +295,22 @@ def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
     np.testing.assert_array_equal(actual, expected)
 
 
+def _generate_random_sample(
+    hailo_exporter_module: ModuleType, tmp_path: Path, inp: InputConfig
+) -> tuple["HailoExporter", np.ndarray]:
+    """Generate one random calibration sample for ``inp`` and load it."""
+    inp.calibration = RandomCalibrationConfig(max_images=1)
+    exporter: HailoExporter = object.__new__(
+        hailo_exporter_module.HailoExporter
+    )
+    exporter._inputs = {inp.name: inp}
+    exporter.intermediate_outputs_dir = tmp_path
+    exporter._prepare_random_calibration_data()
+    calibration = inp.calibration
+    assert isinstance(calibration, ImageCalibrationConfig)
+    return exporter, np.load(calibration.path / "0.npy")
+
+
 @pytest.mark.parametrize("channels", [256, 20])
 def test_generated_non_image_tensor_uses_hailo_channel_last_layout(
     hailo_exporter_module: ModuleType, tmp_path: Path, channels: int
@@ -306,23 +322,79 @@ def test_generated_non_image_tensor_uses_hailo_channel_last_layout(
             "encoding": "NONE",
         }
     )
-    inp.calibration = RandomCalibrationConfig(max_images=1)
     assert inp.layout == "NCDE"
-    exporter: HailoExporter = object.__new__(
-        hailo_exporter_module.HailoExporter
+    exporter, generated = _generate_random_sample(
+        hailo_exporter_module, tmp_path, inp
     )
-    exporter._inputs = {inp.name: inp}
-    exporter.intermediate_outputs_dir = tmp_path
-    exporter._prepare_random_calibration_data()
 
-    calibration = inp.calibration
-    assert isinstance(calibration, ImageCalibrationConfig)
-    generated = np.load(calibration.path / "0.npy")
     actual = exporter._get_calibration_data(_Runner([1, 20, 20, channels]))[
         "hailo_input"
     ][0]
 
     np.testing.assert_array_equal(actual, generated.transpose(0, 2, 3, 1)[0])
+
+
+def test_generated_2d_tensor_drops_its_batch_axis(
+    hailo_exporter_module: ModuleType, tmp_path: Path
+) -> None:
+    inp = InputConfig.model_validate(
+        {"name": "input0", "shape": [1, 4], "encoding": "NONE"}
+    )
+    exporter, generated = _generate_random_sample(
+        hailo_exporter_module, tmp_path, inp
+    )
+
+    actual = exporter._get_calibration_data(_Runner([1, 4]))["hailo_input"]
+
+    np.testing.assert_array_equal(actual, generated)
+
+
+def test_fit_hailo_sample_moves_image_channels_last(
+    hailo_exporter_module: ModuleType,
+) -> None:
+    chw = np.arange(60).reshape(3, 4, 5)
+
+    fitted = hailo_exporter_module._fit_hailo_sample(chw, [4, 5, 3], "CHW")
+
+    np.testing.assert_array_equal(fitted, chw.transpose(1, 2, 0))
+
+
+def test_fit_hailo_sample_drops_an_inner_singleton_batch_axis(
+    hailo_exporter_module: ModuleType,
+) -> None:
+    array = np.arange(6).reshape(2, 1, 3)
+
+    fitted = hailo_exporter_module._fit_hailo_sample(array, [2, 3], "CNH")
+
+    np.testing.assert_array_equal(fitted, array[:, 0, :])
+
+
+def test_fit_hailo_sample_keeps_an_array_it_cannot_fit(
+    hailo_exporter_module: ModuleType,
+) -> None:
+    array = np.arange(6).reshape(2, 3)
+
+    assert (
+        hailo_exporter_module._fit_hailo_sample(array, [3, 2], "CD") is array
+    )
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [(None, True), ("unknown", True), ("2025-04", True), ("2025-07", False)],
+)
+def test_tf_tensor_shapes_follow_the_dfc_version(
+    hailo_exporter_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    version: str | None,
+    expected: bool,
+) -> None:
+    if version is None:
+        monkeypatch.delenv("VERSION", raising=False)
+    else:
+        monkeypatch.setenv("VERSION", version)
+
+    assert hailo_exporter_module._supports_tf_tensor_shapes() is expected
 
 
 def test_disabled_calibration_accepts_archive_preprocessing_retry(

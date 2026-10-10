@@ -22,6 +22,7 @@ import pytest
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
 from modelconverter.platforms.getters import get_inferer
+from modelconverter.utils.config import Config
 from modelconverter.utils.constants import CALIBRATION_DIR, OUTPUTS_DIR
 from modelconverter.utils.general import sanitize_net_name
 from modelconverter.utils.types import Platform
@@ -170,10 +171,14 @@ def _calibration_images() -> list[Path]:
     return paths
 
 
-def _link_options(stage: str, post_stage: str, inputs: list[str]) -> list[str]:
+def _link_options(cfg: Config, stage: str) -> list[str]:
     """Build the overrides wiring yolov8-seg's postprocessor to its
     upstream stage.
     """
+    post_stage, post_config = next(
+        (name, config) for name, config in cfg.stages.items() if name != stage
+    )
+    inputs = [inp.name for inp in post_config.inputs]
     prototypes = inputs.index("prototypes")
     coeffs = inputs.index("coeffs")
     prefix = f"stages.{post_stage}.inputs"
@@ -264,14 +269,7 @@ def test_real_model_task_metrics(
         "16",
     ]
     if case.parser == "instance_segmentation":
-        post_name, post_stage = next(
-            (name, config)
-            for name, config in cfg.stages.items()
-            if name != stage_name
-        )
-        convert_options += _link_options(
-            stage_name, post_name, [inp.name for inp in post_stage.inputs]
-        )
+        convert_options += _link_options(cfg, stage_name)
 
     output_name = sanitize_net_name(f"eval_{platform_name}_{case.id}")
     try:

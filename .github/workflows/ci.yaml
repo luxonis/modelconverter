@@ -75,10 +75,11 @@ env:
   LUXONIS_TELEMETRY_ENABLED: "false"
 
 jobs:
-  # `pre-commit` and `docs` gate every test job below. Lint, formatting and a
-  # docstring pydoctor cannot render are all cheap failures to find, and
-  # finding them here keeps them out of a test log -- and off a self-hosted
-  # runner with a device attached.
+  # `pre-commit` gates `docs` and `typecheck`, and those two run in parallel.
+  # Both gate `unit`, and `unit` gates `integration`. Lint, formatting, a
+  # docstring pydoctor cannot render and a type error are all cheap failures
+  # to find, and finding them here keeps them out of a test log -- and off a
+  # self-hosted runner with a device attached.
   pre-commit:
     name: Pre-commit
     runs-on: ubuntu-latest
@@ -135,7 +136,7 @@ jobs:
 
   typecheck:
     name: Type check
-    needs: docs
+    needs: pre-commit
     runs-on: ubuntu-latest
     env:
       GS_BUILD_ARTIFACTS: gs://luxonis-test-bucket/modelconverter/build-artifacts
@@ -191,7 +192,7 @@ jobs:
 
   unit:
     name: Unit tests
-    needs: typecheck
+    needs: [docs, typecheck]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -447,8 +448,8 @@ jobs:
       contents: read
 
     steps:
-      # Required by codecov-action, it builds the path-fixing file network
-      # from the checked out repository.
+      # The upload action is in the repository, and codecov-action builds
+      # its path-fixing file network from the checkout.
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -463,47 +464,8 @@ jobs:
           path: coverage
           merge-multiple: true
 
-      - name: Collect coverage files
-        id: coverage-files
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # `download-artifact` leaves the directory out entirely when nothing
-          # matched, and a bare `find` failure hides why.
-          mkdir -p coverage
-
-          unit=$(find coverage -type f -name 'coverage-unit.xml' | sort | paste -sd, -)
-          if [[ -z "$unit" ]]; then
-            echo "No unit coverage report found" >&2
-            exit 1
-          fi
-
-          # Whatever is left comes from a `tests/conversion` run inside one of
-          # the platform images. Empty when the integration tests were skipped.
-          conversion=$(find coverage -type f -name 'coverage-*.xml' \
-            ! -name 'coverage-unit.xml' | sort | paste -sd, -)
-
-          echo "unit=$unit" >> "$GITHUB_OUTPUT"
-          echo "conversion=$conversion" >> "$GITHUB_OUTPUT"
-
-      - name: Upload unit coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+      - name: Upload coverage to Codecov
+        uses: ./.github/actions/upload-coverage
         with:
+          directory: coverage
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ${{ steps.coverage-files.outputs.unit }}
-          flags: unit
-          name: unit
-          fail_ci_if_error: false
-          disable_search: true
-
-      - name: Upload conversion coverage to Codecov
-        if: ${{ steps.coverage-files.outputs.conversion != '' }}
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ${{ steps.coverage-files.outputs.conversion }}
-          flags: conversion
-          name: conversion
-          fail_ci_if_error: false
-          disable_search: true

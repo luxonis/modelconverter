@@ -35,6 +35,7 @@ from modelconverter.platforms.base_benchmark import (
     get_option,
     get_optional_option,
 )
+from modelconverter.platforms.dai_benchmark import run_dai_benchmark
 from modelconverter.platforms.rvc4.utils import (
     device_id_to_adb_id,
     get_device_info,
@@ -43,15 +44,11 @@ from modelconverter.utils import (
     DataType,
     DeviceMonitor,
     create_handler,
-    create_progress_handler,
     environ,
     subprocess_run,
 )
 from modelconverter.utils.hubai_utils import create_hubai_client
-from modelconverter.utils.log_latency import (
-    RVC4_INFERENCE_LATENCY_RE,
-    parse_inference_latency,
-)
+from modelconverter.utils.log_latency import RVC4_INFERENCE_LATENCY_RE
 
 
 class InputSpec(BaseModelExtraForbid):
@@ -415,66 +412,82 @@ class RVC4Benchmark(Benchmark):
 
         try:
             if dai_benchmark:
-                for key in [
-                    "dai_benchmark",
-                    "num_images",
-                    "device_id",
-                    "device_monitor",
-                ]:
-                    configuration.pop(key)
-                result = self._benchmark_dai(
-                    self.model_path,
-                    profile=get_option(configuration, "profile", str),
-                    runtime=get_option(configuration, "runtime", str),
-                    repetitions=get_option(configuration, "repetitions", int),
-                    num_threads=get_option(configuration, "num_threads", int),
-                    num_messages=get_option(
-                        configuration, "num_messages", int
-                    ),
-                    benchmark_time=get_option(
-                        configuration, "benchmark_time", int
-                    ),
-                    input_fps=input_fps,
-                    device_ip=device_ip,
+                result = self._run_dai_backend(
+                    configuration, input_fps, device_ip
                 )
             else:
-                for key in [
-                    "dai_benchmark",
-                    "repetitions",
-                    "num_threads",
-                    "num_messages",
-                    "benchmark_time",
-                    "input_fps",
-                    "device_ip",
-                    "device_id",
-                    "device_monitor",
-                ]:
-                    configuration.pop(key, None)
-                logger.info("Running SNPE benchmark directly on the device...")
-                result = self._benchmark_snpe(
-                    self.model_path,
-                    num_images=get_option(configuration, "num_images", int),
-                    profile=get_option(configuration, "profile", str),
-                    runtime=get_option(configuration, "runtime", str),
-                )
+                result = self._run_snpe_backend(configuration)
 
             if self._monitor is not None:
                 result |= self._monitor.get_stats()
                 result |= idle_measurements
             return result
         finally:
-            if self._monitor is not None:
-                self._monitor.stop()
-            if not dai_benchmark and self._handler is not None:
-                # so we don't delete the wrong directory
-                # if `model_name` gets unset for any reason
-                if not self.model_name:
-                    raise AssertionError(
-                        "`model_name` is not set, "
-                        "cannot clean up model files on the device."
-                    )
+            self._clean_up(dai_benchmark=dai_benchmark)
 
-                self._handler.shell(f"rm -rf {self._device_pwd}")
+    def _run_dai_backend(
+        self,
+        configuration: Configuration,
+        input_fps: float,
+        device_ip: str | None,
+    ) -> Result:
+        """Benchmark through a DepthAI pipeline."""
+        for key in [
+            "dai_benchmark",
+            "num_images",
+            "device_id",
+            "device_monitor",
+        ]:
+            configuration.pop(key)
+        return self._benchmark_dai(
+            self.model_path,
+            profile=get_option(configuration, "profile", str),
+            runtime=get_option(configuration, "runtime", str),
+            repetitions=get_option(configuration, "repetitions", int),
+            num_threads=get_option(configuration, "num_threads", int),
+            num_messages=get_option(configuration, "num_messages", int),
+            benchmark_time=get_option(configuration, "benchmark_time", int),
+            input_fps=input_fps,
+            device_ip=device_ip,
+        )
+
+    def _run_snpe_backend(self, configuration: Configuration) -> Result:
+        """Benchmark with SNPE directly on the device."""
+        for key in [
+            "dai_benchmark",
+            "repetitions",
+            "num_threads",
+            "num_messages",
+            "benchmark_time",
+            "input_fps",
+            "device_ip",
+            "device_id",
+            "device_monitor",
+        ]:
+            configuration.pop(key, None)
+        logger.info("Running SNPE benchmark directly on the device...")
+        return self._benchmark_snpe(
+            self.model_path,
+            num_images=get_option(configuration, "num_images", int),
+            profile=get_option(configuration, "profile", str),
+            runtime=get_option(configuration, "runtime", str),
+        )
+
+    def _clean_up(self, *, dai_benchmark: bool) -> None:
+        """Stop the monitor and remove the SNPE files from the device."""
+        if self._monitor is not None:
+            self._monitor.stop()
+        if dai_benchmark or self._handler is None:
+            return
+        # so we don't delete the wrong directory
+        # if `model_name` gets unset for any reason
+        if not self.model_name:
+            raise AssertionError(
+                "`model_name` is not set, "
+                "cannot clean up model files on the device."
+            )
+
+        self._handler.shell(f"rm -rf {self._device_pwd}")
 
     def _benchmark_snpe(
         self,
@@ -486,41 +499,10 @@ class RVC4Benchmark(Benchmark):
         runtime = RUNTIMES.get(runtime, "use_dsp")
 
         if isinstance(model_path, str) or str(model_path).endswith(".tar.xz"):
-            if isinstance(model_path, str):
-                model_archive = dai.getModelFromZoo(
-                    dai.NNModelDescription(
-                        model_path,
-                        platform=dai.Platform.RVC4.name,
-                    ),
-                    apiKey=environ.HUBAI_API_KEY or "",
-                )
-            else:
-                model_archive = model_path
-
-            tmp_dir = Path(model_archive).parent / "tmp"
-            shutil.unpack_archive(model_archive, tmp_dir)
-
-            dlc_model_name = json.loads((tmp_dir / "config.json").read_text())[
-                "model"
-            ]["metadata"]["path"]
-            dlc_path = next(tmp_dir.rglob(dlc_model_name), None)
-            if not dlc_path:
-                raise ValueError("Could not find model.dlc in the archive.")
-            try:
-                input_specs = self._get_dlc_input_specs(dlc_path)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to read input specs from the DLC "
-                    f"with error: {e}. Reading from the archive."
-                )
-                input_specs = self._get_archive_input_specs(
-                    dai.NNArchive(model_archive)
-                )
-
+            dlc_path, input_specs = self._unpack_archive_dlc(model_path)
         elif str(model_path).endswith(".dlc"):
             dlc_path = model_path
             input_specs = self._get_dlc_input_specs(dlc_path)
-
         else:
             raise ValueError(
                 "Unsupported model format. Supported formats: .dlc, or HubAI model slug."
@@ -576,6 +558,36 @@ class RVC4Benchmark(Benchmark):
         fps = float(match.group(1))
         return {"fps": fps, "latency": "N/A"}
 
+    def _unpack_archive_dlc(
+        self, model_path: PathType
+    ) -> tuple[Path, list[InputSpec]]:
+        """Unpack the DLC of an NN Archive or a HubAI slug.
+
+        The input specs come from the DLC, or from the archive when
+        the DLC cannot be read.
+        """
+        model_archive = _resolve_archive(model_path)
+        tmp_dir = model_archive.parent / "tmp"
+        shutil.unpack_archive(model_archive, tmp_dir)
+
+        dlc_model_name = json.loads((tmp_dir / "config.json").read_text())[
+            "model"
+        ]["metadata"]["path"]
+        dlc_path = next(tmp_dir.rglob(dlc_model_name), None)
+        if not dlc_path:
+            raise ValueError("Could not find model.dlc in the archive.")
+        try:
+            input_specs = self._get_dlc_input_specs(dlc_path)
+        except Exception as e:
+            logger.warning(
+                f"Failed to read input specs from the DLC "
+                f"with error: {e}. Reading from the archive."
+            )
+            input_specs = self._get_archive_input_specs(
+                dai.NNArchive(model_archive)
+            )
+        return dlc_path, input_specs
+
     def _benchmark_dai(
         self,
         model_path: PathType,
@@ -588,27 +600,7 @@ class RVC4Benchmark(Benchmark):
         input_fps: float,
         device_ip: str | None = None,
     ) -> Result:
-        if isinstance(model_path, str):
-            resolved_model_path = Path(
-                dai.getModelFromZoo(
-                    dai.NNModelDescription(
-                        model_path,
-                        platform=dai.Platform.RVC4.name,
-                    ),
-                    apiKey=environ.HUBAI_API_KEY or "",
-                )
-            )
-        elif str(model_path).endswith(".tar.xz"):
-            resolved_model_path = Path(model_path)
-        elif str(model_path).endswith(".dlc"):
-            raise ValueError(
-                "DLC model format is not currently supported for dai-benchmark. Please use SNPE for DLC models."
-            )
-        else:
-            raise ValueError(
-                "Unsupported model format. Supported formats: .tar.xz, or HubAI model slug."
-            )
-
+        resolved_model_path = _resolve_archive(model_path)
         model_archive = dai.NNArchive(resolved_model_path)
         try:
             logger.info("Trying to get input specs from the DLC file...")
@@ -629,11 +621,11 @@ class RVC4Benchmark(Benchmark):
                 spec.name, input_data, dataType=spec.data_type.as_dai_dtype()
             )
 
-        if device_ip:
-            device = dai.Device(dai.DeviceInfo(device_ip))
-        else:
-            device = dai.Device(_get_first_rvc4_device_info())
-
+        device = dai.Device(
+            dai.DeviceInfo(device_ip)
+            if device_ip
+            else _get_first_rvc4_device_info()
+        )
         if device.getPlatform() != dai.Platform.RVC4:
             raise ValueError(
                 f"Found {device.getPlatformAsString()}, expected RVC4 platform."
@@ -646,77 +638,26 @@ class RVC4Benchmark(Benchmark):
         if self._monitor is not None:
             self._monitor.start()
 
-        latencies: list[float] = []
-
-        def on_log_message(log_message: dai.LogMessage) -> None:
-            latency = parse_inference_latency(
-                log_message, RVC4_INFERENCE_LATENCY_RE
+        def configure_network(network: dai.node.NeuralNetwork) -> None:
+            """Load the archive and set the SNPE runtime and profile."""
+            network.setNNArchive(model_archive)
+            network.setBackendProperties(
+                {"runtime": runtime, "performance_profile": profile}
             )
-            if latency is not None:
-                latencies.append(latency)
 
-        callback_id = device.addLogCallback(on_log_message)
-        # RVC4 reports per-inference latency at DEBUG level.  Suppress the
-        # verbose device output while retaining callback delivery.
-        device.setLogLevel(dai.LogLevel.DEBUG)
-        device.setLogOutputLevel(dai.LogLevel.WARN)
-
-        fps_list = []
-        try:
-            with dai.Pipeline(device) as pipeline:
-                benchmark_out = pipeline.create(dai.node.BenchmarkOut)
-                benchmark_out.setRunOnHost(False)
-                benchmark_out.setFps(input_fps)
-
-                neural_network = pipeline.create(dai.node.NeuralNetwork)
-                neural_network.setNNArchive(model_archive)
-
-                neural_network.setBackendProperties(
-                    {
-                        "runtime": runtime,
-                        "performance_profile": profile,
-                    }
-                )
-
-                neural_network.setNumInferenceThreads(num_threads)
-
-                benchmark_in = pipeline.create(dai.node.BenchmarkIn)
-                benchmark_in.setRunOnHost(False)
-                benchmark_in.sendReportEveryNMessages(num_messages)
-                benchmark_in.logReportsAsWarnings(False)
-
-                benchmark_out.out.link(neural_network.input)
-                neural_network.out.link(benchmark_in.input)
-
-                output_queue = benchmark_in.report.createOutputQueue()
-                input_queue = benchmark_out.input.createInputQueue()
-
-                pipeline.start()
-                input_queue.send(input_data_packet)
-
-                progress, on_tick, should_continue = create_progress_handler(
-                    benchmark_time, repetitions
-                )
-
-                with progress:
-                    while pipeline.isRunning() and should_continue():
-                        benchmark_report = output_queue.get()
-                        if not isinstance(
-                            benchmark_report, dai.BenchmarkReport
-                        ):
-                            raise TypeError(
-                                f"Expected BenchmarkReport, got {type(benchmark_report)}"
-                            )
-
-                        fps_list.append(benchmark_report.fps)
-                        on_tick()
-        finally:
-            device.removeLogCallback(callback_id)
-
-        return {
-            "fps": float(np.mean(fps_list)),
-            "latency": float(np.mean(latencies)) if latencies else "N/A",
-        }
+        # RVC4 reports per-inference latency at DEBUG level.
+        return run_dai_benchmark(
+            device,
+            input_data_packet,
+            configure_network,
+            latency_pattern=RVC4_INFERENCE_LATENCY_RE,
+            log_level=dai.LogLevel.DEBUG,
+            input_fps=input_fps,
+            num_threads=num_threads,
+            num_messages=num_messages,
+            benchmark_time=benchmark_time,
+            repetitions=repetitions,
+        )
 
     def _extra_header(
         self,
@@ -857,6 +798,29 @@ class RVC4Benchmark(Benchmark):
         if not isinstance(value, int | float) or not value:
             return "[orange3]N/A[reset]"
         return f"{value:.2f}"
+
+
+def _resolve_archive(model_path: PathType) -> Path:
+    """Find the NN Archive of a path or a HubAI slug."""
+    if isinstance(model_path, str):
+        return Path(
+            dai.getModelFromZoo(
+                dai.NNModelDescription(
+                    model_path,
+                    platform=dai.Platform.RVC4.name,
+                ),
+                apiKey=environ.HUBAI_API_KEY or "",
+            )
+        )
+    if str(model_path).endswith(".tar.xz"):
+        return Path(model_path)
+    if str(model_path).endswith(".dlc"):
+        raise ValueError(
+            "DLC model format is not currently supported for dai-benchmark. Please use SNPE for DLC models."
+        )
+    raise ValueError(
+        "Unsupported model format. Supported formats: .tar.xz, or HubAI model slug."
+    )
 
 
 def _get_first_rvc4_device_info() -> dai.DeviceInfo:

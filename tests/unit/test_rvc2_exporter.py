@@ -5,7 +5,10 @@ from pathlib import Path
 import pytest
 from onnx import TensorProto
 
-from modelconverter.platforms.rvc2.exporter import RVC2Exporter
+from modelconverter.platforms.rvc2.exporter import (
+    RVC2Exporter,
+    _follow_onnx_layout,
+)
 from modelconverter.platforms.rvc3.exporter import RVC3Exporter
 from modelconverter.utils import (
     Metadata,
@@ -46,15 +49,43 @@ def test_scalar_preprocessing_is_expanded_to_resolved_channels():
 
 
 @pytest.mark.parametrize(
-    ("converted_shape", "expected_shape", "expected_layout"),
+    ("layout", "shape", "source_shape"),
     [
-        ([1, 4, 8, 8], [1, 4, 8, 8], "NCHW"),
-        ([1, 8, 8, 4], [1, 8, 8, 4], "NHWC"),
+        ("NCHW", [1, 4, 8, 8], [1, 4, 8, 8]),
+        ("NHWC", [1, 8, 8, 4], [8, 8, 4]),
+        ("NC", [1, 4], [1, 4]),
     ],
+    ids=["channels-first", "rank-mismatch", "unsupported-rank"],
+)
+def test_tflite_input_keeps_layout_without_channel_move(
+    layout: str, shape: list[int], source_shape: list[int]
+):
+    inp = InputConfig(
+        name="input0",
+        shape=shape,
+        layout=layout,
+        encoding=EncodingConfig.model_validate(
+            {"from": Encoding.NONE, "to": Encoding.NONE}
+        ),
+    )
+
+    assert _follow_onnx_layout(inp, source_shape, source_shape) is None
+    assert (inp.layout, inp.shape) == (layout, shape)
+
+
+@pytest.mark.parametrize(
+    ("source_shapes", "converted_shape", "expected_shape", "expected_layout"),
+    [
+        ({"input0": [1, 8, 8, 4]}, [1, 4, 8, 8], [1, 4, 8, 8], "NCHW"),
+        ({"input0": [1, 8, 8, 4]}, [1, 8, 8, 4], [1, 8, 8, 4], "NHWC"),
+        ({}, [1, 4, 8, 8], [1, 8, 8, 4], "NHWC"),
+    ],
+    ids=["moved", "kept", "no-source-shape"],
 )
 def test_tflite_raw_layout_tracks_converted_onnx_shape(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    source_shapes: dict[str, list[int]],
     converted_shape: list[int],
     expected_shape: list[int],
     expected_layout: str,
@@ -85,7 +116,7 @@ def test_tflite_raw_layout_tracks_converted_onnx_shape(
             Path(target), shape=converted_shape
         ),
     )
-    _mock_tflite_metadata(monkeypatch, {"input0": [1, 8, 8, 4]})
+    _mock_tflite_metadata(monkeypatch, source_shapes)
 
     exporter._transform_tflite_to_onnx()
 

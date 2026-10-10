@@ -25,6 +25,7 @@ from modelconverter.utils import (
 )
 from modelconverter.utils.config import (
     ImageCalibrationConfig,
+    InputConfig,
     SingleStageConfig,
     broadcast_preprocessing_values,
 )
@@ -168,17 +169,7 @@ class HailoExporter(Exporter):
         npz = dict(runner.get_params())
 
         hn_layers = hn["layers"]
-
-        map_list = []
-        for layer in hn_layers.values():
-            if layer["type"] == "output_layer":
-                input_name = layer["input"][0]
-                context = input_name.split("/")[0]
-                orig_name = layer["original_names"][0]
-                new_name = f"{context}/{orig_name}"
-                map_list.append((input_name, new_name))
-
-        name_map = dict(map_list)
+        name_map = _onnx_output_names(hn_layers)
 
         new_layers = {}
         for name, layer in hn_layers.items():
@@ -190,15 +181,7 @@ class HailoExporter(Exporter):
             new_layers[new_name] = layer
 
         hn["layers"] = new_layers
-
-        updated_npz = {}
-        for key, val in npz.items():
-            for old, new in name_map.items():
-                if old in key:
-                    key = key.replace(old, new)
-                    break
-            updated_npz[key] = val
-        npz = updated_npz
+        npz = _rename_params(npz, name_map)
 
         outputs = hn["net_params"]["output_layers_order"]
         hn["net_params"]["output_layers_order"] = [
@@ -235,39 +218,7 @@ class HailoExporter(Exporter):
             calib_dataset = np.zeros((len(images), *shape), dtype=np.float32)
 
             for idx, img_path in enumerate(images):
-                if is_user_calibration_tensor(img_path, calib):
-                    img = read_user_calibration_tensor(
-                        img_path,
-                        raw_shape=shape,
-                        data_type=inp.data_type,
-                        input_name=orig_name,
-                    )
-                    if img_path.suffix.lower() == ".npy" and img.shape == (
-                        1,
-                        *shape,
-                    ):
-                        img = img[0]
-                else:
-                    img, layout = self._read_calibration_file(
-                        inp, calib, img_path
-                    )
-                    if (
-                        calib.generated_from_random
-                        and img.ndim == 4
-                        and len(shape) == 3
-                        and "N" in layout
-                        and layout.count("C") == 1
-                    ):
-                        # Hailo moves the channel axis last even for non-image
-                        # inputs. Shape equality cannot reveal that move when
-                        # the axes have equal sizes.
-                        sample_layout = channels_last_4d_layout(
-                            layout
-                        ).replace("N", "", 1)
-                        img = reorder_layout(img, layout, sample_layout)
-                    elif img.shape != tuple(shape):
-                        img = _fit_hailo_sample(img, shape, layout)
-
+                img = self._read_hailo_sample(inp, calib, img_path, shape)
                 if img.shape != tuple(shape):
                     raise ModelconverterException(
                         f"Calibration data for input '{orig_name}' has shape "
@@ -279,6 +230,42 @@ class HailoExporter(Exporter):
             data[name] = calib_dataset
 
         return data
+
+    def _read_hailo_sample(
+        self,
+        inp: InputConfig,
+        calib: ImageCalibrationConfig,
+        path: Path,
+        shape: list[int],
+    ) -> np.ndarray:
+        """Read one calibration sample in the sample shape of Hailo."""
+        if is_user_calibration_tensor(path, calib):
+            img = read_user_calibration_tensor(
+                path,
+                raw_shape=shape,
+                data_type=inp.data_type,
+                input_name=inp.name,
+            )
+            if path.suffix.lower() == ".npy" and img.shape == (1, *shape):
+                return img[0]
+            return img
+
+        img, layout = self._read_calibration_file(inp, calib, path)
+        if (
+            calib.generated_from_random
+            and img.ndim == 4
+            and len(shape) == 3
+            and "N" in layout
+            and layout.count("C") == 1
+        ):
+            # Hailo moves the channel axis last even for non-image inputs.
+            # Shape equality cannot reveal that move when the axes have
+            # equal sizes.
+            sample_layout = channels_last_4d_layout(layout).replace("N", "", 1)
+            return reorder_layout(img, layout, sample_layout)
+        if img.shape != tuple(shape):
+            return _fit_hailo_sample(img, shape, layout)
+        return img
 
     def _calibrate(self, har_path: Path) -> str:
         logger.info("Calibrating model.")
@@ -380,6 +367,30 @@ def _is_hwc_sample(shape: list[int], layout: str) -> bool:
         {"H", "W", "C"},
         {"N", "H", "W", "C"},
     )
+
+
+def _onnx_output_names(hn_layers: dict[str, dict]) -> dict[str, str]:
+    """Map the layer that feeds each output layer to its ONNX name."""
+    name_map = {}
+    for layer in hn_layers.values():
+        if layer["type"] != "output_layer":
+            continue
+        input_name = layer["input"][0]
+        context = input_name.split("/")[0]
+        name_map[input_name] = f"{context}/{layer['original_names'][0]}"
+    return name_map
+
+
+def _rename_params(
+    npz: dict[str, np.ndarray], name_map: dict[str, str]
+) -> dict[str, np.ndarray]:
+    """Apply the first rename of ``name_map`` that matches each key."""
+    renamed = {}
+    for key, value in npz.items():
+        old = next((old for old in name_map if old in key), None)
+        new_key = key if old is None else key.replace(old, name_map[old])
+        renamed[new_key] = value
+    return renamed
 
 
 def _fit_hailo_sample(
