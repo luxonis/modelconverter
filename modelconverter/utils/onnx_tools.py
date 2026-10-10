@@ -1009,9 +1009,7 @@ class ONNXModifier:
             constant_val, _ = constant
             if seq_node.op == "Add":
                 bias += constant_val
-            elif seq_node.op == "Sub":
-                bias -= constant_val
-            elif seq_node.op == "Mul":
+            else:
                 scale *= constant_val
         return scale, bias
 
@@ -1449,7 +1447,7 @@ def _shift_conv_bias(
     """Fold the value of an ``Add`` before a Conv into the Conv bias.
 
     ``weights`` are the Conv weights that the added value passes
-    through. A Conv without a bias gets one.
+    through.
     """
     shift = np.sum(add_value * weights.values, axis=(1, 2, 3))
     if len(conv_node.inputs) > 2:

@@ -242,9 +242,8 @@ class _ConversionRecord:
         """Log the resource usage and send the result event."""
         peak_ram_bytes = peak_ram_usage_bytes()
         logger.info(f"Peak RAM usage: {peak_ram_bytes / (1024 * 1024):.2f} MB")
-        logger.info(
-            f"Conversion finished in {time.monotonic() - self.start:.2f} seconds"
-        )
+        elapsed = time.monotonic() - self.start
+        logger.info(f"Conversion finished in {elapsed:.2f} seconds")
         failure_reason = runtime_failure_reason_from_exception(
             caught_exc, phase=self.phase
         )

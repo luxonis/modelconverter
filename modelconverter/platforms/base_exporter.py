@@ -494,7 +494,8 @@ class Exporter(ABC):
         of the original. A failed optimization keeps the original.
 
         Args:
-            skip_optimization: Passed on to `ONNXModifier`.
+            skip_optimization: Skip the graph optimization that
+                `ONNXModifier` runs when it loads and exports the model.
         """
         onnx_modifier = ONNXModifier(
             model_path=self._input_model,

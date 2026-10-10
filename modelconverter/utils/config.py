@@ -1202,7 +1202,7 @@ class SingleStageConfig(BaseModelExtraForbid):
         input_file_type = InputFileType.from_path(model_path)
         data["input_file_type"] = input_file_type.value
         if input_file_type == InputFileType.PYTORCH:
-            metadata = _yolo_metadata(data)
+            metadata = _yolo_metadata(data.pop("yolo_input_shape", [640, 640]))
         else:
             metadata = get_metadata(model_path)
 
@@ -1415,14 +1415,13 @@ def _default_encoding(data: Params) -> dict[str, str]:
     return {"from": "NONE", "to": "NONE"}
 
 
-def _yolo_metadata(data: Params) -> Metadata:
+def _yolo_metadata(raw_shape: ParamValue) -> Metadata:
     """Build the metadata of a YOLO PyTorch model.
 
-    The input shape comes from ``yolo_input_shape``: two sizes split
-    by a space, one size for a square input, or 640 by 640 by default.
+    ``raw_shape`` is the ``yolo_input_shape`` of the config: two sizes
+    split by a space, one size for a square input, or a list of sizes.
     """
     logger.info("Detected PyTorch model. Only YOLO models are supported.")
-    raw_shape = data.pop("yolo_input_shape", [640, 640])
     if isinstance(raw_shape, str):
         input_shape = (
             [int(size) for size in raw_shape.split(" ")]

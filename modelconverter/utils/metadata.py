@@ -90,10 +90,7 @@ def _get_metadata_dlc(path: Path) -> Metadata:
         section = _dlc_section(content, typ)
         if section is None:
             continue
-        csv_text = _table_to_csv(section)
-        if not csv_text.strip():  # pragma: no cover
-            continue
-        metadata |= _dlc_tensor_metadata(csv_text, typ)
+        metadata |= _dlc_tensor_metadata(_table_to_csv(section), typ)
     return Metadata(**metadata)
 
 

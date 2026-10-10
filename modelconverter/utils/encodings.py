@@ -207,11 +207,8 @@ def _encoding_group_names(entries: ParamValue) -> set[str]:
         )
 
     names = set()
-    for item in entries:
-        if not isinstance(item, dict):
-            raise TypeError(
-                f"Expected dict encoding entry, got {type(item).__name__}."
-            )
+    for entry in entries:
+        item = _as_entry(entry)
         name = item.get("name")
         if not isinstance(name, str) or not name:
             raise ValueError(

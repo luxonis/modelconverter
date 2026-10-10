@@ -525,7 +525,28 @@ class RVC4Benchmark(Benchmark):
         if self._monitor is not None:
             self._monitor.start()
 
-        stdout = self._snpe_parallel_run(profile, runtime)
+        try:
+            _, stdout, _ = self._handler.shell(
+                "snpe-parallel-run "
+                f"--container {self._device_pwd}/model.dlc "
+                f"--input_list {self._device_pwd}/input_list.txt "
+                f"--output_dir {self._device_pwd}/outputs "
+                f"--perf_profile {profile} "
+                "--cpu_fallback true "
+                f"--{runtime}",
+            )
+        except CalledProcessError as e:
+            if e.returncode == 137:
+                raise SubprocessError(
+                    "Benchmark process was killed, likely due to out-of-memory. "
+                    "Consider decreasing the number of images (`--num-images`)."
+                ) from e
+
+            raise SubprocessError(
+                f"Benchmark process failed with return code {e.returncode}.\n"
+                f"stdout:\n{e.stdout}\n"
+                f"stderr:\n{e.stderr}"
+            ) from e
 
         pattern = re.compile(r"(\d+\.\d+) infs/sec")
         match = pattern.search(stdout)
@@ -566,33 +587,6 @@ class RVC4Benchmark(Benchmark):
                 dai.NNArchive(model_archive)
             )
         return dlc_path, input_specs
-
-    def _snpe_parallel_run(self, profile: str, runtime: str) -> str:
-        """Run ``snpe-parallel-run`` on the device and return its stdout."""
-        assert self._handler is not None
-        try:
-            _, stdout, _ = self._handler.shell(
-                "snpe-parallel-run "
-                f"--container {self._device_pwd}/model.dlc "
-                f"--input_list {self._device_pwd}/input_list.txt "
-                f"--output_dir {self._device_pwd}/outputs "
-                f"--perf_profile {profile} "
-                "--cpu_fallback true "
-                f"--{runtime}",
-            )
-        except CalledProcessError as e:
-            if e.returncode == 137:
-                raise SubprocessError(
-                    "Benchmark process was killed, likely due to out-of-memory. "
-                    "Consider decreasing the number of images (`--num-images`)."
-                ) from e
-
-            raise SubprocessError(
-                f"Benchmark process failed with return code {e.returncode}.\n"
-                f"stdout:\n{e.stdout}\n"
-                f"stderr:\n{e.stderr}"
-            ) from e
-        return stdout
 
     def _benchmark_dai(
         self,

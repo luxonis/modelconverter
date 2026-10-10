@@ -118,8 +118,8 @@ class RVC2Exporter(Exporter):
                 [
                     "--input",
                     ",".join(
-                        _mo_input_spec(name, inp, fp16=fp16)
-                        for name, inp in self._inputs.items()
+                        _mo_input_spec(inp, fp16=fp16)
+                        for inp in self._inputs.values()
                     ),
                 ]
             )
@@ -466,9 +466,9 @@ class RVC2Exporter(Exporter):
         }
 
 
-def _mo_input_spec(name: str, inp: InputConfig, *, fp16: bool) -> str:
+def _mo_input_spec(inp: InputConfig, *, fp16: bool) -> str:
     """Describe one input in the ``--input`` syntax of the model optimizer."""
-    spec = name
+    spec = inp.name
     if inp.shape is not None:
         spec += _lst_join(inp.shape, sep=" ")
     if inp.data_type is not None:
