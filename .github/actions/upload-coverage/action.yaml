@@ -1,0 +1,99 @@
+name: Upload coverage
+description: >-
+  Upload the unit coverage, and the conversion coverage of each platform under
+  its own flag, to Codecov.
+
+inputs:
+  directory:
+    description: Directory that holds the `coverage-*.xml` reports.
+    required: true
+  token:
+    description: Codecov upload token.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Collect coverage files
+      id: files
+      shell: bash
+      env:
+        DIRECTORY: ${{ inputs.directory }}
+      run: |
+        set -euo pipefail
+
+        # `download-artifact` leaves the directory out entirely when nothing
+        # matched, and a bare `find` failure hides why.
+        mkdir -p "$DIRECTORY"
+
+        reports() {
+          find "$DIRECTORY" -type f -name "$1" | sort | paste -sd, -
+        }
+
+        unit=$(reports 'coverage-unit.xml')
+        if [[ -z "$unit" ]]; then
+          echo "No unit coverage report found" >&2
+          exit 1
+        fi
+        echo "unit=$unit" >> "$GITHUB_OUTPUT"
+
+        # A `tests/conversion` run inside a platform image writes
+        # `coverage-<platform>-<version>.xml`. A platform without a report
+        # keeps the report that codecov.yaml carries forward.
+        for platform in rvc2 rvc3 rvc4 hailo; do
+          echo "$platform=$(reports "coverage-$platform-*.xml")" >> "$GITHUB_OUTPUT"
+        done
+
+    - name: Upload unit coverage
+      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+      with:
+        token: ${{ inputs.token }}
+        files: ${{ steps.files.outputs.unit }}
+        flags: unit
+        name: unit
+        fail_ci_if_error: false
+        disable_search: true
+
+    - name: Upload RVC2 conversion coverage
+      if: ${{ steps.files.outputs.rvc2 != '' }}
+      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+      with:
+        token: ${{ inputs.token }}
+        files: ${{ steps.files.outputs.rvc2 }}
+        flags: conversion-rvc2
+        name: conversion-rvc2
+        fail_ci_if_error: false
+        disable_search: true
+
+    - name: Upload RVC3 conversion coverage
+      if: ${{ steps.files.outputs.rvc3 != '' }}
+      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+      with:
+        token: ${{ inputs.token }}
+        files: ${{ steps.files.outputs.rvc3 }}
+        flags: conversion-rvc3
+        name: conversion-rvc3
+        fail_ci_if_error: false
+        disable_search: true
+
+    - name: Upload RVC4 conversion coverage
+      if: ${{ steps.files.outputs.rvc4 != '' }}
+      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+      with:
+        token: ${{ inputs.token }}
+        files: ${{ steps.files.outputs.rvc4 }}
+        flags: conversion-rvc4
+        name: conversion-rvc4
+        fail_ci_if_error: false
+        disable_search: true
+
+    - name: Upload Hailo conversion coverage
+      if: ${{ steps.files.outputs.hailo != '' }}
+      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+      with:
+        token: ${{ inputs.token }}
+        files: ${{ steps.files.outputs.hailo }}
+        flags: conversion-hailo
+        name: conversion-hailo
+        fail_ci_if_error: false
+        disable_search: true
