@@ -7,6 +7,7 @@ import numpy as np
 import onnx
 import onnxruntime as ort
 import pytest
+from luxonis_ml.typing import ParamValue
 from onnx import TensorProto
 from PIL import Image
 
@@ -432,16 +433,23 @@ def test_io_normalization_rejects_unsupported_activation_group_shape(
         )
 
 
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [(["not-a-dict"], "must be dicts"), ("raw", "must be a dict or list")],
+    ids=["list-item", "entry"],
+)
 def test_io_normalization_rejects_unsupported_exposed_entry_shape(
-    work_dir: Path,
+    work_dir: Path, entry: ParamValue, message: str
 ):
     exporter = _make_exporter(work_dir, "CUSTOM")
     payload = {
-        "activation_encodings": {"input0": ["not-a-dict"]},
+        "activation_encodings": {"input0": entry},
         "param_encodings": {},
     }
 
-    with pytest.raises(TypeError, match=r"activation_encodings\.input0"):
+    with pytest.raises(
+        TypeError, match=rf"activation_encodings\.input0.*{message}"
+    ):
         exporter._generate_io_encodings(
             QuantizationOverrides.from_payload(payload)
         )

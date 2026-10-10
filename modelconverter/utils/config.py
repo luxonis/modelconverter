@@ -580,21 +580,16 @@ class InputConfig(OutputConfig):
                 "input layout explicitly."
             )
 
-        if self.encoding_mismatch:
-            if not self.is_color_input or self.encoding.to not in {
-                Encoding.RGB,
-                Encoding.BGR,
-            }:
-                raise ValueError(
-                    f"Cannot reverse channels for input '{self.name}': "
-                    "channel reversal requires RGB/BGR color encodings."
-                )
-            if channels != 3:
-                raise ValueError(
-                    f"Cannot reverse channels for input '{self.name}' with "
-                    f"{channels} channels; RGB/BGR reversal requires exactly "
-                    "3 channels."
-                )
+        if self.encoding_mismatch and (
+            not self.is_color_input
+            or self.encoding.to not in {Encoding.RGB, Encoding.BGR}
+        ):
+            # The contract check above already limits RGB and BGR to three
+            # channels.
+            raise ValueError(
+                f"Cannot reverse channels for input '{self.name}': "
+                "channel reversal requires RGB/BGR color encodings."
+            )
 
         return channels
 
@@ -960,13 +955,7 @@ class RVC4Config(PlatformConfig):
 
         if isinstance(value, str):
             if value.lstrip().startswith("{"):
-                loaded = json.loads(value)
-                if not isinstance(loaded, dict):
-                    raise TypeError(
-                        "Expected encodings to deserialize to a dict, "
-                        f"got {type(loaded).__name__}."
-                    )
-                return QuantizationOverrides.from_payload(loaded)
+                return QuantizationOverrides.from_payload(json.loads(value))
             value_path = resolve_path(value, MISC_DIR)
             return QuantizationOverrides.from_path(value_path)
 

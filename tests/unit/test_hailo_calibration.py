@@ -347,6 +347,54 @@ def test_generated_2d_tensor_drops_its_batch_axis(
     np.testing.assert_array_equal(actual, generated)
 
 
+def test_fit_hailo_sample_moves_image_channels_last(
+    hailo_exporter_module: ModuleType,
+) -> None:
+    chw = np.arange(60).reshape(3, 4, 5)
+
+    fitted = hailo_exporter_module._fit_hailo_sample(chw, [4, 5, 3], "CHW")
+
+    np.testing.assert_array_equal(fitted, chw.transpose(1, 2, 0))
+
+
+def test_fit_hailo_sample_drops_an_inner_singleton_batch_axis(
+    hailo_exporter_module: ModuleType,
+) -> None:
+    array = np.arange(6).reshape(2, 1, 3)
+
+    fitted = hailo_exporter_module._fit_hailo_sample(array, [2, 3], "CNH")
+
+    np.testing.assert_array_equal(fitted, array[:, 0, :])
+
+
+def test_fit_hailo_sample_keeps_an_array_it_cannot_fit(
+    hailo_exporter_module: ModuleType,
+) -> None:
+    array = np.arange(6).reshape(2, 3)
+
+    assert (
+        hailo_exporter_module._fit_hailo_sample(array, [3, 2], "CD") is array
+    )
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [(None, True), ("unknown", True), ("2025-04", True), ("2025-07", False)],
+)
+def test_tf_tensor_shapes_follow_the_dfc_version(
+    hailo_exporter_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    version: str | None,
+    expected: bool,
+) -> None:
+    if version is None:
+        monkeypatch.delenv("VERSION", raising=False)
+    else:
+        monkeypatch.setenv("VERSION", version)
+
+    assert hailo_exporter_module._supports_tf_tensor_shapes() is expected
+
+
 def test_disabled_calibration_accepts_archive_preprocessing_retry(
     hailo_exporter_module: ModuleType, tmp_path: Path
 ) -> None:

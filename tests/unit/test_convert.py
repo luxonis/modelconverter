@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, NoReturn
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -44,10 +45,10 @@ class _FakeExporter(Exporter):
         self._inference_model_path = output_dir / "model.dlc"
 
     def exporter_buildinfo(self) -> Params:
-        return {}
+        raise AssertionError("run() is overridden")
 
     def export(self) -> Path:
-        return self.inference_model_path
+        raise AssertionError("run() is overridden")
 
     def run(self) -> Path:
         return self.inference_model_path
@@ -272,15 +273,9 @@ def test_convert_logs_final_artifact_for_each_output_mode(
 def test_archive_preprocess_is_rejected_for_native_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config_was_loaded = False
-
-    def fail_if_called(*_args: object, **_kwargs: object) -> NoReturn:
-        nonlocal config_was_loaded
-        config_was_loaded = True
-        raise AssertionError("configuration must not be loaded")
-
+    get_configs = Mock(side_effect=AssertionError("must not load a config"))
     monkeypatch.setattr(main_module.signal, "signal", lambda *_args: None)
-    monkeypatch.setattr(main_module, "get_configs", fail_if_called)
+    monkeypatch.setattr(main_module, "get_configs", get_configs)
     monkeypatch.setattr(
         main_module,
         "get_component_telemetry",
@@ -301,7 +296,7 @@ def test_archive_preprocess_is_rejected_for_native_output(
         )
 
     assert exc_info.value.code == 1
-    assert not config_was_loaded
+    get_configs.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -438,7 +433,7 @@ def test_fallback_regenerates_random_calibration_for_externalized_domain(
                 )
 
         def exporter_buildinfo(self) -> Params:
-            return {}
+            raise AssertionError("run() is overridden")
 
         def export(self) -> Path:
             raise AssertionError("run() is overridden")
@@ -599,13 +594,7 @@ def test_invalid_preprocessing_is_rejected_before_fallback(
             **input_options,
         },
     )
-    exporter_was_created = False
-
-    def fail_if_called(*_args: object, **_kwargs: object) -> NoReturn:
-        nonlocal exporter_was_created
-        exporter_was_created = True
-        raise AssertionError("invalid preprocessing must fail first")
-
+    get_exporter = Mock(side_effect=AssertionError("must fail before export"))
     monkeypatch.setattr(main_module.signal, "signal", lambda *_args: None)
     monkeypatch.setattr(main_module, "init_dirs", lambda: None)
     monkeypatch.setattr(
@@ -613,7 +602,7 @@ def test_invalid_preprocessing_is_rejected_before_fallback(
         "get_configs",
         lambda *_args, **_kwargs: (cfg, None, next(iter(cfg.stages))),
     )
-    monkeypatch.setattr(main_module, "get_exporter", fail_if_called)
+    monkeypatch.setattr(main_module, "get_exporter", get_exporter)
     monkeypatch.setattr(
         main_module,
         "get_component_telemetry",
@@ -635,7 +624,7 @@ def test_invalid_preprocessing_is_rejected_before_fallback(
         )
 
     assert exc_info.value.code == 1
-    assert not exporter_was_created
+    get_exporter.assert_not_called()
 
 
 def _patch_convert(

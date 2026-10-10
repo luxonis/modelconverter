@@ -9,10 +9,17 @@ afterwards.
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from modelconverter.platforms.base_exporter import Exporter
-from modelconverter.utils.config import Config, SingleStageConfig
+from modelconverter.utils import ModelconverterException
+from modelconverter.utils.config import (
+    Config,
+    ImageCalibrationConfig,
+    InputConfig,
+    SingleStageConfig,
+)
 from modelconverter.utils.types import Platform
 from tests.helpers.onnx_factory import multi_file_external_onnx
 
@@ -88,3 +95,39 @@ def test_run_moves_the_export_and_records_the_buildinfo(
     buildinfo = exporter.output_dir / "buildinfo.json"
     assert buildinfo.is_file()
     assert "modelconverter_version" in json.loads(buildinfo.read_text())
+
+
+def _image_input(**data: object) -> InputConfig:
+    return InputConfig.model_validate(
+        {"name": "input0", "shape": [1, 3, 2, 2], "layout": "NCHW", **data}
+    )
+
+
+def test_invalid_requested_preprocessing_stops_the_export():
+    exporter = object.__new__(StubExporter)
+    exporter._inputs = {
+        "input0": _image_input(encoding={"from": "NONE", "to": "RGB"})
+    }
+
+    with pytest.raises(ModelconverterException, match="RGB/BGR color"):
+        exporter._validate_requested_preprocessing()
+
+
+def test_user_tensor_is_not_read_as_managed_calibration(tmp_path: Path):
+    path = tmp_path / "sample.npy"
+    np.save(path, np.zeros((1, 3, 2, 2), dtype=np.float32))
+    calibration = ImageCalibrationConfig(path=tmp_path)
+
+    with pytest.raises(ValueError, match="read_user_calibration_tensor"):
+        Exporter._read_calibration_file(_image_input(), calibration, path)
+
+
+def test_generated_array_must_match_its_generation_layout(tmp_path: Path):
+    path = tmp_path / "0.npy"
+    np.save(path, np.zeros((3, 2, 2), dtype=np.float32))
+    calibration = ImageCalibrationConfig(path=tmp_path)
+    calibration._generated_from_random = True
+    calibration._generated_layout = "NCHW"
+
+    with pytest.raises(ModelconverterException, match="generation-time"):
+        Exporter._read_calibration_file(_image_input(), calibration, path)

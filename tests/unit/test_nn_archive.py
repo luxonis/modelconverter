@@ -8,7 +8,8 @@ No network, cloud, Docker or vendor tooling: the dummy ONNX models and NN-archiv
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from types import SimpleNamespace
+from typing import Literal, cast
 
 import pytest
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
@@ -34,9 +35,11 @@ from modelconverter.utils.config import (
 from modelconverter.utils.constants import MISC_DIR, OUTPUTS_DIR
 from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.nn_archive import (
+    _apply_archive_resize_modes,
     _default_archive_preprocessing,
     _get_io_dtype,
     _match_tensor_names,
+    _replace_names,
     _set_resize_mode,
     archive_from_model,
     default_archive_input_type,
@@ -1028,6 +1031,59 @@ def test_configured_resize_method_replaces_the_resize_mode(
     _set_resize_mode(preprocessing, inp, None)
 
     assert preprocessing == {"resize_mode": resize_mode}
+
+
+def test_image_input_takes_the_resize_mode_of_the_archive():
+    inp = InputConfig(name="input0", shape=[1, 3, 4, 4], layout="NCHW")
+    # Only the pinned luxonis-ml release lacks `resize_mode`, so the archive is
+    # a stand-in with the fields that the function reads.
+    archive = SimpleNamespace(
+        model=SimpleNamespace(
+            inputs=[
+                SimpleNamespace(
+                    name="input0",
+                    preprocessing=SimpleNamespace(resize_mode="LETTERBOX"),
+                )
+            ]
+        )
+    )
+
+    _apply_archive_resize_modes([inp], cast(NNArchiveConfig, archive))
+
+    assert isinstance(inp.calibration, RandomCalibrationConfig)
+    assert inp.calibration.resize_method == ResizeMethod.PAD
+
+
+def test_output_count_must_match_the_converted_model(
+    dummy_onnx: Path, tmp_path: Path
+):
+    converted = build_onnx(
+        tmp_path / "converted.onnx",
+        inputs=[
+            ("input0", [1, 3, 64, 64], TensorProto.FLOAT),
+            ("input1", [1, 3, 128, 128], TensorProto.FLOAT),
+        ],
+        outputs=[("output0", [1, 10], TensorProto.FLOAT)],
+    )
+
+    with pytest.raises(ValueError, match="different number of outputs"):
+        _config_to_nn(_config_from_overrides(dummy_onnx), converted)
+
+
+def test_preprocessing_of_an_unknown_input_is_rejected(dummy_onnx: Path):
+    with pytest.raises(ValueError, match="not found: ghost"):
+        _config_to_nn(
+            _config_from_overrides(dummy_onnx),
+            dummy_onnx,
+            preprocessing={"ghost": PreprocessingBlock.model_validate({})},
+        )
+
+
+def test_replace_names_keeps_tuples():
+    assert _replace_names(("boxes", ["boxes"]), {"boxes": "bbox"}) == (
+        "bbox",
+        ["bbox"],
+    )
 
 
 def test_input_default_layout_when_shape_has_zero(dummy_onnx: Path):

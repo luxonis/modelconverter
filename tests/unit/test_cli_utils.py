@@ -86,6 +86,18 @@ def test_output_dir_default_name():
             Path("/app/output/model/model.rvc4.tar.xz"),
             r"C:\Users\me\project\output\model\model.rvc4.tar.xz",
         ),
+        (
+            True,
+            "/home/user/project/output",
+            Path("/app/output"),
+            "/home/user/project/output",
+        ),
+        (
+            True,
+            "/",
+            Path("/app/output/model/model.rvc4.tar.xz"),
+            "/model/model.rvc4.tar.xz",
+        ),
     ],
 )
 def test_display_output_path(
