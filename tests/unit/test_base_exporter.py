@@ -98,6 +98,7 @@ def test_run_moves_the_export_and_records_the_buildinfo(
 
 
 def _image_input(**data: object) -> InputConfig:
+    """An NCHW image input with three channels."""
     return InputConfig.model_validate(
         {"name": "input0", "shape": [1, 3, 2, 2], "layout": "NCHW", **data}
     )

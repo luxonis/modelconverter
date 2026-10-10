@@ -409,7 +409,7 @@ def test_io_normalization_rejects_invalid_flat_activation_name(
         )
 
 
-def test_io_normalization_rejects_flat_activation_entry_that_is_no_dict(
+def test_io_normalization_rejects_flat_activation_entry_that_is_not_a_dict(
     work_dir: Path,
 ):
     exporter = _make_exporter(work_dir, "CUSTOM")

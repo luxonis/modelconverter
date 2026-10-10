@@ -1,5 +1,4 @@
-# Every line that the tests can reach is covered, and these statuses keep it
-# so. Exclude a line that no test can reach with `# pragma: no cover`, or a
+# Mark a line that no test can reach with `# pragma: no cover`, or list its
 # file in `[tool.coverage.run] omit` of pyproject.toml.
 coverage:
   status:

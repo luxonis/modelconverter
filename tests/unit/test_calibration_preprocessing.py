@@ -101,16 +101,14 @@ def test_normalizing_without_channel_axis_is_rejected():
 
 
 def _preprocessing(
-    *,
-    reverse: bool = False,
-    mean_values: tuple[float, ...] | None = None,
-    scale_values: tuple[float, ...] | None = None,
+    *, reverse: bool = False, mean_values: tuple[float, ...] | None = None
 ) -> CalibrationPreprocessing:
+    """Preprocessing of an RGB float image input."""
     return CalibrationPreprocessing(
         encoding_from=Encoding.RGB,
         encoding_to=Encoding.BGR if reverse else Encoding.RGB,
         mean_values=mean_values,
-        scale_values=scale_values,
+        scale_values=None,
         data_type=DataType.FLOAT32,
         is_image=True,
     )
@@ -119,7 +117,7 @@ def _preprocessing(
 def test_layout_must_name_every_array_axis():
     with pytest.raises(ModelconverterException, match="cannot use layout"):
         apply_calibration_preprocessing(
-            np.ones((3, 2, 2)), _preprocessing(reverse=True), layout="NCHW"
+            np.ones((3, 2, 2)), _preprocessing(), layout="NCHW"
         )
 
 

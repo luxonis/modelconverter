@@ -584,8 +584,6 @@ class InputConfig(OutputConfig):
             not self.is_color_input
             or self.encoding.to not in {Encoding.RGB, Encoding.BGR}
         ):
-            # The contract check above already limits RGB and BGR to three
-            # channels.
             raise ValueError(
                 f"Cannot reverse channels for input '{self.name}': "
                 "channel reversal requires RGB/BGR color encodings."

@@ -21,8 +21,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Holds the upload action, and codecov-action builds the path-fixing
-      # file network from the checked out repository.
+      # The upload action is in the repository, and codecov-action builds
+      # its path-fixing file network from the checkout.
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
