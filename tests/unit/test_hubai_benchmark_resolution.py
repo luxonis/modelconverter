@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Protocol
 from unittest.mock import Mock
 
 import pytest
@@ -14,6 +15,11 @@ from modelconverter.utils.types import DataType
 MODEL = "luxonis/example"
 VARIANT = "default"
 Catalog = tuple[Mock, list[SimpleNamespace], dict[str, list[SimpleNamespace]]]
+
+
+class _ModelTypeWithValue(Protocol):
+    @property
+    def value(self) -> str: ...
 
 
 def _version(
@@ -70,11 +76,13 @@ def catalog(monkeypatch: pytest.MonkeyPatch) -> Catalog:
             )
         ]
 
-    def list_instances(**kwargs: object) -> list[SimpleNamespace]:
+    def list_instances(
+        *, variant_id: str, model_type: _ModelTypeWithValue, **_: object
+    ) -> list[SimpleNamespace]:
         return [
             item
-            for item in instances[kwargs["variant_id"]]
-            if item.model_type.value == kwargs["model_type"].value
+            for item in instances[variant_id]
+            if item.model_type.value == model_type.value
         ]
 
     client.variants.list_variants.side_effect = list_variants
@@ -167,6 +175,7 @@ def test_hash_selects_instance_across_versions(
     benchmark = RVC4Benchmark(f"{MODEL}:{VARIANT}:{reference}")
 
     assert benchmark._model_instance == "1111111".ljust(32, "0")
+    assert benchmark._hubai_instance is not None
     assert benchmark._hubai_instance.model_version_id == "v1"
 
 
@@ -178,6 +187,7 @@ def test_hash_must_match_benchmark_platform(catalog: Catalog):
         RVC4Benchmark(f"{MODEL}:{VARIANT}:1111111")
 
     benchmark = RVC2Benchmark(f"{MODEL}:{VARIANT}:1111111")
+    assert benchmark._hubai_instance is not None
     assert benchmark._hubai_instance.model_type.value == "RVC2"
 
 
