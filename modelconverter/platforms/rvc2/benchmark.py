@@ -29,6 +29,8 @@ from modelconverter.utils.log_latency import (
 class RVC2Benchmark(Benchmark):
     """Benchmark of a model running on a connected RVC2 device."""
 
+    _HUBAI_PLATFORM = "RVC2"
+
     @property
     def default_configuration(self) -> Configuration:
         """Default configuration for RVC2 benchmarking.
