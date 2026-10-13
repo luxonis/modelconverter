@@ -30,6 +30,7 @@ dependencies = [
   "onnxsim~=0.6",
   "onnxslim~=0.1",
   "psutil",
+  "semver>=3,<4",
   "wget",
 ]
 

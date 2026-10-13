@@ -59,7 +59,7 @@ def catalog(monkeypatch: pytest.MonkeyPatch) -> Catalog:
     }
     client = Mock()
     client.models.get_model.return_value = SimpleNamespace(
-        id="model-id", team_slug="luxonis"
+        id="model-id", team_slug="luxonis", is_public=True
     )
 
     def list_variants(**kwargs: object) -> list[SimpleNamespace]:
@@ -163,8 +163,24 @@ def test_version_searches_only_that_version(catalog: Catalog):
 
     assert benchmark._model_instance == "1111111".ljust(32, "0")
     assert client.instances.list_instances.call_count == 1
+    assert client.variants.list_variants.call_args.kwargs["is_public"] is True
+    assert (
+        client.instances.list_instances.call_args.kwargs["is_public"] is True
+    )
     assert (
         client.instances.list_instances.call_args.kwargs["variant_id"] == "v1"
+    )
+
+
+def test_private_model_uses_private_visibility(catalog: Catalog):
+    client, _, _ = catalog
+    client.models.get_model.return_value.is_public = False
+
+    RVC4Benchmark(f"{MODEL}:{VARIANT}:1111111")
+
+    assert client.variants.list_variants.call_args.kwargs["is_public"] is False
+    assert (
+        client.instances.list_instances.call_args.kwargs["is_public"] is False
     )
 
 

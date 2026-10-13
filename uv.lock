@@ -2359,6 +2359,7 @@ dependencies = [
     { name = "onnxslim" },
     { name = "pillow" },
     { name = "psutil" },
+    { name = "semver" },
     { name = "wget" },
 ]
 
@@ -2411,6 +2412,7 @@ requires-dist = [
     { name = "plotly", marker = "extra == 'analysis'" },
     { name = "polars", marker = "extra == 'analysis'" },
     { name = "psutil" },
+    { name = "semver", specifier = ">=3,<4" },
     { name = "wget" },
 ]
 provides-extras = ["bench", "analysis"]

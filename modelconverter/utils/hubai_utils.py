@@ -46,7 +46,10 @@ def is_hubai_model_variant_available(
         return False
     return bool(
         client.variants.list_variants(
-            model_id=model.id, variant_slug=model_variant, limit=1
+            model_id=model.id,
+            variant_slug=model_variant,
+            is_public=model.is_public,
+            limit=1,
         )
     )
 
@@ -127,6 +130,7 @@ def resolve_hubai_benchmark_model(
             model_id=model.id,
             variant_slug=variant_slug,
             variant_version=reference if is_version else None,
+            is_public=model.is_public,
             limit=_LIST_LIMIT,
         ),
         "variant versions",
@@ -156,6 +160,7 @@ def resolve_hubai_benchmark_model(
                 model_id=model.id,
                 variant_id=version.id,
                 model_type=model_type,
+                is_public=model.is_public,
                 limit=_LIST_LIMIT,
             ),
             "instances",
