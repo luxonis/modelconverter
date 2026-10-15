@@ -74,6 +74,18 @@ def test_golden_gray_crop_no_resize():
     assert np.allclose(img, expected)
 
 
+def test_none_encoding_keeps_the_image_mode(tmp_path: Path):
+    path = tmp_path / "gray.png"
+    Image.new("L", (8, 6), color=7).save(path)
+
+    arr = read_image(
+        path, [6, 8], Encoding.NONE, ResizeMethod.RESIZE, transpose=False
+    )
+
+    assert arr.shape == (6, 8, 1)
+    assert (arr == 7).all()
+
+
 def test_transpose_true():
     expected = _golden("resized.png").transpose(2, 0, 1)
     img = read_image(

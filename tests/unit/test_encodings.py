@@ -12,7 +12,7 @@ import json
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from luxonis_ml.typing import Params
+from luxonis_ml.typing import Params, ParamValue
 
 from modelconverter.utils.config import Encodings
 from modelconverter.utils.encodings import (
@@ -223,6 +223,22 @@ def test_collect_quantization_override_names_from_raw_payload():
 
     assert activation_names == {"act"}
     assert parameter_names == {"weight"}
+
+
+@pytest.mark.parametrize(
+    ("group", "error", "message"),
+    [
+        ("act", TypeError, "list or dict"),
+        (["act"], TypeError, "Expected dict encoding entry"),
+        ([{"bitwidth": 8}], ValueError, "invalid tensor name"),
+    ],
+    ids=["group-not-a-collection", "entry-not-a-dict", "entry-without-name"],
+)
+def test_collect_quantization_override_names_rejects_malformed_group(
+    group: ParamValue, error: type[Exception], message: str
+):
+    with pytest.raises(error, match=message):
+        collect_quantization_override_names({"activation_encodings": group})
 
 
 def test_list_json_raises_type_error():

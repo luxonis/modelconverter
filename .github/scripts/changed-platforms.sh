@@ -27,15 +27,17 @@ while IFS= read -r file; do
   case "${file}" in
     # Documentation and repository chores never reach an image. `.dockerignore`
     # is not in this group: it defines the build context of every image.
-    *.md | LICENSE | .gitignore | .pre-commit-config.yaml) ;;
+    *.md | LICENSE | .gitignore | .pre-commit-config.yaml | codecov.yaml) ;;
 
     # The conversion tests are unaffected by the other test suites, and the
     # unit tests run on every pull request anyway.
     tests/unit/* | tests/test_benchmark/*) ;;
 
-    # Everything driving the conversion matrix re-runs the whole matrix; the
-    # remaining workflows (publishing, HIL, Semgrep) do not.
-    .github/workflows/ci.yaml | .github/matrix.json | .github/scripts/*)
+    # Everything driving the conversion matrix or uploading its coverage
+    # re-runs the whole matrix; the remaining workflows (publishing, HIL,
+    # Semgrep) do not.
+    .github/workflows/ci.yaml | .github/matrix.json | .github/scripts/* | \
+      .github/actions/upload-coverage/*)
       echo "${ALL}"
       exit 0
       ;;

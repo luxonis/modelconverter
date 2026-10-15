@@ -236,6 +236,28 @@ class RVC4Analyzer(Analyzer):
 
         return input_matcher
 
+    def _load_raw_input(
+        self, input_name: str, img_path: str, dtype: type[np.generic]
+    ) -> np.ndarray:
+        """Read one input file at the size of the DLC input.
+
+        A ``.npy`` file must already hold the input in the right format.
+        """
+        width_height = self._input_sizes[input_name][1:3][::-1]
+        if not img_path.lower().endswith(".npy"):
+            return self._resize_image(img_path, width_height).astype(dtype)
+
+        img_name = Path(img_path).stem
+        loaded = np.load(img_path)
+        if not isinstance(loaded, np.ndarray):
+            raise TypeError(f"Input `{img_name}` is not a single array.")
+        raw_image = loaded.astype(dtype)
+        if raw_image.shape != tuple(width_height):
+            raise ValueError(
+                f"Input image {img_name} has incorrect shape: {raw_image.shape}, expected: {tuple(width_height)}"
+            )
+        return raw_image
+
     def _prepare_raw_inputs(
         self,
         input_matcher: dict[int, dict[str, str]],
@@ -249,9 +271,7 @@ class RVC4Analyzer(Analyzer):
             logger.info("Preparing raw inputs for RVC4 analysis.")
         if reset_workspace:
             self._handler.shell(f"rm -rf {self._device_work_dir()}")
-            self._handler.shell(f"mkdir -p {self._device_input_dir()}")
-        else:
-            self._handler.shell(f"mkdir -p {self._device_input_dir()}")
+        self._handler.shell(f"mkdir -p {self._device_input_dir()}")
 
         input_list = ""
         dlc_matcher = {}
@@ -262,24 +282,7 @@ class RVC4Analyzer(Analyzer):
             dlc_matcher[sample_id] = f"Result_{result_index}"
             for input_name, img_path in input_dict.items():
                 img_name = Path(img_path).stem
-                width_height = self._input_sizes[input_name][1:3][::-1]
-                if img_path.lower().endswith(
-                    ".npy"
-                ):  # expects numpy array to already be in correct format
-                    loaded = np.load(img_path)
-                    if not isinstance(loaded, np.ndarray):
-                        raise TypeError(
-                            f"Input `{img_name}` is not a single array."
-                        )
-                    raw_image = loaded.astype(dtype)
-
-                    if raw_image.shape != tuple(width_height):
-                        raise ValueError(
-                            f"Input image {img_name} has incorrect shape: {raw_image.shape}, expected: {tuple(width_height)}"
-                        )
-                else:
-                    image = self._resize_image(img_path, width_height)
-                    raw_image = image.astype(dtype)
+                raw_image = self._load_raw_input(input_name, img_path, dtype)
 
                 raw_file_name = (
                     f"{input_name}.raw"
@@ -462,62 +465,77 @@ class RVC4Analyzer(Analyzer):
             logger.info("Comparing ONNX and DLC layer outputs.")
         statistics = []
         for i, input_dict in input_matcher.items():
-            onnx_input_dict = {}
-            for input_name, img_path in input_dict.items():
-                shape = _static_spatial_shape(
-                    onnx_input_shapes[input_name], input_name
+            onnx_input_dict = {
+                input_name: self._load_onnx_input(
+                    img_path,
+                    _static_spatial_shape(
+                        onnx_input_shapes[input_name], input_name
+                    ),
                 )
-                if img_path.lower().endswith(".npy"):
-                    image = np.load(img_path)
-                    if image.shape != tuple(shape):
-                        raise ValueError(
-                            f"Input image {img_path} has incorrect shape: {image.shape}, expected: {tuple(shape)}"
-                        )
-                else:
-                    image = self._resize_image(img_path, shape)
-                    image = np.transpose(
-                        image, [2, 0, 1]
-                    )  # NCHW format is assumed by default and resize returns HWC
-                    image = np.expand_dims(image, axis=0).astype(np.float32)
-
-                onnx_input_dict[input_name] = image
-
+                for input_name, img_path in input_dict.items()
+            }
             outputs = session.run(output_names, onnx_input_dict)
-
-            dlc_output_path = dlc_matcher[i]
 
             if verbose:
                 logger.info("Calculating statistics for ONNX and DLC outputs.")
             for layer_name, onnx_layer_output in zip(
                 layer_names, outputs, strict=True
             ):
-                dlc_layer_size = self._output_sizes.get(layer_name)
-                if dlc_layer_size is None:
-                    continue
-
-                # A sequence or map output has no statistics to compare.
-                if not isinstance(onnx_layer_output, np.ndarray):
-                    raise TypeError(
-                        f"Output `{layer_name}` is not a tensor: "
-                        f"{type(onnx_layer_output).__name__}"
-                    )
-
-                with open(dlc_output_path / f"{layer_name}.raw", "rb") as f:
-                    raw_data = f.read()
-
-                dlc_layer_output = np.frombuffer(raw_data, dtype=np.float32)
-                dlc_layer_output = dlc_layer_output.reshape(dlc_layer_size)
-
-                dlc_layer_output = self._transpose_to_match(
-                    dlc_layer_output, onnx_layer_output.shape
+                layer_stats = self._layer_statistics(
+                    layer_name, onnx_layer_output, dlc_matcher[i]
                 )
-
-                layer_stats = self._calculate_statistics(
-                    onnx_layer_output, dlc_layer_output
-                )
-                statistics.append([layer_name, *layer_stats])
+                if layer_stats is not None:
+                    statistics.append(layer_stats)
 
         return statistics
+
+    def _load_onnx_input(self, img_path: str, shape: list[int]) -> np.ndarray:
+        """Read one input file in the NCHW float format of the ONNX model.
+
+        A ``.npy`` file must already hold the input in that format.
+        """
+        if img_path.lower().endswith(".npy"):
+            image = np.load(img_path)
+            if image.shape != tuple(shape):
+                raise ValueError(
+                    f"Input image {img_path} has incorrect shape: {image.shape}, expected: {tuple(shape)}"
+                )
+            return image
+        image = self._resize_image(img_path, shape)
+        # NCHW format is assumed by default and resize returns HWC
+        image = np.transpose(image, [2, 0, 1])
+        return np.expand_dims(image, axis=0).astype(np.float32)
+
+    def _layer_statistics(
+        self, layer_name: str, onnx_layer_output: object, dlc_output_path: Path
+    ) -> list | None:
+        """Compare the ONNX and the DLC output of one layer.
+
+        Returns:
+            The layer name followed by its statistics, or ``None`` for a
+            layer that the DLC does not output.
+        """
+        dlc_layer_size = self._output_sizes.get(layer_name)
+        if dlc_layer_size is None:
+            return None
+
+        # A sequence or map output has no statistics to compare.
+        if not isinstance(onnx_layer_output, np.ndarray):
+            raise TypeError(
+                f"Output `{layer_name}` is not a tensor: "
+                f"{type(onnx_layer_output).__name__}"
+            )
+
+        raw_data = (dlc_output_path / f"{layer_name}.raw").read_bytes()
+        dlc_layer_output = np.frombuffer(raw_data, dtype=np.float32)
+        dlc_layer_output = dlc_layer_output.reshape(dlc_layer_size)
+        dlc_layer_output = self._transpose_to_match(
+            dlc_layer_output, onnx_layer_output.shape
+        )
+        layer_stats = self._calculate_statistics(
+            onnx_layer_output, dlc_layer_output
+        )
+        return [layer_name, *layer_stats]
 
     def _write_layer_comparison_csv(
         self, statistics: list[list], layer_names: list[str]
@@ -627,41 +645,36 @@ class RVC4Analyzer(Analyzer):
 
         return str(pulled_output_dir)
 
+    def _copy_flat(self, dir_path: Path, *, base: Path) -> None:
+        """Copy each file under ``dir_path`` into ``base``.
+
+        The new file name starts with the directories between ``base``
+        and the file, joined by underscores.
+        """
+        for entry in dir_path.iterdir():
+            if entry.is_dir():
+                self._copy_flat(entry, base=base)
+            if not entry.is_file():
+                continue
+
+            prefix = "_".join(entry.parent.relative_to(base).parts)
+            new_file_name = f"{prefix}_{entry.stem}" if prefix else entry.stem
+            new_file_name = self._replace_bad_layer_name(new_file_name)
+
+            dest = base / f"{new_file_name}.raw"
+            if dest.exists() and entry.samefile(dest):
+                continue
+
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(entry, dest)
+
     def _flatten_dlc_outputs(
         self, dlc_matcher: dict[int, Path], *, verbose: bool = True
     ) -> None:
         if verbose:
             logger.info("Flattening SNPE results.")
         for result_path in dlc_matcher.values():
-            root = Path(result_path)
-
-            def walk(dir_path: Path, *, base: Path) -> None:
-                for entry in dir_path.iterdir():
-                    if entry.is_dir():
-                        walk(entry, base=base)
-
-                    if not entry.is_file():
-                        continue
-
-                    relative_path = entry.parent.relative_to(base)
-                    prefix = (
-                        "_".join(relative_path.parts) if relative_path else ""
-                    )
-                    new_file_name = (
-                        f"{prefix}_{entry.stem}" if prefix else entry.stem
-                    )
-                    new_file_name = self._replace_bad_layer_name(
-                        str(new_file_name)
-                    )
-
-                    dest = base / f"{new_file_name}.raw"
-                    if dest.exists() and entry.samefile(dest):
-                        continue
-
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(entry, dest)
-
-            walk(result_path, base=root)
+            self._copy_flat(result_path, base=result_path)
 
             with os.scandir(result_path) as entries:
                 for entry in entries:

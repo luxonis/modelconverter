@@ -25,7 +25,11 @@ from modelconverter.utils import (
     resolve_path,
     sanitize_net_name,
 )
-from modelconverter.utils.config import Config, broadcast_preprocessing_values
+from modelconverter.utils.config import (
+    Config,
+    InputConfig,
+    broadcast_preprocessing_values,
+)
 from modelconverter.utils.constants import (
     CALIBRATION_DIR,
     CONFIGS_DIR,
@@ -173,21 +177,11 @@ def get_configs(
         ValueError: If ``opts`` is a list of odd length.
 
     """
-    opts = opts or []
     # `infer` parses a second config after `convert` has returned, in the same
     # process. Start from the default base so a directory left behind by the
     # previous config cannot resolve this one's relative paths.
     set_input_base(None)
-    if isinstance(opts, list):
-        if len(opts) % 2 != 0:
-            raise ValueError(
-                "Invalid number of overrides. See --help for more information."
-            )
-        overrides: Params = {
-            opts[i]: opts[i + 1] for i in range(0, len(opts), 2)
-        }
-    else:
-        overrides = opts
+    overrides = _parse_overrides(opts)
     if path is not None:
         path_ = resolve_path(path, MISC_DIR)
         if path_.is_dir() or is_nn_archive(path_):
@@ -196,18 +190,31 @@ def get_configs(
         # scripts, encodings, ...) relative to the config file's directory.
         set_input_base(path_.parent)
     cfg = Config.get_config(path, overrides)
+    return cfg, None, _find_main_stage(cfg)
 
-    main_stage_key = None
-    if len(cfg.stages) > 1:
-        for key in cfg.stages:
-            if "yolov8" in key and "seg" in key:
-                logger.info(f"Detected main stage key: {key}")
-                main_stage_key = key
-                break
-    else:
-        main_stage_key = next(iter(cfg.stages.keys()))
 
-    return cfg, None, main_stage_key
+def _parse_overrides(opts: list[str] | Params | None) -> Params:
+    """Turn the CLI overrides into a mapping of keys to values."""
+    if not opts:
+        return {}
+    if not isinstance(opts, list):
+        return opts
+    if len(opts) % 2 != 0:
+        raise ValueError(
+            "Invalid number of overrides. See --help for more information."
+        )
+    return dict(zip(opts[::2], opts[1::2], strict=True))
+
+
+def _find_main_stage(cfg: Config) -> str | None:
+    """Return the only stage, or the YOLOv8 segmentation stage."""
+    if len(cfg.stages) == 1:
+        return next(iter(cfg.stages))
+    for key in cfg.stages:
+        if "yolov8" in key and "seg" in key:
+            logger.info(f"Detected main stage key: {key}")
+            return key
+    return None
 
 
 def extract_preprocessing(
@@ -241,61 +248,22 @@ def extract_preprocessing(
     preprocessing = {}
     for inp in stage_cfg.inputs:
         inp.validate_input_contract()
-        mean = (
-            broadcast_preprocessing_values(inp.mean_values, inp.channel_count)
-            if inp.mean_values is not None
-            else None
-        )
-        scale = (
-            broadcast_preprocessing_values(inp.scale_values, inp.channel_count)
-            if inp.scale_values is not None
-            else None
-        )
-        encoding = inp.encoding
-        layout = inp.layout
+        mean = _broadcast(inp.mean_values, inp.channel_count)
+        scale = _broadcast(inp.scale_values, inp.channel_count)
 
         # Remember the preprocessing for calibration before it is cleared.
         inp._calibration_preprocessing = CalibrationPreprocessing(
-            encoding_from=encoding.from_,
-            encoding_to=encoding.to,
+            encoding_from=inp.encoding.from_,
+            encoding_to=inp.encoding.to,
             mean_values=None if mean is None else tuple(mean),
             scale_values=None if scale is None else tuple(scale),
             data_type=inp.data_type,
             is_image=not inp.is_raw_input,
         )
 
-        if inp.is_raw_input:
-            if mean is not None or scale is not None:
-                preprocessing[inp.name] = PreprocessingBlock.model_validate(
-                    {
-                        "mean": mean,
-                        "scale": scale,
-                        "reverse_channels": None,
-                        "interleaved_to_planar": None,
-                        "dai_type": None,
-                    }
-                )
-        else:
-            # Once preprocessing is externalized, the converted model is fed
-            # directly in the format expected by the source graph.
-            dai_type = make_dai_type(encoding.from_, inp.data_type, layout)
-            identity_value_count = 1 if encoding.from_ == Encoding.GRAY else 3
-
-            preprocessing[inp.name] = PreprocessingBlock.model_validate(
-                {
-                    "mean": mean
-                    if mean is not None
-                    else [0.0] * identity_value_count,
-                    "scale": scale
-                    if scale is not None
-                    else [1.0] * identity_value_count,
-                    "reverse_channels": encoding.from_ == Encoding.RGB,
-                    "interleaved_to_planar": is_interleaved_image_layout(
-                        layout
-                    ),
-                    "dai_type": dai_type,
-                }
-            )
+        block = _archive_preprocessing(inp, mean, scale)
+        if block is not None:
+            preprocessing[inp.name] = block
 
         inp.mean_values = None
         inp.scale_values = None
@@ -303,6 +271,50 @@ def extract_preprocessing(
         inp.encoding.to = Encoding.NONE
 
     return cfg, preprocessing
+
+
+def _broadcast(
+    values: list[float] | None, channels: int | None
+) -> list[float] | None:
+    """Broadcast optional preprocessing values to the channel count."""
+    if values is None:
+        return None
+    return broadcast_preprocessing_values(values, channels)
+
+
+def _archive_preprocessing(
+    inp: InputConfig, mean: list[float] | None, scale: list[float] | None
+) -> PreprocessingBlock | None:
+    """Build the archive preprocessing block of one input.
+
+    A raw input without mean and scale values needs no block.
+    """
+    if inp.is_raw_input:
+        if mean is None and scale is None:
+            return None
+        return PreprocessingBlock.model_validate(
+            {
+                "mean": mean,
+                "scale": scale,
+                "reverse_channels": None,
+                "interleaved_to_planar": None,
+                "dai_type": None,
+            }
+        )
+
+    # Once preprocessing is externalized, the converted model is fed
+    # directly in the format expected by the source graph.
+    encoding = inp.encoding.from_
+    identity_value_count = 1 if encoding == Encoding.GRAY else 3
+    return PreprocessingBlock.model_validate(
+        {
+            "mean": [0.0] * identity_value_count if mean is None else mean,
+            "scale": [1.0] * identity_value_count if scale is None else scale,
+            "reverse_channels": encoding == Encoding.RGB,
+            "interleaved_to_planar": is_interleaved_image_layout(inp.layout),
+            "dai_type": make_dai_type(encoding, inp.data_type, inp.layout),
+        }
+    )
 
 
 def _join_display_path(root: str, relative: Path) -> str:
