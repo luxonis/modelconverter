@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from hubai_sdk import HubAIClient
 from hubai_sdk.errors import ResourceNotFoundError
 from hubai_sdk.utils.environ import environ as hubai_sdk_environ
-from hubai_sdk.utils.sdk_models import ModelInstanceResponse
+from hubai_sdk.utils.sdk_models import (
+    ModelInstanceResponse,
+    ModelResponse,
+    ModelVersionResponse,
+)
 from hubai_sdk.utils.types import ModelType
 from semver import Version
 
@@ -72,6 +76,121 @@ def _require_complete_list(items: list, resource: str) -> list:
     return items
 
 
+def _matching_versions(
+    client: HubAIClient,
+    model: ModelResponse,
+    variant_slug: str | None,
+    reference: str | None,
+    identifier: str,
+    model_identifier: str,
+) -> tuple[list[ModelVersionResponse], str]:
+    """Find the requested variant versions and require one variant slug."""
+    is_version = reference is not None and _is_semver(reference)
+    listed = _require_complete_list(
+        client.variants.list_variants(
+            model_id=model.id,
+            variant_slug=variant_slug,
+            variant_version=reference if is_version else None,
+            is_public=model.is_public,
+            limit=_LIST_LIMIT,
+        ),
+        "variant versions",
+    )
+    versions = [
+        version
+        for version in listed
+        if version.model_id == model.id
+        and (variant_slug is None or version.variant_slug == variant_slug)
+        and (not is_version or version.version == reference)
+    ]
+    if not versions:
+        raise ValueError(f"No HubAI variant version matches '{identifier}'.")
+
+    variant_slugs = {version.variant_slug for version in versions}
+    if len(variant_slugs) > 1:
+        raise ValueError(
+            f"Model '{model_identifier}' has multiple variants: "
+            f"{', '.join(sorted(variant_slugs))}. Specify a variant."
+        )
+    return versions, next(iter(variant_slugs))
+
+
+def _platform_instances(
+    client: HubAIClient,
+    model: ModelResponse,
+    versions: list[ModelVersionResponse],
+    platform: str,
+) -> dict[str, ModelInstanceResponse]:
+    """Collect unique instances deployable to the requested platform."""
+    instances: dict[str, ModelInstanceResponse] = {}
+    for version in versions:
+        listed = _require_complete_list(
+            client.instances.list_instances(
+                model_id=model.id,
+                variant_id=version.id,
+                model_type=ModelType(platform),
+                is_public=model.is_public,
+                limit=_LIST_LIMIT,
+            ),
+            "instances",
+        )
+        for instance in listed:
+            if instance.model_version_id != version.id:
+                continue
+            if (
+                getattr(instance.model_type, "value", instance.model_type)
+                != platform
+            ):
+                continue
+            if not any(
+                getattr(candidate, "value", candidate) == platform
+                for candidate in instance.platforms or []
+            ):
+                continue
+            instances[str(instance.id)] = instance
+    return instances
+
+
+def _select_instance(
+    instances: dict[str, ModelInstanceResponse],
+    identifier: str,
+    platform: str,
+    reference: str | None,
+) -> ModelInstanceResponse:
+    """Apply an optional hash and require exactly one pinned instance."""
+    if reference and not _is_semver(reference):
+        instances = {
+            instance_id: instance
+            for instance_id, instance in instances.items()
+            if reference.casefold()
+            in {
+                str(instance.hash or "").casefold(),
+                str(instance.hash_short or "").casefold(),
+            }
+        }
+
+    if not instances:
+        raise ValueError(
+            f"No {platform} instance matches HubAI model '{identifier}'."
+        )
+    if len(instances) > 1:
+        raise ValueError(
+            f"HubAI model '{identifier}' has multiple {platform} instances. "
+            "Specify a version or a unique instance hash."
+        )
+
+    instance = next(iter(instances.values()))
+    if (
+        not instance.hash
+        or re.fullmatch(r"[0-9a-fA-F]{32}", instance.hash) is None
+    ):
+        raise ValueError(
+            f"HubAI instance '{instance.id}' has no full MD5 hash and cannot "
+            "be pinned."
+        )
+    return instance
+
+
 def resolve_hubai_benchmark_model(
     identifier: str, platform: str
 ) -> ResolvedHubAIModel:
@@ -122,91 +241,15 @@ def resolve_hubai_benchmark_model(
     model_identifier = f"{team}/{model_name}" if team else model_name
     client = create_hubai_client()
     model = client.models.get_model(model_identifier)
-    model_type = ModelType(platform)
-
-    is_version = reference is not None and _is_semver(reference)
-    versions = _require_complete_list(
-        client.variants.list_variants(
-            model_id=model.id,
-            variant_slug=variant_slug,
-            variant_version=reference if is_version else None,
-            is_public=model.is_public,
-            limit=_LIST_LIMIT,
-        ),
-        "variant versions",
+    versions, selected_variant = _matching_versions(
+        client, model, variant_slug, reference, identifier, model_identifier
     )
-    versions = [
-        version
-        for version in versions
-        if version.model_id == model.id
-        and (variant_slug is None or version.variant_slug == variant_slug)
-        and (not is_version or version.version == reference)
-    ]
-    if not versions:
-        raise ValueError(f"No HubAI variant version matches '{identifier}'.")
-
-    variant_slugs = {version.variant_slug for version in versions}
-    if len(variant_slugs) > 1:
-        raise ValueError(
-            f"Model '{model_identifier}' has multiple variants: "
-            f"{', '.join(sorted(variant_slugs))}. Specify a variant."
-        )
-    selected_variant = next(iter(variant_slugs))
-
-    instances = {}
-    for version in versions:
-        listed = _require_complete_list(
-            client.instances.list_instances(
-                model_id=model.id,
-                variant_id=version.id,
-                model_type=model_type,
-                is_public=model.is_public,
-                limit=_LIST_LIMIT,
-            ),
-            "instances",
-        )
-        for instance in listed:
-            if (
-                instance.model_version_id == version.id
-                and getattr(instance.model_type, "value", instance.model_type)
-                == platform
-                and any(
-                    getattr(candidate, "value", candidate) == platform
-                    for candidate in instance.platforms or []
-                )
-            ):
-                instances[instance.id] = instance
-
-    if reference and not is_version:
-        instances = {
-            instance_id: instance
-            for instance_id, instance in instances.items()
-            if reference.casefold()
-            in {
-                str(instance.hash or "").casefold(),
-                str(instance.hash_short or "").casefold(),
-            }
-        }
-
-    if not instances:
-        raise ValueError(
-            f"No {platform} instance matches HubAI model '{identifier}'."
-        )
-    if len(instances) > 1:
-        raise ValueError(
-            f"HubAI model '{identifier}' has multiple {platform} instances. "
-            "Specify a version or a unique instance hash."
-        )
-
-    instance = next(iter(instances.values()))
-    if (
-        not instance.hash
-        or re.fullmatch(r"[0-9a-fA-F]{32}", instance.hash) is None
-    ):
-        raise ValueError(
-            f"HubAI instance '{instance.id}' has no full MD5 hash and cannot "
-            "be pinned."
-        )
+    instance = _select_instance(
+        _platform_instances(client, model, versions, platform),
+        identifier,
+        platform,
+        reference,
+    )
     team_slug = team or model.team_slug
     if not team_slug:
         raise ValueError(
