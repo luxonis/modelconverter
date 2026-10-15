@@ -7,6 +7,7 @@ import numpy as np
 import onnx
 import onnxruntime as ort
 import pytest
+from luxonis_ml.typing import ParamValue
 from onnx import TensorProto
 from PIL import Image
 
@@ -408,6 +409,18 @@ def test_io_normalization_rejects_invalid_flat_activation_name(
         )
 
 
+def test_io_normalization_rejects_flat_activation_entry_that_is_not_a_dict(
+    work_dir: Path,
+):
+    exporter = _make_exporter(work_dir, "CUSTOM")
+    payload = {"activation_encodings": ["input0"], "param_encodings": {}}
+
+    with pytest.raises(TypeError, match="must be dicts"):
+        exporter._generate_io_encodings(
+            QuantizationOverrides.from_payload(payload)
+        )
+
+
 def test_io_normalization_rejects_unsupported_activation_group_shape(
     work_dir: Path,
 ):
@@ -420,16 +433,23 @@ def test_io_normalization_rejects_unsupported_activation_group_shape(
         )
 
 
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [(["not-a-dict"], "must be dicts"), ("raw", "must be a dict or list")],
+    ids=["list-item", "entry"],
+)
 def test_io_normalization_rejects_unsupported_exposed_entry_shape(
-    work_dir: Path,
+    work_dir: Path, entry: ParamValue, message: str
 ):
     exporter = _make_exporter(work_dir, "CUSTOM")
     payload = {
-        "activation_encodings": {"input0": ["not-a-dict"]},
+        "activation_encodings": {"input0": entry},
         "param_encodings": {},
     }
 
-    with pytest.raises(TypeError, match=r"activation_encodings\.input0"):
+    with pytest.raises(
+        TypeError, match=rf"activation_encodings\.input0.*{message}"
+    ):
         exporter._generate_io_encodings(
             QuantizationOverrides.from_payload(payload)
         )
@@ -626,6 +646,44 @@ def test_externalized_calibration_image_is_written_in_model_domain(
     np.testing.assert_array_equal(
         actual, np.array([[[45.0, 45.0, 45.0]]], dtype=np.float32)
     )
+
+
+def test_generated_calibration_of_externalized_image_is_written_nhwc(
+    tmp_path: Path,
+):
+    shape = [1, 3, 2, 2]
+    model = single_io_onnx(
+        tmp_path / "model.onnx", shape=shape, output_shape=shape
+    ).resolve()
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": shape,
+            "layout": "NCHW",
+            "encoding": "RGB",
+            "mean_values": 10,
+            "scale_values": 2,
+            "calibration": "random",
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+        },
+    )
+    extract_preprocessing(config)
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+    calibration = exporter.inputs["input0"].calibration
+    assert isinstance(calibration, ImageCalibrationConfig)
+    generated = np.load(calibration.path / "0.npy").astype(np.float32)
+
+    input_list = exporter._prepare_calibration_data()
+
+    first_entry = input_list.read_text().splitlines()[0]
+    raw_path = Path(first_entry.split(":=", 1)[1])
+    actual = np.fromfile(raw_path, dtype=np.float32).reshape(1, 2, 2, 3)
+    expected = ((generated - 10) / 2).transpose(0, 2, 3, 1)
+    np.testing.assert_allclose(actual, expected)
 
 
 def test_externalized_calibration_matches_embedded_model_output(

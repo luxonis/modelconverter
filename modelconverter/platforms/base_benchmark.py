@@ -97,6 +97,21 @@ def get_input_fps(configuration: Configuration) -> float:
     return input_fps
 
 
+def _label_benchmark_time(configuration: Configuration) -> None:
+    """Keep either the benchmark time or the repetitions in a result."""
+    benchmark_time = configuration.get("benchmark_time")
+    if not (isinstance(benchmark_time, int) and benchmark_time > 0):
+        configuration.pop("benchmark_time", None)
+        return
+    items = list(configuration.items())
+    configuration.clear()
+    for key, value in items:
+        if key == "benchmark_time":
+            configuration["benchmark_time (s)"] = value
+        elif key != "repetitions":
+            configuration[key] = value
+
+
 class Benchmark(ABC):
     """Base class for benchmarking a converted model on a device.
 
@@ -349,22 +364,7 @@ class Benchmark(ABC):
 
         """
         logger.info(f"Running benchmarking for {self.model_name}")
-        # `all_configurations` names only the options it varies, so the
-        # rest have to come from the defaults. An explicit null stays
-        # null.
-        for key, default in self.default_configuration.items():
-            value = kwargs.get(key, default)
-            # `bool` accepts any object, so it turns the string "false"
-            # into `True`. A boolean option keeps its value and
-            # `get_option` refuses a value of the wrong type.
-            if (
-                default is not None
-                and value is not None
-                and not isinstance(default, bool)
-            ):
-                value = type(default)(value)
-            kwargs[key] = value
-
+        self._cast_overrides(kwargs)
         if not full:
             configurations = [{**self.default_configuration, **kwargs}]
         else:
@@ -381,20 +381,29 @@ class Benchmark(ABC):
             logger.info(f"Running with configuration: {configuration}")
             results.append((configuration, self.benchmark(configuration)))
 
-        # Clean up configuration keys: keep either benchmark_time or repetitions
         for configuration, _ in results:
-            benchmark_time = configuration.get("benchmark_time")
-            if isinstance(benchmark_time, int) and benchmark_time > 0:
-                items = list(configuration.items())
-                configuration.clear()
-                for k, v in items:
-                    if k == "benchmark_time":
-                        configuration["benchmark_time (s)"] = v
-                    elif k != "repetitions":
-                        configuration[k] = v
-            else:
-                configuration.pop("benchmark_time", None)
+            _label_benchmark_time(configuration)
 
         self.print_results(results)
         if save:
             self.save_results(results)
+
+    def _cast_overrides(self, overrides: Configuration) -> None:
+        """Fill the overrides with the defaults and cast them to their type.
+
+        `all_configurations` names only the options it varies, so the
+        rest have to come from the defaults. An explicit null stays
+        null.
+        """
+        for key, default in self.default_configuration.items():
+            value = overrides.get(key, default)
+            # `bool` accepts any object, so it turns the string "false"
+            # into `True`. A boolean option keeps its value and
+            # `get_option` refuses a value of the wrong type.
+            if (
+                default is not None
+                and value is not None
+                and not isinstance(default, bool)
+            ):
+                value = type(default)(value)
+            overrides[key] = value

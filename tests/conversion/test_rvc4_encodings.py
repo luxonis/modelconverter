@@ -33,6 +33,7 @@ Run inside the RVC4 Docker image::
 
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -179,22 +180,10 @@ def test_rvc4_strict_encodings_reject_unknown_before_qualcomm(
     encodings_path = tmp_path / "encodings_bogus_activation.json"
     encodings_path.write_text(json.dumps(encodings, indent=2))
 
-    subprocess_calls: list[tuple[str, list[str]]] = []
-
-    def record_subprocess_call(
-        self: RVC4Exporter,
-        args: list[str],
-        meta_name: str,
-        **kwargs: object,
-    ) -> None:
-        subprocess_calls.append((meta_name, list(args)))
-        pytest.fail(f"Qualcomm subprocess unexpectedly invoked: {args}")
-
-    monkeypatch.setattr(
-        RVC4Exporter,
-        "_subprocess_run",
-        record_subprocess_call,
+    subprocess_run = Mock(
+        side_effect=AssertionError("Qualcomm subprocess unexpectedly invoked")
     )
+    monkeypatch.setattr(RVC4Exporter, "_subprocess_run", subprocess_run)
 
     output_name = (
         f"_rvc4-strict-bogus-activation-{override_source.replace('.', '_')}"
@@ -233,5 +222,5 @@ def test_rvc4_strict_encodings_reject_unknown_before_qualcomm(
     assert "Invalid RVC4 quantization override names" in error
     assert "activation_encodings=['nonexistent_activation']" in error
     assert "param_encodings=[]" in error
-    assert subprocess_calls == []
+    subprocess_run.assert_not_called()
     assert not list((OUTPUTS_DIR / output_name).glob("*.dlc"))

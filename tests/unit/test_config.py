@@ -167,6 +167,12 @@ def test_explicit_stage_key_is_preserved(name: str | None, stage_key: str):
     assert set(restored.stages) == {stage_key}
 
 
+def test_config_instance_validates_as_itself():
+    config = Config.get_config(None, {"input_model": str(_dummy())})
+
+    assert Config.model_validate(config) is config
+
+
 @pytest.mark.parametrize("explicit_stages", [False, True])
 def test_cli_name_overrides_yaml_name(tmp_path: Path, explicit_stages: bool):
     dummy = _dummy()
@@ -495,6 +501,12 @@ def test_inferred_fallback_layout_rejects_preprocessing():
         inp.validate_preprocessing()
 
 
+def test_revalidated_input_keeps_its_explicit_layout():
+    inp = InputConfig(name="i", shape=[2, 3, 224, 224], layout="CDEF")
+
+    assert InputConfig.model_validate(inp).channel_count == 2
+
+
 @pytest.mark.parametrize("channels", [2, 4, 6])
 def test_implicit_non_image_encoding_defaults_to_none(channels: int):
     inp = InputConfig(
@@ -579,6 +591,21 @@ def test_explicit_batchless_image_encoding_opts_into_color_handling(
     assert not inp.is_raw_input
     assert inp.encoding_mismatch
     inp.validate_preprocessing()
+
+
+@pytest.mark.parametrize(
+    "encoding",
+    [{"from": "NONE", "to": "RGB"}, {"from": "BGR", "to": "NONE"}],
+)
+def test_channel_reversal_requires_color_on_both_sides(
+    encoding: dict[str, str],
+):
+    inp = _input_config(
+        name="i", shape=[1, 3, 4, 4], layout="NCHW", encoding=encoding
+    )
+
+    with pytest.raises(ValueError, match="requires RGB/BGR color encodings"):
+        inp.validate_preprocessing()
 
 
 @pytest.mark.parametrize("layout", ["NC", "HWC"])
@@ -879,6 +906,29 @@ def test_encodings_from_path():
     assert isinstance(cfg.encodings, QuantizationOverrides)
     assert cfg.encodings.source_path == enc_file
     assert json.loads(cfg.model_dump_json())["encodings"] == str(enc_file)
+
+
+def test_encodings_of_another_type_are_rejected():
+    with pytest.raises(TypeError, match="deserialize to a dict"):
+        _rvc4_config(encodings=[])
+
+
+@pytest.mark.parametrize(
+    "sources",
+    [{}, {"payload": {}, "source_path": Path("e.json")}],
+    ids=["none", "both"],
+)
+def test_quantization_overrides_require_one_source(sources: dict[str, object]):
+    with pytest.raises(ValueError, match="exactly one source"):
+        QuantizationOverrides.model_validate(sources)
+
+
+def test_quantization_overrides_file_must_hold_a_mapping(tmp_path: Path):
+    path = tmp_path / "encodings.json"
+    path.write_text("[]")
+
+    with pytest.raises(TypeError, match="deserialize to a dict, got list"):
+        QuantizationOverrides.from_path(path).load_payload()
 
 
 def test_quantization_overrides_separated_form_normalized():
@@ -1259,6 +1309,30 @@ def test_random_top_level():
     )
     stage = _single_stage(config)
     assert isinstance(stage.inputs[0].calibration, RandomCalibrationConfig)
+
+
+def test_random_top_level_keeps_input_resize_method():
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(_dummy()),
+            "calibration": "random",
+            "inputs.0.name": "input0",
+            "inputs.0.calibration.resize_method": "PAD",
+        },
+    )
+    calibration = _single_stage(config).inputs[0].calibration
+    assert isinstance(calibration, RandomCalibrationConfig)
+    assert calibration.resize_method == ResizeMethod.PAD
+
+
+def test_generated_image_calibration_keeps_resize_method(tmp_path: Path):
+    random = RandomCalibrationConfig(resize_method=ResizeMethod.PAD)
+
+    calibration = random.to_image_calibration(tmp_path)
+
+    assert calibration.has_resize_method
+    assert calibration.resize_method == ResizeMethod.PAD
 
 
 def test_top_level_and_input_calibration_merged(tmp_path: Path):

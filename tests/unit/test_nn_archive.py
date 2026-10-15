@@ -8,7 +8,8 @@ No network, cloud, Docker or vendor tooling: the dummy ONNX models and NN-archiv
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from types import SimpleNamespace
+from typing import Literal, cast
 
 import pytest
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
@@ -34,9 +35,12 @@ from modelconverter.utils.config import (
 from modelconverter.utils.constants import MISC_DIR, OUTPUTS_DIR
 from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.nn_archive import (
+    _apply_archive_resize_modes,
     _default_archive_preprocessing,
     _get_io_dtype,
     _match_tensor_names,
+    _replace_names,
+    _set_resize_mode,
     archive_from_model,
     default_archive_input_type,
     generate_archive,
@@ -45,7 +49,12 @@ from modelconverter.utils.nn_archive import (
     modelconverter_config_to_nn,
     process_nn_archive,
 )
-from modelconverter.utils.types import DataType, Encoding, Platform
+from modelconverter.utils.types import (
+    DataType,
+    Encoding,
+    Platform,
+    ResizeMethod,
+)
 from tests.helpers.archive_factory import (
     default_archive_config,
     pack_archive,
@@ -991,6 +1000,90 @@ def test_renamed_tensors_with_permuted_shapes_raise():
         {"camera": [1, 224, 320, 3], "tokens": [1, 3, 224, 320]},
         kind="output",
     ) == {"camera": "camera", "tokens": "tokens"}
+
+
+def test_last_renamed_tensor_matches_despite_a_new_shape():
+    configured = [
+        OutputConfig(name="boxes", shape=[1, 4, 100]),
+        OutputConfig(name="scores", shape=[1, 100]),
+    ]
+    converted_shapes = {"boxes": [1, 4, 100], "scores_sink": [1, 1, 100]}
+
+    assert _match_tensor_names(
+        configured, converted_shapes, kind="output"
+    ) == {"boxes": "boxes", "scores": "scores_sink"}
+
+
+@pytest.mark.parametrize(
+    ("resize_method", "resize_mode"),
+    [
+        (ResizeMethod.PAD, "LETTERBOX"),
+        (ResizeMethod.CENTER_CROP_NO_RESIZE, None),
+    ],
+)
+def test_configured_resize_method_replaces_the_resize_mode(
+    resize_method: ResizeMethod, resize_mode: str | None
+):
+    inp = InputConfig(name="input0", shape=[1, 3, 4, 4])
+    inp.calibration = RandomCalibrationConfig(resize_method=resize_method)
+    preprocessing: Params = {"resize_mode": "STRETCH"}
+
+    _set_resize_mode(preprocessing, inp, None)
+
+    assert preprocessing == {"resize_mode": resize_mode}
+
+
+def test_image_input_takes_the_resize_mode_of_the_archive():
+    inp = InputConfig(name="input0", shape=[1, 3, 4, 4], layout="NCHW")
+    # Only the pinned luxonis-ml release lacks `resize_mode`, so the archive is
+    # a stand-in with the fields that the function reads.
+    archive = SimpleNamespace(
+        model=SimpleNamespace(
+            inputs=[
+                SimpleNamespace(
+                    name="input0",
+                    preprocessing=SimpleNamespace(resize_mode="LETTERBOX"),
+                )
+            ]
+        )
+    )
+
+    _apply_archive_resize_modes([inp], cast(NNArchiveConfig, archive))
+
+    assert isinstance(inp.calibration, RandomCalibrationConfig)
+    assert inp.calibration.resize_method == ResizeMethod.PAD
+
+
+def test_output_count_must_match_the_converted_model(
+    dummy_onnx: Path, tmp_path: Path
+):
+    converted = build_onnx(
+        tmp_path / "converted.onnx",
+        inputs=[
+            ("input0", [1, 3, 64, 64], TensorProto.FLOAT),
+            ("input1", [1, 3, 128, 128], TensorProto.FLOAT),
+        ],
+        outputs=[("output0", [1, 10], TensorProto.FLOAT)],
+    )
+
+    with pytest.raises(ValueError, match="different number of outputs"):
+        _config_to_nn(_config_from_overrides(dummy_onnx), converted)
+
+
+def test_preprocessing_of_an_unknown_input_is_rejected(dummy_onnx: Path):
+    with pytest.raises(ValueError, match="not found: ghost"):
+        _config_to_nn(
+            _config_from_overrides(dummy_onnx),
+            dummy_onnx,
+            preprocessing={"ghost": PreprocessingBlock.model_validate({})},
+        )
+
+
+def test_replace_names_keeps_tuples():
+    assert _replace_names(("boxes", ["boxes"]), {"boxes": "bbox"}) == (
+        "bbox",
+        ["bbox"],
+    )
 
 
 def test_input_default_layout_when_shape_has_zero(dummy_onnx: Path):

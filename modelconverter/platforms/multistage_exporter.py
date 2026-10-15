@@ -122,72 +122,82 @@ class MultiStageExporter:
             if not isinstance(calib, LinkCalibrationConfig):
                 continue
 
-            stage = calib.stage
-            stage_output = calib.output
-            script = calib.script
-
-            linked_exporter = self.exporters[stage]
-
-            source_dir = self._create_source_dir(linked_exporter, stage)
-            dest_dir = (
-                self._intermediate_outputs_dir
-                / f"{linked_exporter.model_name}_calibration"
-            )
-            model_path = linked_exporter.inference_model_path
-            # ``get_inferer`` returns a ready ``from_config`` instance (same
-            # contract as the ``infer`` command), so pass the arguments here.
-            inferer = get_inferer(
-                self.platform,
-                str(model_path),
-                source_dir,
-                dest_dir,
-                linked_exporter.config,
-            )
-            logger.debug(f"Initialized inferer {inferer}.")
-            inferer.run()
-            if stage_output is not None:
+            dest_dir = self._infer_linked_stage(calib.stage)
+            if calib.output is not None:
                 inp_config.calibration = calib.to_image_calibration(
-                    dest_dir / stage_output
+                    dest_dir / calib.output
                 )
-            elif script is not None:
-                # One directory per model output. The inferer also leaves a
-                # marker file in there to recognize its own results, so take
-                # only the directories.
-                output_dirs = [p for p in dest_dir.iterdir() if p.is_dir()]
+            elif calib.script is not None:
                 # Keyed by the receiving input, not just the linked stage:
                 # several inputs of this stage may link to the same previous
                 # stage, each with a script of its own.
                 dest = (
                     self._intermediate_outputs_dir
                     / "inference_output"
-                    / stage
+                    / calib.stage
                     / inp_name
                     / "script"
                 )
-                dest.mkdir(parents=True, exist_ok=True)
-                (dest.parent / "script.py").write_text(script)
-                for i, file in enumerate(output_dirs[0].iterdir()):
-                    outputs = {
-                        out_dir.name: np.load(out_dir / file.name)
-                        for out_dir in output_dirs
-                    }
-
-                    # The calibration script is trusted (it comes from the
-                    # model config); exec it with a fresh namespace, which gets
-                    # real builtins so the script can `import numpy` etc.
-                    scope = {}
-                    try:
-                        exec(script, scope)  # nosemgrep  # noqa: S102
-                    except Exception as e:  # pragma: no cover
-                        raise RuntimeError("Error executing script") from e
-
-                    if "run_script" not in scope:  # pragma: no cover
-                        raise RuntimeError(
-                            "Error: `run_script` function not found in script."
-                        )
-
-                    run_script = scope["run_script"]
-                    arr = run_script(outputs)
-                    np.save(dest / f"{i}.npy", arr)
-
+                _run_calibration_script(calib.script, dest_dir, dest)
                 inp_config.calibration = calib.to_image_calibration(dest)
+
+    def _infer_linked_stage(self, stage: str) -> Path:
+        """Run the model of a linked stage on its calibration data.
+
+        Returns:
+            The directory with the outputs of the stage.
+        """
+        linked_exporter = self.exporters[stage]
+        source_dir = self._create_source_dir(linked_exporter, stage)
+        dest_dir = (
+            self._intermediate_outputs_dir
+            / f"{linked_exporter.model_name}_calibration"
+        )
+        # ``get_inferer`` returns a ready ``from_config`` instance (same
+        # contract as the ``infer`` command), so pass the arguments here.
+        inferer = get_inferer(
+            self.platform,
+            str(linked_exporter.inference_model_path),
+            source_dir,
+            dest_dir,
+            linked_exporter.config,
+        )
+        logger.debug(f"Initialized inferer {inferer}.")
+        inferer.run()
+        return dest_dir
+
+
+def _run_calibration_script(
+    script: str, inference_dir: Path, dest: Path
+) -> None:
+    """Turn the outputs of a linked stage into calibration data.
+
+    Each sample of the linked stage goes through ``run_script`` of the
+    script, and the result is saved as a NumPy array in ``dest``.
+    """
+    # One directory per model output. The inferer also leaves a marker file
+    # in there to recognize its own results, so take only the directories.
+    output_dirs = [p for p in inference_dir.iterdir() if p.is_dir()]
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest.parent / "script.py").write_text(script)
+    for i, file in enumerate(output_dirs[0].iterdir()):
+        outputs = {
+            out_dir.name: np.load(out_dir / file.name)
+            for out_dir in output_dirs
+        }
+
+        # The calibration script is trusted (it comes from the model config);
+        # exec it with a fresh namespace, which gets real builtins so the
+        # script can `import numpy` etc.
+        scope = {}
+        try:
+            exec(script, scope)  # nosemgrep  # noqa: S102
+        except Exception as e:  # pragma: no cover
+            raise RuntimeError("Error executing script") from e
+
+        if "run_script" not in scope:  # pragma: no cover
+            raise RuntimeError(
+                "Error: `run_script` function not found in script."
+            )
+
+        np.save(dest / f"{i}.npy", scope["run_script"](outputs))

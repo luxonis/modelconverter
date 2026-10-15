@@ -15,7 +15,10 @@ import shutil
 import signal
 import sys
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
+from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from types import FrameType
 from typing import Annotated, Literal
@@ -23,6 +26,8 @@ from typing import Annotated, Literal
 from cyclopts import App, Group, Parameter
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator
+from luxonis_ml.nn_archive.config_building_blocks import PreprocessingBlock
+from luxonis_ml.telemetry import Telemetry
 from luxonis_ml.typing import ParamValue
 from luxonis_ml.utils import LuxonisFileSystem, setup_logging
 from rich import box
@@ -62,7 +67,7 @@ from modelconverter.utils import (
     resolve_path,
     upload_to_remote,
 )
-from modelconverter.utils.config import SingleStageConfig
+from modelconverter.utils.config import Config, SingleStageConfig
 from modelconverter.utils.constants import (
     CONVERSION_MARKER,
     MODELS_DIR,
@@ -88,6 +93,7 @@ from modelconverter.utils.telemetry import (
     RESULT_EVENT,
     ArchiveOutputMode,
     CommandResult,
+    ConfigSource,
     ConversionPhase,
     FailureReason,
     TelemetryFlowStep,
@@ -141,6 +147,403 @@ def catch_exceptions():
         sys.exit(2)
 
 
+def _exit_on_signal(signum: int, _frame: FrameType | None) -> None:
+    """Exit with status 130 when the conversion receives a signal."""
+    logger.error(f"{signal.Signals(signum).name} received, exiting...")
+    sys.exit(130)
+
+
+def _inline_model_path(
+    platform: Platform, path: str | None, overrides: list[str]
+) -> tuple[str | None, list[str]]:
+    """Turn a standalone model file into ``input_model`` overrides.
+
+    Returns:
+        The path that is left for `get_configs`, ``None`` once the model
+        went into the overrides, and the overrides.
+    """
+    if path is None:
+        return None, overrides
+    model = Path(path)
+    if model.suffix in {".xml", ".bin"} and platform not in {
+        Platform.RVC2,
+        Platform.RVC3,
+    }:
+        raise ValueError(
+            f"OpenVINO IR format is not supported for platform {platform.name}."
+        )
+    if model.suffix == ".xml":
+        bin_path = str(model.with_suffix(".bin"))
+        return None, ["input_bin", bin_path, "input_model", path, *overrides]
+    if model.suffix == ".bin":
+        xml_path = str(model.with_suffix(".xml"))
+        return None, ["input_model", xml_path, "input_bin", path, *overrides]
+    if model.suffix in {".onnx", ".dlc", ".tflite"}:
+        return None, ["input_model", path, *overrides]
+    return path, overrides
+
+
+def _validate_inputs(cfg: Config) -> None:
+    """Check the preprocessing or the input contract of every input."""
+    for stage in cfg.stages.values():
+        for inp in stage.inputs:
+            try:
+                if inp.requires_input_preprocessing():
+                    inp.validate_preprocessing()
+                else:
+                    inp.validate_input_contract()
+            except ValueError as error:
+                raise ModelconverterException(str(error)) from error
+
+
+def _conversion_result(
+    caught_exc: BaseException | None, failure_reason: FailureReason | None
+) -> CommandResult:
+    """Classify how a conversion ended."""
+    if caught_exc is None:
+        return CommandResult.SUCCESS
+    if failure_reason is FailureReason.USER_INTERRUPT:
+        return CommandResult.INTERRUPTED
+    return CommandResult.FAILED
+
+
+@dataclass
+class _ConversionRecord:
+    """The telemetry state of one ``convert`` run.
+
+    ``summary`` stays ``None`` until the configuration is resolved.
+    """
+
+    telemetry: Telemetry
+    run_id: str
+    platform: Platform
+    start: float
+    conversion_start: float | None = None
+    summary: dict[str, ParamValue] | None = None
+    configuration_captured: bool = False
+    output_artifact_count: int | None = None
+    uploaded_output: bool = False
+    uploaded_intermediate_outputs: bool = False
+    phase: ConversionPhase = ConversionPhase.CONFIGURATION
+
+    def capture_configuration(self) -> None:
+        """Send the configuration event once, after the summary exists."""
+        if self.summary is None or self.configuration_captured:
+            return
+        self.telemetry.capture(
+            CONFIGURED_EVENT,
+            self.summary,
+            include_system_metadata=True,
+            distinct_id=self.run_id,
+        )
+        self.configuration_captured = True
+
+    def capture_result(self, caught_exc: BaseException | None) -> None:
+        """Log the resource usage and send the result event."""
+        peak_ram_bytes = peak_ram_usage_bytes()
+        logger.info(f"Peak RAM usage: {peak_ram_bytes / (1024 * 1024):.2f} MB")
+        elapsed = time.monotonic() - self.start
+        logger.info(f"Conversion finished in {elapsed:.2f} seconds")
+        failure_reason = runtime_failure_reason_from_exception(
+            caught_exc, phase=self.phase
+        )
+        if self.summary is None:
+            # Pre-rename telemetry key, kept for analytics continuity (see
+            # telemetry.py).
+            properties: dict[str, ParamValue] = {"target": self.platform.value}
+        else:
+            properties = {
+                key: value
+                for key, value in self.summary.items()
+                if key != "flow_step"
+            }
+        duration = time.monotonic() - (self.conversion_start or self.start)
+        properties |= build_conversion_result_properties(
+            result=_conversion_result(caught_exc, failure_reason),
+            failure_reason=failure_reason,
+            duration_ms=int(duration * 1000),
+            output_artifact_count=self.output_artifact_count,
+            uploaded_output=self.uploaded_output,
+            uploaded_intermediate_outputs=self.uploaded_intermediate_outputs,
+            peak_ram_bytes=peak_ram_bytes,
+        )
+        self.telemetry.capture(
+            RESULT_EVENT,
+            build_flow_properties(
+                self.run_id, TelemetryFlowStep.RESULT_RECORDED, properties
+            ),
+            include_system_metadata=True,
+            distinct_id=self.run_id,
+        )
+
+
+@dataclass
+class _ConversionPlan:
+    """The resolved configuration of one ``convert`` run.
+
+    `extract_preprocessing` clears the inputs in place, so
+    ``source_cfg`` keeps an untouched copy for a retry that moves the
+    preprocessing into the NN Archive.
+    """
+
+    platform: Platform
+    cfg: Config
+    to: Literal["native", "nn_archive"]
+    config_source: ConfigSource
+    main_stage_provided: bool
+    source_cfg: Config = field(init=False)
+    preprocessing: dict[str, PreprocessingBlock] = field(default_factory=dict)
+    input_types: dict[str, Literal["raw", "image"]] = field(
+        default_factory=dict
+    )
+    externalized: bool = False
+
+    def __post_init__(self) -> None:
+        """Copy the config before any preprocessing leaves it."""
+        self.source_cfg = self.cfg.model_copy(deep=True)
+
+    @property
+    def is_multistage(self) -> bool:
+        """Whether the config has more than one stage."""
+        return len(self.cfg.stages) > 1
+
+    def externalize(self) -> None:
+        """Move the preprocessing of the source config to the archive."""
+        self.cfg = self.source_cfg.model_copy(deep=True)
+        stage = next(iter(self.cfg.stages.values()))
+        self.input_types = {
+            inp.name: default_archive_input_type(is_raw_input=inp.is_raw_input)
+            for inp in stage.inputs
+        }
+        self.cfg, self.preprocessing = extract_preprocessing(self.cfg)
+        self.externalized = True
+
+    def fall_back_to_archive(
+        self, error: PreprocessingEmbeddingError, output_path: Path
+    ) -> bool:
+        """Move the preprocessing to the archive when a retry is safe.
+
+        Returns:
+            Whether the conversion can run again.
+        """
+        if self.to != "nn_archive" or self.externalized or self.is_multistage:
+            return False
+        stage = next(iter(self.source_cfg.stages.values()))
+        input_names = [
+            inp.name
+            for inp in stage.inputs
+            if inp.requires_input_preprocessing()
+        ]
+        if not input_names:
+            return False
+
+        self.externalize()
+        # The failed attempt may have materialized random calibration in
+        # the runtime domain. The retry regenerates it from the pristine
+        # configuration.
+        shutil.rmtree(output_path / "intermediate_outputs", ignore_errors=True)
+        names = ", ".join(input_names)
+        logger.warning(
+            f"Could not embed preprocessing for input(s) {names}: "
+            f"{error}. Falling back to NN Archive preprocessing; the "
+            "converted model will not contain these preprocessing "
+            "operations."
+        )
+        return True
+
+    def summary(self, run_id: str) -> dict[str, ParamValue]:
+        """Build the configuration telemetry of the current plan."""
+        return build_flow_properties(
+            run_id,
+            TelemetryFlowStep.CONFIGURATION_RESOLVED,
+            build_conversion_summary(
+                self.cfg,
+                platform=self.platform,
+                config_source=self.config_source,
+                archive_output_mode=ArchiveOutputMode(self.to),
+                archive_preprocess=self.externalized,
+                main_stage_provided=self.main_stage_provided,
+            ),
+        )
+
+    def make_exporter(
+        self, output_path: Path
+    ) -> Exporter | MultiStageExporter:
+        """Create the exporter for the current config."""
+        if self.is_multistage:
+            return MultiStageExporter(
+                platform=self.platform, config=self.cfg, output_dir=output_path
+            )
+        return get_exporter(
+            self.platform,
+            config=next(iter(self.cfg.stages.values())),
+            output_dir=output_path,
+        )
+
+
+def _export(
+    plan: _ConversionPlan, output_path: Path, record: _ConversionRecord
+) -> tuple[Exporter | MultiStageExporter, list[Path]]:
+    """Run the exporter.
+
+    When the preprocessing cannot be embedded into the model, the
+    export runs once more with the preprocessing in the NN Archive.
+    """
+    record.summary = plan.summary(record.run_id)
+    try:
+        exporter = plan.make_exporter(output_path)
+    except PreprocessingEmbeddingError as error:
+        if not plan.fall_back_to_archive(error, output_path):
+            raise
+        record.summary = plan.summary(record.run_id)
+        exporter = plan.make_exporter(output_path)
+
+    record.conversion_start = time.monotonic()
+    record.phase = ConversionPhase.CONVERSION
+    try:
+        out_models = exporter.run()
+    except PreprocessingEmbeddingError as error:
+        if not plan.fall_back_to_archive(error, output_path):
+            raise
+        record.summary = plan.summary(record.run_id)
+        exporter = plan.make_exporter(output_path)
+        out_models = exporter.run()
+
+    if not isinstance(out_models, list):
+        out_models = [out_models]
+    return exporter, out_models
+
+
+def _upload_outputs(
+    exporter: Exporter | MultiStageExporter,
+    out_models: list[Path],
+    record: _ConversionRecord,
+) -> None:
+    """Upload the outputs to the remote URLs that the config names."""
+    if isinstance(exporter.config, SingleStageConfig):
+        cfg = exporter.config
+    else:
+        cfg = next(iter(exporter.config.stages.values()))
+
+    upload_url = cfg.output_remote_url
+    if upload_url is not None:
+        record.phase = ConversionPhase.UPLOAD_OUTPUT
+        for model_path in out_models:
+            logger.info(f"Uploading {model_path} to {upload_url}")
+            upload_to_remote(model_path, upload_url, cfg.put_file_plugin)
+        record.uploaded_output = True
+
+    intermediate_url = cfg.intermediate_outputs_remote_url
+    if intermediate_url is not None:
+        record.phase = ConversionPhase.UPLOAD_INTERMEDIATE
+        exporters = (
+            exporter.exporters.values()
+            if isinstance(exporter, MultiStageExporter)
+            else [exporter]
+        )
+        for stage_exporter in exporters:
+            logger.info(
+                f"Uploading intermediate outputs to {intermediate_url}"
+            )
+            upload_to_remote(
+                stage_exporter.intermediate_outputs_dir,
+                intermediate_url,
+                cfg.put_file_plugin,
+            )
+        record.uploaded_intermediate_outputs = True
+
+
+def _convert(
+    record: _ConversionRecord,
+    platform: Platform,
+    path: str | None,
+    overrides: list[str],
+    *,
+    output_dir: str | None,
+    to: Literal["native", "nn_archive"],
+    main_stage: str | None,
+    archive_preprocess: bool,
+) -> None:
+    """Run the conversion that `convert` describes."""
+    if archive_preprocess and to != "nn_archive":
+        raise ModelconverterException(
+            "`--archive-preprocess` requires `--to nn_archive`; native "
+            "output cannot store externalized preprocessing."
+        )
+
+    main_stage_provided = main_stage is not None
+    original_path = path
+    path, overrides = _inline_model_path(platform, path, overrides)
+
+    init_dirs()
+    cfg, archive_cfg, detected_main_stage = get_configs(
+        platform, path, list(overrides)
+    )
+    main_stage = main_stage or detected_main_stage
+    if len(cfg.stages) > 1 and main_stage is None:
+        raise ValueError(
+            "Main stage name must be provided for multistage models."
+        )
+    _validate_inputs(cfg)
+
+    plan = _ConversionPlan(
+        platform=platform,
+        cfg=cfg,
+        to=to,
+        config_source=detect_config_source(
+            original_path, overrides, archive_cfg
+        ),
+        main_stage_provided=main_stage_provided,
+    )
+    if archive_preprocess:
+        plan.externalize()
+
+    output_path = get_output_dir_name(platform, plan.cfg.name, output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    (output_path / CONVERSION_MARKER).touch()
+    setup_logging(
+        file=str(output_path / "modelconverter.log"),
+        use_rich=plan.cfg.rich_logging,
+    )
+    if archive_preprocess:
+        logger.info(
+            "`--archive-preprocess` was specified; storing input "
+            "preprocessing in the NN Archive instead of baking it into "
+            "the converted model."
+        )
+
+    exporter, out_models = _export(plan, output_path, record)
+    record.capture_configuration()
+    if to == "nn_archive":
+        assert main_stage is not None
+        if isinstance(exporter, Exporter):
+            inference_model_path = exporter.inference_model_path
+        else:
+            inference_model_path = exporter.exporters[
+                main_stage
+            ].inference_model_path
+        out_models = [
+            generate_archive(
+                platform=platform,
+                cfg=plan.cfg,
+                main_stage=main_stage,
+                out_models=out_models,
+                output_path=output_path,
+                archive_cfg=archive_cfg,
+                preprocessing=plan.preprocessing,
+                preprocessing_input_types=plan.input_types,
+                inference_model_path=inference_model_path,
+            )
+        ]
+
+    for model_path in out_models:
+        logger.info(f"Model exported to {display_output_path(model_path)}")
+    record.output_artifact_count = len(out_models)
+
+    _upload_outputs(exporter, out_models, record)
+    logger.info("Conversion finished successfully")
+
+
 @app.command(group=docker_commands)
 def convert(
     platform: Platform,
@@ -179,285 +582,29 @@ def convert(
             metadata for NN Archive output.
 
     """
-
-    def handle_signal(signum: int, frame: FrameType | None) -> None:
-        signame = signal.Signals(signum).name
-        logger.error(f"{signame} received, exiting...")
-        sys.exit(130)
-
-    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGTERM, _exit_on_signal)
 
     if output_dir is not None:
         output_dir = sanitize_net_name(output_dir)
-    t = time.monotonic()
-    runtime_telemetry = get_component_telemetry()
-    conversion_run_id = get_conversion_run_id()
-    original_path = path
-    overrides: list[str] = list(opts)
-    conversion_start: float | None = None
-    conversion_summary: dict[str, ParamValue] | None = None
-    configuration_captured = False
-    output_artifact_count: int | None = None
-    uploaded_output = False
-    uploaded_intermediate_outputs = False
-    phase = ConversionPhase.CONFIGURATION
+    record = _ConversionRecord(
+        start=time.monotonic(),
+        telemetry=get_component_telemetry(),
+        run_id=get_conversion_run_id(),
+        platform=platform,
+    )
     caught_exc: BaseException | None = None
 
     try:
-        if archive_preprocess and to != "nn_archive":
-            raise ModelconverterException(
-                "`--archive-preprocess` requires `--to nn_archive`; native "
-                "output cannot store externalized preprocessing."
-            )
-
-        main_stage_provided = main_stage is not None
-        if path is not None:
-            suffix = Path(path).suffix
-            if suffix in {".xml", ".bin"} and platform not in {
-                Platform.RVC2,
-                Platform.RVC3,
-            }:
-                raise ValueError(
-                    f"OpenVINO IR format is not supported for platform {platform.name}."
-                )
-            if suffix in {".onnx", ".xml", ".dlc", ".tflite"}:
-                overrides = ["input_model", path, *overrides]
-                if suffix == ".xml":
-                    overrides = [
-                        "input_bin",
-                        str(Path(path).with_suffix(".bin")),
-                        *overrides,
-                    ]
-                path = None
-            elif suffix == ".bin":
-                overrides = [
-                    "input_model",
-                    str(Path(path).with_suffix(".xml")),
-                    "input_bin",
-                    path,
-                    *overrides,
-                ]
-                path = None
-
-        init_dirs()
-        cfg, archive_cfg, _main_stage = get_configs(
-            platform, path, list(overrides)
+        _convert(
+            record,
+            platform,
+            path,
+            list(opts),
+            output_dir=output_dir,
+            to=to,
+            main_stage=main_stage,
+            archive_preprocess=archive_preprocess,
         )
-        main_stage = main_stage or _main_stage
-        is_multistage = len(cfg.stages) > 1
-        if is_multistage and main_stage is None:
-            raise ValueError(
-                "Main stage name must be provided for multistage models."
-            )
-
-        for stage in cfg.stages.values():
-            for inp in stage.inputs:
-                try:
-                    if inp.requires_input_preprocessing():
-                        inp.validate_preprocessing()
-                    else:
-                        inp.validate_input_contract()
-                except ValueError as error:
-                    raise ModelconverterException(str(error)) from error
-
-        # `extract_preprocessing` clears the inputs in place, so a retry needs
-        # this untouched copy.
-        fallback_source_cfg = cfg.model_copy(deep=True)
-        preprocessing = {}
-        preprocessing_input_types: dict[str, Literal["raw", "image"]] = {}
-        preprocessing_externalized = archive_preprocess
-        if archive_preprocess:
-            stage = next(iter(cfg.stages.values()))
-            preprocessing_input_types = {
-                inp.name: default_archive_input_type(
-                    is_raw_input=inp.is_raw_input
-                )
-                for inp in stage.inputs
-            }
-            cfg, preprocessing = extract_preprocessing(cfg)
-
-        output_path = get_output_dir_name(platform, cfg.name, output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
-        (output_path / CONVERSION_MARKER).touch()
-        setup_logging(
-            file=str(output_path / "modelconverter.log"),
-            use_rich=cfg.rich_logging,
-        )
-        if archive_preprocess:
-            logger.info(
-                "`--archive-preprocess` was specified; storing input "
-                "preprocessing in the NN Archive instead of baking it into "
-                "the converted model."
-            )
-
-        def externalize_after_embedding_failure(
-            error: PreprocessingEmbeddingError,
-        ) -> bool:
-            """Move preprocessing to the archive when retrying is safe."""
-            nonlocal cfg, preprocessing, preprocessing_externalized
-            nonlocal preprocessing_input_types
-            if (
-                to != "nn_archive"
-                or preprocessing_externalized
-                or is_multistage
-            ):
-                return False
-
-            cfg = fallback_source_cfg.model_copy(deep=True)
-            stage = next(iter(cfg.stages.values()))
-            preprocessing_input_types = {
-                inp.name: default_archive_input_type(
-                    is_raw_input=inp.is_raw_input
-                )
-                for inp in stage.inputs
-            }
-            input_names = [
-                inp.name
-                for inp in stage.inputs
-                if inp.requires_input_preprocessing()
-            ]
-            if not input_names:
-                return False
-
-            cfg, preprocessing = extract_preprocessing(cfg)
-            preprocessing_externalized = True
-            # The failed attempt may have materialized random calibration in
-            # the runtime domain. The retry regenerates it from the pristine
-            # configuration.
-            shutil.rmtree(
-                output_path / "intermediate_outputs", ignore_errors=True
-            )
-            names = ", ".join(input_names)
-            logger.warning(
-                f"Could not embed preprocessing for input(s) {names}: "
-                f"{error}. Falling back to NN Archive preprocessing; the "
-                "converted model will not contain these preprocessing "
-                "operations."
-            )
-            return True
-
-        def make_exporter() -> Exporter | MultiStageExporter:
-            if is_multistage:
-                return MultiStageExporter(
-                    platform=platform, config=cfg, output_dir=output_path
-                )
-            return get_exporter(
-                platform,
-                config=next(iter(cfg.stages.values())),
-                output_dir=output_path,
-            )
-
-        def resolved_conversion_summary() -> dict[str, ParamValue]:
-            """Build telemetry from the effective preprocessing placement."""
-            return build_flow_properties(
-                conversion_run_id,
-                TelemetryFlowStep.CONFIGURATION_RESOLVED,
-                build_conversion_summary(
-                    cfg,
-                    platform=platform,
-                    config_source=detect_config_source(
-                        original_path, overrides, archive_cfg
-                    ),
-                    archive_output_mode=ArchiveOutputMode(to),
-                    archive_preprocess=preprocessing_externalized,
-                    main_stage_provided=main_stage_provided,
-                ),
-            )
-
-        conversion_summary = resolved_conversion_summary()
-        try:
-            exporter = make_exporter()
-        except PreprocessingEmbeddingError as error:
-            if not externalize_after_embedding_failure(error):
-                raise
-            conversion_summary = resolved_conversion_summary()
-            exporter = make_exporter()
-
-        conversion_start = time.monotonic()
-        phase = ConversionPhase.CONVERSION
-        try:
-            out_models = exporter.run()
-        except PreprocessingEmbeddingError as error:
-            if not externalize_after_embedding_failure(error):
-                raise
-            conversion_summary = resolved_conversion_summary()
-            exporter = make_exporter()
-            out_models = exporter.run()
-
-        runtime_telemetry.capture(
-            CONFIGURED_EVENT,
-            conversion_summary,
-            include_system_metadata=True,
-            distinct_id=conversion_run_id,
-        )
-        configuration_captured = True
-        if not isinstance(out_models, list):
-            out_models = [out_models]
-        if to == "nn_archive":
-            assert main_stage is not None
-            out_models = [
-                generate_archive(
-                    platform=platform,
-                    cfg=cfg,
-                    main_stage=main_stage,
-                    out_models=out_models,
-                    output_path=output_path,
-                    archive_cfg=archive_cfg,
-                    preprocessing=preprocessing,
-                    preprocessing_input_types=preprocessing_input_types,
-                    inference_model_path=(
-                        exporter.inference_model_path
-                        if isinstance(exporter, Exporter)
-                        else exporter.exporters[
-                            main_stage
-                        ].inference_model_path
-                    ),
-                )
-            ]
-
-        for model_path in out_models:
-            logger.info(f"Model exported to {display_output_path(model_path)}")
-
-        output_artifact_count = len(out_models)
-
-        if isinstance(exporter.config, SingleStageConfig):
-            _cfg = exporter.config
-        else:
-            _cfg = next(iter(exporter.config.stages.values()))
-        upload_url = _cfg.output_remote_url
-        intermediate_url = _cfg.intermediate_outputs_remote_url
-        put_file_plugin = _cfg.put_file_plugin
-
-        if upload_url is not None:
-            phase = ConversionPhase.UPLOAD_OUTPUT
-            for model_path in out_models:
-                logger.info(f"Uploading {model_path} to {upload_url}")
-                upload_to_remote(
-                    model_path,
-                    upload_url,
-                    put_file_plugin,
-                )
-            uploaded_output = True
-
-        if intermediate_url is not None:
-            phase = ConversionPhase.UPLOAD_INTERMEDIATE
-            exporters = (
-                exporter.exporters.values()
-                if isinstance(exporter, MultiStageExporter)
-                else [exporter]
-            )
-            for exporter in exporters:
-                logger.info(
-                    f"Uploading intermediate outputs to {intermediate_url}"
-                )
-                upload_to_remote(
-                    exporter.intermediate_outputs_dir,
-                    intermediate_url,
-                    put_file_plugin,
-                )
-            uploaded_intermediate_outputs = True
-
-        logger.info("Conversion finished successfully")
     except KeyboardInterrupt as exc:
         caught_exc = exc
         logger.error("Keyboard interrupt received, exiting...")
@@ -474,63 +621,8 @@ def convert(
         logger.exception("Encountered an unexpected error!")
         raise SystemExit(2) from exc
     finally:
-        if conversion_summary is not None and not configuration_captured:
-            runtime_telemetry.capture(
-                CONFIGURED_EVENT,
-                conversion_summary,
-                include_system_metadata=True,
-                distinct_id=conversion_run_id,
-            )
-        peak_ram_bytes = peak_ram_usage_bytes()
-        logger.info(f"Peak RAM usage: {peak_ram_bytes / (1024 * 1024):.2f} MB")
-        logger.info(
-            f"Conversion finished in {time.monotonic() - t:.2f} seconds"
-        )
-        failure_reason = runtime_failure_reason_from_exception(
-            caught_exc, phase=phase
-        )
-        runtime_telemetry.capture(
-            RESULT_EVENT,
-            build_flow_properties(
-                conversion_run_id,
-                TelemetryFlowStep.RESULT_RECORDED,
-                {
-                    **(
-                        {
-                            key: value
-                            for key, value in conversion_summary.items()
-                            if key != "flow_step"
-                        }
-                        if conversion_summary is not None
-                        # Pre-rename telemetry key, kept for analytics
-                        # continuity (see telemetry.py).
-                        else {"target": platform.value}
-                    ),
-                    **build_conversion_result_properties(
-                        result=(
-                            CommandResult.SUCCESS
-                            if caught_exc is None
-                            else (
-                                CommandResult.INTERRUPTED
-                                if failure_reason
-                                is FailureReason.USER_INTERRUPT
-                                else CommandResult.FAILED
-                            )
-                        ),
-                        failure_reason=failure_reason,
-                        duration_ms=int(
-                            (time.monotonic() - (conversion_start or t)) * 1000
-                        ),
-                        output_artifact_count=output_artifact_count,
-                        uploaded_output=uploaded_output,
-                        uploaded_intermediate_outputs=uploaded_intermediate_outputs,
-                        peak_ram_bytes=peak_ram_bytes,
-                    ),
-                },
-            ),
-            include_system_metadata=True,
-            distinct_id=conversion_run_id,
-        )
+        record.capture_configuration()
+        record.capture_result(caught_exc)
         os.environ.pop(CONVERSION_RUN_ID_ENV_VAR, None)
 
 
@@ -1044,6 +1136,47 @@ def cache_clean(
     )
 
 
+def _exec_in_docker(
+    command: Callable[..., object],
+    tokens: tuple[str, ...],
+    platform: Platform,
+    *,
+    dev: bool,
+    gpu: bool,
+    tool_version: str | None,
+    image: str | None,
+    memory: int | None,
+    cpus: float | None,
+) -> None:
+    """Run the command in the Docker image of the platform.
+
+    A ``dev`` image is built first, unless CI already holds it.
+    """
+    tag = "dev" if dev else "latest"
+    if dev:
+        version = tool_version or get_default_tool_version(platform.value)
+        if not (
+            os.getenv("CI") == "true"
+            and get_local_docker_image(
+                platform.value, bare_tag=tag, version=version, image=image
+            )
+        ):
+            docker_build(
+                platform.value, bare_tag=tag, version=version, image=image
+            )
+
+    docker_exec(
+        platform.value,
+        *stage_inputs(list(tokens), path_flags_for(command)),
+        bare_tag=tag,
+        use_gpu=gpu,
+        version=tool_version,
+        image=image,
+        memory=memory,
+        cpus=cpus,
+    )
+
+
 @app.meta.default
 def launcher(
     *tokens: Annotated[
@@ -1097,8 +1230,6 @@ def launcher(
     """
     command, bound, _ = app.parse_args(tokens)
     platform = bound.arguments.get("platform")
-    is_convert_command = getattr(command, "__name__", "") == "convert"
-    running_in_docker = in_docker()
 
     memory_bytes = parse_size(memory) if memory is not None else None
     if memory_bytes is not None and memory_bytes <= 0:
@@ -1107,49 +1238,27 @@ def launcher(
     if cpus is not None and cpus <= 0:
         raise ValueError("CPUs value must be a positive number.")
 
-    def run_in_configured_environment() -> None:
-        if running_in_docker:
-            command(*bound.args, **bound.kwargs)
-            return
-
-        assert platform is not None
-        tag = "dev" if dev else "latest"
-        if dev:
-            version = tool_version or get_default_tool_version(platform.value)
-            if not (
-                os.getenv("CI") == "true"
-                and get_local_docker_image(
-                    platform.value,
-                    bare_tag=tag,
-                    version=version,
-                    image=image,
-                )
-            ):
-                docker_build(
-                    platform.value, bare_tag=tag, version=version, image=image
-                )
-
-        staged_tokens = stage_inputs(list(tokens), path_flags_for(command))
-
-        docker_exec(
-            platform.value,
-            *staged_tokens,
-            bare_tag=tag,
-            use_gpu=gpu,
-            version=tool_version,
-            image=image,
-            memory=memory_bytes,
-            cpus=cpus,
-        )
+    if in_docker():
+        command(*bound.args, **bound.kwargs)
         return
 
-    if not is_convert_command:
-        return run_in_configured_environment()
-
-    if running_in_docker:
-        return run_in_configured_environment()
-
     assert platform is not None
+    run = partial(
+        _exec_in_docker,
+        command,
+        tokens,
+        platform,
+        dev=dev,
+        gpu=gpu,
+        tool_version=tool_version,
+        image=image,
+        memory=memory_bytes,
+        cpus=cpus,
+    )
+    if getattr(command, "__name__", "") != "convert":
+        run()
+        return
+
     command_telemetry = get_component_telemetry()
     previous_conversion_run_id = os.environ.get(CONVERSION_RUN_ID_ENV_VAR)
     conversion_run_id = get_conversion_run_id()
@@ -1157,7 +1266,7 @@ def launcher(
     caught_exc: BaseException | None = None
 
     try:
-        return run_in_configured_environment()
+        run()
     except BaseException as exc:
         caught_exc = exc
         raise
@@ -1168,7 +1277,7 @@ def launcher(
                 build_command_properties(
                     conversion_run_id=conversion_run_id,
                     platform=platform,
-                    runs_in_docker=not running_in_docker,
+                    runs_in_docker=True,
                     dev_image=dev,
                     gpu_enabled=gpu,
                     tool_version=resolve_tool_version(
