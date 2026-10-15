@@ -792,9 +792,12 @@ optionally saves the results to a `.csv` file.
 > - **RVC4** with `--no-dai-benchmark`: `--model-path` can be an NN Archive (`.tar.xz`), a model slug from [Luxonis HubAI](https://hub.luxonis.com/ai) or a `.dlc` file.
 >   In the case of a `.dlc` file, the tool `snpe-dlc-info` must be available in `PATH` either on the host machine or on the device.
 >
-> HubAI model slugs use `[team_name/]model_name:variant[:instance]`, for
-> example `luxonis/yolov6-nano:r2-coco-512x384`. `HUBAI_API_KEY` must have
-> access to the selected team for private models.
+> HubAI benchmark slugs use `[team/]model[:variant[:version-or-hash]]`.
+> Resolution requires exactly one instance for the benchmark platform;
+> ambiguous matches raise an error. Versions have three integer components
+> (`1.2.3`); other third segments are hashes. See the
+> [full resolution rules](https://github.com/luxonis/modelconverter/blob/main/modelconverter/utils/hubai_utils.py).
+> `HUBAI_API_KEY` is required for private models.
 
 > [!NOTE]
 > If you experience Segmentation Faults (core dumps) during benchmarking on RVC4 using the SNPE backend (`--no-dai-benchmark`), it may be due to the device running out of memory. Try decreasing the value of `--num-images` (the default is 500) to reduce RAM usage.

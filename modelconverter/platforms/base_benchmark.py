@@ -7,7 +7,6 @@ configuration, and report the collected numbers. That shared part lives in `Benc
 which the per-platform benchmarks subclass.
 """
 
-import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from math import isfinite
@@ -18,7 +17,8 @@ import polars as pl
 from loguru import logger
 from luxonis_ml.typing import PathType
 
-from modelconverter.utils import is_hubai_model_variant_available, resolve_path
+from modelconverter.utils import resolve_path
+from modelconverter.utils.hubai_utils import resolve_hubai_benchmark_model
 
 ConfigValue: TypeAlias = str | int | float | bool | None
 Configuration: TypeAlias = dict[str, ConfigValue]
@@ -121,9 +121,7 @@ class Benchmark(ABC):
     """
 
     _VALID_EXTENSIONS = (".tar.xz", ".blob", ".dlc")
-    _HUB_MODEL_PATTERN = re.compile(
-        r"^(?:([^/]+)/)?([^:]+):([^:]+)(?::(.+))?$"
-    )
+    _HUBAI_PLATFORM: str | None = None
 
     def __init__(self, model_path: str):
         """Resolve the model to benchmark.
@@ -132,7 +130,7 @@ class Benchmark(ABC):
             model_path: Either a local path or a URL of a model file
                 ending in one of the supported extensions, or a HubAI
                 model slug of the form
-                ``[team_name/]model_name:variant[:model_instance]``. A
+                ``[team/]model[:variant[:version-or-hash]]``. A
                 URL is downloaded first.
 
         Raises:
@@ -142,40 +140,25 @@ class Benchmark(ABC):
         """
         self.model_path: PathType
         self._model_instance: str | None
+        self._hubai_instance = None
 
         if any(model_path.endswith(ext) for ext in self._VALID_EXTENSIONS):
             self.model_path = resolve_path(model_path, Path.cwd())
             self.model_name = self.model_path.stem
             self._model_instance = None
         else:
-            hub_match = self._HUB_MODEL_PATTERN.match(model_path)
-            if not hub_match:
+            if self._HUBAI_PLATFORM is None:
                 raise ValueError(
-                    "Invalid 'model-path' format. Expected either:\n"
-                    "- Model file path: path/to/model.blob, path/to/model.dlc or path/to/model.tar.xz\n"
-                    "- HubAI model slug: [team_name/]model_name:variant[:model_instance]"
+                    f"HubAI models are not supported by {type(self).__name__}."
                 )
-            (
-                team_name,
-                model_name,
-                model_variant,
-                model_instance,
-            ) = hub_match.groups()
-            hub_model_identifier = (
-                f"{team_name}/{model_name}" if team_name else model_name
+            resolved = resolve_hubai_benchmark_model(
+                model_path, self._HUBAI_PLATFORM
             )
-            if is_hubai_model_variant_available(
-                hub_model_identifier, model_variant
-            ):
-                self.model_path = model_path
-                self.model_name = model_name
-                self._model_variant = model_variant
-                self._model_instance = model_instance
-                self._hub_model_identifier = hub_model_identifier
-            else:
-                raise ValueError(
-                    f"Model {team_name + '/' if team_name else ''}{model_name}:{model_variant}{':' + model_instance if model_instance else ''} not found in HubAI."
-                )
+            self.model_path = resolved.slug
+            self.model_name = resolved.model_name
+            self._model_variant = resolved.variant_slug
+            self._model_instance = resolved.instance.hash
+            self._hubai_instance = resolved.instance
 
     @abstractmethod
     def benchmark(self, configuration: Configuration) -> Result:

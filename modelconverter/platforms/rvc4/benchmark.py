@@ -47,7 +47,6 @@ from modelconverter.utils import (
     environ,
     subprocess_run,
 )
-from modelconverter.utils.hubai_utils import create_hubai_client
 from modelconverter.utils.log_latency import RVC4_INFERENCE_LATENCY_RE
 
 
@@ -100,6 +99,8 @@ class RVC4Benchmark(Benchmark):
     ``snpe-dlc-info`` and falling back to the NN archive when that is
     unavailable.
     """
+
+    _HUBAI_PLATFORM = "RVC4"
 
     # How many distinct random inputs are written to the device for the
     # SNPE backend. Anything beyond that is hard-linked to them so that
@@ -758,40 +759,14 @@ class RVC4Benchmark(Benchmark):
         ]
 
     def _get_hubai_type(self) -> DataType | None:
-        if not isinstance(
-            self.model_path, str
-        ) or not self._HUB_MODEL_PATTERN.match(self.model_path):
+        if (
+            self._hubai_instance is None
+            or self._hubai_instance.model_precision_type is None
+        ):
             return None
-
-        client = create_hubai_client()
-        model_variant = client.variants.get_variant(
-            f"{self._hub_model_identifier}:{self._model_variant}"
+        return DataType.from_hubai_dtype(
+            self._hubai_instance.model_precision_type.value
         )
-
-        model_instances = []
-        for is_public in (True, False):
-            model_instances.extend(
-                client.instances.list_instances(
-                    model_id=model_variant.model_id,
-                    variant_id=model_variant.id,
-                    is_public=is_public,
-                    limit=500,
-                )
-            )
-        for instance in model_instances:
-            if any(
-                platform.value == "RVC4"
-                for platform in instance.platforms or []
-            ) and (
-                self._model_instance is None
-                or instance.hash_short == self._model_instance
-            ):
-                if instance.model_precision_type is not None:
-                    return DataType.from_hubai_dtype(
-                        instance.model_precision_type.value
-                    )
-                return None
-        return None
 
     @staticmethod
     def _format_measurement(value: float | str | None) -> str:
