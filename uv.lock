@@ -2151,7 +2151,7 @@ wheels = [
 
 [[package]]
 name = "luxonis-ml"
-version = "0.10.0"
+version = "0.10.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cyclopts" },
@@ -2165,9 +2165,9 @@ dependencies = [
     { name = "semver" },
     { name = "typeguard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/db/a6/157620680c37193f20f5e6d0891928dc84c574e89cfc9c676fa541cfd745/luxonis_ml-0.10.0.tar.gz", hash = "sha256:72dd2f070fabf106d658b0640536ea1486fdf9f3858d3515a793834c6d584447", size = 285523, upload-time = "2026-08-25T07:22:07.413Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/ff/3320c73aafac16d6fd59c6f11ab82ffac2068e52a32b203c24d2fd6dd340/luxonis_ml-0.10.2.tar.gz", hash = "sha256:cf90419242786081ab945e2f953cbac752a55ba4d37d944e50724f2c97144a0e", size = 286671, upload-time = "2026-10-08T18:05:53.651Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/f8/77ff2cbbb2c6c718494e7ebc0ea90bb9b7d913496c4f925359ed3aad4ad4/luxonis_ml-0.10.0-py3-none-any.whl", hash = "sha256:8711d4de1929a67847a1f34f55414bd174facee586ce4e6212674957760f3e2c", size = 354571, upload-time = "2026-08-25T07:22:05.892Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/36/c66dba45eaacb13de05d3cf935d62fd365ce8d5a7485157b4310aac56449/luxonis_ml-0.10.2-py3-none-any.whl", hash = "sha256:fa2b3c7a6adb9c5c8b903df422e8a6ffd91931cff17a02a4820879d1c2954fe0", size = 355915, upload-time = "2026-10-08T18:05:52.414Z" },
 ]
 
 [package.optional-dependencies]
