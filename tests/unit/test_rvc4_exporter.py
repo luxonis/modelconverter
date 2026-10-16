@@ -1,6 +1,7 @@
 """Tests for the RVC4 exporter."""
 
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -182,6 +183,37 @@ def test_path_quantization_overrides_passthrough_without_io_normalization(
 
     assert generated == encodings_path
     assert generated.read_text() == raw
+
+
+@pytest.mark.parametrize("normalize_io_encodings", [True, False])
+def test_snpe_encodings_are_retained_after_intermediate_cleanup(
+    work_dir: Path, normalize_io_encodings: bool
+):
+    exporter = _make_exporter(
+        work_dir,
+        "CUSTOM",
+        normalize_io_encodings=normalize_io_encodings,
+    )
+    source = work_dir / "custom.encodings"
+    source.write_text(
+        json.dumps(
+            {
+                "activation_encodings": {
+                    "input0": [{"bitwidth": 16, "scale": 0.5}],
+                },
+                "param_encodings": {},
+            }
+        )
+    )
+    exporter._encodings = QuantizationOverrides.from_path(source)
+
+    args: list[str] = []
+    exporter._add_quantization_args(args)
+    used_path = Path(args[args.index("--quantization_overrides") + 1])
+    expected = used_path.read_bytes()
+    shutil.rmtree(exporter.intermediate_outputs_dir)
+
+    assert (exporter.output_dir / "encodings.json").read_bytes() == expected
 
 
 def test_inline_quantization_overrides_preserved_without_io_normalization(

@@ -114,6 +114,13 @@ def process_nn_archive(
     model_path = untar_path / archive_config.model.metadata.path
     if (
         platform is Platform.RVC4
+        and not (
+            _has_override(overrides, ("rvc4", "encodings"))
+            or _has_override(
+                overrides,
+                ("stages", main_stage_key, "rvc4", "encodings"),
+            )
+        )
         and (p := _find_archive_encodings(untar_path, model_path)) is not None
     ):
         logger.info(f"Using custom `{p.name}` from the NN Archive.")
@@ -419,6 +426,23 @@ def _split_overrides(
         else:
             root_overrides[key] = value
     return root_overrides, stage_overrides
+
+
+def _has_override(params: Params | None, path: tuple[str, ...]) -> bool:
+    """Check for a nested or dotted override without reading its value."""
+    if not isinstance(params, dict):
+        return False
+    for key, value in params.items():
+        parts = tuple(key.split("."))
+        if path[: len(parts)] != parts:
+            continue
+        if len(parts) == len(path):
+            return True
+        if isinstance(value, dict) and _has_override(
+            value, path[len(parts) :]
+        ):
+            return True
+    return False
 
 
 def _apply_archive_resize_modes(
@@ -1149,15 +1173,26 @@ def _archive_files(
         return files
 
     encodings_path = output_path / "encodings.json"
-    effective_path = output_path / "intermediate_outputs" / "encodings.json"
-    if (
+    stage_output = (
+        output_path / main_stage if len(cfg.stages) > 1 else output_path
+    )
+    retained_path = stage_output / "encodings.json"
+    effective_path = stage_output / "intermediate_outputs" / "encodings.json"
+    if retained_path.is_file():
+        if retained_path != encodings_path:
+            shutil.copyfile(retained_path, encodings_path)
+    elif effective_path.is_file():
+        shutil.copyfile(effective_path, encodings_path)
+    elif rvc4_cfg.normalize_io_encodings:
+        raise RuntimeError(
+            "The encodings passed to SNPE are missing; cannot package "
+            "the original encodings as if they were used for conversion."
+        )
+    elif (
         isinstance(encodings, QuantizationOverrides)
         and encodings.source_path is not None
-        and not rvc4_cfg.normalize_io_encodings
     ):
         shutil.copyfile(encodings.source_path, encodings_path)
-    elif effective_path.exists():
-        shutil.copyfile(effective_path, encodings_path)
     else:
         payload = (
             encodings.load_payload()
