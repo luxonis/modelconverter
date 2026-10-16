@@ -10,6 +10,7 @@ packed back into a new archive whose config this module builds.
 
 import json
 import os
+import shutil
 import tarfile
 from itertools import pairwise
 from pathlib import Path
@@ -109,11 +110,12 @@ def process_nn_archive(
         "input_model": str(untar_path / archive_config.model.metadata.path),
     }
 
+    model_path = untar_path / archive_config.model.metadata.path
     if (
         platform is Platform.RVC4
-        and (p := untar_path / "encodings.json").exists()
+        and (p := _find_archive_encodings(untar_path, model_path)) is not None
     ):
-        logger.info("Using custom `encodings.json` from the NN Archive.")
+        logger.info(f"Using custom `{p.name}` from the NN Archive.")
         main_stage_config["rvc4"] = {
             "encodings": json.loads(p.read_text()),
         }
@@ -157,6 +159,32 @@ def process_nn_archive(
         cfg.stages[main_stage_key].inputs, archive_config
     )
     return cfg, archive_config, main_stage_key
+
+
+def _find_archive_encodings(
+    archive_path: Path, model_path: Path
+) -> Path | None:
+    """Find quantization overrides bundled with an ONNX NN Archive.
+
+    ``encodings.json`` is the established ModelConverter archive name.
+    AIMET's ``<model-stem>.encodings`` sidecar is also accepted next to the
+    executable. If both candidates are present, prefer the established
+    ``encodings.json`` name and log the ambiguity.
+    """
+    candidates = dict.fromkeys(
+        [
+            archive_path / "encodings.json",
+            model_path.with_suffix(".encodings"),
+        ]
+    )
+    existing = [path for path in candidates if path.is_file()]
+    if len(existing) > 1:
+        logger.warning(
+            "Multiple quantization encoding files found in NN Archive; "
+            f"using `{existing[0].name}`. Remove duplicates or provide an "
+            "explicit `rvc4.encodings` override."
+        )
+    return existing[0] if existing else None
 
 
 _ARCHIVE_SUFFIXES = (
@@ -1087,12 +1115,54 @@ def generate_archive(
         archive_name=f"{cfg.name}.{platform.value.lower()}",
         save_path=str(output_path),
         cfg_dict=nn_archive.model_dump(),
-        executables_paths=[
-            *out_models,
-            output_path / "buildinfo.json",
-        ],
+        executables_paths=_archive_files(
+            platform, cfg, main_stage, out_models, output_path
+        ),
     )
     return generator.make_archive()
+
+
+def _archive_files(
+    platform: Platform,
+    cfg: Config,
+    main_stage: str,
+    out_models: list[Path],
+    output_path: Path,
+) -> list[Path]:
+    """Collect the model and provenance files to include in the archive.
+
+    RVC4 NN Archives retain the quantization overrides used for conversion
+    as ``encodings.json``. This keeps the conversion input alongside the
+    compiled DLC and mirrors the filename recognized when importing an NN
+    Archive for a later conversion.
+    """
+    files = [*out_models, output_path / "buildinfo.json"]
+    if platform is not Platform.RVC4:
+        return files
+
+    rvc4_cfg = cfg.stages[main_stage].rvc4
+    encodings = rvc4_cfg.encodings
+    if encodings is None:
+        return files
+    if rvc4_cfg.quantization_mode == QuantizationMode.FP16_STD:
+        return files
+
+    encodings_path = output_path / "encodings.json"
+    source_path = getattr(encodings, "source_path", None)
+    effective_path = output_path / "intermediate_outputs" / "encodings.json"
+    if source_path is not None and not rvc4_cfg.normalize_io_encodings:
+        shutil.copyfile(source_path, encodings_path)
+    elif effective_path.exists():
+        shutil.copyfile(effective_path, encodings_path)
+    else:
+        payload = (
+            encodings.load_payload()
+            if hasattr(encodings, "load_payload")
+            else encodings.model_dump(mode="json")
+        )
+        encodings_path.write_text(json.dumps(payload, indent=2) + "\n")
+    files.append(encodings_path)
+    return files
 
 
 def _get_io_dtype(
