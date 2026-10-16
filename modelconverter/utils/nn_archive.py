@@ -27,7 +27,7 @@ from luxonis_ml.nn_archive.config_building_blocks import (
     InputType,
     PreprocessingBlock,
 )
-from luxonis_ml.typing import Params
+from luxonis_ml.typing import Params, PathType
 from pydantic import BaseModel
 
 from modelconverter.utils.config import (
@@ -36,6 +36,7 @@ from modelconverter.utils.config import (
     InputConfig,
     OutputConfig,
     PlatformConfig,
+    QuantizationOverrides,
     broadcast_preprocessing_values,
 )
 from modelconverter.utils.constants import MISC_DIR
@@ -1128,7 +1129,7 @@ def _archive_files(
     main_stage: str,
     out_models: list[Path],
     output_path: Path,
-) -> list[Path]:
+) -> list[PathType]:
     """Collect the model and provenance files to include in the archive.
 
     RVC4 NN Archives retain the quantization overrides used for conversion
@@ -1136,7 +1137,7 @@ def _archive_files(
     compiled DLC and mirrors the filename recognized when importing an NN
     Archive for a later conversion.
     """
-    files = [*out_models, output_path / "buildinfo.json"]
+    files: list[PathType] = [*out_models, output_path / "buildinfo.json"]
     if platform is not Platform.RVC4:
         return files
 
@@ -1148,16 +1149,19 @@ def _archive_files(
         return files
 
     encodings_path = output_path / "encodings.json"
-    source_path = getattr(encodings, "source_path", None)
     effective_path = output_path / "intermediate_outputs" / "encodings.json"
-    if source_path is not None and not rvc4_cfg.normalize_io_encodings:
-        shutil.copyfile(source_path, encodings_path)
+    if (
+        isinstance(encodings, QuantizationOverrides)
+        and encodings.source_path is not None
+        and not rvc4_cfg.normalize_io_encodings
+    ):
+        shutil.copyfile(encodings.source_path, encodings_path)
     elif effective_path.exists():
         shutil.copyfile(effective_path, encodings_path)
     else:
         payload = (
             encodings.load_payload()
-            if hasattr(encodings, "load_payload")
+            if isinstance(encodings, QuantizationOverrides)
             else encodings.model_dump(mode="json")
         )
         encodings_path.write_text(json.dumps(payload, indent=2) + "\n")
