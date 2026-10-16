@@ -10,6 +10,7 @@ packed back into a new archive whose config this module builds.
 
 import json
 import os
+import shutil
 import tarfile
 from itertools import pairwise
 from pathlib import Path
@@ -26,7 +27,7 @@ from luxonis_ml.nn_archive.config_building_blocks import (
     InputType,
     PreprocessingBlock,
 )
-from luxonis_ml.typing import Params
+from luxonis_ml.typing import Params, PathType
 from pydantic import BaseModel
 
 from modelconverter.utils.config import (
@@ -35,6 +36,7 @@ from modelconverter.utils.config import (
     InputConfig,
     OutputConfig,
     PlatformConfig,
+    QuantizationOverrides,
     broadcast_preprocessing_values,
 )
 from modelconverter.utils.constants import MISC_DIR
@@ -109,11 +111,19 @@ def process_nn_archive(
         "input_model": str(untar_path / archive_config.model.metadata.path),
     }
 
+    model_path = untar_path / archive_config.model.metadata.path
     if (
         platform is Platform.RVC4
-        and (p := untar_path / "encodings.json").exists()
+        and not (
+            _has_override(overrides, ("rvc4", "encodings"))
+            or _has_override(
+                overrides,
+                ("stages", main_stage_key, "rvc4", "encodings"),
+            )
+        )
+        and (p := _find_archive_encodings(untar_path, model_path)) is not None
     ):
-        logger.info("Using custom `encodings.json` from the NN Archive.")
+        logger.info(f"Using custom `{p.name}` from the NN Archive.")
         main_stage_config["rvc4"] = {
             "encodings": json.loads(p.read_text()),
         }
@@ -157,6 +167,32 @@ def process_nn_archive(
         cfg.stages[main_stage_key].inputs, archive_config
     )
     return cfg, archive_config, main_stage_key
+
+
+def _find_archive_encodings(
+    archive_path: Path, model_path: Path
+) -> Path | None:
+    """Find quantization overrides bundled with an ONNX NN Archive.
+
+    ``encodings.json`` is the established ModelConverter archive name.
+    AIMET's ``<model-stem>.encodings`` sidecar is also accepted next to the
+    executable. If both candidates are present, prefer the established
+    ``encodings.json`` name and log the ambiguity.
+    """
+    candidates = dict.fromkeys(
+        [
+            archive_path / "encodings.json",
+            model_path.with_suffix(".encodings"),
+        ]
+    )
+    existing = [path for path in candidates if path.is_file()]
+    if len(existing) > 1:
+        logger.warning(
+            "Multiple quantization encoding files found in NN Archive; "
+            f"using `{existing[0].name}`. Remove duplicates or provide an "
+            "explicit `rvc4.encodings` override."
+        )
+    return existing[0] if existing else None
 
 
 _ARCHIVE_SUFFIXES = (
@@ -390,6 +426,23 @@ def _split_overrides(
         else:
             root_overrides[key] = value
     return root_overrides, stage_overrides
+
+
+def _has_override(params: Params | None, path: tuple[str, ...]) -> bool:
+    """Check for a nested or dotted override without reading its value."""
+    if not isinstance(params, dict):
+        return False
+    for key, value in params.items():
+        parts = tuple(key.split("."))
+        if path[: len(parts)] != parts:
+            continue
+        if len(parts) == len(path):
+            return True
+        if isinstance(value, dict) and _has_override(
+            value, path[len(parts) :]
+        ):
+            return True
+    return False
 
 
 def _apply_archive_resize_modes(
@@ -1087,12 +1140,68 @@ def generate_archive(
         archive_name=f"{cfg.name}.{platform.value.lower()}",
         save_path=str(output_path),
         cfg_dict=nn_archive.model_dump(),
-        executables_paths=[
-            *out_models,
-            output_path / "buildinfo.json",
-        ],
+        executables_paths=_archive_files(
+            platform, cfg, main_stage, out_models, output_path
+        ),
     )
     return generator.make_archive()
+
+
+def _archive_files(
+    platform: Platform,
+    cfg: Config,
+    main_stage: str,
+    out_models: list[Path],
+    output_path: Path,
+) -> list[PathType]:
+    """Collect the model and provenance files to include in the archive.
+
+    RVC4 NN Archives retain the quantization overrides used for conversion
+    as ``encodings.json``. This keeps the conversion input alongside the
+    compiled DLC and mirrors the filename recognized when importing an NN
+    Archive for a later conversion.
+    """
+    files: list[PathType] = [*out_models, output_path / "buildinfo.json"]
+    if platform is not Platform.RVC4:
+        return files
+
+    rvc4_cfg = cfg.stages[main_stage].rvc4
+    encodings = rvc4_cfg.encodings
+    if encodings is None:
+        return files
+    if rvc4_cfg.quantization_mode == QuantizationMode.FP16_STD:
+        return files
+
+    encodings_path = output_path / "encodings.json"
+    stage_output = (
+        output_path / main_stage if len(cfg.stages) > 1 else output_path
+    )
+    retained_path = stage_output / "encodings.json"
+    effective_path = stage_output / "intermediate_outputs" / "encodings.json"
+    if retained_path.is_file():
+        if retained_path != encodings_path:
+            shutil.copyfile(retained_path, encodings_path)
+    elif effective_path.is_file():
+        shutil.copyfile(effective_path, encodings_path)
+    elif rvc4_cfg.normalize_io_encodings:
+        raise RuntimeError(
+            "The encodings passed to SNPE are missing; cannot package "
+            "the original encodings as if they were used for conversion."
+        )
+    elif (
+        isinstance(encodings, QuantizationOverrides)
+        and encodings.source_path is not None
+    ):
+        shutil.copyfile(encodings.source_path, encodings_path)
+    else:
+        payload = (
+            encodings.load_payload()
+            if isinstance(encodings, QuantizationOverrides)
+            else encodings.model_dump(mode="json")
+        )
+        encodings_path.write_text(json.dumps(payload, indent=2) + "\n")
+    files.append(encodings_path)
+    return files
 
 
 def _get_io_dtype(

@@ -5,6 +5,7 @@ No network, cloud, Docker or vendor tooling: the dummy ONNX models and NN-archiv
 ``resolve_path`` short-circuit on ``Path.exists()`` so nothing is downloaded.
 """
 
+import json
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
@@ -19,7 +20,7 @@ from luxonis_ml.nn_archive.config_building_blocks import (
     InputType,
     PreprocessingBlock,
 )
-from luxonis_ml.typing import Params, ParamValue
+from luxonis_ml.typing import Params, ParamValue, PathType
 from onnx import TensorProto
 
 from modelconverter.cli.utils import extract_preprocessing, get_configs
@@ -27,6 +28,7 @@ from modelconverter.utils.config import (
     Config,
     InputConfig,
     OutputConfig,
+    QuantizationOverrides,
     RandomCalibrationConfig,
     RVC2Config,
     RVC3Config,
@@ -36,6 +38,7 @@ from modelconverter.utils.constants import MISC_DIR, OUTPUTS_DIR
 from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.nn_archive import (
     _apply_archive_resize_modes,
+    _archive_files,
     _default_archive_preprocessing,
     _get_io_dtype,
     _match_tensor_names,
@@ -53,6 +56,7 @@ from modelconverter.utils.types import (
     DataType,
     Encoding,
     Platform,
+    QuantizationMode,
     ResizeMethod,
 )
 from tests.helpers.archive_factory import (
@@ -403,17 +407,76 @@ ENCODINGS = {
 }
 
 
-def test_custom_encodings_used_for_rvc4(work_dir: Path):
+@pytest.mark.parametrize(
+    ("filenames", "expected_source"),
+    [
+        (("encodings.json",), "root"),
+        (("dummy_model.encodings",), "sidecar"),
+        (("encodings.json", "dummy_model.encodings"), "root"),
+    ],
+)
+def test_custom_encodings_used_for_rvc4(
+    work_dir: Path, filenames: tuple[str, ...], expected_source: str
+):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
-    enc = write_json(ENCODINGS, work_dir / "encodings.json")
+    sidecar_encodings = {
+        "activation_encodings": {
+            "input0": [{"bitwidth": 8, "scale": 0.2, "offset": 0}]
+        },
+        "param_encodings": {},
+    }
+    sources = {
+        "root": ENCODINGS,
+        "sidecar": sidecar_encodings,
+    }
+    extra_files: dict[str, PathType] = {
+        filename: write_json(
+            sources["root" if filename == "encodings.json" else "sidecar"],
+            work_dir / f"source-{index}.json",
+        )
+        for index, filename in enumerate(filenames)
+    }
     tar = pack_archive(
         work_dir / "dummy_model.tar",
         onnx,
         default_archive_config(),
-        extra_files={"encodings.json": enc},
+        extra_files=extra_files,
     )
     config, _, main_stage = process_nn_archive(Platform.RVC4, tar, None)
-    assert config.stages[main_stage].rvc4.encodings is not None
+    encodings = config.stages[main_stage].rvc4.encodings
+    assert isinstance(encodings, QuantizationOverrides)
+    assert encodings.load_payload() == sources[expected_source]
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"rvc4.encodings": ENCODINGS},
+        {"rvc4": {"encodings": ENCODINGS}},
+        {"stages.dummy_model.rvc4.encodings": ENCODINGS},
+        {"rvc4.encodings": None},
+    ],
+)
+def test_explicit_encodings_override_skips_invalid_archive_file(
+    work_dir: Path, overrides: Params
+):
+    onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
+    archive_encodings = work_dir / "encodings.json"
+    archive_encodings.write_text("invalid JSON")
+    tar = pack_archive(
+        work_dir / "dummy_model.tar",
+        onnx,
+        default_archive_config(),
+        extra_files={"encodings.json": archive_encodings},
+    )
+
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, overrides)
+    encodings = config.stages[main_stage].rvc4.encodings
+    if "rvc4.encodings" in overrides and overrides["rvc4.encodings"] is None:
+        assert encodings is None
+    else:
+        assert isinstance(encodings, QuantizationOverrides)
+        assert encodings.load_payload() == ENCODINGS
 
 
 def test_encodings_ignored_for_non_rvc4(work_dir: Path):
@@ -427,6 +490,102 @@ def test_encodings_ignored_for_non_rvc4(work_dir: Path):
     )
     config, _, main_stage = process_nn_archive(Platform.RVC2, tar, None)
     assert main_stage in config.stages
+
+
+@pytest.mark.parametrize("multistage", [False, True])
+def test_archive_uses_retained_snpe_encodings_after_cleanup(
+    tmp_path: Path, dummy_onnx: Path, multistage: bool
+):
+    config = _config_from_overrides(
+        dummy_onnx, **{"rvc4.encodings": ENCODINGS}
+    )
+    main_stage = next(iter(config.stages))
+    if multistage:
+        config.stages["post"] = config.stages[main_stage].model_copy(deep=True)
+
+    stage_output = tmp_path / main_stage if multistage else tmp_path
+    stage_output.mkdir(exist_ok=True)
+    retained_path = stage_output / "encodings.json"
+    effective_encodings = {
+        "activation_encodings": {"input0": [{"bitwidth": 8, "dtype": "int"}]},
+        "param_encodings": {},
+    }
+    retained_path.write_text(json.dumps(effective_encodings))
+
+    files = _archive_files(
+        Platform.RVC4, config, main_stage, [dummy_onnx], tmp_path
+    )
+
+    archive_encodings = tmp_path / "encodings.json"
+    assert archive_encodings in files
+    assert json.loads(archive_encodings.read_text()) == effective_encodings
+
+
+@pytest.mark.parametrize("source", ["intermediate", "file", "inline"])
+def test_archive_encoding_fallbacks(
+    tmp_path: Path, dummy_onnx: Path, source: str
+):
+    config = _config_from_overrides(
+        dummy_onnx, **{"rvc4.encodings": ENCODINGS}
+    )
+    main_stage = next(iter(config.stages))
+    rvc4_cfg = config.stages[main_stage].rvc4
+    expected_raw: bytes | None = None
+
+    if source == "intermediate":
+        effective_encodings = {
+            "activation_encodings": {
+                "input0": [{"bitwidth": 8, "dtype": "int"}]
+            },
+            "param_encodings": {},
+        }
+        intermediate = tmp_path / "intermediate_outputs"
+        intermediate.mkdir()
+        (intermediate / "encodings.json").write_text(
+            json.dumps(effective_encodings)
+        )
+    else:
+        rvc4_cfg.normalize_io_encodings = False
+        effective_encodings = ENCODINGS
+        if source == "file":
+            path = tmp_path / "custom.encodings"
+            path.write_text(json.dumps(ENCODINGS))
+            expected_raw = path.read_bytes()
+            rvc4_cfg.encodings = QuantizationOverrides.from_path(path)
+
+    files = _archive_files(
+        Platform.RVC4, config, main_stage, [dummy_onnx], tmp_path
+    )
+    archive_encodings = tmp_path / "encodings.json"
+    assert archive_encodings in files
+    assert json.loads(archive_encodings.read_text()) == effective_encodings
+    if expected_raw is not None:
+        assert archive_encodings.read_bytes() == expected_raw
+
+
+@pytest.mark.parametrize("fp16", [False, True])
+def test_archive_requires_used_encodings_except_fp16(
+    tmp_path: Path, dummy_onnx: Path, fp16: bool
+):
+    config = _config_from_overrides(
+        dummy_onnx, **{"rvc4.encodings": ENCODINGS}
+    )
+    main_stage = next(iter(config.stages))
+    if fp16:
+        rvc4_cfg = config.stages[main_stage].rvc4
+        rvc4_cfg.quantization_mode = QuantizationMode.FP16_STD
+        files = _archive_files(
+            Platform.RVC4, config, main_stage, [dummy_onnx], tmp_path
+        )
+        assert tmp_path / "encodings.json" not in files
+        return
+
+    with pytest.raises(
+        RuntimeError, match="encodings passed to SNPE are missing"
+    ):
+        _archive_files(
+            Platform.RVC4, config, main_stage, [dummy_onnx], tmp_path
+        )
 
 
 # Covers the ``dai_type is not None`` decision tree.

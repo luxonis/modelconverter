@@ -531,6 +531,8 @@ The `rvc4.quantization_mode` CLI option allows you to choose between different p
 > [!IMPORTANT]
 > When `rvc4.quantization_mode` is set to anything other than `CUSTOM`, the default settings for that mode will override any custom settings provided in the configuration file or via command-line arguments (via the `rvc4.snpe_onnx_to_dlc_args`, `rvc4.snpe_dlc_quant_args`, or `rvc4.snpe_dlc_graph_prepare_args` options).
 
+An ONNX NN Archive can include quantization overrides as root-level `encodings.json` or as AIMET's `<model-stem>.encodings` sidecar next to the ONNX file. For RVC4 conversion, ModelConverter uses the archive file unless `rvc4.encodings` is explicitly set. When an RVC4 NN Archive is generated with quantization overrides, it includes the effective `encodings.json` used by SNPE.
+
 #### Handling Large ONNX Files (Exceeding 2GB)
 
 When working with ONNX models that exceed 2GB in size, the model data must be stored using ONNX's external data mechanism. This separates the model structure from the large weight data.

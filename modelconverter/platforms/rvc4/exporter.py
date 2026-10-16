@@ -595,6 +595,11 @@ class RVC4Exporter(Exporter):
         self._validate_quantization_overrides()
         if self._encodings is not None:
             io_encodings_file = self._generate_io_encodings(self._encodings)
+            # Archive creation runs after intermediate outputs may be removed.
+            # Keep the exact file passed to SNPE in the durable output directory.
+            retained_path = self.output_dir / "encodings.json"
+            if io_encodings_file.resolve() != retained_path.resolve():
+                shutil.copyfile(io_encodings_file, retained_path)
             self._add_args(
                 args, ["--quantization_overrides", str(io_encodings_file)]
             )
