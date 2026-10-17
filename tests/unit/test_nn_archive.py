@@ -7,6 +7,7 @@ No network, cloud, Docker or vendor tooling: the dummy ONNX models and NN-archiv
 
 import json
 import shutil
+import tarfile
 from collections.abc import Mapping
 from pathlib import Path
 from types import SimpleNamespace
@@ -1797,7 +1798,37 @@ def _prepare_output(name: str) -> Path:
     out_dir = OUTPUTS_DIR / name
     out_dir.mkdir(parents=True, exist_ok=True)
     write_json({}, out_dir / "buildinfo.json")
+    write_json({"name": name}, out_dir / "config.yaml")
     return out_dir
+
+
+@pytest.mark.parametrize("platform", list(Platform))
+def test_generated_archive_includes_conversion_config(
+    dummy_onnx: Path, platform: Platform
+):
+    out_dir = _prepare_output(f"config-{platform.value}")
+    out_model = out_dir / "output.onnx"
+    shutil.copy(dummy_onnx, out_model)
+    config = _config_from_overrides(dummy_onnx)
+    main_stage = next(iter(config.stages))
+    config_path = out_dir / "config.yaml"
+    config_path.write_text(config.stages[main_stage].model_dump_json(indent=4))
+
+    archive = generate_archive(
+        platform,
+        config,
+        main_stage,
+        [out_model],
+        out_dir,
+        None,
+        {},
+        dummy_onnx,
+    )
+
+    with tarfile.open(archive, "r:xz") as tar:
+        member = tar.extractfile("config.yaml")
+        assert member is not None
+        assert member.read() == config_path.read_bytes()
 
 
 @pytest.mark.parametrize("name", ["myarchive", "default_stage", "bundle.v1"])
