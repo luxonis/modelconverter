@@ -366,7 +366,8 @@ If omitted or null, it defaults to the archive basename (without its archive ext
 unpacked directory name, model stem for a flat config, or explicit `stages` keys joined by dashes.
 
 NN Archives are named `<name>.<platform>.tar.xz`; `--to native` creates no
-archive. Both modes use the default output subfolder
+archive. Each NN Archive includes the output folder's `config.yaml` and
+`buildinfo.json` at its root. Both modes use the default output subfolder
 `<sanitized_name>_to_<platform>_<YYYY_MM_DD_HH_MM_SS>` (UTC).
 `--output-dir` overrides this directory independently of `name`, under
 `output/` when using Docker. An existing destination is replaced only if
