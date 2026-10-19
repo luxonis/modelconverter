@@ -255,7 +255,10 @@ def test_inline_quantization_overrides_preserved_without_io_normalization(
     assert json.loads(generated.read_text()) == payload
 
 
-def test_io_normalization_preserves_unrelated_override_data(work_dir: Path):
+@pytest.mark.parametrize("version", [None, "0.6.1"])
+def test_io_normalization_preserves_unrelated_override_data(
+    work_dir: Path, version: str | None
+):
     exporter = _make_exporter(work_dir, "CUSTOM")
     payload = {
         "top_level_vendor_key": {"keep": True},
@@ -281,12 +284,15 @@ def test_io_normalization_preserves_unrelated_override_data(work_dir: Path):
             "weight": [{"bitwidth": 8, "param_vendor_key": {"x": 2}}],
         },
     }
+    if version is not None:
+        payload["version"] = version
 
     generated = exporter._generate_io_encodings(
         QuantizationOverrides.from_payload(payload)
     )
     generated_payload = json.loads(generated.read_text())
 
+    assert generated_payload.get("version") == version
     assert generated_payload["top_level_vendor_key"] == {"keep": True}
     assert generated_payload["activation_encodings"]["input0"] == [
         {"activation_vendor_key": [1], "bitwidth": 8, "dtype": "int"}
@@ -387,45 +393,85 @@ def test_io_normalization_preserves_dict_shaped_exposed_entry(
     }
 
 
+@pytest.mark.parametrize("version", [None, "1.0.0"])
 def test_io_normalization_preserves_flat_activation_list_shape(
-    work_dir: Path,
+    work_dir: Path, version: str | None
 ):
     exporter = _make_exporter(work_dir, "CUSTOM")
+    bitwidth_key = "bw" if version == "1.0.0" else "bitwidth"
+    default_encoding = (
+        {"bw": 8, "dtype": "INT", "enc_type": "PER_TENSOR"}
+        if version == "1.0.0"
+        else {"bitwidth": 8, "dtype": "int"}
+    )
     payload = {
         "activation_encodings": [
             {
                 "name": "hidden",
-                "bitwidth": 16,
+                bitwidth_key: 16,
                 "hidden_vendor_key": "keep",
             },
             {
                 "name": "input0",
-                "scale": 0.5,
+                bitwidth_key: 16,
+                "dtype": "INT",
+                "enc_type": "LPBQ",
+                "is_sym": True,
+                "scale": [0.5],
+                "offset": [-32768],
+                "block_size": 16,
+                "compressed_bw": 8,
+                "per_block_int_scale": [1, 2],
                 "input_vendor_key": "keep",
             },
         ],
-        "param_encodings": {},
+        "param_encodings": [
+            {"name": "weight", bitwidth_key: 16, "dtype": "FLOAT"}
+        ],
+        "quantizer_args": {"activation_bitwidth": 16},
     }
+    if version is not None:
+        payload["version"] = version
 
     generated = exporter._generate_io_encodings(
         QuantizationOverrides.from_payload(payload)
     )
     generated_payload = json.loads(generated.read_text())
 
+    assert generated_payload.get("version") == version
+    assert generated_payload["param_encodings"] == payload["param_encodings"]
+    assert generated_payload["quantizer_args"] == payload["quantizer_args"]
     assert generated_payload["activation_encodings"] == [
         {
             "name": "hidden",
-            "bitwidth": 16,
+            bitwidth_key: 16,
             "hidden_vendor_key": "keep",
         },
         {
             "name": "input0",
             "input_vendor_key": "keep",
-            "bitwidth": 8,
-            "dtype": "int",
+            **default_encoding,
         },
-        {"name": "output0", "bitwidth": 8, "dtype": "int"},
+        {"name": "output0", **default_encoding},
     ]
+
+
+@pytest.mark.parametrize("version", ["2.0.0", "3.0.0"])
+def test_unknown_normalization_version_can_pass_through(
+    work_dir: Path, version: str
+):
+    exporter = _make_exporter(work_dir, "CUSTOM")
+    path = work_dir / "encodings.json"
+    raw = json.dumps({"version": version, "encodings": []}) + "\n"
+    path.write_text(raw)
+    overrides = QuantizationOverrides.from_path(path)
+
+    with pytest.raises(TypeError, match="normalize_io_encodings=False"):
+        exporter._generate_io_encodings(overrides)
+
+    exporter._normalize_io_encodings = False
+    assert exporter._generate_io_encodings(overrides) == path
+    assert path.read_text() == raw
 
 
 @pytest.mark.parametrize(
