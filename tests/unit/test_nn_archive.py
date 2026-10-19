@@ -5,9 +5,13 @@ No network, cloud, Docker or vendor tooling: the dummy ONNX models and NN-archiv
 ``resolve_path`` short-circuit on ``Path.exists()`` so nothing is downloaded.
 """
 
+import os
 import shutil
+import tarfile
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 from types import SimpleNamespace
 from typing import Literal, cast
 
@@ -19,14 +23,16 @@ from luxonis_ml.nn_archive.config_building_blocks import (
     InputType,
     PreprocessingBlock,
 )
-from luxonis_ml.typing import Params, ParamValue
+from luxonis_ml.typing import Params, ParamValue, PathType
 from onnx import TensorProto
 
 from modelconverter.cli.utils import extract_preprocessing, get_configs
+from modelconverter.utils import input_staging, nn_archive
 from modelconverter.utils.config import (
     Config,
     InputConfig,
     OutputConfig,
+    QuantizationOverrides,
     RandomCalibrationConfig,
     RVC2Config,
     RVC3Config,
@@ -36,6 +42,7 @@ from modelconverter.utils.constants import MISC_DIR, OUTPUTS_DIR
 from modelconverter.utils.metadata import get_metadata
 from modelconverter.utils.nn_archive import (
     _apply_archive_resize_modes,
+    _archive_files,
     _default_archive_preprocessing,
     _get_io_dtype,
     _match_tensor_names,
@@ -53,6 +60,7 @@ from modelconverter.utils.types import (
     DataType,
     Encoding,
     Platform,
+    QuantizationMode,
     ResizeMethod,
 )
 from tests.helpers.archive_factory import (
@@ -163,7 +171,8 @@ def test_process_plain_tar(work_dir: Path):
     assert isinstance(config, Config)
     assert isinstance(archive_cfg, NNArchiveConfig)
     assert main_stage in config.stages
-    assert (MISC_DIR / "dummy_model" / "config.json").exists()
+    extracted = config.stages[main_stage].input_model.parent
+    assert (extracted / "config.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -346,9 +355,12 @@ def test_process_tar_xz(work_dir: Path):
         default_archive_config(),
         mode="w:xz",
     )
-    _, archive_cfg, _ = process_nn_archive(Platform.RVC4, tar, None)
+    config, archive_cfg, main_stage = process_nn_archive(
+        Platform.RVC4, tar, None
+    )
     assert archive_cfg is not None
-    assert (MISC_DIR / "dummy_model" / "config.json").exists()
+    extracted = config.stages[main_stage].input_model.parent
+    assert (extracted / "config.json").exists()
 
 
 def test_process_already_extracted_directory(work_dir: Path):
@@ -372,9 +384,11 @@ def test_unsafe_members_are_skipped(work_dir: Path):
         default_archive_config(),
         extra_files={"../evil.txt": evil, "/abs.txt": absolute},
     )
-    _, archive_cfg, _ = process_nn_archive(Platform.RVC4, tar, None)
+    config, archive_cfg, main_stage = process_nn_archive(
+        Platform.RVC4, tar, None
+    )
     assert archive_cfg is not None
-    untar = MISC_DIR / "dummy_model"
+    untar = config.stages[main_stage].input_model.parent
     # Traversal members are dropped, safe ones extracted.
     assert not (untar.parent / "evil.txt").exists()
     assert (untar / "config.json").exists()
@@ -403,17 +417,235 @@ ENCODINGS = {
 }
 
 
-def test_custom_encodings_used_for_rvc4(work_dir: Path):
+def _pack_encoding_archive(
+    work_dir: Path, extra_files: dict[str, PathType] | None = None
+) -> Path:
+    return pack_archive(
+        work_dir / "model.tar",
+        standard_dummy_onnx(work_dir / "dummy_model.onnx"),
+        default_archive_config(),
+        extra_files=extra_files,
+    )
+
+
+@pytest.mark.parametrize(
+    ("filenames", "expected_source"),
+    [
+        (("encodings.json",), "root"),
+        (("dummy_model.encodings",), "sidecar"),
+        (("encodings.json", "dummy_model.encodings"), "root"),
+    ],
+)
+def test_custom_encodings_used_for_rvc4(
+    work_dir: Path, filenames: tuple[str, ...], expected_source: str
+):
+    sources = {
+        "root": ENCODINGS,
+        "sidecar": {"activation_encodings": {}, "param_encodings": {}},
+    }
+    extra_files: dict[str, PathType] = {
+        filename: write_json(
+            sources["root" if filename == "encodings.json" else "sidecar"],
+            work_dir / f"source-{index}.json",
+        )
+        for index, filename in enumerate(filenames)
+    }
+    tar = _pack_encoding_archive(work_dir, extra_files)
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, None)
+    encodings = config.stages[main_stage].rvc4.encodings
+    assert isinstance(encodings, QuantizationOverrides)
+    assert encodings.load_payload() == sources[expected_source]
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("rvc4.encodings", ENCODINGS),
+        ("rvc4", {"encodings": ENCODINGS}),
+        ("stages.dummy_model.rvc4.encodings", ENCODINGS),
+        ("rvc4.encodings", None),
+        (
+            "rvc4.snpe_onnx_to_dlc_args",
+            ["--quantization_overrides", "user.encodings"],
+        ),
+        (
+            "stages.dummy_model.rvc4.snpe_onnx_to_dlc_args",
+            ["--quantization_overrides=user.encodings"],
+        ),
+    ],
+)
+def test_explicit_encodings_override_skips_invalid_archive_file(
+    work_dir: Path, key: str, value: ParamValue
+):
+    archive_encodings = work_dir / "encodings.json"
+    archive_encodings.write_text("invalid JSON")
+    tar = _pack_encoding_archive(
+        work_dir,
+        {
+            "encodings.json": archive_encodings,
+            "dummy_model.encodings": archive_encodings,
+        },
+    )
+    user_file = write_json(ENCODINGS, work_dir / "user.encodings")
+
+    config, _, main_stage = process_nn_archive(
+        Platform.RVC4, tar, {key: value}
+    )
+    encodings = config.stages[main_stage].rvc4.encodings
+    assert config.stages[main_stage].rvc4.snpe_onnx_to_dlc_args == []
+    if value is None:
+        assert encodings is None
+    else:
+        assert isinstance(encodings, QuantizationOverrides)
+        assert encodings.load_payload() == ENCODINGS
+        assert encodings.source_path == (
+            user_file.relative_to(work_dir) if key.endswith("_args") else None
+        )
+
+
+@pytest.mark.parametrize("new_sidecar", [False, True])
+def test_same_named_archives_do_not_reuse_encodings(
+    work_dir: Path, new_sidecar: bool, monkeypatch: pytest.MonkeyPatch
+):
+    old_encodings = write_json(ENCODINGS, work_dir / "old.json")
+    tar = _pack_encoding_archive(
+        work_dir,
+        {
+            "encodings.json": old_encodings,
+            "dummy_model.encodings": old_encodings,
+        },
+    )
+    first_config, _, first_stage = process_nn_archive(Platform.RVC4, tar, None)
+    first_extracted = first_config.stages[first_stage].input_model.parent
+
+    new_payload = {"activation_encodings": {}, "param_encodings": {}}
+    new_encodings = write_json(new_payload, work_dir / "new.json")
+    _pack_encoding_archive(
+        work_dir,
+        {"dummy_model.encodings": new_encodings} if new_sidecar else {},
+    )
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, None)
+
+    extracted = config.stages[main_stage].input_model.parent
+    assert extracted.parent == MISC_DIR
+    assert extracted.name.startswith("model-")
+    assert extracted != first_extracted
+    assert (
+        first_extracted / "encodings.json"
+    ).read_bytes() == old_encodings.read_bytes()
+
+    # An unchanged archive reuses its completed extraction and cached digest.
+    os.utime(extracted, (1, 1))
+    monkeypatch.setattr(
+        input_staging,
+        "_hash_file",
+        lambda _: pytest.fail("Rehashed archive"),
+    )
+    monkeypatch.setattr(
+        nn_archive,
+        "_safe_members",
+        lambda _: pytest.fail("Re-extracted archive"),
+    )
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, None)
+    assert config.stages[main_stage].input_model.parent == extracted
+    assert extracted.stat().st_mtime > 1
+    assert not (extracted / "encodings.json").exists()
+    assert set(MISC_DIR.iterdir()) == {first_extracted, extracted}
+    encodings = config.stages[main_stage].rvc4.encodings
+    if new_sidecar:
+        assert isinstance(encodings, QuantizationOverrides)
+        assert encodings.load_payload() == new_payload
+    else:
+        assert encodings is None
+
+
+def test_concurrent_archive_extractions_publish_one_complete_directory(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    tar = _pack_encoding_archive(work_dir)
+    onnx = work_dir / "dummy_model.onnx"
+    expected_model = onnx.read_bytes()
+    barrier = Barrier(2, timeout=10)
+    publish = nn_archive._publish_directory
+
+    def publish_together(src: Path, dest: Path) -> None:
+        assert not dest.exists()
+        assert (src / onnx.name).read_bytes() == expected_model
+        assert (src / "config.json").is_file()
+        barrier.wait()
+        publish(src, dest)
+
+    monkeypatch.setattr(nn_archive, "_publish_directory", publish_together)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first, second = pool.map(nn_archive._unpack_archive, [tar, tar])
+
+    assert first == second
+    assert (first / onnx.name).read_bytes() == expected_model
+    assert set(MISC_DIR.iterdir()) == {first}
+
+
+def test_failed_archive_extraction_is_not_published(
+    work_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    tar = _pack_encoding_archive(work_dir)
+    onnx = work_dir / "dummy_model.onnx"
+    extract = tarfile.TarFile.extract
+
+    def fail_after_extract(
+        archive: tarfile.TarFile, member: tarfile.TarInfo, path: Path
+    ) -> None:
+        extract(archive, member, path=path)
+        raise OSError("Interrupted extraction")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tarfile.TarFile, "extract", fail_after_extract)
+        with pytest.raises(OSError, match="Interrupted extraction"):
+            nn_archive._unpack_archive(tar)
+
+    assert not list(MISC_DIR.iterdir())
+    extracted = nn_archive._unpack_archive(tar)
+    assert (extracted / onnx.name).read_bytes() == onnx.read_bytes()
+    assert (extracted / "config.json").is_file()
+
+
+@pytest.mark.parametrize("stage_override", [False, True])
+def test_archive_encodings_preserve_multistage_rvc4_overrides(
+    work_dir: Path, stage_override: bool
+):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
-    enc = write_json(ENCODINGS, work_dir / "encodings.json")
+    post = single_io_onnx(work_dir / "post.onnx")
+    encodings = write_json(ENCODINGS, work_dir / "dummy_model.encodings")
     tar = pack_archive(
         work_dir / "dummy_model.tar",
         onnx,
-        default_archive_config(),
-        extra_files={"encodings.json": enc},
+        default_archive_config(
+            heads=[
+                {
+                    "parser": "Classification",
+                    "metadata": {"postprocessor_path": "post.onnx"},
+                    "outputs": ["output0"],
+                }
+            ]
+        ),
+        extra_files={"post.onnx": post, "dummy_model.encodings": encodings},
     )
-    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, None)
-    assert config.stages[main_stage].rvc4.encodings is not None
+    overrides: Params = {
+        "rvc4.quantization_mode": "INT8_INT16_MIXED",
+        "rvc4.htp_socs": ["sm8650"],
+    }
+    if stage_override:
+        overrides["stages.dummy_model.rvc4.quantization_mode"] = "CUSTOM"
+
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, overrides)
+
+    rvc4 = config.stages[main_stage].rvc4
+    assert rvc4.quantization_mode.value == (
+        "CUSTOM" if stage_override else "INT8_INT16_MIXED"
+    )
+    assert rvc4.htp_socs == ["sm8650"]
+    assert isinstance(rvc4.encodings, QuantizationOverrides)
+    assert rvc4.encodings.load_payload() == ENCODINGS
+    assert config.stages["post"].rvc4.encodings is None
 
 
 def test_encodings_ignored_for_non_rvc4(work_dir: Path):
@@ -427,6 +659,35 @@ def test_encodings_ignored_for_non_rvc4(work_dir: Path):
     )
     config, _, main_stage = process_nn_archive(Platform.RVC2, tar, None)
     assert main_stage in config.stages
+
+
+@pytest.mark.parametrize(
+    ("fp16", "normalize_io_encodings"),
+    [(False, True), (False, False), (True, True)],
+)
+def test_archive_requires_used_encodings_except_fp16(
+    tmp_path: Path, dummy_onnx: Path, fp16: bool, normalize_io_encodings: bool
+):
+    config = _config_from_overrides(
+        dummy_onnx, **{"rvc4.encodings": ENCODINGS}
+    )
+    main_stage = next(iter(config.stages))
+    rvc4_cfg = config.stages[main_stage].rvc4
+    rvc4_cfg.normalize_io_encodings = normalize_io_encodings
+    if fp16:
+        rvc4_cfg.quantization_mode = QuantizationMode.FP16_STD
+        files = _archive_files(
+            Platform.RVC4, config, main_stage, [dummy_onnx], tmp_path
+        )
+        assert tmp_path / "encodings.json" not in files
+        return
+
+    with pytest.raises(
+        RuntimeError, match="encodings passed to SNPE are missing"
+    ):
+        _archive_files(
+            Platform.RVC4, config, main_stage, [dummy_onnx], tmp_path
+        )
 
 
 # Covers the ``dai_type is not None`` decision tree.

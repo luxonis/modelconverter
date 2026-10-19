@@ -1,6 +1,7 @@
 """Tests for the RVC4 exporter."""
 
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -24,8 +25,9 @@ from modelconverter.utils.config import (
     QuantizationOverrides,
     RVC4Config,
 )
+from modelconverter.utils.nn_archive import _archive_files
 from modelconverter.utils.preprocessing import reorder_layout
-from modelconverter.utils.types import InputFileType
+from modelconverter.utils.types import InputFileType, Platform
 from tests.helpers.onnx_factory import build_onnx, single_io_onnx
 
 
@@ -182,6 +184,50 @@ def test_path_quantization_overrides_passthrough_without_io_normalization(
 
     assert generated == encodings_path
     assert generated.read_text() == raw
+
+
+@pytest.mark.parametrize(
+    ("normalize_io_encodings", "multistage"), [(True, False), (False, True)]
+)
+def test_snpe_encodings_are_archived_after_intermediate_cleanup(
+    work_dir: Path, normalize_io_encodings: bool, multistage: bool
+):
+    exporter = _make_exporter(
+        work_dir,
+        "CUSTOM",
+        normalize_io_encodings=normalize_io_encodings,
+    )
+    source = work_dir / "custom.encodings"
+    source.write_text(
+        '{"activation_encodings":{"input0":[{"bitwidth":16,"scale":0.5}]},"param_encodings":{}}\n'
+    )
+    exporter._encodings = QuantizationOverrides.from_path(source)
+
+    args: list[str] = []
+    exporter._add_quantization_args(args)
+    used_path = Path(args[args.index("--quantization_overrides") + 1])
+    expected = used_path.read_bytes()
+    shutil.rmtree(exporter.intermediate_outputs_dir)
+
+    assert (exporter.output_dir / "encodings.json").read_bytes() == expected
+
+    exporter.config.rvc4.encodings = exporter._encodings
+    main_stage = exporter.output_dir.name
+    config = Config.model_construct(
+        name="model", stages={main_stage: exporter.config}
+    )
+    if multistage:
+        config.stages["post"] = exporter.config.model_copy(deep=True)
+    archive_dir = work_dir if multistage else exporter.output_dir
+    files = _archive_files(
+        Platform.RVC4,
+        config,
+        main_stage,
+        [exporter.config.input_model],
+        archive_dir,
+    )
+    assert archive_dir / "encodings.json" in files
+    assert (archive_dir / "encodings.json").read_bytes() == expected
 
 
 def test_inline_quantization_overrides_preserved_without_io_normalization(
