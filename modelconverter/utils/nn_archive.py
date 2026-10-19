@@ -8,13 +8,13 @@ unpacked and turned into a `Config` here, and the converted models are
 packed back into a new archive whose config this module builds.
 """
 
-import hashlib
 import json
 import os
 import shutil
 import tarfile
 from itertools import pairwise
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Literal
 
 from loguru import logger
@@ -40,6 +40,10 @@ from modelconverter.utils.config import (
     broadcast_preprocessing_values,
 )
 from modelconverter.utils.constants import MISC_DIR
+from modelconverter.utils.input_staging import (
+    _hash_file_memoized,
+    _publish_directory,
+)
 from modelconverter.utils.layout import (
     guess_new_layout,
     is_image_input_shape,
@@ -229,32 +233,30 @@ _ARCHIVE_SUFFIXES = (
 def _unpack_archive(path: Path) -> Path:
     """Return the directory of an archive.
 
-    Extract into a directory named after the archive stem and content
-    hash, replacing any previous extraction at that path.
+    Reuse a completed extraction keyed by archive stem and content hash,
+    or extract privately and publish the directory atomically.
     """
     if path.is_dir():
         return path
     if not tarfile.is_tarfile(path):
         raise RuntimeError(f"Unknown NN Archive path: `{path}`")
 
-    # Computes NNArchive hash
-    digest = hashlib.sha256()
-    with path.open("rb") as archive:
-        for chunk in iter(lambda: archive.read(1024 * 1024), b""):
-            digest.update(chunk)
-
+    digest = _hash_file_memoized(path)
     untar_path = MISC_DIR / path.stem
     if untar_path.suffix == ".tar":
         untar_path = MISC_DIR / untar_path.stem
-    untar_path = untar_path.with_name(
-        f"{untar_path.name}-{digest.hexdigest()}"
-    )
-    if untar_path.exists():
-        shutil.rmtree(untar_path)
-    untar_path.mkdir(parents=True)
-    with tarfile.open(path, mode="r") as tf:
-        for member in _safe_members(tf):
-            tf.extract(member, path=untar_path)
+    untar_path = untar_path.with_name(f"{untar_path.name}-{digest}")
+    if not untar_path.exists():
+        MISC_DIR.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(
+            prefix=f".{untar_path.name}-", dir=MISC_DIR
+        ) as tmp:
+            tmp_path = Path(tmp)
+            with tarfile.open(path, mode="r") as tf:
+                for member in _safe_members(tf):
+                    tf.extract(member, path=tmp_path)
+            _publish_directory(tmp_path, untar_path)
+    os.utime(untar_path, None)
     return untar_path
 
 
