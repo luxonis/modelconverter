@@ -111,23 +111,6 @@ def process_nn_archive(
         "input_model": str(untar_path / archive_config.model.metadata.path),
     }
 
-    model_path = untar_path / archive_config.model.metadata.path
-    if (
-        platform is Platform.RVC4
-        and not (
-            _has_override(overrides, ("rvc4", "encodings"))
-            or _has_override(
-                overrides,
-                ("stages", main_stage_key, "rvc4", "encodings"),
-            )
-        )
-        and (p := _find_archive_encodings(untar_path, model_path)) is not None
-    ):
-        logger.info(f"Using custom `{p.name}` from the NN Archive.")
-        main_stage_config["rvc4"] = {
-            "encodings": json.loads(p.read_text()),
-        }
-
     main_stage_config["inputs"] = [
         _archive_input_config(inp) for inp in archive_config.model.inputs
     ]
@@ -157,6 +140,13 @@ def process_nn_archive(
     # become root defaults that are ignored for fields already in the stage.
     Config._merge_overrides(main_stage_config, stage_overrides)
     Config._merge_overrides(config, root_overrides)
+    if platform is Platform.RVC4:
+        _apply_archive_encodings(
+            config,
+            main_stage_config,
+            untar_path,
+            untar_path / archive_config.model.metadata.path,
+        )
     # Resolve the archive default after overrides have been parsed, so
     # omitted names and null values follow the same fallback.
     if config.get("name") is None:
@@ -167,6 +157,38 @@ def process_nn_archive(
         cfg.stages[main_stage_key].inputs, archive_config
     )
     return cfg, archive_config, main_stage_key
+
+
+def _apply_archive_encodings(
+    config: Params,
+    main_stage_config: Params,
+    archive_path: Path,
+    model_path: Path,
+) -> None:
+    """Apply archive encodings."""
+    root_rvc4 = config.get("rvc4", {})
+    stage_rvc4 = main_stage_config.get("rvc4", {})
+    if not isinstance(root_rvc4, dict) or not isinstance(stage_rvc4, dict):
+        return
+
+    rvc4 = {**root_rvc4, **stage_rvc4}
+    main_stage_config["rvc4"] = rvc4
+    if "encodings" in rvc4:
+        return
+    args = rvc4.get("snpe_onnx_to_dlc_args", [])
+    if isinstance(args, list) and any(
+        isinstance(arg, str)
+        and (
+            arg == "--quantization_overrides"
+            or arg.startswith("--quantization_overrides=")
+        )
+        for arg in args
+    ):
+        return
+    path = _find_archive_encodings(archive_path, model_path)
+    if path is not None:
+        logger.info(f"Using custom `{path.name}` from the NN Archive.")
+        rvc4["encodings"] = json.loads(path.read_text())
 
 
 def _find_archive_encodings(
@@ -426,23 +448,6 @@ def _split_overrides(
         else:
             root_overrides[key] = value
     return root_overrides, stage_overrides
-
-
-def _has_override(params: Params | None, path: tuple[str, ...]) -> bool:
-    """Check for a nested or dotted override without reading its value."""
-    if not isinstance(params, dict):
-        return False
-    for key, value in params.items():
-        parts = tuple(key.split("."))
-        if path[: len(parts)] != parts:
-            continue
-        if len(parts) == len(path):
-            return True
-        if isinstance(value, dict) and _has_override(
-            value, path[len(parts) :]
-        ):
-            return True
-    return False
 
 
 def _apply_archive_resize_modes(

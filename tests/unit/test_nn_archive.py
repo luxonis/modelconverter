@@ -479,6 +479,78 @@ def test_explicit_encodings_override_skips_invalid_archive_file(
         assert encodings.load_payload() == ENCODINGS
 
 
+@pytest.mark.parametrize("stage_override", [False, True])
+def test_archive_encodings_preserve_multistage_rvc4_overrides(
+    work_dir: Path, stage_override: bool
+):
+    onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
+    post = single_io_onnx(work_dir / "post.onnx")
+    encodings = write_json(ENCODINGS, work_dir / "dummy_model.encodings")
+    tar = pack_archive(
+        work_dir / "dummy_model.tar",
+        onnx,
+        default_archive_config(
+            heads=[
+                {
+                    "parser": "Classification",
+                    "metadata": {"postprocessor_path": "post.onnx"},
+                    "outputs": ["output0"],
+                }
+            ]
+        ),
+        extra_files={"post.onnx": post, "dummy_model.encodings": encodings},
+    )
+    overrides: Params = {
+        "rvc4.quantization_mode": "INT8_INT16_MIXED",
+        "rvc4.htp_socs": ["sm8650"],
+    }
+    if stage_override:
+        overrides["stages.dummy_model.rvc4.quantization_mode"] = "CUSTOM"
+
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, overrides)
+
+    rvc4 = config.stages[main_stage].rvc4
+    assert rvc4.quantization_mode.value == (
+        "CUSTOM" if stage_override else "INT8_INT16_MIXED"
+    )
+    assert rvc4.htp_socs == ["sm8650"]
+    assert isinstance(rvc4.encodings, QuantizationOverrides)
+    assert rvc4.encodings.load_payload() == ENCODINGS
+    assert config.stages["post"].rvc4.encodings is None
+
+
+@pytest.mark.parametrize(
+    ("scope", "equals_form"),
+    [("rvc4", False), ("stages.dummy_model.rvc4", True)],
+)
+def test_snpe_override_skips_invalid_archive_encodings(
+    work_dir: Path, scope: str, equals_form: bool
+):
+    onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
+    archive_encodings = work_dir / "dummy_model.encodings"
+    archive_encodings.write_text("invalid JSON")
+    tar = pack_archive(
+        work_dir / "dummy_model.tar",
+        onnx,
+        default_archive_config(),
+        extra_files={"dummy_model.encodings": archive_encodings},
+    )
+    user_file = write_json(ENCODINGS, work_dir / "user.encodings")
+    args = (
+        [f"--quantization_overrides={user_file}"]
+        if equals_form
+        else ["--quantization_overrides", str(user_file)]
+    )
+    overrides: Params = {f"{scope}.snpe_onnx_to_dlc_args": args}
+
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, overrides)
+
+    rvc4 = config.stages[main_stage].rvc4
+    assert isinstance(rvc4.encodings, QuantizationOverrides)
+    assert rvc4.encodings.source_path == user_file
+    assert rvc4.snpe_onnx_to_dlc_args == []
+
+
 def test_encodings_ignored_for_non_rvc4(work_dir: Path):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     enc = write_json(ENCODINGS, work_dir / "encodings.json")
