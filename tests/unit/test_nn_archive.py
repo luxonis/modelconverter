@@ -626,7 +626,10 @@ def test_archive_uses_retained_snpe_encodings_after_cleanup(
         "activation_encodings": {"input0": [{"bitwidth": 8, "dtype": "int"}]},
         "param_encodings": {},
     }
-    retained_path.write_text(json.dumps(effective_encodings))
+    retained_bytes = (
+        json.dumps(effective_encodings, indent=4) + "\n"
+    ).encode()
+    retained_path.write_bytes(retained_bytes)
 
     files = _archive_files(
         Platform.RVC4, config, main_stage, [dummy_onnx], tmp_path
@@ -634,61 +637,23 @@ def test_archive_uses_retained_snpe_encodings_after_cleanup(
 
     archive_encodings = tmp_path / "encodings.json"
     assert archive_encodings in files
-    assert json.loads(archive_encodings.read_text()) == effective_encodings
+    assert archive_encodings.read_bytes() == retained_bytes
 
 
-@pytest.mark.parametrize("source", ["intermediate", "file", "inline"])
-def test_archive_encoding_fallbacks(
-    tmp_path: Path, dummy_onnx: Path, source: str
+@pytest.mark.parametrize(
+    ("fp16", "normalize_io_encodings"),
+    [(False, True), (False, False), (True, True)],
+)
+def test_archive_requires_used_encodings_except_fp16(
+    tmp_path: Path, dummy_onnx: Path, fp16: bool, normalize_io_encodings: bool
 ):
     config = _config_from_overrides(
         dummy_onnx, **{"rvc4.encodings": ENCODINGS}
     )
     main_stage = next(iter(config.stages))
     rvc4_cfg = config.stages[main_stage].rvc4
-    expected_raw: bytes | None = None
-
-    if source == "intermediate":
-        effective_encodings = {
-            "activation_encodings": {
-                "input0": [{"bitwidth": 8, "dtype": "int"}]
-            },
-            "param_encodings": {},
-        }
-        intermediate = tmp_path / "intermediate_outputs"
-        intermediate.mkdir()
-        (intermediate / "encodings.json").write_text(
-            json.dumps(effective_encodings)
-        )
-    else:
-        rvc4_cfg.normalize_io_encodings = False
-        effective_encodings = ENCODINGS
-        if source == "file":
-            path = tmp_path / "custom.encodings"
-            path.write_text(json.dumps(ENCODINGS))
-            expected_raw = path.read_bytes()
-            rvc4_cfg.encodings = QuantizationOverrides.from_path(path)
-
-    files = _archive_files(
-        Platform.RVC4, config, main_stage, [dummy_onnx], tmp_path
-    )
-    archive_encodings = tmp_path / "encodings.json"
-    assert archive_encodings in files
-    assert json.loads(archive_encodings.read_text()) == effective_encodings
-    if expected_raw is not None:
-        assert archive_encodings.read_bytes() == expected_raw
-
-
-@pytest.mark.parametrize("fp16", [False, True])
-def test_archive_requires_used_encodings_except_fp16(
-    tmp_path: Path, dummy_onnx: Path, fp16: bool
-):
-    config = _config_from_overrides(
-        dummy_onnx, **{"rvc4.encodings": ENCODINGS}
-    )
-    main_stage = next(iter(config.stages))
+    rvc4_cfg.normalize_io_encodings = normalize_io_encodings
     if fp16:
-        rvc4_cfg = config.stages[main_stage].rvc4
         rvc4_cfg.quantization_mode = QuantizationMode.FP16_STD
         files = _archive_files(
             Platform.RVC4, config, main_stage, [dummy_onnx], tmp_path

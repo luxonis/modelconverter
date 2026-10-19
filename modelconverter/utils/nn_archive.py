@@ -37,7 +37,6 @@ from modelconverter.utils.config import (
     InputConfig,
     OutputConfig,
     PlatformConfig,
-    QuantizationOverrides,
     broadcast_preprocessing_values,
 )
 from modelconverter.utils.constants import MISC_DIR
@@ -1175,8 +1174,7 @@ def _archive_files(
         return files
 
     rvc4_cfg = cfg.stages[main_stage].rvc4
-    encodings = rvc4_cfg.encodings
-    if encodings is None:
+    if rvc4_cfg.encodings is None:
         return files
     if rvc4_cfg.quantization_mode == QuantizationMode.FP16_STD:
         return files
@@ -1186,29 +1184,12 @@ def _archive_files(
         output_path / main_stage if len(cfg.stages) > 1 else output_path
     )
     retained_path = stage_output / "encodings.json"
-    effective_path = stage_output / "intermediate_outputs" / "encodings.json"
-    if retained_path.is_file():
-        if retained_path != encodings_path:
-            shutil.copyfile(retained_path, encodings_path)
-    elif effective_path.is_file():
-        shutil.copyfile(effective_path, encodings_path)
-    elif rvc4_cfg.normalize_io_encodings:
+    if not retained_path.is_file():
         raise RuntimeError(
-            "The encodings passed to SNPE are missing; cannot package "
-            "the original encodings as if they were used for conversion."
+            f"The encodings passed to SNPE are missing: {retained_path}"
         )
-    elif (
-        isinstance(encodings, QuantizationOverrides)
-        and encodings.source_path is not None
-    ):
-        shutil.copyfile(encodings.source_path, encodings_path)
-    else:
-        payload = (
-            encodings.load_payload()
-            if isinstance(encodings, QuantizationOverrides)
-            else encodings.model_dump(mode="json")
-        )
-        encodings_path.write_text(json.dumps(payload, indent=2) + "\n")
+    if retained_path != encodings_path:
+        shutil.copyfile(retained_path, encodings_path)
     files.append(encodings_path)
     return files
 
