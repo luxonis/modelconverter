@@ -14,6 +14,7 @@ import shutil
 import tarfile
 from itertools import pairwise
 from pathlib import Path
+from tempfile import mkdtemp
 from typing import Literal
 
 from loguru import logger
@@ -201,12 +202,10 @@ def _find_archive_encodings(
     executable. If both candidates are present, prefer the established
     ``encodings.json`` name and log the ambiguity.
     """
-    candidates = dict.fromkeys(
-        [
-            archive_path / "encodings.json",
-            model_path.with_suffix(".encodings"),
-        ]
-    )
+    candidates = [
+        archive_path / "encodings.json",
+        model_path.with_suffix(".encodings"),
+    ]
     existing = [path for path in candidates if path.is_file()]
     if len(existing) > 1:
         logger.warning(
@@ -231,17 +230,22 @@ _ARCHIVE_SUFFIXES = (
 def _unpack_archive(path: Path) -> Path:
     """Return the directory of an archive.
 
-    A tar file is unpacked into `MISC_DIR` first. A directory is taken
-    as an unpacked archive.
+    Extraction uses the archive stem as the directory name, adding a
+    unique suffix if that name is already taken.
     """
     if path.is_dir():
         return path
     if not tarfile.is_tarfile(path):
         raise RuntimeError(f"Unknown NN Archive path: `{path}`")
 
+    MISC_DIR.mkdir(parents=True, exist_ok=True)
     untar_path = MISC_DIR / path.stem
     if untar_path.suffix == ".tar":
         untar_path = MISC_DIR / untar_path.stem
+    try:
+        untar_path.mkdir()
+    except FileExistsError:
+        untar_path = Path(mkdtemp(prefix=f"{untar_path.name}-", dir=MISC_DIR))
     with tarfile.open(path, mode="r") as tf:
         for member in _safe_members(tf):
             tf.extract(member, path=untar_path)

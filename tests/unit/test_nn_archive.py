@@ -479,6 +479,50 @@ def test_explicit_encodings_override_skips_invalid_archive_file(
         assert encodings.load_payload() == ENCODINGS
 
 
+@pytest.mark.parametrize("new_sidecar", [False, True])
+def test_same_named_archives_do_not_reuse_encodings(
+    work_dir: Path, new_sidecar: bool
+):
+    onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
+    old_encodings = write_json(ENCODINGS, work_dir / "old.json")
+    tar = pack_archive(
+        work_dir / "model.tar",
+        onnx,
+        default_archive_config(),
+        extra_files={
+            "encodings.json": old_encodings,
+            "dummy_model.encodings": old_encodings,
+        },
+    )
+    first_config, _, first_stage = process_nn_archive(Platform.RVC4, tar, None)
+    assert (
+        first_config.stages[first_stage].input_model.parent
+        == MISC_DIR / "model"
+    )
+
+    new_payload = {"activation_encodings": {}, "param_encodings": {}}
+    new_encodings = write_json(new_payload, work_dir / "new.json")
+    pack_archive(
+        tar,
+        onnx,
+        default_archive_config(),
+        extra_files={"dummy_model.encodings": new_encodings}
+        if new_sidecar
+        else {},
+    )
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, None)
+
+    extracted = config.stages[main_stage].input_model.parent
+    assert extracted.parent == MISC_DIR
+    assert extracted.name.startswith("model-")
+    encodings = config.stages[main_stage].rvc4.encodings
+    if new_sidecar:
+        assert isinstance(encodings, QuantizationOverrides)
+        assert encodings.load_payload() == new_payload
+    else:
+        assert encodings is None
+
+
 @pytest.mark.parametrize("stage_override", [False, True])
 def test_archive_encodings_preserve_multistage_rvc4_overrides(
     work_dir: Path, stage_override: bool
