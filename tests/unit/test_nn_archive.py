@@ -5,6 +5,7 @@ No network, cloud, Docker or vendor tooling: the dummy ONNX models and NN-archiv
 ``resolve_path`` short-circuit on ``Path.exists()`` so nothing is downloaded.
 """
 
+import hashlib
 import json
 import shutil
 from collections.abc import Mapping
@@ -167,7 +168,11 @@ def test_process_plain_tar(work_dir: Path):
     assert isinstance(config, Config)
     assert isinstance(archive_cfg, NNArchiveConfig)
     assert main_stage in config.stages
-    assert (MISC_DIR / "dummy_model" / "config.json").exists()
+    extracted = config.stages[main_stage].input_model.parent
+    assert extracted == MISC_DIR / (
+        f"dummy_model-{hashlib.sha256(tar.read_bytes()).hexdigest()}"
+    )
+    assert (extracted / "config.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -350,9 +355,15 @@ def test_process_tar_xz(work_dir: Path):
         default_archive_config(),
         mode="w:xz",
     )
-    _, archive_cfg, _ = process_nn_archive(Platform.RVC4, tar, None)
+    config, archive_cfg, main_stage = process_nn_archive(
+        Platform.RVC4, tar, None
+    )
     assert archive_cfg is not None
-    assert (MISC_DIR / "dummy_model" / "config.json").exists()
+    extracted = config.stages[main_stage].input_model.parent
+    assert extracted == MISC_DIR / (
+        f"dummy_model-{hashlib.sha256(tar.read_bytes()).hexdigest()}"
+    )
+    assert (extracted / "config.json").exists()
 
 
 def test_process_already_extracted_directory(work_dir: Path):
@@ -376,9 +387,11 @@ def test_unsafe_members_are_skipped(work_dir: Path):
         default_archive_config(),
         extra_files={"../evil.txt": evil, "/abs.txt": absolute},
     )
-    _, archive_cfg, _ = process_nn_archive(Platform.RVC4, tar, None)
+    config, archive_cfg, main_stage = process_nn_archive(
+        Platform.RVC4, tar, None
+    )
     assert archive_cfg is not None
-    untar = MISC_DIR / "dummy_model"
+    untar = config.stages[main_stage].input_model.parent
     # Traversal members are dropped, safe ones extracted.
     assert not (untar.parent / "evil.txt").exists()
     assert (untar / "config.json").exists()
@@ -495,10 +508,7 @@ def test_same_named_archives_do_not_reuse_encodings(
         },
     )
     first_config, _, first_stage = process_nn_archive(Platform.RVC4, tar, None)
-    assert (
-        first_config.stages[first_stage].input_model.parent
-        == MISC_DIR / "model"
-    )
+    first_extracted = first_config.stages[first_stage].input_model.parent
 
     new_payload = {"activation_encodings": {}, "param_encodings": {}}
     new_encodings = write_json(new_payload, work_dir / "new.json")
@@ -515,6 +525,18 @@ def test_same_named_archives_do_not_reuse_encodings(
     extracted = config.stages[main_stage].input_model.parent
     assert extracted.parent == MISC_DIR
     assert extracted.name.startswith("model-")
+    assert extracted != first_extracted
+    assert (
+        json.loads((first_extracted / "encodings.json").read_text())
+        == ENCODINGS
+    )
+
+    # Repeating the same archive rebuilds the same directory, removing stale files.
+    write_json(ENCODINGS, extracted / "encodings.json")
+    config, _, main_stage = process_nn_archive(Platform.RVC4, tar, None)
+    assert config.stages[main_stage].input_model.parent == extracted
+    assert not (extracted / "encodings.json").exists()
+    assert set(MISC_DIR.iterdir()) == {first_extracted, extracted}
     encodings = config.stages[main_stage].rvc4.encodings
     if new_sidecar:
         assert isinstance(encodings, QuantizationOverrides)
