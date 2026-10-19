@@ -1124,7 +1124,7 @@ def generate_archive(
         main_stage: Key of the stage holding the main model.
         out_models: Converted model files to put into the archive.
         output_path: Directory the archive is written to, and where
-            ``buildinfo.json`` is picked up from.
+            ``buildinfo.json`` and ``config.yaml`` are picked up from.
         archive_cfg: Archive config the conversion started from, or
             ``None`` if it did not start from an archive.
         preprocessing: Preprocessing blocks to attach, keyed by input
@@ -1178,7 +1178,11 @@ def _archive_files(
     compiled DLC and mirrors the filename recognized when importing an NN
     Archive for a later conversion.
     """
-    files: list[PathType] = [*out_models, output_path / "buildinfo.json"]
+    files: list[PathType] = [
+        *out_models,
+        output_path / "buildinfo.json",
+        output_path / "config.yaml",
+    ]
     if platform is not Platform.RVC4:
         return files
 
