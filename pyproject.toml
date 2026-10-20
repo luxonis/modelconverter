@@ -181,6 +181,7 @@ typeCheckingMode = "standard"
 # are pyright's own defaults, which a custom `exclude` would otherwise drop.
 exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests/test_benchmark"]
 # Checks that the standard mode leaves off.
+reportConstantRedefinition = "error"
 reportInconsistentConstructor = "error"
 reportMatchNotExhaustive = "error"
 reportMissingParameterType = "error"

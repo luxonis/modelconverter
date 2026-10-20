@@ -13,7 +13,6 @@ from contextlib import suppress
 import keyring
 from luxonis_ml.utils import Environ as BaseEnviron
 from pydantic import model_validator
-from typing_extensions import Self
 
 
 def get_password_with_timeout(
@@ -82,28 +81,31 @@ class Environ(BaseEnviron):
     # set survives; `0` turns the eviction off.
     MODELCONVERTER_CACHE_MAX_SIZE: str = "50GiB"
 
-    @model_validator(mode="after")
-    def validate_hubai_api_key(self) -> Self:
+    @model_validator(mode="before")
+    @classmethod
+    def validate_hubai_api_key(cls, data: object) -> object:
         """Fall back to the system keyring for the HubAI API key.
 
         The keyring is only consulted when the key was not provided
         through the environment. Any failure of the lookup is ignored
         and leaves the key unset.
 
+        Args:
+            data: Raw settings collected from the environment.
+
         Returns:
-            The environment itself, with ``HUBAI_API_KEY`` filled in if
-            the keyring held one.
+            The settings, with ``HUBAI_API_KEY`` filled in if the
+            keyring held one.
 
         """
-        if self.HUBAI_API_KEY:
-            return self
+        if not isinstance(data, dict) or data.get("HUBAI_API_KEY"):
+            return data
 
+        api_key = None
         with suppress(Exception):
-            self.HUBAI_API_KEY = get_password_with_timeout(
-                "ModelConverter", "api_key"
-            )
+            api_key = get_password_with_timeout("ModelConverter", "api_key")
 
-        return self
+        return {**data, "HUBAI_API_KEY": api_key}
 
 
 environ = Environ()
