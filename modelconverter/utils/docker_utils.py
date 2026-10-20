@@ -499,10 +499,6 @@ def _download_file(
     try:
         request = Request(url, headers={"User-Agent": "modelconverter"})  # noqa: S310
         with urlopen(request, timeout=30) as response:  # noqa: S310
-            if response.status >= 400:
-                raise RuntimeError(
-                    f"HTTP {response.status} while downloading {url}"
-                )
             headers: HTTPMessage = response.headers
             length = headers.get("Content-Length")
             total = int(length) if length and length.isdigit() else None
