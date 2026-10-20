@@ -198,6 +198,7 @@ def constant_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def _assert_correct(
     platform: Platform,
     precision: Precision,
+    *,
     config_path: Path,
     output_name: str,
     image: Path,
@@ -267,10 +268,10 @@ def test_toy_integration(
         _assert_correct(
             platform,
             precision,
-            toy_config,
-            output_name,
-            constant_image,
-            precision.correctness,
+            config_path=toy_config,
+            output_name=output_name,
+            image=constant_image,
+            floor=precision.correctness,
         )
 
 

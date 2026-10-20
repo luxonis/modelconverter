@@ -22,6 +22,7 @@ def read_image(
     shape: list[int],
     encoding: Encoding,
     resize_method: ResizeMethod,
+    *,
     data_type: DataType | None = None,
     transpose: bool = True,
     layout: str | None = None,

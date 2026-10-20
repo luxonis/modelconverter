@@ -168,11 +168,11 @@ class RVC4Analyzer(Analyzer):
                     statistics.extend(
                         self._collect_comparison_statistics(
                             session,
-                            output_names,
-                            layer_names,
-                            onnx_input_shapes,
-                            chunk_input_matcher,
-                            dlc_matcher,
+                            output_names=output_names,
+                            layer_names=layer_names,
+                            onnx_input_shapes=onnx_input_shapes,
+                            input_matcher=chunk_input_matcher,
+                            dlc_matcher=dlc_matcher,
                             verbose=False,
                         )
                     )
@@ -453,12 +453,12 @@ class RVC4Analyzer(Analyzer):
     def _collect_comparison_statistics(
         self,
         session: rt.InferenceSession,
+        *,
         output_names: list[str],
         layer_names: list[str],
         onnx_input_shapes: dict[str, list[int | str | None]],
         input_matcher: dict[int, dict[str, str]],
         dlc_matcher: dict[int, Path],
-        *,
         verbose: bool = True,
     ) -> list[list]:
         if verbose:

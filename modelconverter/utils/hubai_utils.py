@@ -79,6 +79,7 @@ def _require_complete_list(items: list, resource: str) -> list:
 def _matching_versions(
     client: HubAIClient,
     model: ModelResponse,
+    *,
     variant_slug: str | None,
     reference: str | None,
     identifier: str,
@@ -242,7 +243,12 @@ def resolve_hubai_benchmark_model(
     client = create_hubai_client()
     model = client.models.get_model(model_identifier)
     versions, selected_variant = _matching_versions(
-        client, model, variant_slug, reference, identifier, model_identifier
+        client,
+        model,
+        variant_slug=variant_slug,
+        reference=reference,
+        identifier=identifier,
+        model_identifier=model_identifier,
     )
     instance = _select_instance(
         _platform_instances(client, model, versions, platform),

@@ -986,12 +986,14 @@ def _config_to_nn(
     """
     return modelconverter_config_to_nn(
         config,
-        Path("out.onnx"),
-        orig,
-        preprocessing or {},
-        main_stage if main_stage is not None else next(iter(config.stages)),
-        dummy_onnx,
-        platform,
+        model_name=Path("out.onnx"),
+        orig_nn=orig,
+        preprocessing=preprocessing or {},
+        main_stage_key=(
+            main_stage if main_stage is not None else next(iter(config.stages))
+        ),
+        model_path=dummy_onnx,
+        platform=platform,
         preprocessing_input_types=preprocessing_input_types,
     )
 
@@ -1918,12 +1920,12 @@ def test_generated_archive_includes_conversion_config(
     archive = generate_archive(
         platform,
         config,
-        main_stage,
-        [out_model],
-        out_dir,
-        None,
-        {},
-        dummy_onnx,
+        main_stage=main_stage,
+        out_models=[out_model],
+        output_path=out_dir,
+        archive_cfg=None,
+        preprocessing={},
+        inference_model_path=dummy_onnx,
     )
 
     with tarfile.open(archive, "r:xz") as tar:
@@ -1942,12 +1944,12 @@ def test_single_model_roundtrip(dummy_onnx: Path, name: str):
     archive = generate_archive(
         Platform.RVC4,
         config,
-        main_stage,
-        [out_model],
-        out_dir,
-        None,
-        {},
-        dummy_onnx,
+        main_stage=main_stage,
+        out_models=[out_model],
+        output_path=out_dir,
+        archive_cfg=None,
+        preprocessing={},
+        inference_model_path=dummy_onnx,
     )
     assert archive.exists()
     assert archive.name == f"{name}.rvc4.tar.xz"
@@ -1968,12 +1970,12 @@ def test_multiple_models_use_stage_name(dummy_onnx: Path):
     archive = generate_archive(
         Platform.RVC2,
         config,
-        main_stage,
-        [out_a, out_b],
-        out_dir,
-        None,
-        {},
-        dummy_onnx,
+        main_stage=main_stage,
+        out_models=[out_a, out_b],
+        output_path=out_dir,
+        archive_cfg=None,
+        preprocessing={},
+        inference_model_path=dummy_onnx,
     )
     assert archive.exists()
     assert archive.name.endswith(".rvc2.tar.xz")

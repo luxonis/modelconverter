@@ -340,6 +340,7 @@ NUMERIC_DATA_TYPES = [
 )
 def test_output_geometry_matches_the_requested_shape(
     work_dir: Path,
+    *,
     source: tuple[int, int],
     target: tuple[int, int],
     channels: int,

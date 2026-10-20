@@ -85,6 +85,7 @@ def test_tflite_input_keeps_layout_without_channel_move(
 def test_tflite_raw_layout_tracks_converted_onnx_shape(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
     source_shapes: dict[str, list[int]],
     converted_shape: list[int],
     expected_shape: list[int],
