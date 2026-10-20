@@ -266,8 +266,8 @@ class SubprocessHandle:
         self._ps_proc = psutil.Process(self._proc.pid)
 
         def _reader(stream: io.TextIOWrapper, buf: list[str]) -> None:
-            for line in iter(stream.readline, ""):
-                line = strip_ansi(line)
+            for raw_line in iter(stream.readline, ""):
+                line = strip_ansi(raw_line)
                 buf.append(line)
                 if not self._silent:
                     logger.info(line.strip())

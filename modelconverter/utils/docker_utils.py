@@ -567,8 +567,8 @@ def pull_image(client: docker.DockerClient, image: str) -> str:
         TaskProgressColumn(),
     ) as progress:
         bars = {}
-        for log in client.api.pull(repository, tag=tag, stream=True):
-            log = json.loads(log)
+        for chunk in client.api.pull(repository, tag=tag, stream=True):
+            log = json.loads(chunk)
             error_detail = log.get("errorDetail", {})
             error = error_detail.get("message") or log.get("error")
             if error:
