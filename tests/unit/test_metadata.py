@@ -10,7 +10,7 @@ dispatches to them, leaving their bodies to the conversion tests.
 
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -220,17 +220,14 @@ def test_ir_load_failure_raises(
 def test_tflite_missing_subgraph_raises(
     work_dir: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    class _Root:
-        def Subgraphs(self, i: int) -> None:
-            return None
+    def no_subgraph(_index: int) -> None:
+        return None
 
-    class _Model:
-        @staticmethod
-        def GetRootAsModel(data: bytes, offset: int) -> "_Root":
-            return _Root()
+    def get_root(_data: bytes, _offset: int) -> SimpleNamespace:
+        return SimpleNamespace(Subgraphs=no_subgraph)
 
     tflite = ModuleType("tflite")
-    tflite.Model = _Model  # type: ignore[attr-defined]
+    tflite.Model = SimpleNamespace(GetRootAsModel=get_root)  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "tflite", tflite)
 
     path = work_dir / "model.tflite"
