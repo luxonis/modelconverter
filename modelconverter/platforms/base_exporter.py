@@ -14,6 +14,7 @@ import shutil
 from abc import ABC, abstractmethod
 from importlib.metadata import version
 from pathlib import Path
+from typing import Literal
 
 import cv2
 import numpy as np
@@ -198,7 +199,7 @@ class Exporter(ABC):
             self._onnx_simplification
             and self._input_file_type == InputFileType.ONNX
         ):
-            self._input_model = self._simplify_onnx()
+            self._input_model = self._simplify_onnx(self._onnx_simplification)
 
         self._disable_calibration = self.config.get_platform_config(
             self.platform
@@ -313,13 +314,17 @@ class Exporter(ABC):
                 raise ModelconverterException(str(error)) from error
         return requested_inputs
 
-    def _simplify_onnx(self) -> Path:  # pragma: no cover
+    def _simplify_onnx(
+        self, backend: Literal["onnxsim", "onnxslim"]
+    ) -> Path:  # pragma: no cover
         """Simplify the staged ONNX model.
 
-        The backend is whichever one the ``onnx_simplification`` option
-        names, ``onnxsim`` or ``onnxslim``. A missing backend, a failed
-        simplification or a simplified model that does not check out are
-        all only warned about, leaving the model as it was.
+        A missing backend, a failed simplification or a simplified model
+        that does not check out are all only warned about, leaving the
+        model as it was.
+
+        Args:
+            backend: Package that simplifies the model.
 
         Returns:
             Path of the simplified model, or the path of the staged
@@ -328,11 +333,11 @@ class Exporter(ABC):
         """
         logger.info("Simplifying ONNX.")
         try:
-            if self._onnx_simplification == "onnxsim":
+            if backend == "onnxsim":
                 from onnxsim import simplify
 
                 logger.info("Using `onnxsim` for simplification.")
-            elif self._onnx_simplification == "onnxslim":
+            else:
                 from onnxslim import slim
 
                 logger.info("Using `onnxslim` for simplification.")
@@ -343,7 +348,6 @@ class Exporter(ABC):
                     return slimmed, True
 
         except ImportError:
-            backend = self._onnx_simplification
             logger.warning(
                 f"`{backend}` not installed, proceeding without simplification."
                 f"Please install it using `pip install {backend}`."

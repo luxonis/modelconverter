@@ -185,7 +185,7 @@ wrap-summaries = 72
 wrap-descriptions = 72
 
 [tool.pyright]
-typeCheckingMode = "basic"
+typeCheckingMode = "standard"
 # The benchmark suite runs on the internal Luxonis HIL testbed and imports
 # `hil_framework`, which is not published. No environment outside the testbed
 # can resolve it, so these files are not type checked. The first three entries

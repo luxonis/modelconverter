@@ -768,8 +768,12 @@ def benchmark(
             for RVC4.
 
     """
-    if platform in {Platform.RVC2, Platform.RVC4}:
+    if platform is Platform.RVC3:
         kwargs: Configuration = {
+            "requests": requests,
+        }
+    else:
+        kwargs = {
             "repetitions": repetitions,
             "benchmark_time": benchmark_time,
             "input_fps": input_fps,
@@ -786,10 +790,6 @@ def benchmark(
                 "device_id": device_id,
                 "device_monitor": device_monitor,
             }
-    elif platform is Platform.RVC3:
-        kwargs = {
-            "requests": requests,
-        }
     get_benchmark(platform, model_path).run(full=full, save=save, **kwargs)
 
 
