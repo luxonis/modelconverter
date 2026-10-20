@@ -10,7 +10,7 @@ the activation/parameter names it needs from the raw structure.
 """
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -290,5 +290,8 @@ def _collect_onnx_encoding_names(
     )
 
 
-def _non_empty_names(values: Any) -> set[str]:
+def _non_empty_names(
+    values: Iterable[onnx.TensorProto | onnx.ValueInfoProto],
+) -> set[str]:
+    """Return the names of the values, without the empty ones."""
     return {value.name for value in values if value.name}

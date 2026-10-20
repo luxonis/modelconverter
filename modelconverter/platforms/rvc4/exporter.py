@@ -13,10 +13,10 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Final, NamedTuple
+from typing import Any, Final, NamedTuple, NoReturn
 
 from loguru import logger
-from luxonis_ml.typing import Params
+from luxonis_ml.typing import Params, ParamValue
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
@@ -493,7 +493,7 @@ class RVC4Exporter(Exporter):
             if name not in seen
         )
 
-    def _normalize_encoding_entry(self, name: str, entry: Any) -> None:
+    def _normalize_encoding_entry(self, name: str, entry: ParamValue) -> None:
         """Normalize the encodings of one exposed tensor in the dict form.
 
         The entry is one encoding or a list of them. An empty list gets
@@ -523,7 +523,8 @@ class RVC4Exporter(Exporter):
         item.update({"bitwidth": 8, "dtype": "int"})
 
     @staticmethod
-    def _raise_io_normalization_error(reason: str) -> None:
+    def _raise_io_normalization_error(reason: str) -> NoReturn:
+        """Raise a ``TypeError`` for overrides that IO normalization rejects."""
         raise TypeError(
             "Could not apply `rvc4.normalize_io_encodings=True` to the "
             f"configured quantization overrides: {reason}. Disable IO "

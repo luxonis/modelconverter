@@ -341,7 +341,7 @@ class InputConfig(OutputConfig):
     @model_validator(mode="wrap")
     @classmethod
     def _track_layout_source(
-        cls, data: Any, handler: ModelWrapValidatorHandler[Self]
+        cls, data: object, handler: ModelWrapValidatorHandler[Self]
     ) -> Self:
         """Remember whether ``C`` came from the user or layout inference."""
         if isinstance(data, cls):
@@ -1320,7 +1320,7 @@ class Config(LuxonisConfig):
     @model_validator(mode="wrap")
     @classmethod
     def _validate_stages(
-        cls, data: Any, handler: ModelWrapValidatorHandler[Self]
+        cls, data: object, handler: ModelWrapValidatorHandler[Self]
     ) -> Self:
         """Fill implicit stage names without changing explicit stage keys."""
         if not isinstance(data, dict):
