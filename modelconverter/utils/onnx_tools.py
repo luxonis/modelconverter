@@ -455,7 +455,13 @@ class ONNXModifier:
         self.output_path = output_path
         self._skip_optimization = skip_optimization
         self._skip_constant_folding = skip_constant_folding
-        self._load_onnx()
+        self._onnx_model = self._load_onnx()
+        input_type = self._onnx_model.graph.input[0].type.tensor_type
+        self._dtype = helper.tensor_dtype_to_np_dtype(input_type.elem_type)
+        self._has_dynamic_shape = any(
+            dim.dim_value == 0 for dim in input_type.shape.dim
+        )
+        self._onnx_gs = gs.import_onnx(self._onnx_model)
         self._prev_onnx_model = self._onnx_model
         self._prev_onnx_gs = self._onnx_gs
 
@@ -596,14 +602,12 @@ class ONNXModifier:
 
         return equal_outputs
 
-    def _load_onnx(self) -> None:
-        """Load the ONNX model and store it as ``onnx.ModelProto`` and
-        ``onnx_graphsurgeon`` graph.
-        """
+    def _load_onnx(self) -> onnx.ModelProto:
+        """Load, simplify and check the ONNX model."""
         logger.info(f"Loading model: {self.model_path.stem}")
 
         try:
-            self._onnx_model, _ = simplify(
+            onnx_model, _ = simplify(
                 self.model_path.as_posix(),
                 perform_optimization=not self._skip_optimization,
                 skip_constant_folding=self._skip_constant_folding,
@@ -612,21 +616,9 @@ class ONNXModifier:
             logger.warning(
                 f"Failed to load and simplify ONNX model: {self.model_path.stem} with error: {e}\nLoading without simplification."
             )
-            self._onnx_model = onnx.load(self.model_path.as_posix())
-        onnx.checker.check_model(self._onnx_model)
-
-        self._dtype = helper.tensor_dtype_to_np_dtype(
-            self._onnx_model.graph.input[0].type.tensor_type.elem_type
-        )
-        self._input_shape = [
-            dim.dim_value
-            for dim in self._onnx_model.graph.input[
-                0
-            ].type.tensor_type.shape.dim
-        ]
-        self._has_dynamic_shape = 0 in self._input_shape
-
-        self._onnx_gs = gs.import_onnx(self._onnx_model)
+            onnx_model = onnx.load(self.model_path.as_posix())
+        onnx.checker.check_model(onnx_model)
+        return onnx_model
 
     def _optimize_onnx(self) -> None:
         """Optimize and simplify the ONNX model's graph."""

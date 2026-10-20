@@ -184,6 +184,7 @@ exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests/test_benchmark"]
 reportInconsistentConstructor = "error"
 reportMatchNotExhaustive = "error"
 reportMissingParameterType = "error"
+reportUninitializedInstanceVariable = "error"
 reportUnnecessaryCast = "error"
 reportUnnecessaryComparison = "error"
 reportUnnecessaryContains = "error"
