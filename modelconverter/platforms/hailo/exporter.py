@@ -8,8 +8,8 @@ architecture. Requires the Hailo Docker image, which provides the SDK.
 
 import os
 import shutil
+from functools import partial
 from pathlib import Path
-from typing import TypedDict
 
 import hailo_sdk_client
 import numpy as np
@@ -17,7 +17,6 @@ import tensorflow as tf
 from hailo_sdk_client import ClientRunner
 from loguru import logger
 from luxonis_ml.typing import Params
-from typing_extensions import NotRequired
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
@@ -38,15 +37,6 @@ from modelconverter.utils.preprocessing import (
     reorder_layout,
 )
 from modelconverter.utils.types import Platform
-
-
-class _TFTranslateKwargs(TypedDict):
-    """Keyword arguments of ``ClientRunner.translate_tf_model``."""
-
-    net_name: str
-    start_node_names: list[str]
-    end_node_names: list[str]
-    tensor_shapes: NotRequired[dict[str, list[int]]]
 
 
 class HailoExporter(Exporter):
@@ -121,16 +111,17 @@ class HailoExporter(Exporter):
 
         logger.info("Translating model to Hailo IR.")
         if self._is_tflite:
-            translate_kwargs: _TFTranslateKwargs = {
-                "net_name": self._model_name,
-                "start_node_names": start_nodes,
-                "end_node_names": list(self._outputs.keys()),
-            }
-            if _supports_tf_tensor_shapes():
-                translate_kwargs["tensor_shapes"] = net_input_shapes
-            runner.translate_tf_model(
-                str(self._input_model), **translate_kwargs
+            translate = partial(
+                runner.translate_tf_model,
+                str(self._input_model),
+                net_name=self._model_name,
+                start_node_names=start_nodes,
+                end_node_names=list(self._outputs.keys()),
             )
+            if _supports_tf_tensor_shapes():
+                translate(tensor_shapes=net_input_shapes)
+            else:
+                translate()
         else:
             runner.translate_onnx_model(
                 str(self._input_model),
