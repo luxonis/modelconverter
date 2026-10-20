@@ -15,7 +15,7 @@ import shutil
 import signal
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import partial
@@ -131,7 +131,7 @@ device_commands = Group.create_ordered("Device Commands")
 
 
 @contextmanager
-def catch_exceptions():
+def catch_exceptions() -> Iterator[None]:
     """Log any exception raised in the block and exit.
 
     Exits with status 1 for a ``ModelconverterException`` and with
@@ -1199,7 +1199,7 @@ def launcher(
     ] = None,
     memory: Annotated[str | None, Parameter(group=docker_parameters)] = None,
     cpus: Annotated[float | None, Parameter(group=docker_parameters)] = None,
-):
+) -> None:
     """Convert neural network models for Luxonis devices.
 
     The ``convert``, ``infer`` and ``shell`` commands run in a docker
