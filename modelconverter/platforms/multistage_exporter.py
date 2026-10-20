@@ -61,7 +61,7 @@ class MultiStageExporter:
         )
         self._intermediate_outputs_dir.mkdir(parents=True, exist_ok=True)
 
-        with open(self.output_dir / "config.yaml", "w") as f:
+        with (self.output_dir / "config.yaml").open("w") as f:
             f.write(config.model_dump_json(indent=4))
 
         logger.info(f"Output directory: {self.output_dir}")
@@ -93,11 +93,11 @@ class MultiStageExporter:
             self._produce_calibration_data(exporter=exporter)
             logger.info(f"Running stage {stage_name}.")
             output_paths.append(exporter.run())
-            with open(exporter.output_dir / "buildinfo.json") as f:
+            with (exporter.output_dir / "buildinfo.json").open() as f:
                 buildinfo[stage_name] = json.load(f)
             logger.info(f"Stage {stage_name} completed.")
 
-        with open(self.output_dir / "buildinfo.json", "w") as f:
+        with (self.output_dir / "buildinfo.json").open("w") as f:
             json.dump(buildinfo, f, indent=4)
         return output_paths
 

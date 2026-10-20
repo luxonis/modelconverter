@@ -603,7 +603,7 @@ def _write_superblob(
         for patch_name in blobs_directory.glob("*.patch")
     }
 
-    with open(superblob_path, "wb") as superblob_file:
+    with superblob_path.open("wb") as superblob_file:
         header = default_blob_path.stat().st_size.to_bytes(8, "big")
         for patch_idx in range(1, 17):
             patch = idx2patch.get(patch_idx)

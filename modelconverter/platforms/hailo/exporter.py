@@ -158,7 +158,7 @@ class HailoExporter(Exporter):
         hef = runner.compile()
 
         hef_path = self._input_model.with_suffix(".hef")
-        with open(hef_path, "wb") as hef_file:
+        with hef_path.open("wb") as hef_file:
             hef_file.write(hef)
         return hef_path
 

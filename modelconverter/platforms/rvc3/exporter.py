@@ -207,7 +207,7 @@ class RVC3Exporter(RVC2Exporter):
 
         pot_config_path = self.intermediate_outputs_dir / "pot_config.json"
 
-        with open(pot_config_path, "w") as f:
+        with pot_config_path.open("w") as f:
             json.dump(config, f, indent=4)
 
         logger.info(f"Executing POT pipeline for {xml_path}")

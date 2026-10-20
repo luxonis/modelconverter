@@ -253,7 +253,7 @@ def _get_metadata_onnx(onnx_path: Path) -> Metadata:
 def _get_metadata_tflite(model_path: Path) -> Metadata:
     import tflite
 
-    with open(model_path, "rb") as f:
+    with model_path.open("rb") as f:
         data = f.read()
 
     subgraph = tflite.Model.GetRootAsModel(data, 0).Subgraphs(0)

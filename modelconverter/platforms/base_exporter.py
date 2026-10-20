@@ -151,7 +151,7 @@ class Exporter(ABC):
         self._cmd_info: dict[str, list[str]] = {}
         self._is_tflite = self._input_file_type == InputFileType.TFLITE
 
-        with open(self.output_dir / "config.yaml", "w") as f:
+        with (self.output_dir / "config.yaml").open("w") as f:
             f.write(config.model_dump_json(indent=4))
 
         sanitized_model_name = (
@@ -296,7 +296,7 @@ class Exporter(ABC):
             **self.exporter_buildinfo(),
         }
 
-        with open(self.output_dir / "buildinfo.json", "w") as f:
+        with (self.output_dir / "buildinfo.json").open("w") as f:
             json.dump(buildinfo, f, indent=4)
 
         return new_output_path

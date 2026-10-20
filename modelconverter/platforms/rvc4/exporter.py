@@ -323,7 +323,7 @@ class RVC4Exporter(Exporter):
             shutil.rmtree(self._raw_img_dir)
         self._raw_img_dir.mkdir(exist_ok=True)
         i = 0
-        with open(self._input_list_path, "w") as f:
+        with self._input_list_path.open("w") as f:
             for sample_idx, sample in enumerate(zip(*entries, strict=True)):
                 parts = []
                 for entry in sample:
@@ -427,7 +427,7 @@ class RVC4Exporter(Exporter):
         if self._normalize_io_encodings:
             self._normalize_exposed_io_encodings(encodings_dict)
         encodings_path = self.intermediate_outputs_dir / "encodings.json"
-        with open(encodings_path, "w") as encodings_file:
+        with encodings_path.open("w") as encodings_file:
             json.dump(encodings_dict, encodings_file, indent=4)
         return encodings_path
 

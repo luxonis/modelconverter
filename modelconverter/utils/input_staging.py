@@ -1304,7 +1304,7 @@ _DIGEST = re.compile(r"[0-9a-f]{16}")
 
 def _hash_file(path: Path) -> str:
     h = hashlib.sha256()
-    with open(path, "rb") as f:
+    with path.open("rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()[:16]

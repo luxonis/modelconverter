@@ -106,7 +106,7 @@ def process_nn_archive(
     if not (untar_path / "config.json").exists():
         raise RuntimeError(f"NN Archive config not found in `{untar_path}`")
 
-    with open(untar_path / "config.json") as f:
+    with (untar_path / "config.json").open() as f:
         archive_config = NNArchiveConfig(**json.load(f))
     package_name = _package_name(path)
 

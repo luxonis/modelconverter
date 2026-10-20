@@ -786,7 +786,7 @@ class QuantizationOverrides(BaseModelExtraForbid):
         if self.payload is not None:
             return copy.deepcopy(self.payload)
         assert self.source_path is not None
-        with open(self.source_path) as f:
+        with self.source_path.open() as f:
             value = json.load(f)
         if not isinstance(value, dict):
             raise TypeError(
