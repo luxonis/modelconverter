@@ -191,6 +191,17 @@ typeCheckingMode = "standard"
 # can resolve it, so these files are not type checked. The first three entries
 # are pyright's own defaults, which a custom `exclude` would otherwise drop.
 exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests/test_benchmark"]
+# Checks that the standard mode leaves off.
+reportInconsistentConstructor = "error"
+reportMatchNotExhaustive = "error"
+reportUnnecessaryCast = "error"
+reportUnnecessaryContains = "error"
+reportUnnecessaryIsInstance = "error"
+reportUnnecessaryTypeIgnoreComment = "error"
+reportUntypedBaseClass = "error"
+reportUntypedClassDecorator = "error"
+reportUntypedFunctionDecorator = "error"
+reportUntypedNamedTuple = "error"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/conversion"]
