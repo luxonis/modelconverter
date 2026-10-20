@@ -572,14 +572,14 @@ def pull_image(client: docker.DockerClient, image: str) -> str:
             status = log.get("status")
             if status not in {"Downloading", "Extracting"}:
                 continue
-            id = log["id"]
+            layer_id = log["id"]
             detail = log["progressDetail"]
-            description = f"{id} [{status}]:"
+            description = f"{layer_id} [{status}]:"
             total = detail.get("total")
-            if id not in bars:
-                bars[id] = progress.add_task(description, total=total)
+            if layer_id not in bars:
+                bars[layer_id] = progress.add_task(description, total=total)
             progress.update(
-                bars[id],
+                bars[layer_id],
                 completed=detail["current"] if total is not None else None,
                 total=total,
                 description=description,

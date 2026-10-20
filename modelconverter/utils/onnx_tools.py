@@ -570,10 +570,10 @@ class ONNXModifier:
         ort_session_2 = ort.InferenceSession(onnx_model_2)
 
         inputs = {
-            input.name: np.random.rand(*input.shape).astype(
-                _ORT_INPUT_TYPES[input.type]
+            model_input.name: np.random.rand(*model_input.shape).astype(
+                _ORT_INPUT_TYPES[model_input.type]
             )
-            for input in ort_session_1.get_inputs()
+            for model_input in ort_session_1.get_inputs()
         }
 
         outputs_1 = ort_session_1.run(None, inputs)
@@ -748,9 +748,9 @@ class ONNXModifier:
             no constant input.
 
         """
-        for idx, input in enumerate(node.inputs):
-            if input.name in constant_map:
-                return (constant_map[input.name], idx)
+        for idx, tensor in enumerate(node.inputs):
+            if tensor.name in constant_map:
+                return (constant_map[tensor.name], idx)
 
         return None
 
@@ -766,9 +766,9 @@ class ONNXModifier:
             variable input.
 
         """
-        for idx, input in enumerate(node.inputs):
-            if isinstance(input, gs.Variable):
-                return (input, idx)
+        for idx, tensor in enumerate(node.inputs):
+            if isinstance(tensor, gs.Variable):
+                return (tensor, idx)
 
         return None
 
@@ -796,8 +796,8 @@ class ONNXModifier:
 
         for old_input, new_input in connections_to_fix:
             for node in nodes:
-                for idx, input in enumerate(node.inputs):
-                    if input == old_input:
+                for idx, tensor in enumerate(node.inputs):
+                    if tensor == old_input:
                         node.inputs[idx] = new_input
 
         for node in nodes_to_remove:
