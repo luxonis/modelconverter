@@ -461,6 +461,7 @@ class ONNXModifier:
 
     def modify_onnx(
         self,
+        *,
         substitute_sub_with_add: bool = True,
         substitute_div_with_mul: bool = True,
         fuse_add_mul_to_bn: bool = True,

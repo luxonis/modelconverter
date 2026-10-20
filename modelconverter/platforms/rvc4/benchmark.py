@@ -592,6 +592,7 @@ class RVC4Benchmark(Benchmark):
     def _benchmark_dai(
         self,
         model_path: PathType,
+        *,
         profile: str,
         runtime: str,
         repetitions: int,

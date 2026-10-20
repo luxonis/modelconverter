@@ -666,6 +666,7 @@ def _warn_if_renamed(
 
 def modelconverter_config_to_nn(
     config: Config,
+    *,
     model_name: Path,
     orig_nn: NNArchiveConfig | None,
     preprocessing: dict[str, PreprocessingBlock],
@@ -1103,6 +1104,7 @@ def archive_from_model(model_path: Path) -> NNArchiveConfig:
 def generate_archive(
     platform: Platform,
     cfg: Config,
+    *,
     main_stage: str,
     out_models: list[Path],
     output_path: Path,
@@ -1145,12 +1147,12 @@ def generate_archive(
         model_name = out_models[0].name
     nn_archive = modelconverter_config_to_nn(
         cfg,
-        Path(model_name),
-        archive_cfg,
-        preprocessing,
-        main_stage,
-        inference_model_path,
-        platform,
+        model_name=Path(model_name),
+        orig_nn=archive_cfg,
+        preprocessing=preprocessing,
+        main_stage_key=main_stage,
+        model_path=inference_model_path,
+        platform=platform,
         preprocessing_input_types=preprocessing_input_types,
     )
     generator = ArchiveGenerator(

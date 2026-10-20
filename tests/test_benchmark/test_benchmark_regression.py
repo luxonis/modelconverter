@@ -254,6 +254,7 @@ def _select_benchmark_camera(
     ids=[_model_id(s) for s in _model_slugs("rvc4")],
 )
 def test_benchmark_fps(
+    *,
     model_slug: str,
     benchmark_platform: str,
     benchmark_run_id: str,
