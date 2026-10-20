@@ -569,8 +569,9 @@ class ONNXModifier:
         ort_session_1 = ort.InferenceSession(onnx_model_1)
         ort_session_2 = ort.InferenceSession(onnx_model_2)
 
+        rng = np.random.default_rng()
         inputs = {
-            model_input.name: np.random.rand(*model_input.shape).astype(
+            model_input.name: rng.random(model_input.shape).astype(
                 _ORT_INPUT_TYPES[model_input.type]
             )
             for model_input in ort_session_1.get_inputs()

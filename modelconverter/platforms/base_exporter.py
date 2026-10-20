@@ -423,10 +423,9 @@ class Exporter(ABC):
                     )
                 )
 
+            rng = np.random.default_rng()
             for i in range(calib.max_images):
-                arr: np.ndarray = np.random.normal(
-                    calib.mean, calib.std, inp.shape
-                )
+                arr: np.ndarray = rng.normal(calib.mean, calib.std, inp.shape)
                 arr = np.clip(arr, calib.min_value, calib.max_value)
                 arr = arr.astype(calib.data_type.as_numpy_dtype())
                 _save_random_sample(arr, inp, dest, i)

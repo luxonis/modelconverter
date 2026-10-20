@@ -13,7 +13,6 @@ pixel values never affect which branch runs.
 from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
 import pytest
 
 from modelconverter.platforms.base_exporter import Exporter
@@ -72,7 +71,6 @@ def test_random_calibration_output_format(
     encoding: str | None,
     suffix: str,
 ):
-    np.random.seed(0)
     assert _prepare(tmp_path, shape, layout, encoding=encoding) == [
         suffix,
         suffix,

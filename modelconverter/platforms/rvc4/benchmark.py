@@ -331,22 +331,17 @@ class RVC4Benchmark(Benchmark):
             # INT inputs are often token/index tensors;
             # zero keeps synthetic benchmark inputs in a safe range.
             return np.zeros(spec.shape, dtype=np.int32)
+        rng = np.random.default_rng()
         if spec.data_type == DataType.INT8:
-            return np.random.randint(-128, 128, size=spec.shape, dtype=np.int8)
+            return rng.integers(-128, 128, size=spec.shape, dtype=np.int8)
         if spec.data_type == DataType.INT16:
-            return np.random.randint(
-                -32768, 32768, size=spec.shape, dtype=np.int16
-            )
+            return rng.integers(-32768, 32768, size=spec.shape, dtype=np.int16)
         if spec.data_type in {DataType.UINT8, DataType.UFXP8}:
-            return np.random.randint(0, 256, size=spec.shape, dtype=np.uint8)
+            return rng.integers(0, 256, size=spec.shape, dtype=np.uint8)
         if spec.data_type in {DataType.UINT16, DataType.UFXP16}:
-            return np.random.randint(
-                0, 65536, size=spec.shape, dtype=np.uint16
-            )
+            return rng.integers(0, 65536, size=spec.shape, dtype=np.uint16)
 
-        return np.random.rand(*spec.shape).astype(
-            spec.data_type.as_numpy_dtype()
-        )
+        return rng.random(spec.shape).astype(spec.data_type.as_numpy_dtype())
 
     @staticmethod
     def _validate_dai_input_specs(input_specs: Iterable[InputSpec]) -> None:

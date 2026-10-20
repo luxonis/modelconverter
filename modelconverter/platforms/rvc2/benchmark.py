@@ -165,7 +165,8 @@ def _random_input_data(model: dai.NNArchive | Path) -> dai.NNData:
         ]
 
     input_data = dai.NNData()
+    rng = np.random.default_rng()
     for name, size in sizes:
-        img = np.random.randint(0, 255, (size[1], size[0], 3), np.uint8)
+        img = rng.integers(0, 255, (size[1], size[0], 3), np.uint8)
         input_data.addTensor(name, img)
     return input_data
