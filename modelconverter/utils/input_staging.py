@@ -193,6 +193,16 @@ def _maybe_stage_token(
     if prev is not None and _is_flag(prev):
         return None
 
+    return _maybe_stage_value(token, prev, inputs_dir)
+
+
+def _maybe_stage_value(
+    token: str, prev: str | None, inputs_dir: Path
+) -> str | None:
+    """Return the rewritten value if it should be staged, else ``None``.
+
+    The value follows a config override key or stands alone.
+    """
     # A config override (`<key> <value>`). The schema knows what the value is,
     # which beats guessing from its shape: a bare directory name is staged when
     # the key calls for a path, and a destination is never staged at all.
