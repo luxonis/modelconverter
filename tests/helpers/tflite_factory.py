@@ -25,6 +25,25 @@ def _int_vector(b: flatbuffers.Builder, values: list[int]) -> int:
     return b.EndVector()
 
 
+def _offset_vector(b: flatbuffers.Builder, offsets: list[int]) -> int:
+    """Write a vector of table offsets and return its offset."""
+    b.StartVector(4, len(offsets), 4)
+    for offset in reversed(offsets):
+        b.PrependUOffsetTRelative(offset)
+    return b.EndVector()
+
+
+def _tensor(b: flatbuffers.Builder, name: int, shape: tuple[int, ...]) -> int:
+    """Write a float32 tensor that has no data and return its offset."""
+    shape_vec = _int_vector(b, list(shape))
+    b.StartObject(4)
+    b.PrependUOffsetTRelativeSlot(0, shape_vec, 0)
+    b.PrependInt8Slot(1, _FLOAT32, 0)
+    b.PrependUint32Slot(2, 0, 0)  # buffer 0 (no data)
+    b.PrependUOffsetTRelativeSlot(3, name, 0)
+    return b.EndObject()
+
+
 def build_toy_tflite(
     path: PathType, *, shape: tuple[int, ...] = (1, 8, 8, 3)
 ) -> Path:
@@ -44,33 +63,15 @@ def build_toy_tflite(
     b.StartObject(4)
     b.PrependInt8Slot(0, _RELU, 0)  # deprecated_builtin_code
     b.PrependInt32Slot(3, _RELU, 0)  # builtin_code
-    operator_code = b.EndObject()
-    b.StartVector(4, 1, 4)
-    b.PrependUOffsetTRelative(operator_code)
-    operator_codes = b.EndVector()
+    operator_codes = _offset_vector(b, [b.EndObject()])
 
     # One empty buffer (index 0) shared by the data-less activation tensors.
     b.StartObject(1)
-    empty_buffer = b.EndObject()
-    b.StartVector(4, 1, 4)
-    b.PrependUOffsetTRelative(empty_buffer)
-    buffers = b.EndVector()
+    buffers = _offset_vector(b, [b.EndObject()])
 
-    def tensor(name: int) -> int:
-        shape_vec = _int_vector(b, list(shape))
-        b.StartObject(4)
-        b.PrependUOffsetTRelativeSlot(0, shape_vec, 0)
-        b.PrependInt8Slot(1, _FLOAT32, 0)
-        b.PrependUint32Slot(2, 0, 0)  # buffer 0 (no data)
-        b.PrependUOffsetTRelativeSlot(3, name, 0)
-        return b.EndObject()
-
-    input_tensor = tensor(in_name)
-    output_tensor = tensor(out_name)
-    b.StartVector(4, 2, 4)
-    b.PrependUOffsetTRelative(output_tensor)
-    b.PrependUOffsetTRelative(input_tensor)
-    tensors = b.EndVector()
+    input_tensor = _tensor(b, in_name, shape)
+    output_tensor = _tensor(b, out_name, shape)
+    tensors = _offset_vector(b, [input_tensor, output_tensor])
 
     op_inputs = _int_vector(b, [0])
     op_outputs = _int_vector(b, [1])
@@ -78,10 +79,7 @@ def build_toy_tflite(
     b.PrependUint32Slot(0, 0, 0)  # opcode_index
     b.PrependUOffsetTRelativeSlot(1, op_inputs, 0)
     b.PrependUOffsetTRelativeSlot(2, op_outputs, 0)
-    operator = b.EndObject()
-    b.StartVector(4, 1, 4)
-    b.PrependUOffsetTRelative(operator)
-    operators = b.EndVector()
+    operators = _offset_vector(b, [b.EndObject()])
 
     sg_inputs = _int_vector(b, [0])
     sg_outputs = _int_vector(b, [1])
@@ -91,10 +89,7 @@ def build_toy_tflite(
     b.PrependUOffsetTRelativeSlot(2, sg_outputs, 0)
     b.PrependUOffsetTRelativeSlot(3, operators, 0)
     b.PrependUOffsetTRelativeSlot(4, subgraph_name, 0)
-    subgraph = b.EndObject()
-    b.StartVector(4, 1, 4)
-    b.PrependUOffsetTRelative(subgraph)
-    subgraphs = b.EndVector()
+    subgraphs = _offset_vector(b, [b.EndObject()])
 
     b.StartObject(8)
     b.PrependUint32Slot(0, _TFLITE_SCHEMA_VERSION, 0)
