@@ -86,6 +86,11 @@ class RVC4Exporter(Exporter):
         "min",
         "offset",
         "scale",
+        "enc_type",
+        "block_size",
+        "compressed_bw",
+        "per_block_int_scale",
+        "zero_point_shift",
     }
 
     def __init__(self, config: SingleStageConfig, output_dir: Path) -> None:
@@ -402,6 +407,8 @@ class RVC4Exporter(Exporter):
         encoding for DAI compatibility. Otherwise, their configured
         encodings are preserved. Existing file payloads are passed through
         without reserialization when no normalization is requested.
+        Normalization supports legacy and 1.0.0 encoding formats; other
+        versions require disabling normalization to pass through to SNPE.
 
         Args:
             encodings: Quantization overrides as resolved from the configuration,
@@ -440,13 +447,28 @@ class RVC4Exporter(Exporter):
     def _normalize_exposed_io_encodings(
         self, encodings_dict: dict[str, Any]
     ) -> None:
+        version = encodings_dict.get("version")
+        if version == "1.0.0":
+            default_encoding = {
+                "bw": 8,
+                "dtype": "INT",
+                "enc_type": "PER_TENSOR",
+            }
+        elif version in (None, "0.4.0", "0.5.0", "0.6.0", "0.6.1"):
+            default_encoding = {"bitwidth": 8, "dtype": "int"}
+        else:
+            self._raise_io_normalization_error(
+                f"encoding version {version!r} is not supported for IO normalization"
+            )
         activation_encodings = encodings_dict.setdefault(
-            "activation_encodings", {}
+            "activation_encodings", [] if version == "1.0.0" else {}
         )
         exposed_names = list(self._inputs.keys()) + list(self._outputs.keys())
 
         if isinstance(activation_encodings, list):
-            self._normalize_encoding_list(activation_encodings, exposed_names)
+            self._normalize_encoding_list(
+                activation_encodings, exposed_names, default_encoding
+            )
             return
 
         if not isinstance(activation_encodings, dict):
@@ -457,13 +479,16 @@ class RVC4Exporter(Exporter):
         for name in exposed_names:
             if name in activation_encodings:
                 self._normalize_encoding_entry(
-                    name, activation_encodings[name]
+                    name, activation_encodings[name], default_encoding
                 )
             else:
-                activation_encodings[name] = [{"bitwidth": 8, "dtype": "int"}]
+                activation_encodings[name] = [default_encoding.copy()]
 
     def _normalize_encoding_list(
-        self, encodings: list[Any], exposed_names: list[str]
+        self,
+        encodings: list[Any],
+        exposed_names: list[str],
+        default_encoding: dict[str, Any],
     ) -> None:
         """Normalize activation encodings in the list form.
 
@@ -483,42 +508,46 @@ class RVC4Exporter(Exporter):
                     "nonempty string `name`"
                 )
             if name in exposed_names:
-                self._normalize_io_encoding_item(item)
+                self._normalize_io_encoding_item(item, default_encoding)
                 seen.add(name)
         encodings.extend(
-            {"name": name, "bitwidth": 8, "dtype": "int"}
+            {"name": name, **default_encoding}
             for name in exposed_names
             if name not in seen
         )
 
-    def _normalize_encoding_entry(self, name: str, entry: ParamValue) -> None:
+    def _normalize_encoding_entry(
+        self, name: str, entry: ParamValue, default_encoding: dict[str, Any]
+    ) -> None:
         """Normalize the encodings of one exposed tensor in the dict form.
 
         The entry is one encoding or a list of them. An empty list gets
         an 8-bit encoding.
         """
         if isinstance(entry, dict):
-            self._normalize_io_encoding_item(entry)
+            self._normalize_io_encoding_item(entry, default_encoding)
             return
         if not isinstance(entry, list):
             self._raise_io_normalization_error(
                 f"`activation_encodings.{name}` must be a dict or list"
             )
         if not entry:
-            entry.append({"bitwidth": 8, "dtype": "int"})
+            entry.append(default_encoding.copy())
             return
         for item in entry:
             if not isinstance(item, dict):
                 self._raise_io_normalization_error(
                     f"`activation_encodings.{name}` list entries must be dicts"
                 )
-            self._normalize_io_encoding_item(item)
+            self._normalize_io_encoding_item(item, default_encoding)
 
     @staticmethod
-    def _normalize_io_encoding_item(item: dict[str, Any]) -> None:
+    def _normalize_io_encoding_item(
+        item: dict[str, Any], default_encoding: dict[str, Any]
+    ) -> None:
         for key in RVC4Exporter._IO_ENCODING_TRANSFORMED_KEYS:
             item.pop(key, None)
-        item.update({"bitwidth": 8, "dtype": "int"})
+        item.update(default_encoding)
 
     @staticmethod
     def _raise_io_normalization_error(reason: str) -> NoReturn:
