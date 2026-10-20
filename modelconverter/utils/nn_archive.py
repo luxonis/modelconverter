@@ -15,21 +15,23 @@ import tarfile
 from itertools import pairwise
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Literal
+from typing import Literal, TypedDict
 
 from loguru import logger
 from luxonis_ml.nn_archive import ArchiveGenerator
 from luxonis_ml.nn_archive.config import CONFIG_VERSION
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import (
-    Input as NNArchiveInput,
-)
-from luxonis_ml.nn_archive.config_building_blocks import (
+    HeadType,
     InputType,
     PreprocessingBlock,
 )
+from luxonis_ml.nn_archive.config_building_blocks import (
+    Input as NNArchiveInput,
+)
 from luxonis_ml.typing import Params, PathType
 from pydantic import BaseModel
+from typing_extensions import NotRequired
 
 from modelconverter.utils.config import (
     BlobBaseConfig,
@@ -59,6 +61,50 @@ from modelconverter.utils.types import (
     QuantizationMode,
     ResizeMethod,
 )
+
+
+class _RawArchiveMetadata(TypedDict):
+    """Raw ``model.metadata`` section of an archive config."""
+
+    name: str
+    path: str
+    precision: NotRequired[str]
+
+
+class _RawArchiveInput(TypedDict):
+    """Raw entry of ``model.inputs`` in an archive config."""
+
+    name: str
+    shape: list[int]
+    layout: str
+    dtype: str
+    input_type: Literal["raw", "image"]
+    preprocessing: Params
+
+
+class _RawArchiveOutput(TypedDict):
+    """Raw entry of ``model.outputs`` in an archive config."""
+
+    name: str
+    shape: list[int]
+    layout: str
+    dtype: str
+
+
+class _RawArchiveModel(TypedDict):
+    """Raw ``model`` section of an archive config."""
+
+    metadata: _RawArchiveMetadata
+    inputs: list[_RawArchiveInput]
+    outputs: list[_RawArchiveOutput]
+    heads: list[HeadType] | None
+
+
+class _RawArchiveConfig(TypedDict):
+    """Raw archive config, before it is validated."""
+
+    config_version: str
+    model: _RawArchiveModel
 
 
 def get_archive_input(cfg: NNArchiveConfig, name: str) -> NNArchiveInput:
@@ -717,7 +763,7 @@ def modelconverter_config_to_nn(
     cfg = config.stages[main_stage_key]
     platform_cfg = cfg.get_platform_config(platform)
 
-    archive_cfg = {
+    archive_cfg: _RawArchiveConfig = {
         "config_version": CONFIG_VERSION,
         "model": {
             "metadata": {
@@ -780,10 +826,12 @@ def modelconverter_config_to_nn(
         for old_name, new_name in output_name_map.items()
         if old_name != new_name
     }
-    if orig_nn is not None and renamed_outputs:
-        archive_cfg["model"]["heads"] = _replace_names(
-            orig_nn.model.heads, renamed_outputs
-        )
+    heads = archive_cfg["model"]["heads"]
+    if heads and renamed_outputs:
+        archive_cfg["model"]["heads"] = [
+            HeadType.model_validate(_replace_names(head, renamed_outputs))
+            for head in heads
+        ]
     for out in cfg.outputs:
         metadata_name = output_name_map[out.name]
         _warn_if_renamed("output", out.name, metadata_name)
@@ -810,7 +858,7 @@ def modelconverter_config_to_nn(
         names = ", ".join(sorted(unknown_preprocessing))
         raise ValueError(f"Preprocessing input(s) not found: {names}")
 
-    archive = NNArchiveConfig(**archive_cfg)
+    archive = NNArchiveConfig.model_validate(archive_cfg)
     if len(config.stages) > 1:
         _attach_postprocessor(archive, config, main_stage_key, model_name)
     return archive
@@ -1055,7 +1103,7 @@ def archive_from_model(model_path: Path) -> NNArchiveConfig:
     """
     metadata = get_metadata(model_path)
 
-    archive_cfg = {
+    archive_cfg: _RawArchiveConfig = {
         "config_version": CONFIG_VERSION,
         "model": {
             "metadata": {
@@ -1098,7 +1146,7 @@ def archive_from_model(model_path: Path) -> NNArchiveConfig:
             }
         )
 
-    return NNArchiveConfig(**archive_cfg)
+    return NNArchiveConfig.model_validate(archive_cfg)
 
 
 def generate_archive(

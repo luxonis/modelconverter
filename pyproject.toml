@@ -195,6 +195,9 @@ reportUntypedBaseClass = "error"
 reportUntypedClassDecorator = "error"
 reportUntypedFunctionDecorator = "error"
 reportUntypedNamedTuple = "error"
+strictDictionaryInference = true
+strictListInference = true
+strictSetInference = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/conversion"]
