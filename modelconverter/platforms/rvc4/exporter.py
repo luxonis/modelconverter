@@ -317,7 +317,6 @@ class RVC4Exporter(Exporter):
             Path to the written input list.
 
         """
-
         entries = self._calibration_entries()
         if self._raw_img_dir.exists():  # pragma: no cover
             logger.warning("Removing existing raw_images directory.")
