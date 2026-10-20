@@ -398,10 +398,7 @@ def subprocess_run(
         Result of the command.
 
     """
-    if isinstance(cmd, str):
-        args = cmd.split()
-    else:
-        args = [str(arg) for arg in cmd]
+    args = cmd.split() if isinstance(cmd, str) else [str(arg) for arg in cmd]
 
     with SubprocessHandle(args, silent=silent, timeout=timeout) as proc:
         while proc:
