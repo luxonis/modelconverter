@@ -11,6 +11,7 @@ import multiprocessing
 from contextlib import suppress
 
 import keyring
+from luxonis_ml.typing import Params
 from luxonis_ml.utils import Environ as BaseEnviron
 from pydantic import model_validator
 
@@ -83,7 +84,7 @@ class Environ(BaseEnviron):
 
     @model_validator(mode="before")
     @classmethod
-    def validate_hubai_api_key(cls, data: object) -> object:
+    def validate_hubai_api_key(cls, data: Params) -> Params:
         """Fall back to the system keyring for the HubAI API key.
 
         The keyring is only consulted when the key was not provided
@@ -98,7 +99,7 @@ class Environ(BaseEnviron):
             keyring held one.
 
         """
-        if not isinstance(data, dict) or data.get("HUBAI_API_KEY"):
+        if data.get("HUBAI_API_KEY"):
             return data
 
         api_key = None
