@@ -698,8 +698,6 @@ class RVC4Benchmark(Benchmark):
             if hubai_precision is not None:
                 logger.info(f"HubAI is reporting {hubai_precision}")
 
-            result = None
-
             # e.g. for inputs representing indices
             if input_precision not in {
                 DataType.INT8,
@@ -727,8 +725,6 @@ class RVC4Benchmark(Benchmark):
                         result = DataType.FLOAT32
                     case _:
                         result = input_precision
-            if result is None:
-                raise ValueError("Unable to resolve the type combination")
             logger.info(
                 f"Resolved the type of '{name}' to be '{result.name.upper()}'"
             )

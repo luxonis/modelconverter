@@ -471,9 +471,8 @@ def _mo_input_spec(inp: InputConfig, *, fp16: bool) -> str:
     spec = inp.name
     if inp.shape is not None:
         spec += _lst_join(inp.shape, sep=" ")
-    if inp.data_type is not None:
-        data_type = DataType("float16") if fp16 else inp.data_type
-        spec += f"{{{data_type.as_openvino_dtype()}}}"
+    data_type = DataType("float16") if fp16 else inp.data_type
+    spec += f"{{{data_type.as_openvino_dtype()}}}"
     if inp.frozen_value is not None:
         if len(inp.frozen_value) == 1:
             value = inp.frozen_value[0]

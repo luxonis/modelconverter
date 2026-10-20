@@ -624,9 +624,7 @@ class ONNXModifier:
                 0
             ].type.tensor_type.shape.dim
         ]
-        self._has_dynamic_shape = any(
-            dim == 0 or dim is None for dim in self._input_shape
-        )
+        self._has_dynamic_shape = 0 in self._input_shape
 
         self._onnx_gs = gs.import_onnx(self._onnx_model)
 

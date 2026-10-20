@@ -317,8 +317,6 @@ class HailoExporter(Exporter):
                 exit_with(
                     ValueError(f"Input `{name}` has no shape specified.")
                 )
-            if not all(x is not None for x in inp.shape):
-                exit_with(ValueError(f"Input `{name}` has dynamic shape."))
 
             values_len = inp.channel_count
             assert values_len is not None

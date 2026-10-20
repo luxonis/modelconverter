@@ -350,8 +350,6 @@ class RVC4Exporter(Exporter):
                 exit_with(
                     ValueError(f"Input `{name}` has no shape specified.")
                 )
-            if not all(x is not None for x in inp.shape):
-                exit_with(ValueError(f"Input `{name}` has dynamic shape."))
             entries.append(
                 [
                     _CalibrationEntry(path=path, inp=inp, calib=calib)
@@ -578,7 +576,6 @@ class RVC4Exporter(Exporter):
                 {
                     name: inp.data_type.as_snpe_dtype()
                     for name, inp in self._inputs.items()
-                    if inp.data_type is not None
                 },
             )
         if "--out_name" not in args:

@@ -377,8 +377,7 @@ def docker_build(
         "--load",
         str(build_dir),
     ]
-    if version is not None:
-        args += ["--build-arg", f"VERSION={version}"]
+    args += ["--build-arg", f"VERSION={version}"]
     if bare_tag == "dev":
         # Dev images also carry the test/coverage tooling so the suite can be
         # run inside the container (e.g. `modelconverter shell <t> --dev -c pytest`).
