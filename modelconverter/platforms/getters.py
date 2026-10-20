@@ -10,6 +10,8 @@ the platform's Docker image; the host-run benchmark, analyzer and
 visualizer take theirs from the host environment.
 """
 
+from typing_extensions import assert_never
+
 from modelconverter.platforms.base_analyze import Analyzer
 from modelconverter.platforms.base_benchmark import Benchmark
 from modelconverter.platforms.base_exporter import Exporter
@@ -50,6 +52,8 @@ def get_exporter(platform: Platform, *args, **kwargs) -> Exporter:
 
         return HailoExporter(*args, **kwargs)
 
+    assert_never(platform)
+
 
 def get_inferer(platform: Platform, *args, **kwargs) -> Inferer:
     """Create the `Inferer` implementation for the given platform.
@@ -85,6 +89,8 @@ def get_inferer(platform: Platform, *args, **kwargs) -> Inferer:
 
         return HailoInferer.from_config(*args, **kwargs)
 
+    assert_never(platform)
+
 
 def get_benchmark(platform: Platform, *args, **kwargs) -> Benchmark:
     """Create the `Benchmark` implementation for the given platform.
@@ -118,6 +124,8 @@ def get_benchmark(platform: Platform, *args, **kwargs) -> Benchmark:
 
     if platform is Platform.HAILO:  # pragma: no branch
         raise NotImplementedError("Hailo Benchmark is not implemented yet.")
+
+    assert_never(platform)
 
 
 def get_analyzer(platform: Platform, *args, **kwargs) -> Analyzer:

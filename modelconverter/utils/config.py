@@ -41,7 +41,7 @@ from pydantic import (
     model_serializer,
     model_validator,
 )
-from typing_extensions import Self
+from typing_extensions import Self, assert_never
 
 from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
@@ -1119,6 +1119,7 @@ class SingleStageConfig(BaseModelExtraForbid):
             return self.rvc3
         if platform == Platform.RVC4:  # pragma: no branch
             return self.rvc4
+        assert_never(platform)
 
     @model_validator(mode="before")
     @classmethod
