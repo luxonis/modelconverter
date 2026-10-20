@@ -107,16 +107,23 @@ def dir_stats(path: Path) -> tuple[int, int]:
     files behind, and neither reporting on the cache nor keeping it
     within its budget must be what breaks.
     """
-    size = 0
-    count = 0
-    for f in path.rglob("*"):
-        try:
-            if f.is_file():
-                size += f.stat().st_size
-                count += 1
-        except OSError:
-            continue
-    return size, count
+    sizes = [
+        size
+        for entry in path.rglob("*")
+        if (size := _file_size(entry)) is not None
+    ]
+    return sum(sizes), len(sizes)
+
+
+def _file_size(path: Path) -> int | None:
+    """Return the size of a regular file, or ``None`` if it is no file.
+
+    An entry that cannot be read also gives ``None``.
+    """
+    try:
+        return path.stat().st_size if path.is_file() else None
+    except OSError:
+        return None
 
 
 _SIZE_UNITS = {"B": 1, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4}

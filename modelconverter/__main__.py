@@ -185,15 +185,15 @@ def _inline_model_path(
 
 def _validate_inputs(cfg: Config) -> None:
     """Check the preprocessing or the input contract of every input."""
-    for stage in cfg.stages.values():
-        for inp in stage.inputs:
-            try:
+    try:
+        for stage in cfg.stages.values():
+            for inp in stage.inputs:
                 if inp.requires_input_preprocessing():
                     inp.validate_preprocessing()
                 else:
                     inp.validate_input_contract()
-            except ValueError as error:
-                raise ModelconverterException(str(error)) from error
+    except ValueError as error:
+        raise ModelconverterException(str(error)) from error
 
 
 def _conversion_result(

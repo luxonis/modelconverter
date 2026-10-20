@@ -847,12 +847,14 @@ def get_container_memory_available() -> int:
     running inside it, never less than zero.
     """
     limit = get_container_memory_limit()
-    # sum RSS of all processes in the container
-    total_usage = 0
-    for p in psutil.process_iter():
-        try:
-            total_usage += p.memory_info().rss
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
+    total_usage = sum(_resident_memory(p) for p in psutil.process_iter())
     available = limit - total_usage
     return max(0, available)
+
+
+def _resident_memory(process: psutil.Process) -> int:
+    """Return the RSS of a process, or 0 if it is gone or not readable."""
+    try:
+        return process.memory_info().rss
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return 0
