@@ -45,7 +45,7 @@ class RVC4Analyzer(Analyzer):
         dlc_model_path: str,
         image_dirs: dict[str, str],
         image_subset: int | None = None,
-    ):
+    ) -> None:
         """Initialize the analyzer and connect to the device.
 
         Args:

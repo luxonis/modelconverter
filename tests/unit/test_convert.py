@@ -423,7 +423,9 @@ def test_fallback_regenerates_random_calibration_for_externalized_domain(
     class RetryExporter(Exporter):
         platform = Platform.RVC4
 
-        def __init__(self, config: SingleStageConfig, output_dir: Path):
+        def __init__(
+            self, config: SingleStageConfig, output_dir: Path
+        ) -> None:
             super().__init__(config, output_dir)
             calibration = config.inputs[0].calibration
             assert isinstance(calibration, ImageCalibrationConfig)

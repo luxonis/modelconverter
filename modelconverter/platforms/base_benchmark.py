@@ -123,7 +123,7 @@ class Benchmark(ABC):
     _VALID_EXTENSIONS = (".tar.xz", ".blob", ".dlc")
     _HUBAI_PLATFORM: str | None = None
 
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str) -> None:
         """Resolve the model to benchmark.
 
         Args:

@@ -88,7 +88,7 @@ class RVC4Exporter(Exporter):
         "scale",
     }
 
-    def __init__(self, config: SingleStageConfig, output_dir: Path):
+    def __init__(self, config: SingleStageConfig, output_dir: Path) -> None:
         """Initialize the exporter and pre-process the input model.
 
         The SNPE arguments and the quantization options are taken from

@@ -34,7 +34,9 @@ class Analyzer(ABC):
 
     """
 
-    def __init__(self, dlc_model_path: str, image_dirs: dict[str, str]):
+    def __init__(
+        self, dlc_model_path: str, image_dirs: dict[str, str]
+    ) -> None:
         """Initialize the analyzer and read the model's layer shapes.
 
         Args:

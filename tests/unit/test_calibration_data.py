@@ -5,7 +5,7 @@ network access or cloud credentials are ever required.
 """
 
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import numpy as np
@@ -213,11 +213,14 @@ def test_ldf_malformed_too_many_parts():
         cd.download_calibration_data("a:b:c:d")
 
 
+_Sample = tuple[np.ndarray | dict[str, int], None]
+
+
 class _FakeLoader:
-    def __init__(self, items: list):
+    def __init__(self, items: list[_Sample]) -> None:
         self._items = items
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[_Sample]:
         return iter(self._items)
 
 

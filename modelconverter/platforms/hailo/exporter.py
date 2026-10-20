@@ -49,7 +49,7 @@ class HailoExporter(Exporter):
 
     platform: Platform = Platform.HAILO
 
-    def __init__(self, config: SingleStageConfig, output_dir: Path):
+    def __init__(self, config: SingleStageConfig, output_dir: Path) -> None:
         """Initialize the exporter.
 
         If TensorFlow reports no available GPU, the optimization and

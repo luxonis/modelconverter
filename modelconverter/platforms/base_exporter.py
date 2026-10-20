@@ -108,7 +108,7 @@ class Exporter(ABC):
         self,
         config: SingleStageConfig,
         output_dir: Path,
-    ):
+    ) -> None:
         """Stage the input model and the calibration data.
 
         The model, along with any ONNX external data belonging to it, is

@@ -147,7 +147,6 @@ select = [
 ignore = [
   "ANN002",
   "ANN003",
-  "ANN204",
   "D205",
   "E501",
   "PLC0415",

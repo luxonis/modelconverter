@@ -66,7 +66,7 @@ class Inferer(ABC):
     layout: dict[str, str | None] = field(default_factory=dict)
     config: SingleStageConfig | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Prepare the output directory and set up the runtime.
 
         The recreated directory is tagged with a marker file, which is

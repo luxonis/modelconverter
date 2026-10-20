@@ -47,7 +47,7 @@ class RVC3Exporter(RVC2Exporter):
 
     platform: Platform = Platform.RVC3
 
-    def __init__(self, config: SingleStageConfig, output_dir: Path):
+    def __init__(self, config: SingleStageConfig, output_dir: Path) -> None:
         """Initialize the exporter from the RVC3 configuration.
 
         Args:

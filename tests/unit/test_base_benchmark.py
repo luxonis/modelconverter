@@ -25,7 +25,7 @@ DEFAULTS: Configuration = {
 class _FakeBenchmark(Benchmark):
     """A benchmark that records the configurations it received."""
 
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str) -> None:
         super().__init__(model_path)
         self.seen: list[Configuration] = []
 

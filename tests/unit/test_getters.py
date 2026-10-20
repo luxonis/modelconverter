@@ -22,7 +22,7 @@ from tests.helpers.onnx_factory import single_io_onnx
 class _Recorder:
     """A stand-in backend that records how it was instantiated."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         self.args = args
         self.kwargs = kwargs
         self.via_from_config = False

@@ -33,7 +33,9 @@ class SubprocessResult(subprocess.CompletedProcess[bytes]):
 
     """
 
-    def __init__(self, *args, peak_memory: int, total_time: float, **kwargs):
+    def __init__(
+        self, *args, peak_memory: int, total_time: float, **kwargs
+    ) -> None:
         """Initialize the result.
 
         Args:
@@ -101,7 +103,7 @@ class SubprocessHandle:
         *,
         silent: bool = False,
         timeout: float | None = None,
-    ):
+    ) -> None:
         """Initialize the subprocess handle.
 
         Args:
