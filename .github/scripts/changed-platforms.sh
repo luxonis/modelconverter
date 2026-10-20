@@ -59,7 +59,7 @@ while IFS= read -r file; do
     docker/rvc4/*) select_platforms rvc4 ;;
     docker/hailo/*) select_platforms hailo ;;
 
-    # Shared code — test every platform.
+    # Shared code: test every platform.
     *)
       echo "${ALL}"
       exit 0
