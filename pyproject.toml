@@ -118,6 +118,7 @@ select = [
   "INP",
   "INT",
   "ISC",
+  "LOG",
   "NPY",
   "PERF",
   "PGH",
