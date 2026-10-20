@@ -61,7 +61,7 @@ Run `modelconverter --help` to see the available commands and options.
 There are two main ways to configure the conversion process:
 
 1. **NN Archive**:
-   You can use an [NN Archive](https://docs.luxonis.com/software-v3/ai-inference/nn-archive/#NN%20Archive) as input. An NN Archive includes a model in one of the supported formats—ONNX (.onnx), OpenVINO IR (.xml and .bin), or TensorFlow Lite (.tflite)—alongside a `config.json` file. The config.json file follows a specific configuration format as described under the `Configuration` section.
+   You can use an [NN Archive](https://docs.luxonis.com/software-v3/ai-inference/nn-archive/#NN%20Archive) as input. An NN Archive includes a `config.json` file and a model in one of the supported formats: ONNX (.onnx), OpenVINO IR (.xml and .bin), or TensorFlow Lite (.tflite). The config.json file follows a specific configuration format as described under the `Configuration` section.
 2. **YAML Configuration File (Legacy)**:
    An alternative way to configure the conversion is through a YAML configuration file. For reference, you can check [defaults.yaml](configs/defaults.yaml) and other examples located in the [configs](configs) directory.
 
@@ -98,7 +98,7 @@ The `encoding` flag in the YAML configuration file specifies the format that the
 > A single `mean_values` or `scale_values` value is broadcast to every channel. A list must contain either one value to broadcast or one value per channel, and scale values must be non-zero. ONNX preprocessing embedding currently supports `NCHW` and `NHWC` inputs.
 
 > [!IMPORTANT]
-> Use RGB, BGR, or GRAY encoding only when the input channels represent an image. Packed tensors, feature maps, and other non-image inputs—including tensors with nonstandard channel counts—must use `encoding: NONE`, which makes them raw tensor inputs rather than DepthAI image inputs.
+> Use RGB, BGR, or GRAY encoding only when the input channels represent an image. Packed tensors, feature maps, and other non-image inputs, including tensors with nonstandard channel counts, must use `encoding: NONE`, which makes them raw tensor inputs rather than DepthAI image inputs.
 
 ### NN Archive Configuration File
 
@@ -145,7 +145,7 @@ In the NN Archive configuration, there are two flags related to color encoding c
 > If both `dai_type` and `reverse_channels` are provided, the converter will give priority to `dai_type`.
 
 > [!IMPORTANT]
-> Provide mean/scale values in the original color format used during model training (e.g., RGB or BGR). Any necessary channel permutation is handled internally—do not reorder values manually.
+> Provide mean/scale values in the original color format used during model training (e.g., RGB or BGR). Any necessary channel permutation is handled internally. Do not reorder values manually.
 
 ## Online Usage
 
@@ -334,7 +334,7 @@ To enable GPU acceleration for `hailo` conversion, install the [Nvidia Container
 ### Inputs, Outputs and the Cache
 
 You can pass models, config files, calibration data and NN archives to the CLI
-by **any path on your machine** (relative or absolute) — or by a remote URL
+by **any path on your machine** (relative or absolute), or by a remote URL
 (`s3://`, `gs://`, ...). There is no need to place files in a special directory.
 
 - **Inputs** you pass on the CLI are copied into a hidden, auto-managed cache
@@ -400,7 +400,7 @@ modelconverter cache clean       # remove cache contents after confirmation
 modelconverter cache clean -y    # remove it non-interactively
 ```
 
-Inputs are cached in full — directories included — and ModelConverter warns
+Inputs are cached in full, directories included, and ModelConverter warns
 when a single one exceeds 1 GiB. When an input changes, the copy staged from
 it is replaced rather than kept alongside the new one.
 
@@ -457,8 +457,8 @@ You can run the built image either manually using the `docker run` command or us
 
 3. Execute the conversion:
 
-- If using the `modelconverter` CLI (recommended — it handles staging inputs and
-  fixing output ownership for you):
+- If using the `modelconverter` CLI (recommended, because it handles staging
+  inputs and fixing output ownership for you):
 
   ```bash
   modelconverter convert <platform> --path <s3_url_or_path> [ config overrides ]
@@ -713,7 +713,7 @@ modelconverter infer rvc4 \
 ```
 
 Results are written to `output/<output_dir_name>` in your current working
-directory — the same `output/` the conversions use — with the run's log next to
+directory (the same `output/` the conversions use), with the run's log next to
 it:
 
 ```txt
