@@ -145,8 +145,6 @@ select = [
   "YTT",
 ]
 ignore = [
-  "ANN002",
-  "ANN003",
   "D205",
   "E501",
   "PLC0415",
@@ -185,6 +183,7 @@ exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests/test_benchmark"]
 # Checks that the standard mode leaves off.
 reportInconsistentConstructor = "error"
 reportMatchNotExhaustive = "error"
+reportMissingParameterType = "error"
 reportUnnecessaryCast = "error"
 reportUnnecessaryContains = "error"
 reportUnnecessaryIsInstance = "error"

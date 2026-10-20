@@ -34,21 +34,28 @@ class SubprocessResult(subprocess.CompletedProcess[bytes]):
     """
 
     def __init__(
-        self, *args, peak_memory: int, total_time: float, **kwargs
+        self,
+        args: list[str],
+        returncode: int,
+        stdout: bytes | None = None,
+        stderr: bytes | None = None,
+        *,
+        peak_memory: int,
+        total_time: float,
     ) -> None:
         """Initialize the result.
 
         Args:
-            *args: Positional arguments passed to
-                ``subprocess.CompletedProcess``.
+            args: Command that was run.
+            returncode: Exit status of the process.
+            stdout: Captured standard output.
+            stderr: Captured standard error.
             peak_memory: Peak memory usage of the process and its
                 children, in bytes.
             total_time: Wall-clock run time of the process, in seconds.
-            **kwargs: Keyword arguments passed to
-                ``subprocess.CompletedProcess``.
 
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(args, returncode, stdout, stderr)
         self.peak_memory = peak_memory
         self.total_time = total_time
 

@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from luxonis_ml.typing import Params, ParamValue
 
 import modelconverter.cli.utils as cli_utils
 from modelconverter.cli.utils import (
@@ -30,8 +31,8 @@ from tests.helpers.archive_factory import (
 from tests.helpers.onnx_factory import grayscale_onnx, standard_dummy_onnx
 
 
-def _single_stage_config(dummy_onnx: Path, **overrides) -> Config:
-    opts = {"input_model": str(dummy_onnx), "shape": [1, 3, 64, 64]}
+def _single_stage_config(dummy_onnx: Path, **overrides: ParamValue) -> Config:
+    opts: Params = {"input_model": str(dummy_onnx), "shape": [1, 3, 64, 64]}
     opts.update(overrides)
     return Config.get_config(None, opts)
 

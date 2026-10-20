@@ -503,10 +503,10 @@ def test_a_file_lost_mid_copy_does_not_publish_an_incomplete_entry(
     expected = inputs_dir / input_staging._hash_dir(src) / src.name
     real_copy = shutil.copy2
 
-    def fail_on_second(source: Path, dest: Path, *args, **kwargs) -> None:
-        if Path(source).name == "two.jpg":
+    def fail_on_second(source: Path, dest: Path) -> None:
+        if source.name == "two.jpg":
             raise PermissionError(errno.EACCES, "Permission denied")
-        real_copy(source, dest, *args, **kwargs)
+        real_copy(source, dest)
 
     monkeypatch.setattr(shutil, "copy2", fail_on_second)
 

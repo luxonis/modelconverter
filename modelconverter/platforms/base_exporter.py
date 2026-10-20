@@ -534,8 +534,8 @@ class Exporter(ABC):
             args.extend(new_args)
 
     def _subprocess_run(
-        self, args: list[str], meta_name: str, **kwargs
+        self, args: list[str], meta_name: str
     ) -> SubprocessResult:
-        result = subprocess_run(args, **kwargs)
+        result = subprocess_run(args)
         self._cmd_info[meta_name] = [str(arg) for arg in args]
         return result

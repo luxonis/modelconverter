@@ -88,7 +88,7 @@ class DeviceHandler(ABC):
         """
 
     def run(
-        self, *args, check: bool = False, silent: bool = True, **kwargs
+        self, *args: PathType, check: bool = False, silent: bool = True
     ) -> tuple[int, str, str]:
         """Run a subprocess command and return its result.
 
@@ -102,8 +102,6 @@ class DeviceHandler(ABC):
             check: If ``True``, propagate subprocess failures as
                 exceptions.
             silent: If ``True``, suppress command logging.
-            **kwargs: Additional keyword arguments forwarded to
-                ``subprocess.run``.
 
         Returns:
             A tuple containing return code, stdout, and stderr.
@@ -113,12 +111,11 @@ class DeviceHandler(ABC):
                 the subprocess exits with a non-zero status.
 
         """
-        args = list(map(str, args))
+        command = [str(arg) for arg in args]
         if not silent:
-            logger.info(f"{' '.join(args)}")
+            logger.info(f"{' '.join(command)}")
         result = subprocess.run(
-            args,
-            **kwargs,
+            command,
             capture_output=True,
             check=check,
         )
@@ -213,14 +210,16 @@ class AdbHandler(DeviceHandler):
         self._device_args = ["-s", device_id] if device_id else []
 
     @override
-    def run(self, *args, check: bool = True, **kwargs) -> tuple[int, str, str]:
+    def run(
+        self, *args: PathType, check: bool = True, silent: bool = True
+    ) -> tuple[int, str, str]:
         subprocess.run(
             ["adb", *map(str, self._device_args), "root"],
             capture_output=True,
             check=check,
         )
         return super().run(
-            "adb", *self._device_args, *args, check=check, **kwargs
+            "adb", *self._device_args, *args, check=check, silent=silent
         )
 
     @override
