@@ -21,6 +21,7 @@ from typing import Final, NamedTuple
 import tflite2onnx
 from loguru import logger
 from luxonis_ml.typing import Params
+from typing_extensions import override
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
@@ -227,6 +228,7 @@ class RVC2Exporter(Exporter):
                 self._mo_args, ["--layout", ",".join(layout_mappings)]
             )
 
+    @override
     def export(self) -> Path:
         """Convert the model and compile it for RVC2.
 
@@ -432,6 +434,7 @@ class RVC2Exporter(Exporter):
         logger.info(f"Superblob compiled to {superblob_path}")
         return superblob_path
 
+    @override
     def exporter_buildinfo(self) -> Params:
         """Return the RVC2-specific build information.
 

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from typing_extensions import override
 
 from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.utils import ModelconverterException
@@ -25,8 +26,10 @@ class _StubInferer(Inferer):
     before anything vendor-specific would.
     """
 
+    @override
     def setup(self) -> None: ...
 
+    @override
     def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
         return {}
 

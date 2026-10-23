@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from typing_extensions import override
 
 from modelconverter.platforms.base_benchmark import (
     Benchmark,
@@ -30,13 +31,16 @@ class _FakeBenchmark(Benchmark):
         self.seen: list[Configuration] = []
 
     @property
+    @override
     def default_configuration(self) -> Configuration:
         return dict(DEFAULTS)
 
     @property
+    @override
     def all_configurations(self) -> list[Configuration]:
         return [{"num_threads": threads} for threads in (1, 2)]
 
+    @override
     def benchmark(self, configuration: Configuration) -> Result:
         self.seen.append(dict(configuration))
         return {"fps": 1.0, "latency": 1.0}

@@ -26,6 +26,7 @@ from depthai import XLinkPlatform
 from loguru import logger
 from luxonis_ml.typing import BaseModelExtraForbid, PathType
 from rich.progress import track
+from typing_extensions import override
 
 from modelconverter.platforms.base_benchmark import (
     Benchmark,
@@ -108,6 +109,7 @@ class RVC4Benchmark(Benchmark):
     _MAX_REAL_SNPE_INPUTS = 100
 
     @property
+    @override
     def default_configuration(self) -> Configuration:
         """Default configuration for RVC4 benchmarking.
 
@@ -160,6 +162,7 @@ class RVC4Benchmark(Benchmark):
         }
 
     @property
+    @override
     def all_configurations(self) -> list[Configuration]:
         """Return every SNPE profile at one and at two threads."""
         return [
@@ -358,6 +361,7 @@ class RVC4Benchmark(Benchmark):
                 "models."
             )
 
+    @override
     def benchmark(self, configuration: Configuration) -> Result:
         """Run one benchmark of the model on an RVC4 device.
 
@@ -656,6 +660,7 @@ class RVC4Benchmark(Benchmark):
             repetitions=repetitions,
         )
 
+    @override
     def _extra_header(
         self,
         results: list[tuple[Configuration, Result]],
@@ -669,6 +674,7 @@ class RVC4Benchmark(Benchmark):
             heads.append("cpu (%)")
         return heads
 
+    @override
     def _extra_row_cells(
         self,
         configuration: Configuration,

@@ -10,6 +10,7 @@ original one.
 from pathlib import Path
 
 import numpy as np
+from typing_extensions import override
 
 from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.utils import read_image
@@ -18,6 +19,7 @@ from modelconverter.utils import read_image
 class RVC2Inferer(Inferer):
     """Inferer for RVC2 models, using the OpenVINO inference engine."""
 
+    @override
     def setup(self) -> None:
         """Load the IR model and prepare it for inference on the CPU.
 
@@ -44,6 +46,7 @@ class RVC2Inferer(Inferer):
                 self.layout[name] = "NCHW" if shape[1] in {1, 3, 4} else "NHWC"
         self._exec_net = ie.load_network(network=net, device_name="CPU")
 
+    @override
     def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
         """Run the network on one image per input.
 

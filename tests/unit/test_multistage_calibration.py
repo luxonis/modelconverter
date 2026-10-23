@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from typing_extensions import override
 
 from modelconverter.platforms import multistage_exporter
 from modelconverter.platforms.base_inferer import Inferer
@@ -65,9 +66,11 @@ class StubExporter:
 class StubInferer(Inferer):
     """A real ``Inferer`` with the vendor runtime replaced by ones."""
 
+    @override
     def setup(self) -> None:
         """Do nothing -- there is no vendor runtime to set up."""
 
+    @override
     def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
         """Return an array of ones for every output.
 

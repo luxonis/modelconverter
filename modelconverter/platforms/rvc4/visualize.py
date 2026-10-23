@@ -12,6 +12,7 @@ from pathlib import Path
 
 import plotly.graph_objects as go
 import polars as pl
+from typing_extensions import override
 
 from modelconverter.platforms.base_visualize import Visualizer
 from modelconverter.utils import constants
@@ -43,6 +44,7 @@ class RVC4Visualizer(Visualizer):
             dir_path=self._dir_path, comparison_type="layer_cycles"
         )
 
+    @override
     def visualize(self) -> None:
         """Create, save and show the analysis figures.
 

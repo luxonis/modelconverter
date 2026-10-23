@@ -17,6 +17,7 @@ import tensorflow as tf
 from hailo_sdk_client import ClientRunner
 from loguru import logger
 from luxonis_ml.typing import Params
+from typing_extensions import override
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
@@ -96,6 +97,7 @@ class HailoExporter(Exporter):
                 net_input_shapes[inp.name] = inp.shape
         return start_nodes, net_input_shapes
 
+    @override
     def export(self) -> Path:
         """Translate, calibrate and compile the model.
 
@@ -344,6 +346,7 @@ class HailoExporter(Exporter):
         self._alls = alls
         return "\n".join(alls)
 
+    @override
     def exporter_buildinfo(self) -> Params:
         """Return Hailo-specific information about the conversion.
 

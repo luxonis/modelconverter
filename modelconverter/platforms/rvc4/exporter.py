@@ -17,6 +17,7 @@ from typing import Any, Final, NamedTuple, NoReturn
 
 from loguru import logger
 from luxonis_ml.typing import Params, ParamValue
+from typing_extensions import override
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
@@ -177,6 +178,7 @@ class RVC4Exporter(Exporter):
                 "verified or transformed for the bare converted model."
             )
 
+    @override
     def export(self) -> Path:
         """Convert, quantize and graph-prepare the model.
 
@@ -659,6 +661,7 @@ class RVC4Exporter(Exporter):
         logger.info("Exported for RVC4")
         return self._input_model.with_suffix(".dlc")
 
+    @override
     def exporter_buildinfo(self) -> Params:
         """Collect the RVC4-specific build information.
 

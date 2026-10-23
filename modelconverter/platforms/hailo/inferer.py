@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 from hailo_sdk_client import ClientRunner, InferenceContext
+from typing_extensions import override
 
 from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.platforms.hailo.exporter import HailoExporter
@@ -22,6 +23,7 @@ from modelconverter.utils import read_image
 class HailoInferer(Inferer):
     """Inferer for Hailo HAR models based on the Hailo SDK client."""
 
+    @override
     def setup(self) -> None:
         """Load the HAR model and collect the output names.
 
@@ -60,6 +62,7 @@ class HailoInferer(Inferer):
             if hn_name in output_hn_names:
                 self._output_names.extend(params["original_names"])
 
+    @override
     def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
         """Run the model on a single set of input files.
 

@@ -11,6 +11,7 @@ from pathlib import Path
 import depthai as dai
 import numpy as np
 from luxonis_ml.typing import PathType
+from typing_extensions import override
 
 from modelconverter.platforms.base_benchmark import (
     Benchmark,
@@ -30,6 +31,7 @@ class RVC2Benchmark(Benchmark):
     _HUBAI_PLATFORM = "RVC2"
 
     @property
+    @override
     def default_configuration(self) -> Configuration:
         """Default configuration for RVC2 benchmarking.
 
@@ -57,6 +59,7 @@ class RVC2Benchmark(Benchmark):
         }
 
     @property
+    @override
     def all_configurations(self) -> list[Configuration]:
         """Return the configurations used by the full benchmark.
 
@@ -65,6 +68,7 @@ class RVC2Benchmark(Benchmark):
         """
         return [{"num_threads": i} for i in [1, 2, 3]]
 
+    @override
     def benchmark(self, configuration: Configuration) -> Result:
         """Run a single benchmark of the model on the device.
 

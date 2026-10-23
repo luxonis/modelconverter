@@ -23,6 +23,7 @@ import polars as pl
 from loguru import logger
 from PIL import Image
 from rich.progress import track
+from typing_extensions import override
 
 from modelconverter.platforms.base_analyze import Analyzer
 from modelconverter.platforms.rvc4.utils import get_device_info
@@ -103,6 +104,7 @@ class RVC4Analyzer(Analyzer):
             )
         return local_output_dir
 
+    @override
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
         """Compare the DLC layer outputs against the ONNX model.
 
@@ -212,6 +214,7 @@ class RVC4Analyzer(Analyzer):
             }
         return image_names
 
+    @override
     def _check_dir_sizes(self) -> None:
         image_names = self._get_selected_image_paths()
         dir_lengths = [len(paths) for paths in image_names.values()]
@@ -682,6 +685,7 @@ class RVC4Analyzer(Analyzer):
                         shutil.rmtree(entry.path)
 
     # layer execution times
+    @override
     def analyze_layer_cycles(self) -> None:
         """Measure how long each layer takes on the device.
 

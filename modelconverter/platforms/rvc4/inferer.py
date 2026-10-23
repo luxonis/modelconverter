@@ -10,6 +10,7 @@ import shutil
 from pathlib import Path
 
 import numpy as np
+from typing_extensions import override
 
 from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.utils import read_image, subprocess_run
@@ -21,6 +22,7 @@ class RVC4Inferer(Inferer):
 
     _output_layouts: dict[str, str | None]
 
+    @override
     def setup(self) -> None:
         """Set paths and cache metadata used by every inference.
 
@@ -37,6 +39,7 @@ class RVC4Inferer(Inferer):
             else {}
         )
 
+    @override
     def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
         """Run the model on a single set of input images.
 

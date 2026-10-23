@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 from loguru import logger
 from luxonis_ml.typing import Params
+from typing_extensions import override
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.platforms.rvc2.exporter import RVC2Exporter
@@ -66,6 +67,7 @@ class RVC3Exporter(RVC2Exporter):
         self._device = "VPUX.3400"
         self._device_specific_buildinfo = {}
 
+    @override
     def export(self) -> Path:
         """Convert the model and compile it for RVC3.
 

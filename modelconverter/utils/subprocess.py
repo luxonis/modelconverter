@@ -19,7 +19,7 @@ from types import TracebackType
 import psutil
 from loguru import logger
 from luxonis_ml.typing import PathType
-from typing_extensions import Self
+from typing_extensions import Self, override
 
 
 class SubprocessResult(subprocess.CompletedProcess[bytes]):
@@ -69,6 +69,7 @@ class SubprocessResult(subprocess.CompletedProcess[bytes]):
             mem /= 1024
         return f"{mem:.2f} GB"
 
+    @override
     def __repr__(self) -> str:
         """Return the base representation with memory and run time."""
         base = super().__repr__()
@@ -78,6 +79,7 @@ class SubprocessResult(subprocess.CompletedProcess[bytes]):
             f"total_time={round(self.total_time, 3)}s)"
         )
 
+    @override
     def __str__(self) -> str:
         """Return the representation of the result."""
         return repr(self)

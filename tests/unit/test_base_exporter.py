@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from typing_extensions import override
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import ModelconverterException
@@ -29,10 +30,12 @@ class StubExporter(Exporter):
 
     platform = Platform.RVC2
 
+    @override
     def exporter_buildinfo(self) -> dict:
         """Return empty build info."""
         return {}
 
+    @override
     def export(self) -> Path:
         """Return the input model unchanged."""
         return self._input_model
