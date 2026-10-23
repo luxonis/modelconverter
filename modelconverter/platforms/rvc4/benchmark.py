@@ -665,14 +665,15 @@ class RVC4Benchmark(Benchmark):
         self,
         results: list[tuple[Configuration, Result]],
     ) -> list[str]:
-        heads = []
-        if self._monitor is not None:
-            heads.append("power_sys (W)")
-            heads.append("power_core (W)")
-            heads.append("dsp (%)")
-            heads.append("memory (MiB)")
-            heads.append("cpu (%)")
-        return heads
+        if self._monitor is None:
+            return []
+        return [
+            "power_sys (W)",
+            "power_core (W)",
+            "dsp (%)",
+            "memory (MiB)",
+            "cpu (%)",
+        ]
 
     @override
     def _extra_row_cells(
