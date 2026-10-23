@@ -21,6 +21,7 @@ from typing import Final
 
 import depthai as dai
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 from depthai import XLinkPlatform
 from loguru import logger
@@ -329,7 +330,7 @@ class RVC4Benchmark(Benchmark):
         )
 
     @staticmethod
-    def _create_random_input(spec: InputSpec) -> np.ndarray:
+    def _create_random_input(spec: InputSpec) -> npt.NDArray[np.generic]:
         if spec.data_type is DataType.INT32:
             # INT inputs are often token/index tensors;
             # zero keeps synthetic benchmark inputs in a safe range.

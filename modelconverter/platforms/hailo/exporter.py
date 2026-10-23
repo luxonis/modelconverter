@@ -10,9 +10,11 @@ import os
 import shutil
 from functools import partial
 from pathlib import Path
+from typing import TypedDict, TypeVar
 
 import hailo_sdk_client
 import numpy as np
+import numpy.typing as npt
 import tensorflow as tf
 from hailo_sdk_client import ClientRunner
 from loguru import logger
@@ -37,6 +39,8 @@ from modelconverter.utils.preprocessing import (
     reorder_layout,
 )
 from modelconverter.utils.types import Platform
+
+_ScalarT = TypeVar("_ScalarT", bound=np.generic)
 
 
 class HailoExporter(Exporter):
@@ -199,7 +203,7 @@ class HailoExporter(Exporter):
 
     def _get_calibration_data(
         self, runner: ClientRunner
-    ) -> dict[str, np.ndarray]:
+    ) -> dict[str, npt.NDArray[np.float32]]:
         data = {}
         for orig_name, inp in self._inputs.items():
             name, shape = self.get_hn_layer_info(runner, orig_name)
@@ -240,7 +244,7 @@ class HailoExporter(Exporter):
         calib: ImageCalibrationConfig,
         path: Path,
         shape: list[int],
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.generic]:
         """Read one calibration sample in the sample shape of Hailo."""
         if calib.is_user_tensor(path):
             img = read_user_calibration_tensor(
@@ -384,7 +388,15 @@ def _is_hwc_sample(shape: list[int], layout: str) -> bool:
     )
 
 
-def _onnx_output_names(hn_layers: dict[str, dict]) -> dict[str, str]:
+class _HnLayer(TypedDict):
+    """The fields of a Hailo HN layer that `_onnx_output_names` reads."""
+
+    type: str
+    input: list[str]
+    original_names: list[str]
+
+
+def _onnx_output_names(hn_layers: dict[str, _HnLayer]) -> dict[str, str]:
     """Map the layer that feeds each output layer to its ONNX name."""
     name_map = {}
     for layer in hn_layers.values():
@@ -397,8 +409,8 @@ def _onnx_output_names(hn_layers: dict[str, dict]) -> dict[str, str]:
 
 
 def _rename_params(
-    npz: dict[str, np.ndarray], name_map: dict[str, str]
-) -> dict[str, np.ndarray]:
+    npz: dict[str, npt.NDArray[np.generic]], name_map: dict[str, str]
+) -> dict[str, npt.NDArray[np.generic]]:
     """Apply the first rename of ``name_map`` that matches each key."""
     renamed = {}
     for key, value in npz.items():
@@ -409,8 +421,8 @@ def _rename_params(
 
 
 def _fit_hailo_sample(
-    array: np.ndarray, shape: list[int], layout: str
-) -> np.ndarray:
+    array: npt.NDArray[_ScalarT], shape: list[int], layout: str
+) -> npt.NDArray[_ScalarT]:
     """Drop the batch axis, or reorder the axes, to match the Hailo input."""
     if array.shape == (1, *shape):
         return array[0]

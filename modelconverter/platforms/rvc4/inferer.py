@@ -10,6 +10,7 @@ import shutil
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 from typing_extensions import override
 
 from modelconverter.platforms.base_inferer import Inferer
@@ -40,7 +41,9 @@ class RVC4Inferer(Inferer):
         )
 
     @override
-    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+    def infer(
+        self, inputs: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         """Run the model on a single set of input images.
 
         Every image is read as ``float32`` and dumped to a raw file
@@ -111,8 +114,8 @@ class RVC4Inferer(Inferer):
 
 
 def _reshape_output(
-    arr: np.ndarray, shape: list[int], layout: str | None
-) -> np.ndarray:
+    arr: npt.NDArray[np.generic], shape: list[int], layout: str | None
+) -> npt.NDArray[np.generic]:
     """Reshape an SNPE output, exposing four-dimensional tensors as NCHW."""
     if len(shape) != 4:
         return arr.reshape(shape)

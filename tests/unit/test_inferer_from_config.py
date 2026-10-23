@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from luxonis_ml.typing import ParamValue
 from typing_extensions import override
@@ -31,7 +32,9 @@ class _StubInferer(Inferer):
     def setup(self) -> None: ...
 
     @override
-    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+    def infer(
+        self, inputs: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         return {}
 
 

@@ -195,13 +195,13 @@ def _read_csv(csv_path: Path) -> pl.DataFrame:
 
 def _align_metrics(
     df: pl.DataFrame, metrics: list[str], x_labels: list[str]
-) -> dict[str, list]:
+) -> dict[str, list[str] | list[float | None]]:
     """Line up the metric values of a model with the x labels.
 
     A layer that the model does not hold gets ``None``.
     """
     layer_names = df["layer_name"].to_list()
-    data: dict[str, list] = {"x_axis": x_labels}
+    data: dict[str, list[str] | list[float | None]] = {"x_axis": x_labels}
     for metric in metrics:
         values = dict(zip(layer_names, df[metric].to_list(), strict=True))
         data[metric] = [values.get(layer) for layer in x_labels]
@@ -218,7 +218,7 @@ def _hover_template(model: str, metric: str) -> str:
 def _add_metric_buttons(
     fig: go.Figure,
     metrics: list[str],
-    traces_data: dict[str, dict[str, list]],
+    traces_data: dict[str, dict[str, list[str] | list[float | None]]],
     *,
     title: str,
 ) -> None:

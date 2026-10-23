@@ -73,7 +73,7 @@ def _launch(
 
     def fake_run(
         argv: list[str], **_kwargs: object
-    ) -> subprocess.CompletedProcess:
+    ) -> subprocess.CompletedProcess[bytes]:
         nonlocal launch
         compose_file = Path(argv[argv.index("-f") + 1])
         compose = _mapping(

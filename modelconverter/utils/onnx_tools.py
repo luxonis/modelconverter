@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Final, cast
 
 import numpy as np
+import numpy.typing as npt
 import onnx
 import onnxruntime as ort
 from loguru import logger
@@ -707,7 +708,9 @@ class ONNXModifier:
                 self._onnx_gs.outputs.append(tensor)
         self._onnx_model = gs.export_onnx(self._onnx_gs)
 
-    def _get_constant_map(self, graph: gs.Graph) -> dict[str, np.ndarray]:
+    def _get_constant_map(
+        self, graph: gs.Graph
+    ) -> dict[str, npt.NDArray[np.generic]]:
         """Extract constant tensors from the GraphSurgeon graph.
 
         Args:
@@ -726,8 +729,8 @@ class ONNXModifier:
 
     @staticmethod
     def _get_constant_value(
-        node: gs.Node, constant_map: dict[str, np.ndarray]
-    ) -> tuple[np.ndarray, int] | None:
+        node: gs.Node, constant_map: dict[str, npt.NDArray[np.generic]]
+    ) -> tuple[npt.NDArray[np.generic], int] | None:
         """Return the constant value of a node if it is a constant node.
 
         Args:
@@ -985,8 +988,13 @@ class ONNXModifier:
         return sequence
 
     def _fold_sequence(
-        self, sequence: list[gs.Node], constant_map: dict[str, np.ndarray]
-    ) -> tuple[float | np.ndarray, float | np.ndarray] | None:
+        self,
+        sequence: list[gs.Node],
+        constant_map: dict[str, npt.NDArray[np.generic]],
+    ) -> (
+        tuple[float | npt.NDArray[np.generic], float | npt.NDArray[np.generic]]
+        | None
+    ):
         """Fold the constants after the leading Conv into a scale and a
         bias.
 
@@ -1001,9 +1009,9 @@ class ONNXModifier:
                 return None
             constant_val, _ = constant
             if seq_node.op == "Add":
-                bias += constant_val
+                bias = np.add(bias, constant_val)
             else:
-                scale *= constant_val
+                scale = np.multiply(scale, constant_val)
         return scale, bias
 
     def _fuse_single_add_mul_to_conv(self) -> None:
@@ -1034,7 +1042,9 @@ class ONNXModifier:
         )
 
     def _fuse_mul_into_next_conv(
-        self, mul_node: gs.Node, constant_map: dict[str, np.ndarray]
+        self,
+        mul_node: gs.Node,
+        constant_map: dict[str, npt.NDArray[np.generic]],
     ) -> bool:
         """Fold a constant ``Mul`` into the weights of the Conv after it.
 
@@ -1053,7 +1063,9 @@ class ONNXModifier:
         return True
 
     def _fuse_add_into_next_conv(
-        self, add_node: gs.Node, constant_map: dict[str, np.ndarray]
+        self,
+        add_node: gs.Node,
+        constant_map: dict[str, npt.NDArray[np.generic]],
     ) -> bool:
         """Fold a constant ``Add`` into the bias of the Conv after it.
 
@@ -1113,7 +1125,9 @@ class ONNXModifier:
         )
 
     def _fuse_mul_add_into_conv(
-        self, mul_node: gs.Node, constant_map: dict[str, np.ndarray]
+        self,
+        mul_node: gs.Node,
+        constant_map: dict[str, npt.NDArray[np.generic]],
     ) -> gs.Node | None:
         """Fold a constant ``Mul -> Add`` into the Conv after it.
 
@@ -1137,7 +1151,9 @@ class ONNXModifier:
         return add_node
 
     def _fuse_add_mul_into_conv(
-        self, add_node: gs.Node, constant_map: dict[str, np.ndarray]
+        self,
+        add_node: gs.Node,
+        constant_map: dict[str, npt.NDArray[np.generic]],
     ) -> gs.Node | None:
         """Fold a constant ``Add -> Mul`` into the Conv after it.
 
@@ -1157,7 +1173,7 @@ class ONNXModifier:
 
         add_value, _ = add_constant
         mul_value, _ = mul_constant
-        add_value *= mul_value
+        np.multiply(add_value, mul_value, out=add_value)
         conv_weights = conv_node.inputs[1]
         _shift_conv_bias(conv_node, add_value, conv_weights)
         _scale_conv_weights(conv_node, mul_value)
@@ -1286,7 +1302,7 @@ class ONNXModifier:
         self._onnx_gs = self._prev_onnx_gs
 
     def _apply_optimization_step(
-        self, step_name: str, optimization_func: Callable
+        self, step_name: str, optimization_func: Callable[[], None]
     ) -> None:
         """Apply a single optimization step to the ONNX model.
 
@@ -1368,10 +1384,10 @@ def _longest_sequences(
 def _batch_norm_node(
     name: str,
     input_tensor: gs.Variable,
-    scale: float | np.ndarray,
-    bias: float | np.ndarray,
+    scale: float | npt.NDArray[np.generic],
+    bias: float | npt.NDArray[np.generic],
     *,
-    dtype: np.dtype,
+    dtype: np.dtype[np.generic],
 ) -> gs.Node:
     """Build a ``BatchNormalization`` node that computes ``x * scale + bias``.
 
@@ -1426,7 +1442,9 @@ def _conv_after(node: gs.Node, op: str) -> tuple[gs.Node, gs.Node] | None:
     return second, conv_node
 
 
-def _scale_conv_weights(conv_node: gs.Node, mul_value: np.ndarray) -> None:
+def _scale_conv_weights(
+    conv_node: gs.Node, mul_value: npt.NDArray[np.generic]
+) -> None:
     """Fold the value of a ``Mul`` before a Conv into the Conv weights."""
     conv_weights = conv_node.inputs[1]
     conv_node.inputs[1] = gs.Constant(
@@ -1435,7 +1453,9 @@ def _scale_conv_weights(conv_node: gs.Node, mul_value: np.ndarray) -> None:
 
 
 def _shift_conv_bias(
-    conv_node: gs.Node, add_value: np.ndarray, weights: gs.Constant
+    conv_node: gs.Node,
+    add_value: npt.NDArray[np.generic],
+    weights: gs.Constant,
 ) -> None:
     """Fold the value of an ``Add`` before a Conv into the Conv bias.
 

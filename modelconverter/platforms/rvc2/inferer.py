@@ -10,6 +10,7 @@ original one.
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 from typing_extensions import override
 
 from modelconverter.platforms.base_inferer import Inferer
@@ -47,7 +48,9 @@ class RVC2Inferer(Inferer):
         self._exec_net = ie.load_network(network=net, device_name="CPU")
 
     @override
-    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+    def infer(
+        self, inputs: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         """Run the network on one image per input.
 
         Every image is read in the layout the network expects and gets a

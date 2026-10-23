@@ -8,6 +8,7 @@ package reads.
 """
 
 import multiprocessing
+import multiprocessing.queues
 from contextlib import suppress
 
 import keyring
@@ -38,14 +39,14 @@ def get_password_with_timeout(
 
     """
 
-    def _get_password(q: multiprocessing.Queue) -> None:
+    def _get_password(q: multiprocessing.queues.Queue[str | None]) -> None:
         try:
             result = keyring.get_password(service_name, username)
             q.put(result)
         except Exception:
             q.put(None)
 
-    q = multiprocessing.Queue()
+    q: multiprocessing.queues.Queue[str | None] = multiprocessing.Queue()
     p = multiprocessing.Process(target=_get_password, args=(q,))
     p.start()
     p.join(timeout)

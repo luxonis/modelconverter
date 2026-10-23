@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 from loguru import logger
 from typing_extensions import Self
 
@@ -166,7 +167,9 @@ class Inferer(ABC):
         """
 
     @abstractmethod
-    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+    def infer(
+        self, inputs: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         """Run the model on a single set of inputs.
 
         Args:

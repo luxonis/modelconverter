@@ -43,7 +43,7 @@ def test_color_conversion_precedes_channelwise_normalization(layout: str):
 
     actual = apply_calibration_preprocessing(bgr, preprocessing, layout=layout)
 
-    np.testing.assert_allclose(actual, expected)
+    np.testing.assert_allclose(actual.astype(np.float64), expected)
 
 
 def test_scalar_normalization_broadcasts_and_preserves_negative_values():

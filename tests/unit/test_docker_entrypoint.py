@@ -75,7 +75,7 @@ def _entrypoint_process(
     *args: str,
     env: dict[str, str],
     stdin: bool = False,
-) -> Generator[subprocess.Popen, None, None]:
+) -> Generator[subprocess.Popen[str], None, None]:
     """Run the entrypoint and leaves nothing of it behind.
 
     The entrypoint runs the converter as a background child, so killing

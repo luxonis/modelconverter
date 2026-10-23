@@ -141,11 +141,11 @@ class SubprocessHandle:
 
         self._threads: list[threading.Thread] = []
         self._start_time: float = 0.0
-        self._proc: subprocess.Popen | None = None
+        self._proc: subprocess.Popen[str] | None = None
         self._ps_proc: psutil.Process | None = None
 
     @property
-    def proc(self) -> subprocess.Popen:
+    def proc(self) -> subprocess.Popen[str]:
         """The underlying ``subprocess.Popen`` object.
 
         Raises:

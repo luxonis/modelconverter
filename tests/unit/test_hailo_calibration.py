@@ -7,6 +7,7 @@ from types import ModuleType, SimpleNamespace
 from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from PIL import Image
 
@@ -297,7 +298,7 @@ def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
 
 def _generate_random_sample(
     hailo_exporter_module: ModuleType, tmp_path: Path, inp: InputConfig
-) -> tuple["HailoExporter", np.ndarray]:
+) -> tuple["HailoExporter", npt.NDArray[np.generic]]:
     """Generate one random calibration sample for ``inp`` and load it."""
     inp.calibration = RandomCalibrationConfig(max_images=1)
     exporter: HailoExporter = object.__new__(

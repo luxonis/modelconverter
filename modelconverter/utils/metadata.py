@@ -148,7 +148,9 @@ def _table_to_csv(section: str) -> str:
     return "\n".join(cleaned_lines)
 
 
-def _dlc_tensor_metadata(csv_text: str, typ: str) -> dict[str, dict]:
+def _dlc_tensor_metadata(
+    csv_text: str, typ: str
+) -> dict[str, dict[str, list[int]] | dict[str, DataType]]:
     """Read the shapes and the data types of the tensors of a table."""
     import polars as pl
 

@@ -6,6 +6,7 @@ from typing import Literal, NoReturn
 from unittest.mock import Mock
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from luxonis_ml.nn_archive import Config as NNArchiveConfig
 from luxonis_ml.typing import Params
@@ -423,7 +424,9 @@ def test_fallback_regenerates_random_calibration_for_externalized_domain(
     main_stage = next(iter(cfg.stages))
     output_dir = tmp_path / "retry-output"
     generated_suffixes: list[str] = []
-    prepared_samples: list[tuple[np.ndarray, np.ndarray]] = []
+    prepared_samples: list[
+        tuple[npt.NDArray[np.generic], npt.NDArray[np.generic]]
+    ] = []
 
     class RetryExporter(Exporter):
         platform = Platform.RVC4
@@ -485,7 +488,9 @@ def test_fallback_regenerates_random_calibration_for_externalized_domain(
     assert generated_suffixes == [".png", ".npy"]
     assert len(prepared_samples) == 1
     source, prepared = prepared_samples[0]
-    np.testing.assert_allclose(prepared, (source - 10) / 2)
+    np.testing.assert_allclose(
+        prepared.astype(np.float64), np.subtract(source, 10) / 2
+    )
 
 
 @pytest.mark.parametrize(

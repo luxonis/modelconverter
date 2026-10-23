@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import onnx
 import onnxruntime as ort
 import pytest
@@ -802,12 +803,15 @@ def test_externalized_calibration_matches_embedded_model_output(
     )
     model_array = reorder_layout(model_array, model_layout, "NCHW")
 
-    def infer(model_path: Path, array: np.ndarray) -> np.ndarray:
+    def infer(
+        model_path: Path, array: npt.NDArray[np.generic]
+    ) -> npt.NDArray[np.float32]:
         session = ort.InferenceSession(
             str(model_path), providers=["CPUExecutionProvider"]
         )
         return np.asarray(
-            session.run(None, {session.get_inputs()[0].name: array})[0]
+            session.run(None, {session.get_inputs()[0].name: array})[0],
+            dtype=np.float32,
         )
 
     embedded_output = infer(embedded._input_model, runtime_array)

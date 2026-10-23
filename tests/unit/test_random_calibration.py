@@ -14,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils.config import InputConfig, RandomCalibrationConfig
@@ -29,7 +30,7 @@ def _prepare(
     data_type: DataType = DataType.FLOAT32,
 ) -> list[str]:
     """Run the calibration prep for one input, returning the written suffixes."""
-    data: dict = {"name": "x", "shape": shape}
+    data: Params = {"name": "x", "shape": shape}
     if layout is not None:
         data["layout"] = layout
     if encoding is not None:

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from luxonis_ml.typing import Params
 from typing_extensions import override
 
 from modelconverter.platforms.base_exporter import Exporter
@@ -31,7 +32,7 @@ class StubExporter(Exporter):
     platform = Platform.RVC2
 
     @override
-    def exporter_buildinfo(self) -> dict:
+    def exporter_buildinfo(self) -> Params:
         """Return empty build info."""
         return {}
 

@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -213,7 +214,7 @@ def test_ldf_malformed_too_many_parts():
         cd.download_calibration_data("a:b:c:d")
 
 
-_Sample = tuple[np.ndarray | dict[str, int], None]
+_Sample = tuple[npt.NDArray[np.uint8] | dict[str, int], None]
 
 
 class _FakeLoader:

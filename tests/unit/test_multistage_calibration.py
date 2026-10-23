@@ -11,6 +11,7 @@ what the linking code has to read back.
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from typing_extensions import override
 
@@ -71,7 +72,9 @@ class StubInferer(Inferer):
         """Do nothing -- there is no vendor runtime to set up."""
 
     @override
-    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+    def infer(
+        self, inputs: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         """Return an array of ones for every output.
 
         Args:

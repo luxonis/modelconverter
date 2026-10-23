@@ -12,6 +12,7 @@ from io import StringIO
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 from hailo_sdk_client import ClientRunner, InferenceContext
 from typing_extensions import override
 
@@ -63,7 +64,9 @@ class HailoInferer(Inferer):
                 self._output_names.extend(params["original_names"])
 
     @override
-    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+    def infer(
+        self, inputs: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         """Run the model on a single set of input files.
 
         Every file is read according to the input it belongs to: an

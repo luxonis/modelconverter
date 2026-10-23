@@ -6,6 +6,7 @@ from typing import Literal
 import cv2
 import numpy as np
 import yaml
+from luxonis_ml.typing import Params
 
 from modelconverter.utils.constants import OUTPUTS_DIR
 from tests.helpers.onnx_factory import build_toy_conv_onnx
@@ -52,7 +53,7 @@ def assert_produced_suffix(output_name: str, suffix: str) -> None:
     )
 
 
-def toy_net_image_inputs(calib: dict, *, size: int = 64) -> list[dict]:
+def toy_net_image_inputs(calib: Params, *, size: int = 64) -> list[Params]:
     """Build the toy integration net's image inputs.
 
     The ``bgr``/``rgb``/``gray`` inputs each carry their own
@@ -92,7 +93,7 @@ def toy_net_image_inputs(calib: dict, *, size: int = 64) -> list[dict]:
     ]
 
 
-def write_config(workdir: Path, name: str, config: dict) -> Path:
+def write_config(workdir: Path, name: str, config: Params) -> Path:
     """Write a conversion config as yaml, returning its path."""
     path = workdir / f"{name}.yaml"
     path.write_text(yaml.safe_dump(config, sort_keys=False))
@@ -151,7 +152,7 @@ def write_toy_conv_config(
         external_data=external_data,
     )
 
-    input_cfg: dict = {
+    input_cfg: Params = {
         "name": "img",
         "shape": [1, 3, size, size],
         "data_type": "float32",

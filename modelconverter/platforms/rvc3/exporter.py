@@ -327,7 +327,9 @@ class RVC3Exporter(RVC2Exporter):
                 data_type=DataType.UINT8,
                 transpose=False,
             )
-            cv2.imwrite(str(directory / file.name), img)
+            cv2.imwrite(
+                str(directory / file.name), img.astype(np.uint8, copy=False)
+            )
 
         dataset: Params = {
             "name": "calibration",

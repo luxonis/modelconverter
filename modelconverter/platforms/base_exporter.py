@@ -14,7 +14,7 @@ import shutil
 from abc import ABC, abstractmethod
 from importlib.metadata import version
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeVar
 
 import cv2
 import numpy as np
@@ -50,6 +50,8 @@ from modelconverter.utils.preprocessing import (
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import InputFileType, Platform
 
+_ScalarT = TypeVar("_ScalarT", bound=np.generic)
+
 
 def _is_numeric(
     arr: npt.NDArray[np.generic],
@@ -61,7 +63,7 @@ def _is_numeric(
 
 
 def _save_random_sample(
-    arr: np.ndarray, inp: InputConfig, dest: Path, index: int
+    arr: npt.NDArray[np.generic], inp: InputConfig, dest: Path, index: int
 ) -> None:
     """Save one random calibration sample as an image or an array.
 
@@ -80,7 +82,9 @@ def _save_random_sample(
         np.save(dest / f"{index}.npy", arr)
 
 
-def _channels_last(arr: np.ndarray, layout: str | None) -> np.ndarray:
+def _channels_last(
+    arr: npt.NDArray[_ScalarT], layout: str | None
+) -> npt.NDArray[_ScalarT]:
     """Drop a batch of one and move the channel axis last.
 
     Without a channel axis in ``layout``, a first axis of 1 or 3 is
@@ -435,7 +439,9 @@ class Exporter(ABC):
 
             rng = np.random.default_rng()
             for i in range(calib.max_images):
-                arr: np.ndarray = rng.normal(calib.mean, calib.std, inp.shape)
+                arr: npt.NDArray[np.generic] = rng.normal(
+                    calib.mean, calib.std, inp.shape
+                )
                 arr = np.clip(arr, calib.min_value, calib.max_value)
                 arr = arr.astype(calib.data_type.as_numpy_dtype())
                 _save_random_sample(arr, inp, dest, i)
@@ -450,7 +456,7 @@ class Exporter(ABC):
         inp: InputConfig,
         calib: ImageCalibrationConfig,
         path: Path,
-    ) -> tuple[np.ndarray, str]:
+    ) -> tuple[npt.NDArray[np.generic], str]:
         """Load a managed calibration file and apply preprocessing."""
         if inp.shape is None:  # pragma: no cover - validated by each backend
             raise ValueError(
@@ -538,7 +544,9 @@ class Exporter(ABC):
                 onnx_modifier.output_path.unlink()
 
     @staticmethod
-    def _add_args(args: list, new_args: list, index: int = 0) -> None:
+    def _add_args(
+        args: list[str], new_args: list[str], index: int = 0
+    ) -> None:
         if new_args[index] not in args:
             args.extend(new_args)
 

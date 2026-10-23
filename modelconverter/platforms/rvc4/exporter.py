@@ -201,8 +201,8 @@ class RVC4Exporter(Exporter):
 
         logger.info("Performing offline graph preparation.")
         args = self._snpe_dlc_graph_prepare
-        self._add_args(args, ["--input_dlc", quantized_dlc_path])
-        self._add_args(args, ["--output_dlc", out_dlc_path])
+        self._add_args(args, ["--input_dlc", str(quantized_dlc_path)])
+        self._add_args(args, ["--output_dlc", str(out_dlc_path)])
         self._add_args(
             args,
             ["--set_output_tensors", ",".join(name for name in self._outputs)],
@@ -260,8 +260,8 @@ class RVC4Exporter(Exporter):
         quantized_dlc_path = self._attach_suffix(
             self._input_model, "quantized.dlc"
         )
-        self._add_args(args, ["--input_dlc", dlc_path])
-        self._add_args(args, ["--output_dlc", quantized_dlc_path])
+        self._add_args(args, ["--input_dlc", str(dlc_path)])
+        self._add_args(args, ["--output_dlc", str(quantized_dlc_path)])
 
         # INT16_STD uses the native W16A16 path; per-channel
         # quantization caused severe degradation on the device.
@@ -585,7 +585,7 @@ class RVC4Exporter(Exporter):
                 )
         return layouts
 
-    def _add_io_args(self, args: list) -> None:
+    def _add_io_args(self, args: list[str]) -> None:
         """Add the input and output flags that ``args`` does not set.
 
         The flags are the input shapes, data types and layouts and the
@@ -614,7 +614,7 @@ class RVC4Exporter(Exporter):
         if "--input_layout" not in args:
             args += _per_input_args("--input_layout", self._snpe_layouts())
 
-    def _add_quantization_args(self, args: list) -> None:
+    def _add_quantization_args(self, args: list[str]) -> None:
         """Add the float bit width or the quantization overrides."""
         if self._quantization_mode == QuantizationMode.FP16_STD:
             self._add_args(args, ["--float_bitwidth", "16"])
@@ -647,7 +647,7 @@ class RVC4Exporter(Exporter):
         """
         logger.info("Exporting for RVC4")
         args = self._snpe_onnx_to_dlc
-        self._add_args(args, ["-i", self._input_model])
+        self._add_args(args, ["-i", str(self._input_model)])
         self._add_io_args(args)
 
         self._add_quantization_args(args)

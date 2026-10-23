@@ -14,6 +14,7 @@ anywhere the unit tests do, unlike the vendor inferers.
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import onnx
 import onnxruntime as ort
 from luxonis_ml.typing import PathType
@@ -89,7 +90,7 @@ class ONNXReferenceInferer:
 
     def _preprocess(
         self, inp: InputConfig, image_path: PathType
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.floating]:
         # Feed the original model its native (`from`) encoding, matching what
         # the baked reverse-channel step produces inside the converted model.
         # read_image yields CHW float in [0, 255], unnormalized.
@@ -119,7 +120,9 @@ class ONNXReferenceInferer:
 
         return arr[np.newaxis, ...]
 
-    def infer(self, image_path: PathType) -> dict[str, np.ndarray]:
+    def infer(
+        self, image_path: PathType
+    ) -> dict[str, npt.NDArray[np.generic]]:
         """Run the model on one image, preprocessed per the config.
 
         Args:
