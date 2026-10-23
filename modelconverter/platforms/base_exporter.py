@@ -14,12 +14,15 @@ import shutil
 from abc import ABC, abstractmethod
 from importlib.metadata import version
 from pathlib import Path
+from typing import Literal, TypeVar
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import onnx
 from loguru import logger
 from luxonis_ml.typing import Params, PathType
+from typing_extensions import TypeIs
 
 from modelconverter.utils import (
     ModelconverterException,
@@ -43,25 +46,35 @@ from modelconverter.utils.onnx_compatibility import (
 )
 from modelconverter.utils.preprocessing import (
     apply_calibration_preprocessing,
-    is_user_calibration_tensor,
 )
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import InputFileType, Platform
 
+_ScalarT = TypeVar("_ScalarT", bound=np.generic)
+
+
+def _is_numeric(
+    arr: npt.NDArray[np.generic],
+) -> TypeIs[npt.NDArray[np.integer | np.floating]]:
+    """Whether OpenCV can write the array, which needs ints or floats."""
+    return np.issubdtype(arr.dtype, np.integer) or np.issubdtype(
+        arr.dtype, np.floating
+    )
+
 
 def _save_random_sample(
-    arr: np.ndarray, inp: InputConfig, dest: Path, index: int
+    arr: npt.NDArray[np.generic], inp: InputConfig, dest: Path, index: int
 ) -> None:
     """Save one random calibration sample as an image or an array.
 
     An image input with a 2D or 3D sample, or a 4D sample with a batch
-    of one, is written as a channels-last PNG. Any other sample is
-    written as a NumPy array.
+    of one, is written as a channels-last PNG if its dtype is an integer
+    or a float. Any other sample is written as a NumPy array.
     """
     is_image = not inp.is_raw_input and (
         arr.ndim in {2, 3} or (arr.ndim == 4 and arr.shape[0] == 1)
     )
-    if is_image:
+    if is_image and _is_numeric(arr):
         cv2.imwrite(
             str(dest / f"{index}.png"), _channels_last(arr, inp.layout)
         )
@@ -69,7 +82,9 @@ def _save_random_sample(
         np.save(dest / f"{index}.npy", arr)
 
 
-def _channels_last(arr: np.ndarray, layout: str | None) -> np.ndarray:
+def _channels_last(
+    arr: npt.NDArray[_ScalarT], layout: str | None
+) -> npt.NDArray[_ScalarT]:
     """Drop a batch of one and move the channel axis last.
 
     Without a channel axis in ``layout``, a first axis of 1 or 3 is
@@ -107,7 +122,7 @@ class Exporter(ABC):
         self,
         config: SingleStageConfig,
         output_dir: Path,
-    ):
+    ) -> None:
         """Stage the input model and the calibration data.
 
         The model, along with any ONNX external data belonging to it, is
@@ -150,7 +165,7 @@ class Exporter(ABC):
         self._cmd_info: dict[str, list[str]] = {}
         self._is_tflite = self._input_file_type == InputFileType.TFLITE
 
-        with open(self.output_dir / "config.yaml", "w") as f:
+        with (self.output_dir / "config.yaml").open("w") as f:
             f.write(config.model_dump_json(indent=4))
 
         sanitized_model_name = (
@@ -198,7 +213,7 @@ class Exporter(ABC):
             self._onnx_simplification
             and self._input_file_type == InputFileType.ONNX
         ):
-            self._input_model = self._simplify_onnx()
+            self._input_model = self._simplify_onnx(self._onnx_simplification)
 
         self._disable_calibration = self.config.get_platform_config(
             self.platform
@@ -213,7 +228,7 @@ class Exporter(ABC):
 
     @property
     def inference_model_path(self) -> Path:
-        """Return the path of the model to run inference with.
+        """The path of the model to run inference with.
 
         Raises:
             ValueError: If the export has not been run yet, so no such
@@ -295,7 +310,7 @@ class Exporter(ABC):
             **self.exporter_buildinfo(),
         }
 
-        with open(self.output_dir / "buildinfo.json", "w") as f:
+        with (self.output_dir / "buildinfo.json").open("w") as f:
             json.dump(buildinfo, f, indent=4)
 
         return new_output_path
@@ -313,13 +328,17 @@ class Exporter(ABC):
                 raise ModelconverterException(str(error)) from error
         return requested_inputs
 
-    def _simplify_onnx(self) -> Path:  # pragma: no cover
+    def _simplify_onnx(
+        self, backend: Literal["onnxsim", "onnxslim"]
+    ) -> Path:  # pragma: no cover
         """Simplify the staged ONNX model.
 
-        The backend is whichever one the ``onnx_simplification`` option
-        names, ``onnxsim`` or ``onnxslim``. A missing backend, a failed
-        simplification or a simplified model that does not check out are
-        all only warned about, leaving the model as it was.
+        A missing backend, a failed simplification or a simplified model
+        that does not check out are all only warned about, leaving the
+        model as it was.
+
+        Args:
+            backend: Package that simplifies the model.
 
         Returns:
             Path of the simplified model, or the path of the staged
@@ -328,11 +347,11 @@ class Exporter(ABC):
         """
         logger.info("Simplifying ONNX.")
         try:
-            if self._onnx_simplification == "onnxsim":
+            if backend == "onnxsim":
                 from onnxsim import simplify
 
                 logger.info("Using `onnxsim` for simplification.")
-            elif self._onnx_simplification == "onnxslim":
+            else:
                 from onnxslim import slim
 
                 logger.info("Using `onnxslim` for simplification.")
@@ -343,7 +362,6 @@ class Exporter(ABC):
                     return slimmed, True
 
         except ImportError:
-            backend = self._onnx_simplification
             logger.warning(
                 f"`{backend}` not installed, proceeding without simplification."
                 f"Please install it using `pip install {backend}`."
@@ -419,8 +437,9 @@ class Exporter(ABC):
                     )
                 )
 
+            rng = np.random.default_rng()
             for i in range(calib.max_images):
-                arr: np.ndarray = np.random.normal(
+                arr: npt.NDArray[np.generic] = rng.normal(
                     calib.mean, calib.std, inp.shape
                 )
                 arr = np.clip(arr, calib.min_value, calib.max_value)
@@ -428,9 +447,8 @@ class Exporter(ABC):
                 _save_random_sample(arr, inp, dest, i)
 
             calibration = calib.to_image_calibration(dest)
-            calibration._generated_from_random = True
             assert inp.layout is not None
-            calibration._generated_layout = inp.layout
+            calibration.mark_generated_from_random(inp.layout)
             self._inputs[name].calibration = calibration
 
     @staticmethod
@@ -438,13 +456,13 @@ class Exporter(ABC):
         inp: InputConfig,
         calib: ImageCalibrationConfig,
         path: Path,
-    ) -> tuple[np.ndarray, str]:
+    ) -> tuple[npt.NDArray[np.generic], str]:
         """Load a managed calibration file and apply preprocessing."""
         if inp.shape is None:  # pragma: no cover - validated by each backend
             raise ValueError(
                 f"Input shape must be provided for calibration input '{inp.name}'."
             )
-        if is_user_calibration_tensor(path, calib):
+        if calib.is_user_tensor(path):
             raise ValueError(
                 "User calibration tensors must use read_user_calibration_tensor."
             )
@@ -526,13 +544,15 @@ class Exporter(ABC):
                 onnx_modifier.output_path.unlink()
 
     @staticmethod
-    def _add_args(args: list, new_args: list, index: int = 0) -> None:
+    def _add_args(
+        args: list[str], new_args: list[str], index: int = 0
+    ) -> None:
         if new_args[index] not in args:
             args.extend(new_args)
 
     def _subprocess_run(
-        self, args: list[str], meta_name: str, **kwargs
+        self, args: list[str], meta_name: str
     ) -> SubprocessResult:
-        result = subprocess_run(args, **kwargs)
+        result = subprocess_run(args)
         self._cmd_info[meta_name] = [str(arg) for arg in args]
         return result

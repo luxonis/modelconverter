@@ -57,7 +57,7 @@ def test_no_leading_one():
         ([1, 3, 224, 224], "NHWC", False),
     ],
 )
-def test_image_input_shape(shape: list[int], layout: str, expected: bool):
+def test_image_input_shape(shape: list[int], layout: str, *, expected: bool):
     assert is_image_input_shape(shape, layout) is expected
 
 
@@ -74,7 +74,7 @@ def test_image_input_shape(shape: list[int], layout: str, expected: bool):
     ],
 )
 def test_explicit_image_input_shape_allows_batchless_layouts(
-    shape: list[int], layout: str, expected: bool
+    shape: list[int], layout: str, *, expected: bool
 ):
     assert (
         is_image_input_shape(shape, layout, allow_batchless=True) is expected
@@ -91,7 +91,7 @@ def test_explicit_image_input_shape_allows_batchless_layouts(
         (None, False),
     ],
 )
-def test_interleaved_image_layout(layout: str | None, expected: bool):
+def test_interleaved_image_layout(layout: str | None, *, expected: bool):
     assert is_interleaved_image_layout(layout) is expected
 
 

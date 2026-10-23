@@ -10,6 +10,8 @@ import shutil
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
+from typing_extensions import override
 
 from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.utils import read_image, subprocess_run
@@ -21,6 +23,7 @@ class RVC4Inferer(Inferer):
 
     _output_layouts: dict[str, str | None]
 
+    @override
     def setup(self) -> None:
         """Set paths and cache metadata used by every inference.
 
@@ -37,7 +40,10 @@ class RVC4Inferer(Inferer):
             else {}
         )
 
-    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+    @override
+    def infer(
+        self, inputs: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         """Run the model on a single set of input images.
 
         Every image is read as ``float32`` and dumped to a raw file
@@ -65,7 +71,7 @@ class RVC4Inferer(Inferer):
         self._raw_images_path.mkdir(parents=True)
         shutil.rmtree(outputs_path, ignore_errors=True)
 
-        with open("input_list.txt", "w") as f:
+        with Path("input_list.txt").open("w", encoding="utf-8") as f:
             f.write(self._header + "\n")
             for input_name, path in inputs.items():
                 raw_path = Path(f"raw_images/{input_name}.raw")
@@ -108,8 +114,8 @@ class RVC4Inferer(Inferer):
 
 
 def _reshape_output(
-    arr: np.ndarray, shape: list[int], layout: str | None
-) -> np.ndarray:
+    arr: npt.NDArray[np.generic], shape: list[int], layout: str | None
+) -> npt.NDArray[np.generic]:
     """Reshape an SNPE output, exposing four-dimensional tensors as NCHW."""
     if len(shape) != 4:
         return arr.reshape(shape)

@@ -8,12 +8,13 @@ package reads.
 """
 
 import multiprocessing
+import multiprocessing.queues
 from contextlib import suppress
 
 import keyring
+from luxonis_ml.typing import Params
 from luxonis_ml.utils import Environ as BaseEnviron
 from pydantic import model_validator
-from typing_extensions import Self
 
 
 def get_password_with_timeout(
@@ -38,14 +39,14 @@ def get_password_with_timeout(
 
     """
 
-    def _get_password(q: multiprocessing.Queue) -> None:
+    def _get_password(q: multiprocessing.queues.Queue[str | None]) -> None:
         try:
             result = keyring.get_password(service_name, username)
             q.put(result)
         except Exception:
             q.put(None)
 
-    q = multiprocessing.Queue()
+    q: multiprocessing.queues.Queue[str | None] = multiprocessing.Queue()
     p = multiprocessing.Process(target=_get_password, args=(q,))
     p.start()
     p.join(timeout)
@@ -82,28 +83,31 @@ class Environ(BaseEnviron):
     # set survives; `0` turns the eviction off.
     MODELCONVERTER_CACHE_MAX_SIZE: str = "50GiB"
 
-    @model_validator(mode="after")
-    def validate_hubai_api_key(self) -> Self:
+    @model_validator(mode="before")
+    @classmethod
+    def validate_hubai_api_key(cls, data: Params) -> Params:
         """Fall back to the system keyring for the HubAI API key.
 
         The keyring is only consulted when the key was not provided
         through the environment. Any failure of the lookup is ignored
         and leaves the key unset.
 
+        Args:
+            data: Raw settings collected from the environment.
+
         Returns:
-            The environment itself, with ``HUBAI_API_KEY`` filled in if
-            the keyring held one.
+            The settings, with ``HUBAI_API_KEY`` filled in if the
+            keyring held one.
 
         """
-        if self.HUBAI_API_KEY:
-            return self
+        if data.get("HUBAI_API_KEY"):
+            return data
 
+        api_key = data.get("HUBAI_API_KEY")
         with suppress(Exception):
-            self.HUBAI_API_KEY = get_password_with_timeout(
-                "ModelConverter", "api_key"
-            )
+            api_key = get_password_with_timeout("ModelConverter", "api_key")
 
-        return self
+        return {**data, "HUBAI_API_KEY": api_key}
 
 
 environ = Environ()

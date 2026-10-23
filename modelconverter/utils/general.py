@@ -6,6 +6,7 @@ or parsing the byte sizes used to report on and bound the disk cache.
 """
 
 import re
+from contextlib import suppress
 from pathlib import Path
 
 from loguru import logger
@@ -15,7 +16,7 @@ def _normalize_underscores(s: str) -> str:
     return re.sub(r"_+", "_", s)
 
 
-def sanitize_net_name(name: str, with_suffix: bool = False) -> str:
+def sanitize_net_name(name: str, *, with_suffix: bool = False) -> str:
     """Sanitize net name or path.
 
     If input is a path, only sanitize the basename. If input is a name,
@@ -109,13 +110,11 @@ def dir_stats(path: Path) -> tuple[int, int]:
     """
     size = 0
     count = 0
-    for f in path.rglob("*"):
-        try:
-            if f.is_file():
-                size += f.stat().st_size
+    for entry in path.rglob("*"):
+        with suppress(OSError):
+            if entry.is_file():
+                size += entry.stat().st_size
                 count += 1
-        except OSError:
-            continue
     return size, count
 
 

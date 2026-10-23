@@ -15,20 +15,25 @@ from pathlib import Path
 import pytest
 
 from modelconverter.platforms import getters
+from modelconverter.utils.config import SingleStageConfig
 from modelconverter.utils.types import Platform
 from tests.helpers.onnx_factory import single_io_onnx
+
+# The fake backends only record their arguments, so an unvalidated
+# configuration is enough.
+_STAGE = SingleStageConfig.model_construct()
 
 
 class _Recorder:
     """A stand-in backend that records how it was instantiated."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: object, **kwargs: object) -> None:
         self.args = args
         self.kwargs = kwargs
         self.via_from_config = False
 
     @classmethod
-    def from_config(cls, *args, **kwargs) -> "_Recorder":
+    def from_config(cls, *args: object, **kwargs: object) -> "_Recorder":
         inst = cls(*args, **kwargs)
         inst.via_from_config = True
         return inst
@@ -71,9 +76,9 @@ def test_get_exporter_dispatch(
     cls_name: str,
 ):
     _inject_fake_backend(monkeypatch, path, cls_name)
-    exporter = getters.get_exporter(platform, "cfg", "out_dir")
+    exporter = getters.get_exporter(platform, _STAGE, Path("out"))
     assert isinstance(exporter, _Recorder)
-    assert exporter.args == ("cfg", "out_dir")
+    assert exporter.args == (_STAGE, Path("out"))
 
 
 def test_get_exporter_rvc4_real_construction(work_dir: Path):
@@ -119,8 +124,11 @@ def test_get_inferer_dispatch(
     cls_name: str,
 ):
     _inject_fake_backend(monkeypatch, path, cls_name)
-    inferer = getters.get_inferer(platform, "cfg")
+    inferer = getters.get_inferer(
+        platform, "model", Path("src"), Path("dest"), _STAGE
+    )
     assert isinstance(inferer, _Recorder)
+    assert inferer.args == ("model", Path("src"), Path("dest"), _STAGE)
     # Inferers are built through the ``from_config`` classmethod.
     assert inferer.via_from_config
 
@@ -161,7 +169,7 @@ def test_get_benchmark_dispatch(
 
 def test_get_benchmark_hailo_not_implemented():
     with pytest.raises(NotImplementedError, match="Hailo Benchmark"):
-        getters.get_benchmark(Platform.HAILO)
+        getters.get_benchmark(Platform.HAILO, "model")
 
 
 def test_get_analyzer_rvc4_dispatch(monkeypatch: pytest.MonkeyPatch):
@@ -170,7 +178,7 @@ def test_get_analyzer_rvc4_dispatch(monkeypatch: pytest.MonkeyPatch):
         "modelconverter.platforms.rvc4.analyze",
         "RVC4Analyzer",
     )
-    analyzer = getters.get_analyzer(Platform.RVC4, "arg")
+    analyzer = getters.get_analyzer(Platform.RVC4, None, None, "m.dlc", {})
     assert isinstance(analyzer, _Recorder)
 
 
@@ -179,7 +187,7 @@ def test_get_analyzer_rvc4_dispatch(monkeypatch: pytest.MonkeyPatch):
 )
 def test_get_analyzer_unsupported_platform(platform: Platform):
     with pytest.raises(ValueError, match="Analyzer not available"):
-        getters.get_analyzer(platform)
+        getters.get_analyzer(platform, None, None, "m.dlc", {})
 
 
 def test_get_visualizer_rvc4_dispatch(monkeypatch: pytest.MonkeyPatch):

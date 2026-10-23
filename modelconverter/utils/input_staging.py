@@ -193,6 +193,16 @@ def _maybe_stage_token(
     if prev is not None and _is_flag(prev):
         return None
 
+    return _maybe_stage_value(token, prev, inputs_dir)
+
+
+def _maybe_stage_value(
+    token: str, prev: str | None, inputs_dir: Path
+) -> str | None:
+    """Return the rewritten value if it should be staged, else ``None``.
+
+    The value follows a config override key or stands alone.
+    """
     # A config override (`<key> <value>`). The schema knows what the value is,
     # which beats guessing from its shape: a bare directory name is staged when
     # the key calls for a path, and a destination is never staged at all.
@@ -381,7 +391,7 @@ def _stage_value(value: str, inputs_dir: Path) -> str | None:
 
 
 def _stage_file(src: Path, inputs_dir: Path) -> Path:
-    digest = _hash_file_memoized(src)
+    digest = hash_file_memoized(src)
     entry = inputs_dir / digest
     dest = entry / src.name
     # The claim goes in before the entry is trusted, not after it is used:
@@ -485,13 +495,13 @@ def _publish_bundle(destinations: dict[Path, Path], dest_dir: Path) -> None:
             size += file_size
             _log_copy(src, file_size)
             shutil.copy2(src, tmp_dest)
-        _publish_directory(tmp_dir, dest_dir)
+        publish_directory(tmp_dir, dest_dir)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
     _record_size(dest_dir, size)
 
 
-def _publish_directory(src: Path, dest: Path) -> None:
+def publish_directory(src: Path, dest: Path) -> None:
     """Rename ``src`` to ``dest``, accepting a concurrent winner."""
     try:
         src.rename(dest)
@@ -508,7 +518,7 @@ def _stage_config(src: Path, inputs_dir: Path) -> Path:
     never a reason to copy the directory it happens to live in.
     """
     try:
-        data = yaml.safe_load(src.read_text())
+        data = yaml.safe_load(src.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, yaml.YAMLError):
         # Not a config we can read. Hand it over as-is and let the container
         # report what is wrong with it.
@@ -876,7 +886,7 @@ def _stage_dir(src: Path, inputs_dir: Path) -> Path:
         tmp_dest = tmp_root / src.name
         try:
             _copy_input_files(files, tmp_dest)
-            _publish_directory(tmp_dest, dest)
+            publish_directory(tmp_dest, dest)
         finally:
             shutil.rmtree(tmp_root, ignore_errors=True)
         _record_size(digest_dir, size)
@@ -1158,7 +1168,9 @@ def _iter_cache_entries(cache: Path) -> Iterator[_CacheEntry]:
     """
     downloads_evictable = not _claimed_by_another_process(cache)
     for entry in _cache_children(cache / "inputs"):
-        yield _CacheEntry(entry, _entry_size(entry), _used_time(entry), True)
+        yield _CacheEntry(
+            entry, _entry_size(entry), _used_time(entry), evictable=True
+        )
     for name in _DOWNLOAD_SUBDIRS:
         for entry in _cache_children(cache / name):
             yield _CacheEntry(
@@ -1294,13 +1306,13 @@ _DIGEST = re.compile(r"[0-9a-f]{16}")
 
 def _hash_file(path: Path) -> str:
     h = hashlib.sha256()
-    with open(path, "rb") as f:
+    with path.open("rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()[:16]
 
 
-def _hash_file_memoized(path: Path) -> str:
+def hash_file_memoized(path: Path) -> str:
     """Content digest of ``path``, memoized on its stat fingerprint.
 
     Staging would otherwise re-read every staged file in full on each
@@ -1336,7 +1348,7 @@ def _hash_files(paths: list[Path]) -> str:
     h = hashlib.sha256()
     for path in sorted(paths):
         h.update(path.name.encode())
-        h.update(_hash_file_memoized(path).encode())
+        h.update(hash_file_memoized(path).encode())
     return h.hexdigest()[:16]
 
 

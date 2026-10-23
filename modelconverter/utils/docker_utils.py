@@ -144,6 +144,7 @@ def rvc4_tag_version(version: str) -> str:
 
 def generate_compose_config(
     image: str,
+    *,
     gpu: bool = False,
     memory: int | None = None,
     cpus: float | None = None,
@@ -377,8 +378,7 @@ def docker_build(
         "--load",
         str(build_dir),
     ]
-    if version is not None:
-        args += ["--build-arg", f"VERSION={version}"]
+    args += ["--build-arg", f"VERSION={version}"]
     if bare_tag == "dev":
         # Dev images also carry the test/coverage tooling so the suite can be
         # run inside the container (e.g. `modelconverter shell <t> --dev -c pytest`).
@@ -499,10 +499,6 @@ def _download_file(
     try:
         request = Request(url, headers={"User-Agent": "modelconverter"})  # noqa: S310
         with urlopen(request, timeout=30) as response:  # noqa: S310
-            if response.status >= 400:
-                raise RuntimeError(
-                    f"HTTP {response.status} while downloading {url}"
-                )
             headers: HTTPMessage = response.headers
             length = headers.get("Content-Length")
             total = int(length) if length and length.isdigit() else None
@@ -567,8 +563,8 @@ def pull_image(client: docker.DockerClient, image: str) -> str:
         TaskProgressColumn(),
     ) as progress:
         bars = {}
-        for log in client.api.pull(repository, tag=tag, stream=True):
-            log = json.loads(log)
+        for chunk in client.api.pull(repository, tag=tag, stream=True):
+            log = json.loads(chunk)
             error_detail = log.get("errorDetail", {})
             error = error_detail.get("message") or log.get("error")
             if error:
@@ -576,14 +572,14 @@ def pull_image(client: docker.DockerClient, image: str) -> str:
             status = log.get("status")
             if status not in {"Downloading", "Extracting"}:
                 continue
-            id = log["id"]
+            layer_id = log["id"]
             detail = log["progressDetail"]
-            description = f"{id} [{status}]:"
+            description = f"{layer_id} [{status}]:"
             total = detail.get("total")
-            if id not in bars:
-                bars[id] = progress.add_task(description, total=total)
+            if layer_id not in bars:
+                bars[layer_id] = progress.add_task(description, total=total)
             progress.update(
-                bars[id],
+                bars[layer_id],
                 completed=detail["current"] if total is not None else None,
                 total=total,
                 description=description,
@@ -826,7 +822,7 @@ def get_container_memory_limit() -> int:
     # cgroup v2 (common on modern Linux/Docker)
     cgroup_v2_path = Path("/sys/fs/cgroup/memory.max")
     if cgroup_v2_path.exists():
-        val = cgroup_v2_path.read_text().strip()
+        val = cgroup_v2_path.read_text(encoding="utf-8").strip()
         if val.isdigit():
             return int(val)
         if val == "max":
@@ -834,7 +830,7 @@ def get_container_memory_limit() -> int:
     # fallback to cgroup v1
     cgroup_v1_path = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
     if cgroup_v1_path.exists():
-        val = cgroup_v1_path.read_text().strip()
+        val = cgroup_v1_path.read_text(encoding="utf-8").strip()
         if val.isdigit():
             return int(val)
     return psutil.virtual_memory().available
@@ -847,12 +843,14 @@ def get_container_memory_available() -> int:
     running inside it, never less than zero.
     """
     limit = get_container_memory_limit()
-    # sum RSS of all processes in the container
-    total_usage = 0
-    for p in psutil.process_iter():
-        try:
-            total_usage += p.memory_info().rss
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
+    total_usage = sum(_resident_memory(p) for p in psutil.process_iter())
     available = limit - total_usage
     return max(0, available)
+
+
+def _resident_memory(process: psutil.Process) -> int:
+    """Return the RSS of a process, or 0 if it is gone or not readable."""
+    try:
+        return process.memory_info().rss
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return 0

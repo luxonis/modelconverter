@@ -123,7 +123,7 @@ class Benchmark(ABC):
     _VALID_EXTENSIONS = (".tar.xz", ".blob", ".dlc")
     _HUBAI_PLATFORM: str | None = None
 
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str) -> None:
         """Resolve the model to benchmark.
 
         Args:
@@ -176,12 +176,12 @@ class Benchmark(ABC):
     @property
     @abstractmethod
     def default_configuration(self) -> Configuration:
-        """Return the configuration a plain benchmark run uses."""
+        """The configuration a plain benchmark run uses."""
 
     @property
     @abstractmethod
     def all_configurations(self) -> list[Configuration]:
-        """Return the configurations a full benchmark run sweeps."""
+        """The configurations a full benchmark run sweeps."""
 
     def print_results(
         self, results: list[tuple[Configuration, Result]]
@@ -329,7 +329,7 @@ class Benchmark(ABC):
         logger.info(f"Benchmark results saved to {file}.")
 
     def run(
-        self, full: bool = True, save: bool = False, **kwargs: ConfigValue
+        self, *, full: bool = True, save: bool = False, **kwargs: ConfigValue
     ) -> None:
         """Benchmark the model and report the results.
 

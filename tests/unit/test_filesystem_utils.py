@@ -16,29 +16,47 @@ from modelconverter.utils.constants import SHARED_DIR
 from tests.helpers.strategies import reuses_function_fixtures
 
 
+class _RecordingFS:
+    """Fake file system that records the transfers it is asked for."""
+
+    def __init__(
+        self, absolute_path: str, put_file_plugin: str | None = None
+    ) -> None:
+        self.absolute_path = absolute_path
+        self.put_file_plugin = put_file_plugin
+        self.get_file_calls: list[tuple[str, str]] = []
+        self.put_file_calls: list[tuple[PathType, str]] = []
+        self.put_dir_calls: list[tuple[PathType, str]] = []
+
+    def get_file(self, remote: str, local: str) -> None:
+        self.get_file_calls.append((remote, local))
+
+    def put_file(self, local: PathType, remote: str) -> None:
+        self.put_file_calls.append((local, remote))
+
+    def put_dir(self, local: PathType, remote: str) -> None:
+        self.put_dir_calls.append((local, remote))
+
+
 def _install_fake_fs(
     monkeypatch: pytest.MonkeyPatch,
     split: tuple[str, str],
     *,
     is_dir: bool = False,
     walk: tuple[str, ...] = (),
-) -> list:
+) -> list[_RecordingFS]:
     """Patch ``filesystem_utils.LuxonisFileSystem`` with a fake.
 
     Returns a list that collects every constructed fake instance so the
     tests can assert on recorded calls.
     """
-    instances: list = []
+    instances: list[_RecordingFS] = []
 
-    class FakeFS:
+    class FakeFS(_RecordingFS):
         def __init__(
             self, absolute_path: str, put_file_plugin: str | None = None
         ) -> None:
-            self.absolute_path = absolute_path
-            self.put_file_plugin = put_file_plugin
-            self.get_file_calls: list = []
-            self.put_file_calls: list = []
-            self.put_dir_calls: list = []
+            super().__init__(absolute_path, put_file_plugin)
             instances.append(self)
 
         @staticmethod
@@ -48,17 +66,8 @@ def _install_fake_fs(
         def is_directory(self, remote_path: str) -> bool:
             return is_dir
 
-        def walk_dir(self, remote_path: str) -> list:
+        def walk_dir(self, remote_path: str) -> list[str]:
             return list(walk)
-
-        def get_file(self, remote: str, local: str) -> None:
-            self.get_file_calls.append((remote, local))
-
-        def put_file(self, local: PathType, remote: str) -> None:
-            self.put_file_calls.append((local, remote))
-
-        def put_dir(self, local: PathType, remote: str) -> None:
-            self.put_dir_calls.append((local, remote))
 
     monkeypatch.setattr(fsu, "LuxonisFileSystem", FakeFS)
     return instances

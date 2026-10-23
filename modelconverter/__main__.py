@@ -15,7 +15,7 @@ import shutil
 import signal
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import partial
@@ -131,7 +131,7 @@ device_commands = Group.create_ordered("Device Commands")
 
 
 @contextmanager
-def catch_exceptions():
+def catch_exceptions() -> Generator[None, None, None]:
     """Log any exception raised in the block and exit.
 
     Exits with status 1 for a ``ModelconverterException`` and with
@@ -185,15 +185,15 @@ def _inline_model_path(
 
 def _validate_inputs(cfg: Config) -> None:
     """Check the preprocessing or the input contract of every input."""
-    for stage in cfg.stages.values():
-        for inp in stage.inputs:
-            try:
+    try:
+        for stage in cfg.stages.values():
+            for inp in stage.inputs:
                 if inp.requires_input_preprocessing():
                     inp.validate_preprocessing()
                 else:
                     inp.validate_input_contract()
-            except ValueError as error:
-                raise ModelconverterException(str(error)) from error
+    except ValueError as error:
+        raise ModelconverterException(str(error)) from error
 
 
 def _conversion_result(
@@ -768,8 +768,12 @@ def benchmark(
             for RVC4.
 
     """
-    if platform in {Platform.RVC2, Platform.RVC4}:
+    if platform is Platform.RVC3:
         kwargs: Configuration = {
+            "requests": requests,
+        }
+    else:
+        kwargs = {
             "repetitions": repetitions,
             "benchmark_time": benchmark_time,
             "input_fps": input_fps,
@@ -786,10 +790,6 @@ def benchmark(
                 "device_id": device_id,
                 "device_monitor": device_monitor,
             }
-    elif platform is Platform.RVC3:
-        kwargs = {
-            "requests": requests,
-        }
     get_benchmark(platform, model_path).run(full=full, save=save, **kwargs)
 
 
@@ -1199,7 +1199,7 @@ def launcher(
     ] = None,
     memory: Annotated[str | None, Parameter(group=docker_parameters)] = None,
     cpus: Annotated[float | None, Parameter(group=docker_parameters)] = None,
-):
+) -> None:
     """Convert neural network models for Luxonis devices.
 
     The ``convert``, ``infer`` and ``shell`` commands run in a docker

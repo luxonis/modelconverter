@@ -12,6 +12,7 @@ from statistics import median
 from loguru import logger
 from openvino.inference_engine.ie_api import IECore, StatusCode
 from rich.progress import track
+from typing_extensions import override
 
 from modelconverter.platforms.base_benchmark import (
     Benchmark,
@@ -25,6 +26,7 @@ class RVC3Benchmark(Benchmark):
     """Benchmark of a converted model running on an RVC3 device."""
 
     @property
+    @override
     def default_configuration(self) -> Configuration:
         """Default configuration for RVC3 benchmarking.
 
@@ -34,13 +36,15 @@ class RVC3Benchmark(Benchmark):
         return {"requests": 1}
 
     @property
+    @override
     def all_configurations(self) -> list[Configuration]:
-        """Return the configurations used by the full benchmark.
+        """The configurations used by the full benchmark.
 
         Covers one to five concurrent inference requests.
         """
         return [{"requests": i} for i in range(1, 6)]
 
+    @override
     def benchmark(self, configuration: Configuration) -> Result:
         """Run a single benchmark of the model on the device.
 

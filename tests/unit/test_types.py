@@ -221,7 +221,7 @@ def test_from_dai_dtype_unsupported():
     # No unmapped ``dai`` enum member exists, so pass a value that is
     # provably absent from the map to hit the error branch.
     with pytest.raises(ValueError, match="Unsupported DepthAI"):
-        DataType.from_dai_dtype(None)  # type: ignore[arg-type]
+        DataType.from_dai_dtype(None)  # pyright: ignore[reportArgumentType]
 
 
 class _FakeTensorType:
@@ -251,8 +251,10 @@ def fake_tflite(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     tflite = ModuleType("tflite")
     tensor_type = ModuleType("tflite.TensorType")
-    tensor_type.TensorType = _FakeTensorType  # type: ignore[attr-defined]
-    tflite.TensorType = tensor_type  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        tensor_type, "TensorType", _FakeTensorType, raising=False
+    )
+    monkeypatch.setattr(tflite, "TensorType", tensor_type, raising=False)
     monkeypatch.setitem(sys.modules, "tflite", tflite)
     monkeypatch.setitem(sys.modules, "tflite.TensorType", tensor_type)
 

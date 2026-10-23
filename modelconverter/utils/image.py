@@ -10,6 +10,7 @@ from itertools import chain
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 from luxonis_ml.typing import PathType
 from PIL import Image, ImageOps
 
@@ -26,7 +27,7 @@ def read_image(
     data_type: DataType | None = None,
     transpose: bool = True,
     layout: str | None = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.generic]:
     """Read a single calibration or inference input from a file.
 
     ``.npy`` files are loaded as they are and ``.raw`` files are read as

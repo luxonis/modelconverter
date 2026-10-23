@@ -8,14 +8,18 @@ architecture. Requires the Hailo Docker image, which provides the SDK.
 
 import os
 import shutil
+from functools import partial
 from pathlib import Path
+from typing import TypedDict, TypeVar
 
 import hailo_sdk_client
 import numpy as np
+import numpy.typing as npt
 import tensorflow as tf
 from hailo_sdk_client import ClientRunner
 from loguru import logger
 from luxonis_ml.typing import Params
+from typing_extensions import override
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
@@ -31,11 +35,12 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.preprocessing import (
     channels_last_4d_layout,
-    is_user_calibration_tensor,
     read_user_calibration_tensor,
     reorder_layout,
 )
 from modelconverter.utils.types import Platform
+
+_ScalarT = TypeVar("_ScalarT", bound=np.generic)
 
 
 class HailoExporter(Exporter):
@@ -49,7 +54,7 @@ class HailoExporter(Exporter):
 
     platform: Platform = Platform.HAILO
 
-    def __init__(self, config: SingleStageConfig, output_dir: Path):
+    def __init__(self, config: SingleStageConfig, output_dir: Path) -> None:
         """Initialize the exporter.
 
         If TensorFlow reports no available GPU, the optimization and
@@ -95,6 +100,7 @@ class HailoExporter(Exporter):
                 net_input_shapes[inp.name] = inp.shape
         return start_nodes, net_input_shapes
 
+    @override
     def export(self) -> Path:
         """Translate, calibrate and compile the model.
 
@@ -110,16 +116,17 @@ class HailoExporter(Exporter):
 
         logger.info("Translating model to Hailo IR.")
         if self._is_tflite:
-            translate_kwargs = {
-                "net_name": self._model_name,
-                "start_node_names": start_nodes,
-                "end_node_names": list(self._outputs.keys()),
-            }
-            if _supports_tf_tensor_shapes():
-                translate_kwargs["tensor_shapes"] = net_input_shapes
-            runner.translate_tf_model(
-                str(self._input_model), **translate_kwargs
+            translate = partial(
+                runner.translate_tf_model,
+                str(self._input_model),
+                net_name=self._model_name,
+                start_node_names=start_nodes,
+                end_node_names=list(self._outputs.keys()),
             )
+            if _supports_tf_tensor_shapes():
+                translate(tensor_shapes=net_input_shapes)
+            else:
+                translate()
         else:
             runner.translate_onnx_model(
                 str(self._input_model),
@@ -158,7 +165,7 @@ class HailoExporter(Exporter):
         hef = runner.compile()
 
         hef_path = self._input_model.with_suffix(".hef")
-        with open(hef_path, "wb") as hef_file:
+        with hef_path.open("wb") as hef_file:
             hef_file.write(hef)
         return hef_path
 
@@ -196,10 +203,10 @@ class HailoExporter(Exporter):
 
     def _get_calibration_data(
         self, runner: ClientRunner
-    ) -> dict[str, np.ndarray]:
+    ) -> dict[str, npt.NDArray[np.float32]]:
         data = {}
         for orig_name, inp in self._inputs.items():
-            name, shape = self._get_hn_layer_info(runner, orig_name)
+            name, shape = self.get_hn_layer_info(runner, orig_name)
             shape = shape[1:]
 
             calib = inp.calibration
@@ -237,9 +244,9 @@ class HailoExporter(Exporter):
         calib: ImageCalibrationConfig,
         path: Path,
         shape: list[int],
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.generic]:
         """Read one calibration sample in the sample shape of Hailo."""
-        if is_user_calibration_tensor(path, calib):
+        if calib.is_user_tensor(path):
             img = read_user_calibration_tensor(
                 path,
                 raw_shape=shape,
@@ -287,9 +294,22 @@ class HailoExporter(Exporter):
         return str(quantized_model_har_path)
 
     @staticmethod
-    def _get_hn_layer_info(
+    def get_hn_layer_info(
         runner: ClientRunner, name: str
     ) -> tuple[str, list[int]]:
+        """Find the HN layer that an original layer name maps to.
+
+        Args:
+            runner: Runner that holds the translated model.
+            name: Name of the layer in the source model.
+
+        Returns:
+            The HN layer name and its input shape, with a batch size of 1.
+
+        Raises:
+            RuntimeError: If no HN layer has ``name`` as an original name.
+
+        """
         for hn_name, params in runner.get_hn_dict()["layers"].items():
             if name in params.get("original_names", []):
                 return hn_name, [1, *(params["input_shapes"][0])[1:]]
@@ -311,14 +331,12 @@ class HailoExporter(Exporter):
 
             safe_name = name.replace(".", "")
 
-            hn_name, _ = self._get_hn_layer_info(runner, name)
+            hn_name, _ = self.get_hn_layer_info(runner, name)
 
             if inp.shape is None:
                 exit_with(
                     ValueError(f"Input `{name}` has no shape specified.")
                 )
-            if not all(x is not None for x in inp.shape):
-                exit_with(ValueError(f"Input `{name}` has dynamic shape."))
 
             values_len = inp.channel_count
             assert values_len is not None
@@ -344,6 +362,7 @@ class HailoExporter(Exporter):
         self._alls = alls
         return "\n".join(alls)
 
+    @override
     def exporter_buildinfo(self) -> Params:
         """Return Hailo-specific information about the conversion.
 
@@ -369,7 +388,15 @@ def _is_hwc_sample(shape: list[int], layout: str) -> bool:
     )
 
 
-def _onnx_output_names(hn_layers: dict[str, dict]) -> dict[str, str]:
+class _HnLayer(TypedDict):
+    """The fields of a Hailo HN layer that `_onnx_output_names` reads."""
+
+    type: str
+    input: list[str]
+    original_names: list[str]
+
+
+def _onnx_output_names(hn_layers: dict[str, _HnLayer]) -> dict[str, str]:
     """Map the layer that feeds each output layer to its ONNX name."""
     name_map = {}
     for layer in hn_layers.values():
@@ -382,8 +409,8 @@ def _onnx_output_names(hn_layers: dict[str, dict]) -> dict[str, str]:
 
 
 def _rename_params(
-    npz: dict[str, np.ndarray], name_map: dict[str, str]
-) -> dict[str, np.ndarray]:
+    npz: dict[str, npt.NDArray[np.generic]], name_map: dict[str, str]
+) -> dict[str, npt.NDArray[np.generic]]:
     """Apply the first rename of ``name_map`` that matches each key."""
     renamed = {}
     for key, value in npz.items():
@@ -394,8 +421,8 @@ def _rename_params(
 
 
 def _fit_hailo_sample(
-    array: np.ndarray, shape: list[int], layout: str
-) -> np.ndarray:
+    array: npt.NDArray[_ScalarT], shape: list[int], layout: str
+) -> npt.NDArray[_ScalarT]:
     """Drop the batch axis, or reorder the axes, to match the Hailo input."""
     if array.shape == (1, *shape):
         return array[0]

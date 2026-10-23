@@ -22,6 +22,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 from modelconverter.__main__ import convert
@@ -73,7 +74,9 @@ def constant_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
-def _to_nchw(arr: np.ndarray, platform_name: str) -> np.ndarray:
+def _to_nchw(
+    arr: npt.NDArray[np.generic], platform_name: str
+) -> npt.NDArray[np.generic]:
     """Normalize a platform's spatial output to NCHW.
 
     The Hailo inferer returns spatial outputs channels-last; the others,

@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass
+from typing import TypeVar
 
 from hubai_sdk import HubAIClient
 from hubai_sdk.errors import ResourceNotFoundError
@@ -21,6 +22,7 @@ _HUB_MODEL_PATTERN = re.compile(
     r"(?::(?P<variant>[^/:]+)(?::(?P<reference>[^/:]+))?)?$"
 )
 _LIST_LIMIT = 500
+_T = TypeVar("_T")
 
 
 @dataclass(frozen=True)
@@ -67,7 +69,7 @@ def _is_semver(reference: str) -> bool:
     return version.prerelease is None and version.build is None
 
 
-def _require_complete_list(items: list, resource: str) -> list:
+def _require_complete_list(items: list[_T], resource: str) -> list[_T]:
     if len(items) >= _LIST_LIMIT:
         raise ValueError(
             f"HubAI returned at least {_LIST_LIMIT} {resource}; cannot resolve "

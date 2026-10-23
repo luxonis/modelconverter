@@ -39,7 +39,7 @@ def test_platform_options(
     [("2021.4.0", True), ("2022.3.0", False)],
 )
 def test_superblob_skip_reason(
-    monkeypatch: pytest.MonkeyPatch, version: str, skipped: bool
+    monkeypatch: pytest.MonkeyPatch, version: str, *, skipped: bool
 ):
     monkeypatch.setenv("MODELCONVERTER_TOOL_VERSION", version)
 

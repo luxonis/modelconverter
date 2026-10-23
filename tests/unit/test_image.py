@@ -8,6 +8,7 @@ Re-homes the golden-image coverage from the old
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
@@ -28,7 +29,7 @@ DATA_DIR = (
 ORIG = DATA_DIR / "orig.jpg"
 
 
-def _golden(name: str, mode: str = "RGB") -> np.ndarray:
+def _golden(name: str, mode: str = "RGB") -> npt.NDArray[np.uint8]:
     return np.array(Image.open(DATA_DIR / name).convert(mode), dtype=np.uint8)
 
 
@@ -153,7 +154,7 @@ def test_crop_matches_centered_resize_to_fill_geometry(
         Encoding.RGB,
         ResizeMethod.CROP,
         transpose=False,
-    )
+    ).astype(np.float64)
 
     # DepthAI fills the destination using the larger scale factor and
     # centers the excess. Sample at pixel centers; allow uint8 resampling

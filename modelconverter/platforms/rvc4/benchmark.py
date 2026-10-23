@@ -21,11 +21,13 @@ from typing import Final
 
 import depthai as dai
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 from depthai import XLinkPlatform
 from loguru import logger
 from luxonis_ml.typing import BaseModelExtraForbid, PathType
 from rich.progress import track
+from typing_extensions import override
 
 from modelconverter.platforms.base_benchmark import (
     Benchmark,
@@ -108,6 +110,7 @@ class RVC4Benchmark(Benchmark):
     _MAX_REAL_SNPE_INPUTS = 100
 
     @property
+    @override
     def default_configuration(self) -> Configuration:
         """Default configuration for RVC4 benchmarking.
 
@@ -160,8 +163,9 @@ class RVC4Benchmark(Benchmark):
         }
 
     @property
+    @override
     def all_configurations(self) -> list[Configuration]:
-        """Return every SNPE profile at one and at two threads."""
+        """Every SNPE profile at one and at two threads."""
         return [
             {"profile": profile, "num_threads": threads}
             for profile in PROFILES
@@ -197,7 +201,7 @@ class RVC4Benchmark(Benchmark):
                 ],
                 silent=True,
             )
-            content = csv_path.read_text()
+            content = csv_path.read_text(encoding="utf-8")
             csv_path.unlink()
         elif (
             self._handler is not None
@@ -326,27 +330,22 @@ class RVC4Benchmark(Benchmark):
         )
 
     @staticmethod
-    def _create_random_input(spec: InputSpec) -> np.ndarray:
+    def _create_random_input(spec: InputSpec) -> npt.NDArray[np.generic]:
         if spec.data_type is DataType.INT32:
             # INT inputs are often token/index tensors;
             # zero keeps synthetic benchmark inputs in a safe range.
             return np.zeros(spec.shape, dtype=np.int32)
+        rng = np.random.default_rng()
         if spec.data_type == DataType.INT8:
-            return np.random.randint(-128, 128, size=spec.shape, dtype=np.int8)
+            return rng.integers(-128, 128, size=spec.shape, dtype=np.int8)
         if spec.data_type == DataType.INT16:
-            return np.random.randint(
-                -32768, 32768, size=spec.shape, dtype=np.int16
-            )
+            return rng.integers(-32768, 32768, size=spec.shape, dtype=np.int16)
         if spec.data_type in {DataType.UINT8, DataType.UFXP8}:
-            return np.random.randint(0, 256, size=spec.shape, dtype=np.uint8)
+            return rng.integers(0, 256, size=spec.shape, dtype=np.uint8)
         if spec.data_type in {DataType.UINT16, DataType.UFXP16}:
-            return np.random.randint(
-                0, 65536, size=spec.shape, dtype=np.uint16
-            )
+            return rng.integers(0, 65536, size=spec.shape, dtype=np.uint16)
 
-        return np.random.rand(*spec.shape).astype(
-            spec.data_type.as_numpy_dtype()
-        )
+        return rng.random(spec.shape).astype(spec.data_type.as_numpy_dtype())
 
     @staticmethod
     def _validate_dai_input_specs(input_specs: Iterable[InputSpec]) -> None:
@@ -363,6 +362,7 @@ class RVC4Benchmark(Benchmark):
                 "models."
             )
 
+    @override
     def benchmark(self, configuration: Configuration) -> Result:
         """Run one benchmark of the model on an RVC4 device.
 
@@ -661,19 +661,22 @@ class RVC4Benchmark(Benchmark):
             repetitions=repetitions,
         )
 
+    @override
     def _extra_header(
         self,
         results: list[tuple[Configuration, Result]],
     ) -> list[str]:
-        heads = []
-        if self._monitor is not None:
-            heads.append("power_sys (W)")
-            heads.append("power_core (W)")
-            heads.append("dsp (%)")
-            heads.append("memory (MiB)")
-            heads.append("cpu (%)")
-        return heads
+        if self._monitor is None:
+            return []
+        return [
+            "power_sys (W)",
+            "power_core (W)",
+            "dsp (%)",
+            "memory (MiB)",
+            "cpu (%)",
+        ]
 
+    @override
     def _extra_row_cells(
         self,
         configuration: Configuration,
@@ -703,8 +706,6 @@ class RVC4Benchmark(Benchmark):
             if hubai_precision is not None:
                 logger.info(f"HubAI is reporting {hubai_precision}")
 
-            result = None
-
             # e.g. for inputs representing indices
             if input_precision not in {
                 DataType.INT8,
@@ -732,8 +733,6 @@ class RVC4Benchmark(Benchmark):
                         result = DataType.FLOAT32
                     case _:
                         result = input_precision
-            if result is None:
-                raise ValueError("Unable to resolve the type combination")
             logger.info(
                 f"Resolved the type of '{name}' to be '{result.name.upper()}'"
             )

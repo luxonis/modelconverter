@@ -40,7 +40,7 @@ def budget(monkeypatch: pytest.MonkeyPatch) -> SetBudget:
     return set_budget
 
 
-def _stage(src: Path, cache_dir: Path, released: bool = True) -> Path:
+def _stage(src: Path, cache_dir: Path, *, released: bool = True) -> Path:
     """Stages ``src`` and, by default, drops the claim on it.
 
     A released entry stands for one staged by a conversion that has since
