@@ -10,8 +10,10 @@ output's cosine similarity above a per-platform floor -- quantizing backends
 
 Adding a model is one ``PrecisionCase`` entry; nothing here is model-specific.
 
-Hailo is excluded: the cheap smoke settings the conversion tests use destroy
-numeric fidelity, and a full-optimization Hailo compile is far too slow for CI.
+Hailo runs only the small mnist case, at the default optimization level and
+without the HEF compile: the check runs the quantized HAR. The cheap smoke
+settings the conversion tests use destroy numeric fidelity, and a
+full-optimization resnet18 is far too slow for CI.
 """
 
 from dataclasses import dataclass, field
@@ -26,6 +28,7 @@ from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.general import sanitize_net_name
 from modelconverter.utils.types import Platform
+from tests.helpers.conversion import HAILO_NO_COMPILE_OPTS
 from tests.helpers.data import TEST_IMAGE
 from tests.helpers.onnx_reference import ONNXReferenceInferer
 from tests.helpers.platform_options import platform_options
@@ -75,6 +78,8 @@ _PARAMS = [
 def test_precision(platform_name: str, case: PrecisionCase):
     platform = Platform(platform_name)
     options = platform_options(platform)
+    if platform is Platform.HAILO:
+        options = (*options, *HAILO_NO_COMPILE_OPTS)
     output_name = sanitize_net_name(f"prec_{platform_name}_{case.id}")
 
     convert(

@@ -14,7 +14,9 @@ their inferers.
 
 Conversion is checked on every platform; correctness against an fp32 golden
 pipeline on rvc2/rvc4, matching the single-stage toy -- their preprocessing goes
-through the golden path and their DLC/IR runs on the CI CPU backend.
+through the golden path and their DLC/IR runs on the CI CPU backend. On
+rvc2/rvc4 the correctness test is also the conversion check, so the plain
+conversion test runs only on the other platforms.
 
 Run inside the platform Docker image, e.g.::
 
@@ -45,7 +47,7 @@ from tests.helpers.onnx_factory import (
     build_toy_integration_onnx,
 )
 from tests.helpers.platform_options import platform_options
-from tests.helpers.platforms import platform_params
+from tests.helpers.platforms import ALL_PLATFORMS, platform_params
 from tests.helpers.precision import (
     cosine_similarity,
     golden_reference_outputs,
@@ -57,6 +59,9 @@ _CALIB_VALUE = 100
 _THRESHOLD = 0.9
 
 CORRECTNESS_PLATFORMS = ("rvc2", "rvc4")
+CONVERSION_ONLY_PLATFORMS = tuple(
+    p for p in ALL_PLATFORMS if p not in CORRECTNESS_PLATFORMS
+)
 MAIN_STAGE = "third"
 
 # Linked-calibration script for `from_second`. `run_script(outputs)` receives
@@ -135,7 +140,8 @@ def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.mark.parametrize(
-    "platform_name", platform_params(xfails=_CONVERT_XFAILS)
+    "platform_name",
+    platform_params(CONVERSION_ONLY_PLATFORMS, xfails=_CONVERT_XFAILS),
 )
 def test_toy_multistage(platform_name: str, multistage_config: Path):
     platform = Platform(platform_name)

@@ -31,7 +31,10 @@ from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.config import ImageCalibrationConfig
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Platform
-from tests.helpers.conversion import write_toy_conv_config
+from tests.helpers.conversion import (
+    HAILO_NO_COMPILE_OPTS,
+    write_toy_conv_config,
+)
 from tests.helpers.onnx_reference import ONNXReferenceInferer
 from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import platform_params
@@ -50,10 +53,8 @@ _THRESHOLD = 0.9
 # agree with each other much more closely than either does with the ONNX.
 _EQUIVALENCE_THRESHOLD = 0.99
 
-# Hailo: skip the slow HEF compile -- the check runs `SDK_QUANTIZED` inference on
-# the quantized HAR, so compilation is unneeded.
 _PLATFORM_OPTS: dict[str, tuple[str, ...]] = {
-    "hailo": ("hailo.disable_compilation", "True"),
+    "hailo": HAILO_NO_COMPILE_OPTS,
 }
 
 

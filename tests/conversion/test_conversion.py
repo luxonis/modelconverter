@@ -48,28 +48,39 @@ class Scenario:
 
 
 SCENARIOS: list[Scenario] = [
-    # Single-stage (resnet18), every input/output format combination.
+    # Single-stage (resnet18). There is no archive-to-native case: `to` only
+    # adds the archive packaging after the same export, so archive-to-archive
+    # covers it.
     Scenario("archive-to-archive", f"{GS}/resnet18.tar.xz", "nn_archive"),
-    Scenario("archive-to-native", f"{GS}/resnet18.tar.xz", "native"),
     Scenario(
         "config-to-archive",
         f"{GS}/resnet18.yaml",
         "nn_archive",
         archive_preprocess=True,
     ),
-    Scenario("config-to-native", f"{GS}/resnet18.yaml", "native"),
+    # On rvc2/rvc3/rvc4, `test_precision[resnet18]` runs this exact conversion
+    # and also checks the outputs.
+    Scenario(
+        "config-to-native",
+        f"{GS}/resnet18.yaml",
+        "native",
+        platforms=("hailo",),
+    ),
     # Multistage (yolov5n-seg + mult) with full linked calibration: stage-2
     # `coeffs` via a script, `prototypes` from stage-1 `protos_output`. A raw
     # multistage NN archive cannot reconstruct that, so its non-image stage-2
     # inputs would fall back to random calibration and fail -- hence the config.
+    #
+    # No RVC3 case: RVC3 cannot quantize the multi-input `mult` stage, and it
+    # fails on that only after it has converted the whole first stage. The toy
+    # tests reach the same check in seconds.
     Scenario(
         "multistage-config-to-native",
         "configs/multistage.yaml",
         "native",
+        platforms=("rvc2", "rvc4", "hailo"),
         main_stage="yolov5n-seg",
         xfail={
-            # The postprocessor stage (`mult`) takes coeffs + prototypes.
-            "rvc3": "RVC3 quantization does not support multi-input models",
             # IndexError in the SDK's own `is_null_reshape`.
             "hailo": "Hailo SDK ONNX parser fails on this multistage model",
         },

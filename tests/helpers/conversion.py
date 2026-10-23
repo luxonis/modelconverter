@@ -21,6 +21,10 @@ HAILO_FAST_OPTS = (
     "True",
 )
 
+# Skip only the HEF compile. A fidelity check runs the quantized HAR, which
+# needs the default optimization but no HEF.
+HAILO_NO_COMPILE_OPTS = ("hailo.disable_compilation", "True")
+
 
 def assert_produced(output_name: str, to_format: str = "native") -> None:
     """Assert a conversion wrote an artifact into its output dir."""
