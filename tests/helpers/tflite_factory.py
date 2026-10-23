@@ -32,6 +32,9 @@ def build_toy_tflite(
 
     A single elementwise op keeps the graph trivially convertible; the NHWC
     ``shape`` (default ``[1, 8, 8, 3]``) is carried on both tensors.
+
+    Returns:
+        The path of the written model.
     """
     b = flatbuffers.Builder(1024)
     in_name = b.CreateString("input")

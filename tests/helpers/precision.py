@@ -48,6 +48,9 @@ def golden_reference_outputs(
     apply before the backend step -- then runs it on a constant ``value`` image.
     Reusing that function avoids re-deriving the channel-reversal and
     mean/scale-reversal semantics by hand.
+
+    Returns:
+        The outputs of the golden model, keyed by output name.
     """
     work_dir.mkdir(parents=True, exist_ok=True)
     golden = onnx_attach_normalization_to_inputs(
@@ -75,6 +78,9 @@ def locate_converted_model(output_dir: Path, platform: str) -> Path:
     intermediate DLC would test the un-quantized graph -- and falls back to a
     nested match for backends whose runnable model lives deeper (the rvc2/rvc3
     OpenVINO IR ``.xml``).
+
+    Returns:
+        The first matching path in sorted order.
     """
     pattern = _MODEL_GLOB[platform]
     matches = sorted(output_dir.glob(pattern)) or sorted(

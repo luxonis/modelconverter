@@ -16,6 +16,10 @@ def superblob_skip_reason() -> str | None:
     that is slow enough to dominate the CI job -- so the RVC2 tests build a
     plain blob there. It is a runtime budget, not a capability: superblob works
     on 2021.4.0, it is just too expensive to compile on every run.
+
+    Returns:
+        The reason when ``MODELCONVERTER_TOOL_VERSION`` is
+        ``2021.4.0``, otherwise ``None``.
     """
     if os.getenv("MODELCONVERTER_TOOL_VERSION") == "2021.4.0":
         return "superblob compilation is too slow on OpenVINO 2021.4.0"
@@ -28,6 +32,11 @@ def platform_options(platform: Platform) -> tuple[str, ...]:
     Every conversion test threads these into ``convert`` (and into any
     ``get_configs`` call that has to agree with it), so a tool version that
     needs different settings is handled in one place rather than per test.
+
+    Returns:
+        ``("rvc2.superblob", "False")`` for RVC2 when
+        ``superblob_skip_reason`` gives a reason, otherwise an empty
+        tuple.
     """
     if platform is Platform.RVC2 and superblob_skip_reason() is not None:
         return ("rvc2.superblob", "False")

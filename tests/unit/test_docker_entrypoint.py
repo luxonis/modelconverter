@@ -43,6 +43,9 @@ TIMEOUT = 5
 def entrypoint(tmp_path: Path) -> Path:
     """Lays the entrypoint out the way the image does, with the shared
     part next to it.
+
+    Returns:
+        The path of the copied RVC2 entrypoint.
     """
     app = tmp_path / "app"
     app.mkdir()
@@ -56,6 +59,10 @@ def entrypoint(tmp_path: Path) -> Path:
 def _entrypoint_env(tmp_path: Path, body: str) -> dict[str, str]:
     """Put a fake ``modelconverter`` on PATH and return the
     environment to run the entrypoint with.
+
+    Returns:
+        A copy of the current environment with ``tmp_path`` first on
+        ``PATH`` and without ``HOST_UID`` and ``HOST_GID``.
     """
     executable = tmp_path / "modelconverter"
     executable.write_text(f"#!/usr/bin/env bash\n{body}")
@@ -82,6 +89,9 @@ def _entrypoint_process(
     the entrypoint alone -- all a timeout does -- would leave that child
     spinning for the rest of the test session. Its own session makes the
     pair killable as one group.
+
+    Yields:
+        The entrypoint process, with a stdin pipe if ``stdin`` is set.
     """
     process = subprocess.Popen(
         [BASH, str(entrypoint), *args],

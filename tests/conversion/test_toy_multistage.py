@@ -161,6 +161,10 @@ def _golden_pipeline(
     Returns ``third``'s fp32 output plus the two fp32 upstream tensors that feed
     it -- the same ones the converted ``third`` gets. ``third`` has no
     preprocessing, so its golden is a plain onnxruntime run.
+
+    Returns:
+        The output of ``third``, then its inputs ``from_first`` and
+        ``from_second``.
     """
     first, second, third = (
         cfg.stages["first"],

@@ -54,6 +54,9 @@ def build_onnx(
 
     Each output comes off an ``Identity`` node fed from an input, so the graph
     is structurally valid whatever the declared shapes.
+
+    Returns:
+        The path of the saved model.
     """
     graph_inputs = [
         helper.make_tensor_value_info(name, dtype, shape)
@@ -92,6 +95,9 @@ def build_toy_integration_onnx(
     for): ``bgr + rgb + gray`` (``* flag * chan_scale`` when present) gives
     ``output`` ``[1, 3, size, size]``, and a channel-wise spatial average gives
     ``pooled`` ``[1, 3, 1, 1]`` -- two outputs of different rank.
+
+    Returns:
+        The path of the saved model.
     """
 
     def image(name: str, channels: int) -> onnx.ValueInfoProto:
@@ -164,6 +170,9 @@ def build_toy_aggregator_onnx(path: PathType, *, size: int = 64) -> Path:
     Two ``[1, 3, size, size]`` inputs -- fed from two upstream toy stages via
     linked calibration -- combined as ``from_first * from_second + bias``. The
     inputs are raw, so the converted model has no baked normalization.
+
+    Returns:
+        The path of the saved model.
     """
     shape = [1, 3, size, size]
     inputs = [
@@ -203,6 +212,9 @@ def build_toy_conv_onnx(
     ``external_data=True`` writes the weights to a sibling ``<name>_data`` file
     instead of embedding them, so a conversion exercises the external-data
     copy/preserve branches.
+
+    Returns:
+        The path of the saved model.
     """
     inp = helper.make_tensor_value_info(
         "img", TensorProto.FLOAT, [1, 3, size, size]
@@ -247,6 +259,9 @@ def weights_only_external_onnx(
     The graph declares no inputs or outputs: these are subjects for the
     file bookkeeping around a model, never for a conversion, and leaving
     the graph empty keeps what each test is about in the test.
+
+    Returns:
+        The companion files that the save created, in sorted order.
     """
     path = Path(path)
     tensors = [
@@ -288,6 +303,9 @@ def build_relu_onnx(path: PathType, shape: list[int]) -> Path:
     a rank-3 ``HWC`` (channels-last, no batch dim) input, or a rank-3
     ``[1, C, D]`` one, which ``make_default_layout`` can only label ``NCD`` --
     exactly what SNPE's ``NCD``/``NDC``/``D`` -> ``F`` rewrite expects.
+
+    Returns:
+        The path of the saved model.
     """
     inp = helper.make_tensor_value_info("data", TensorProto.FLOAT, shape)
     out = helper.make_tensor_value_info("out", TensorProto.FLOAT, shape)
@@ -301,6 +319,9 @@ def split_concat_onnx(path: PathType) -> Path:
     The Concat produces a graph output, so nothing consumes it. The
     Split-Concat fusion walks forward from the Concat to find a ``Conv``,
     and this graph gives that walk nowhere to go.
+
+    Returns:
+        The path of the saved model.
     """
     inp = helper.make_tensor_value_info("img", TensorProto.FLOAT, [1, 4, 8, 8])
     out = helper.make_tensor_value_info("out", TensorProto.FLOAT, [1, 4, 8, 8])
@@ -373,6 +394,9 @@ def dynamic_batch_onnx(path: PathType) -> Path:
 def intermediate_info_onnx(path: PathType) -> Path:
     """Model with one intermediate tensor described in ``value_info`` and one
     that is not, for the ONNX introspection helpers in config.py.
+
+    Returns:
+        The path of the saved model.
     """
     inp = helper.make_tensor_value_info(
         "input0", TensorProto.FLOAT, [1, 3, 64, 64]
@@ -404,11 +428,14 @@ def intermediate_info_onnx(path: PathType) -> Path:
 def multi_file_external_onnx(path: PathType) -> list[Path]:
     """Build a conv model whose weight and bias each live in their own file.
 
-    Returns the companion files, in sorted order. This is the layout
-    ``all_tensors_to_one_file=False`` produces; two initializers are the
-    smallest model that tells "copies the external data" apart from
-    "copies *all* of it". Unlike `weights_only_external_onnx` the graph
-    has real inputs and outputs, so it can be put through a conversion.
+    This is the layout ``all_tensors_to_one_file=False`` produces; two
+    initializers are the smallest model that tells "copies the external
+    data" apart from "copies *all* of it". Unlike
+    `weights_only_external_onnx` the graph has real inputs and outputs,
+    so it can be put through a conversion.
+
+    Returns:
+        The companion files that the save created, in sorted order.
     """
     path = Path(path)
     inp = helper.make_tensor_value_info("img", TensorProto.FLOAT, [1, 3, 8, 8])

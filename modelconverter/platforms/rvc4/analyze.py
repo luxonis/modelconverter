@@ -242,6 +242,13 @@ class RVC4Analyzer(Analyzer):
         """Read one input file at the size of the DLC input.
 
         A ``.npy`` file must already hold the input in the right format.
+
+        Returns:
+            The input as an array of ``dtype``.
+
+        Raises:
+            TypeError: If ``np.load`` does not return an array.
+            ValueError: If the ``.npy`` array has the wrong shape.
         """
         width_height = self._input_sizes[input_name][1:3][::-1]
         if not img_path.lower().endswith(".npy"):
@@ -493,6 +500,13 @@ class RVC4Analyzer(Analyzer):
         """Read one input file in the NCHW float format of the ONNX model.
 
         A ``.npy`` file must already hold the input in that format.
+
+        Returns:
+            The resized image as a ``float32`` NCHW array, or the
+            ``.npy`` array as it is stored.
+
+        Raises:
+            ValueError: If the ``.npy`` array has the wrong shape.
         """
         if img_path.lower().endswith(".npy"):
             image = np.load(img_path)
@@ -514,6 +528,10 @@ class RVC4Analyzer(Analyzer):
         Returns:
             The layer name followed by its statistics, or ``None`` for a
             layer that the DLC does not output.
+
+        Raises:
+            TypeError: If the DLC outputs the layer and its ONNX output
+                is not a NumPy array.
         """
         dlc_layer_size = self._output_sizes.get(layer_name)
         if dlc_layer_size is None:

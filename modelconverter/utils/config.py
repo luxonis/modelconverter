@@ -1347,6 +1347,13 @@ class Config(LuxonisConfig):
 
         The stage takes the ``name`` of the config, or the stem of its
         input model.
+
+        Returns:
+            The validated config, with ``data`` as its only stage.
+
+        Raises:
+            TypeError: If the ``name`` in ``data`` is neither a string
+                nor ``None``.
         """
         name = data.pop("name", None)
         if name is not None and not isinstance(name, str):
@@ -1384,6 +1391,9 @@ def _default_encoding(data: Params) -> dict[str, str]:
     An input with a static shape that does not describe an image is a
     raw tensor. Any other input is an RGB image that the model takes
     as BGR.
+
+    Returns:
+        The encoding, as a mapping with the keys ``from`` and ``to``.
     """
     shape = data.get("shape")
     layout = data.get("layout")
@@ -1420,6 +1430,11 @@ def _yolo_metadata(raw_shape: ParamValue) -> Metadata:
 
     ``raw_shape`` is the ``yolo_input_shape`` of the config: two sizes
     split by a space, one size for a square input, or a list of sizes.
+
+    Returns:
+        Metadata with the ``FLOAT32`` input ``images``, whose shape is
+        the sizes in reverse order, and the placeholder output
+        ``dummy``.
     """
     logger.info("Detected PyTorch model. Only YOLO models are supported.")
     if isinstance(raw_shape, str):
@@ -1449,6 +1464,9 @@ def _fill_input(
     A field takes the top-level value from ``defaults`` first, and then
     the value that the model holds. An input that is not an input of
     the model is read as an intermediate tensor.
+
+    Raises:
+        ValueError: If ``inp`` has no ``name``.
     """
     if "name" not in inp:
         raise ValueError(f"Unable to determine name for input: `{inp}`.")

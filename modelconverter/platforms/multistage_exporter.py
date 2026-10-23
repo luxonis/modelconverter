@@ -174,6 +174,11 @@ def _run_calibration_script(
 
     Each sample of the linked stage goes through ``run_script`` of the
     script, and the result is saved as a NumPy array in ``dest``.
+
+    Raises:
+        RuntimeError: If the script raises an exception while it loads,
+            or if it defines no ``run_script`` function.
+
     """
     # One directory per model output. The inferer also leaves a marker file
     # in there to recognize its own results, so take only the directories.

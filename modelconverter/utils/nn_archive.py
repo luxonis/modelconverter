@@ -204,6 +204,9 @@ def _find_archive_encodings(
     AIMET's ``<model-stem>.encodings`` sidecar is also accepted next to the
     executable. If both candidates are present, prefer the established
     ``encodings.json`` name and log the ambiguity.
+
+    Returns:
+        The first candidate that is a file, or ``None`` if neither is.
     """
     candidates = [
         archive_path / "encodings.json",
@@ -235,6 +238,9 @@ def _unpack_archive(path: Path) -> Path:
 
     Reuse a completed extraction keyed by archive stem and content hash,
     or extract privately and publish the directory atomically.
+
+    Raises:
+        RuntimeError: If ``path`` is a file that is not a tar archive.
     """
     if path.is_dir():
         return path
@@ -277,6 +283,10 @@ def _package_name(path: Path) -> str:
 
     Strip recognized archive/model suffixes, preserving other package
     dots.
+
+    Returns:
+        The base name of ``path``. For a file, the name loses its
+        archive suffix and a model suffix right before it.
     """
     package_name = Path(os.path.abspath(path)).name  # noqa: PTH100
     if path.is_dir():
@@ -299,6 +309,9 @@ def _archive_input_config(inp: NNArchiveInput) -> Params:
     """Turn an input of an archive into a modelconverter input config.
 
     An image input without mean or scale values gets identity values.
+
+    Returns:
+        The modelconverter input config as a raw dict.
     """
     layout = inp.layout
     encoding: str | dict[str, str] = "NONE"
@@ -345,6 +358,10 @@ def _archive_image_encoding(
     ``dai_type`` decides both. Without it, the deprecated
     ``reverse_channels`` flag decides the encoding. An input with one
     channel is gray in either case.
+
+    Returns:
+        The encoding and the layout. The encoding is a name, or a
+        mapping with ``from`` and ``to`` keys.
     """
     dai_type = inp.preprocessing.dai_type
     if dai_type is not None:
@@ -367,6 +384,10 @@ def _dai_type_encoding(
     The layout follows the ``i`` (interleaved) or ``p`` (planar) suffix
     when the shape of the input fits it. The deprecated flags lose
     against ``dai_type``, with a warning.
+
+    Returns:
+        The encoding and the layout. Without a fitting suffix, the
+        layout of the archive input is kept.
     """
     preprocessing = inp.preprocessing
     reverse = preprocessing.reverse_channels
@@ -510,6 +531,9 @@ def _compress_to_fp16(platform_cfg: PlatformConfig) -> bool:
     The ``compress_to_fp16`` option decides it. SNPE also runs in FP16
     with ``--float_bitwidth 16`` for the conversion and
     ``--use_float_io`` for the graph preparation.
+
+    Returns:
+        ``True`` if the config keeps FP16, ``False`` otherwise.
     """
     onnx_args = getattr(platform_cfg, "snpe_onnx_to_dlc_args", [])
     prep_args = getattr(platform_cfg, "snpe_dlc_graph_prepare_args", [])
@@ -542,6 +566,9 @@ def _output_layout(out: OutputConfig, new_shape: list[int]) -> str:
 
     When the configured shape does not fit the converted one, the
     output gets the default layout, with a warning.
+
+    Returns:
+        The guessed layout, or the default layout of ``new_shape``.
     """
     try:
         return _converted_layout(out, new_shape)
@@ -580,6 +607,9 @@ def _archive_input_preprocessing(
 
     Without a supplied block, the preprocessing is identity. An image
     input also gets a ``resize_mode`` where the archive supports it.
+
+    Returns:
+        The preprocessing of the input as a dict of archive fields.
     """
     if block is None:
         preprocessing_cfg = _default_archive_preprocessing(
@@ -876,6 +906,9 @@ def _match_by_unique_shape(
 ) -> dict[str, str]:
     """Pair configured and converted tensors that alone have one shape.
 
+    Returns:
+        The configured names mapped to the paired converted names.
+
     Raises:
         ValueError: If another configured tensor has the same
             dimensions in a different order.
@@ -922,6 +955,10 @@ def _match_remaining_pair(
     kind: Literal["input", "output"],
 ) -> dict[str, str]:
     """Pair the one configured tensor left with the one converted tensor left.
+
+    Returns:
+        The configured name mapped to the converted name, or an empty
+        dict if no tensor is left.
 
     Raises:
         ValueError: If more than one tensor is left on a side, or a
@@ -1179,6 +1216,15 @@ def _archive_files(
     as ``encodings.json``. This keeps the conversion input alongside the
     compiled DLC and mirrors the filename recognized when importing an NN
     Archive for a later conversion.
+
+    Returns:
+        The converted models, ``buildinfo.json`` and ``config.yaml``.
+        For RVC4, a main stage that sets ``encodings`` adds
+        ``encodings.json``, unless its quantization mode is ``FP16_STD``.
+
+    Raises:
+        RuntimeError: If ``encodings.json`` belongs in the archive, but
+            the output directory of the main stage does not hold it.
     """
     files: list[PathType] = [
         *out_models,

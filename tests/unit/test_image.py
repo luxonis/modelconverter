@@ -39,6 +39,9 @@ def _make_img(
 ) -> Path:
     """Write a solid-color RGB image (``size`` is ``(width,
     height)``).
+
+    Returns:
+        The path of the written image.
     """
     Image.new("RGB", size, color).save(path)
     return path

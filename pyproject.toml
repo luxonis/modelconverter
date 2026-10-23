@@ -105,6 +105,9 @@ select = [
   "B",
   "C4",
   "D",
+  "DOC201",
+  "DOC402",
+  "DOC501",
   "DTZ",
   "E",
   "ERA",
@@ -182,6 +185,10 @@ explicit-preview-rules = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.ruff.lint.pydoclint]
+# A one-line docstring is complete without sections.
+ignore-one-line-docstrings = true
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN201", "D103"]
