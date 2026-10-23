@@ -15,7 +15,7 @@ import shutil
 import signal
 import sys
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import partial
@@ -131,7 +131,7 @@ device_commands = Group.create_ordered("Device Commands")
 
 
 @contextmanager
-def catch_exceptions() -> Iterator[None]:
+def catch_exceptions() -> Generator[None, None, None]:
     """Log any exception raised in the block and exit.
 
     Exits with status 1 for a ``ModelconverterException`` and with

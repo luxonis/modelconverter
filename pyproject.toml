@@ -184,6 +184,7 @@ exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests/test_benchmark"]
 # Checks that the standard mode leaves off.
 reportCallInDefaultInitializer = "error"
 reportConstantRedefinition = "error"
+reportDeprecated = "error"
 reportDuplicateImport = "error"
 reportInconsistentConstructor = "error"
 reportMatchNotExhaustive = "error"
@@ -205,6 +206,7 @@ reportUnusedClass = "error"
 strictDictionaryInference = true
 strictListInference = true
 strictSetInference = true
+deprecateTypingAliases = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/conversion"]
