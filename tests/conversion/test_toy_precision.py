@@ -3,15 +3,22 @@
 ``build_toy_integration_onnx`` covers the preprocessing surface but is a poor
 fidelity subject: its output is essentially the preprocessed input, and its wide
 per-input scale spread makes the Hailo quantizer reject it, so the toy
-integration precision check only covers rvc2/rvc4.
+integration precision check does not run on Hailo.
 
 This uses the well-conditioned single-input conv toy instead, which every backend
-including Hailo can quantize and reproduce near-losslessly. It still carries
-mean/scale + channel reversal in the config, so the full baked-preprocessing path
-is exercised -- the difference is only that the graph does real quantizable work.
-RVC3, RVC4, and Hailo additionally convert the toy with preprocessing stored in
-the NN Archive, feed the bare model an equivalent preprocessed tensor, and compare
-both quantized paths with each other and with the original ONNX.
+including Hailo can quantize and reproduce near-losslessly. It still carries a
+mean and a scale for each channel and a channel reversal in the config, so the
+full baked-preprocessing path is exercised -- the difference is only that the
+graph does real quantizable work. RVC3, RVC4, and Hailo additionally convert the
+toy with preprocessing stored in the NN Archive, feed the bare model an
+equivalent preprocessed tensor, and compare both quantized paths with each other
+and with the original ONNX.
+
+The reference is the original ONNX model, with the preprocessing applied in
+numpy (``ONNXReferenceInferer``). The image is random noise from the
+calibration distribution, so each channel and each pixel differs. The model is
+linear, so the checks use the relative error: it also catches a wrong scale,
+which the cosine similarity cannot see.
 
 Run inside the platform Docker image, e.g.::
 
@@ -31,29 +38,27 @@ from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.config import ImageCalibrationConfig
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Platform
-from tests.helpers.conversion import write_toy_conv_config
+from tests.helpers.conversion import (
+    HAILO_NO_COMPILE_OPTS,
+    write_toy_conv_config,
+)
 from tests.helpers.onnx_reference import ONNXReferenceInferer
 from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import platform_params
 from tests.helpers.precision import (
-    cosine_similarity,
-    golden_reference_outputs,
+    RecordProperty,
+    check_relative_error,
     locate_converted_model,
 )
 
 _SIZE = 32
-# Constant the fidelity comparison runs on, inside the calibration range so the
-# quantized model represents it well.
-_INFER_VALUE = 100
-_THRESHOLD = 0.9
-# Both quantized paths run the same graph on the same numbers, so they have to
-# agree with each other much more closely than either does with the ONNX.
-_EQUIVALENCE_THRESHOLD = 0.99
+# About three times the worst relative error that CI measures (0.016, Hailo),
+# also between the embedded and the externalized model. A lost channel swap or a
+# wrong mean or scale gives an error far above it.
+_ERROR_LIMIT = 0.05
 
-# Hailo: skip the slow HEF compile -- the check runs `SDK_QUANTIZED` inference on
-# the quantized HAR, so compilation is unneeded.
 _PLATFORM_OPTS: dict[str, tuple[str, ...]] = {
-    "hailo": ("hailo.disable_compilation", "True"),
+    "hailo": HAILO_NO_COMPILE_OPTS,
 }
 
 
@@ -65,10 +70,12 @@ def toy_conv_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="module")
-def constant_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    path = tmp_path_factory.mktemp("toy_prec_const") / "const.png"
+def inference_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Write uniform noise, the distribution of the calibration images."""
+    path = tmp_path_factory.mktemp("toy_prec_image") / "noise.png"
+    rng = np.random.default_rng(1)
     cv2.imwrite(
-        str(path), np.full((_SIZE, _SIZE, 3), _INFER_VALUE, dtype=np.uint8)
+        str(path), rng.integers(0, 256, (_SIZE, _SIZE, 3), dtype=np.uint8)
     )
     return path
 
@@ -77,7 +84,7 @@ def _to_nchw(arr: np.ndarray, platform_name: str) -> np.ndarray:
     """Normalize a platform's spatial output to NCHW.
 
     The Hailo inferer returns spatial outputs channels-last; the others,
-    and the golden reference, are already NCHW.
+    and the reference, are already NCHW.
     """
     arr = np.asarray(arr)
     if arr.ndim == 3 and platform_name == "hailo":
@@ -87,7 +94,10 @@ def _to_nchw(arr: np.ndarray, platform_name: str) -> np.ndarray:
 
 @pytest.mark.parametrize("platform_name", platform_params())
 def test_toy_precision(
-    platform_name: str, toy_conv_config: Path, constant_image: Path
+    platform_name: str,
+    toy_conv_config: Path,
+    inference_image: Path,
+    record_property: RecordProperty,
 ):
     platform = Platform(platform_name)
     opts = (
@@ -107,30 +117,28 @@ def test_toy_precision(
     cfg, _, _ = get_configs(platform, str(toy_conv_config), list(opts))
     stage = next(iter(cfg.stages.values()))
 
-    reference = golden_reference_outputs(
-        Path(stage.input_model),
-        {inp.name: inp for inp in stage.inputs},
-        OUTPUTS_DIR / f"{output_name}_golden",
-        float(_INFER_VALUE),
-    )
+    reference = ONNXReferenceInferer.from_stage(stage).infer(inference_image)
     model_path = locate_converted_model(
         OUTPUTS_DIR / output_name, platform_name
     )
     inferer = get_inferer(
         platform,
         str(model_path),
-        constant_image.parent,
+        inference_image.parent,
         OUTPUTS_DIR / f"{output_name}_infer",
         stage,
     )
-    converted = inferer.infer({"img": constant_image})
+    converted = inferer.infer({"img": inference_image})
 
     for (name, ref), conv in zip(
         reference.items(), converted.values(), strict=True
     ):
-        cos = cosine_similarity(ref, _to_nchw(conv, platform_name))
-        assert cos >= _THRESHOLD, (
-            f"{platform_name} output {name!r}: cosine {cos:.5f} < {_THRESHOLD}"
+        check_relative_error(
+            record_property,
+            f"{platform_name} {name}",
+            ref,
+            _to_nchw(conv, platform_name),
+            _ERROR_LIMIT,
         )
 
 
@@ -140,7 +148,9 @@ def test_toy_precision(
 def test_externalized_calibration_matches_embedded_model(
     platform_name: str,
     toy_conv_config: Path,
+    inference_image: Path,
     tmp_path: Path,
+    record_property: RecordProperty,
 ) -> None:
     """Quantized embedded and archive-preprocessed models remain equivalent."""
     platform = Platform(platform_name)
@@ -169,12 +179,7 @@ def test_externalized_calibration_matches_embedded_model(
 
     cfg, _, _ = get_configs(platform, str(toy_conv_config), list(options))
     stage = next(iter(cfg.stages.values()))
-    runtime_image = tmp_path / "runtime.png"
-    cv2.imwrite(
-        str(runtime_image),
-        np.tile(np.array([80, 100, 120], dtype=np.uint8), (_SIZE, _SIZE, 1)),
-    )
-    reference = ONNXReferenceInferer.from_stage(stage).infer(runtime_image)
+    reference = ONNXReferenceInferer.from_stage(stage).infer(inference_image)
 
     externalized_cfg = cfg.model_copy(deep=True)
     extract_preprocessing(externalized_cfg)
@@ -183,7 +188,7 @@ def test_externalized_calibration_matches_embedded_model(
     calibration = externalized_input.calibration
     assert isinstance(calibration, ImageCalibrationConfig)
     model_array, layout = Exporter._read_calibration_file(
-        externalized_input, calibration, runtime_image
+        externalized_input, calibration, inference_image
     )
     assert layout == "HWC"
     if platform in {Platform.RVC3, Platform.HAILO}:
@@ -200,10 +205,10 @@ def test_externalized_calibration_matches_embedded_model(
     embedded = get_inferer(
         platform,
         str(embedded_model),
-        runtime_image.parent,
+        inference_image.parent,
         OUTPUTS_DIR / f"{embedded_name}_infer",
         stage,
-    ).infer({"img": runtime_image})
+    ).infer({"img": inference_image})
     externalized = get_inferer(
         platform,
         str(externalized_model),
@@ -221,25 +226,25 @@ def test_externalized_calibration_matches_embedded_model(
     ):
         embedded_output = _to_nchw(embedded_value, platform.value)
         externalized_output = _to_nchw(externalized_value, platform.value)
-        checks = (
-            (
-                "embedded",
-                cosine_similarity(expected, embedded_output),
-                _THRESHOLD,
-            ),
-            (
-                "externalized",
-                cosine_similarity(expected, externalized_output),
-                _THRESHOLD,
-            ),
-            (
-                "embedded vs externalized",
-                cosine_similarity(embedded_output, externalized_output),
-                _EQUIVALENCE_THRESHOLD,
-            ),
+        label = f"{platform_name} {name}"
+        check_relative_error(
+            record_property,
+            f"{label} embedded",
+            expected,
+            embedded_output,
+            _ERROR_LIMIT,
         )
-        for compared, cos, threshold in checks:
-            assert cos >= threshold, (
-                f"{platform_name} {compared} output {name!r}: "
-                f"cosine {cos:.5f} < {threshold}"
-            )
+        check_relative_error(
+            record_property,
+            f"{label} externalized",
+            expected,
+            externalized_output,
+            _ERROR_LIMIT,
+        )
+        check_relative_error(
+            record_property,
+            f"{label} embedded vs externalized",
+            embedded_output,
+            externalized_output,
+            _ERROR_LIMIT,
+        )

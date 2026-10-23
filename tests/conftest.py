@@ -4,7 +4,8 @@ Disables telemetry, sets up logging, pins the Hypothesis profile so that
 property tests are reproducible, applies the ``unit`` marker during
 collection, and deselects the other platforms' conversion tests inside
 a platform Docker image. The per-platform markers themselves are
-applied at parametrization, in `tests.helpers.platforms`.
+applied at parametrization, in `tests.helpers.platforms`. At the end of
+a run, it lists the values that the precision tests recorded.
 """
 
 import os
@@ -73,3 +74,24 @@ def pytest_collection_modifyitems(
     if deselected:
         config.hook.pytest_deselected(items=deselected)
         items[:] = selected
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    """List the values that the precision tests recorded.
+
+    A green run then also shows the margin of each precision check.
+    """
+    reports = [
+        report
+        for key in ("passed", "failed")
+        for report in terminalreporter.stats.get(key, [])
+        if report.when == "call" and report.user_properties
+    ]
+    if not reports:
+        return
+    terminalreporter.section("precision")
+    for report in reports:
+        values = ", ".join(
+            f"{name} {value}" for name, value in report.user_properties
+        )
+        terminalreporter.write_line(f"{report.nodeid}: {values}")

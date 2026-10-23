@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import onnx
 import pytest
 from onnx import TensorProto
 
@@ -347,6 +348,63 @@ def test_selective_bgr_to_rgb_reversal_preserves_runtime_encoding(
     reversed_input = exporter.inputs["reversed"]
     assert reversed_input.encoding.from_ == Encoding.RGB
     assert reversed_input.encoding.to == Encoding.RGB
+
+
+@pytest.mark.parametrize("ov_2021", [True, False], ids=["2021.4", "2022.3"])
+def test_nhwc_reversal_moves_into_onnx_on_openvino_2021(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ov_2021: bool
+):
+    """The 2021.4 model optimizer skips an NHWC input, so the ONNX
+    reverses it instead.
+    """
+    shape = [1, 8, 8, 3]
+    model = build_onnx(
+        tmp_path / "nhwc.onnx",
+        [("input", shape, TensorProto.FLOAT)],
+        [("output", shape, TensorProto.FLOAT)],
+    ).resolve()
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "inputs": [
+                {
+                    "name": "input",
+                    "layout": "NHWC",
+                    "encoding": {"from": "RGB", "to": "BGR"},
+                }
+            ],
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc2.disable_calibration": True,
+        },
+    )
+    monkeypatch.setattr(
+        "modelconverter.platforms.rvc2.exporter.OV_2021", ov_2021
+    )
+    output_dir = tmp_path / "out-rvc2-nhwc"
+    output_dir.mkdir()
+    exporter = RVC2Exporter(next(iter(config.stages.values())), output_dir)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        exporter,
+        "_subprocess_run",
+        lambda command, **_kwargs: commands.append(command),
+    )
+
+    exporter._export_openvino_ir()
+
+    (command,) = commands
+    input_model = command[command.index("--input_model") + 1]
+    split_axes = [
+        attribute.i
+        for node in onnx.load(input_model).graph.node
+        if node.op_type == "Split"
+        for attribute in node.attribute
+        if attribute.name == "axis"
+    ]
+    assert ("--reverse_input_channels" in command) is not ov_2021
+    assert split_axes == ([3] if ov_2021 else [])
 
 
 @pytest.mark.parametrize(

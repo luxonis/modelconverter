@@ -21,6 +21,10 @@ HAILO_FAST_OPTS = (
     "True",
 )
 
+# Skip only the HEF compile. A fidelity check runs the quantized HAR, which
+# needs the default optimization but no HEF.
+HAILO_NO_COMPILE_OPTS = ("hailo.disable_compilation", "True")
+
 
 def assert_produced(output_name: str, to_format: str = "native") -> None:
     """Assert a conversion wrote an artifact into its output dir."""
@@ -137,8 +141,10 @@ def write_toy_conv_config(
     """Build the toy conv ONNX plus a matching config, returning the yaml path.
 
     Shared by the single-input conversion tests (precision, external-data,
-    hailo-compile, rvc4-encodings). The config carries mean/scale and an
-    RGB->BGR reversal, so the converted model gets the full baked preprocessing.
+    hailo-compile, rvc4-encodings). The config carries a different mean and
+    scale for each channel and an RGB->BGR reversal, so the converted model
+    gets the full baked preprocessing, and a precision check can see a
+    channel in the wrong place.
 
     ``calibration="none"`` leaves the input to fall back to random calibration
     (for a ``disable_calibration`` run).
@@ -155,8 +161,8 @@ def write_toy_conv_config(
         "name": "img",
         "shape": [1, 3, size, size],
         "data_type": "float32",
-        "mean_values": [128, 128, 128],
-        "scale_values": [58, 58, 58],
+        "mean_values": [100, 128, 150],
+        "scale_values": [40, 58, 70],
         "encoding": {"from": "RGB", "to": "BGR"},
     }
     if calibration != "none":
