@@ -6,13 +6,13 @@ model covers the whole preprocessing surface: per-input mean/scale, an ``RGB`` -
 ``BGR`` reversal alongside a ``BGR`` -> ``BGR`` input that keeps its channels, a
 single-channel ``gray`` input, and two outputs of different rank.
 
-For rvc2/rvc4 -- whose preprocessing goes through
-``onnx_attach_normalization_to_inputs`` -- the converted outputs are also
-compared against an fp32 golden reference. Calibration uses a *constant*
-synthetic image (``std=0``) and inference uses the same constant, so the
-quantized activation range collapses onto that value and int8 stays
-near-lossless. rvc3/hailo bake preprocessing via other paths, so they stay
-conversion-only.
+For rvc2/rvc3/rvc4 the converted outputs are also compared against the original
+ONNX model, with the preprocessing applied in numpy (``ONNXReferenceInferer``).
+Calibration draws random images around one value, and inference runs on another
+image from the same distribution, so int8 stays close to the reference while
+each channel and each pixel differs. The net is linear, so the check uses the
+relative error, which also catches a wrong scale. Hailo stays conversion-only,
+and so do the quantized RVC3 case and the RVC4 int16 and fp16 cases.
 """
 
 from dataclasses import dataclass
@@ -34,22 +34,24 @@ from tests.helpers.conversion import (
     write_config,
 )
 from tests.helpers.onnx_factory import build_toy_integration_onnx
+from tests.helpers.onnx_reference import ONNXReferenceInferer
 from tests.helpers.platform_options import (
     platform_options,
     superblob_skip_reason,
 )
 from tests.helpers.platforms import platform_marks
 from tests.helpers.precision import (
-    cosine_similarity,
-    golden_reference_outputs,
+    RecordProperty,
+    check_relative_error,
     locate_converted_model,
 )
 
 _SIZE = 64
-# Constant pixel value used for BOTH calibration and the correctness input, so
-# the quantized activation range collapses onto it and int8 is near-lossless.
-_CALIB_VALUE = 100
-_THRESHOLD = 0.9
+# The random calibration draws pixels around this mean, and the inference image
+# comes from the same distribution, so the quantized range covers it.
+_CALIB_MEAN = 100
+_CALIB_STD = 20
+_ERROR_LIMIT = 0.25
 
 
 @dataclass(frozen=True)
@@ -62,10 +64,8 @@ class Precision:
     xfail: str | None = None
     # Reason, if the current tool version cannot run this precision at all.
     skip: str | None = None
-    # Cosine floor, if this precision also gets the fidelity check. Only
-    # rvc2/rvc4 can: their preprocessing goes through the same transform as the
-    # golden reference, so the outputs are directly comparable.
-    correctness: float | None = None
+    # Relative error limit, if this precision also gets the fidelity check.
+    error_limit: float | None = None
 
 
 # These two cases own the RVC2 superblob decision explicitly, so unlike the other
@@ -74,16 +74,22 @@ class Precision:
 # `False`, which would just duplicate `blob`.
 PRECISIONS: dict[str, list[Precision]] = {
     "rvc2": [
-        Precision("blob", ("rvc2.superblob", "False"), correctness=_THRESHOLD),
+        Precision(
+            "blob", ("rvc2.superblob", "False"), error_limit=_ERROR_LIMIT
+        ),
         Precision(
             "superblob",
             ("rvc2.superblob", "True"),
             skip=superblob_skip_reason(),
-            correctness=_THRESHOLD,
+            error_limit=_ERROR_LIMIT,
         ),
     ],
     "rvc3": [
-        Precision("non-quant", ("rvc3.disable_calibration", "True")),
+        Precision(
+            "non-quant",
+            ("rvc3.disable_calibration", "True"),
+            error_limit=_ERROR_LIMIT,
+        ),
         Precision(
             "quant",
             (),
@@ -94,22 +100,22 @@ PRECISIONS: dict[str, list[Precision]] = {
         Precision(
             "int8",
             ("rvc4.quantization_mode", "INT8_STANDARD"),
-            correctness=_THRESHOLD,
+            error_limit=_ERROR_LIMIT,
         ),
         Precision(
             "int8-acc",
             ("rvc4.quantization_mode", "INT8_ACCURACY_FOCUSED"),
-            correctness=_THRESHOLD,
+            error_limit=_ERROR_LIMIT,
         ),
         Precision(
             "int8-int16-mixed",
             ("rvc4.quantization_mode", "INT8_INT16_MIXED"),
-            correctness=_THRESHOLD,
+            error_limit=_ERROR_LIMIT,
         ),
         Precision(
             "int8-int16-mixed-acc",
             ("rvc4.quantization_mode", "INT8_INT16_MIXED_ACCURACY_FOCUSED"),
-            correctness=_THRESHOLD,
+            error_limit=_ERROR_LIMIT,
         ),
         # fp16 keeps the baked preprocessing as explicit fp16 Eltwise ops, which
         # the CPU reference backend (all CI has) cannot run, so it stays
@@ -140,7 +146,8 @@ def _toy_config(workdir: Path, name: str, *, with_flag: bool = False) -> Path:
         workdir / f"{name}.onnx", size=_SIZE, with_flag=with_flag
     )
     inputs = toy_net_image_inputs(
-        {"mean": _CALIB_VALUE, "std": 0, "max_images": 8}, size=_SIZE
+        {"mean": _CALIB_MEAN, "std": _CALIB_STD, "max_images": 8},
+        size=_SIZE,
     )
     if with_flag:
         # Raw (non-image) inputs frozen to a constant: RVC2-only, and these two
@@ -186,12 +193,12 @@ def frozen_toy_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="module")
-def constant_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Create a constant-valued image matching the calibration constant."""
-    path = tmp_path_factory.mktemp("toy_const") / "const.png"
-    cv2.imwrite(
-        str(path), np.full((_SIZE, _SIZE, 3), _CALIB_VALUE, dtype=np.uint8)
-    )
+def inference_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Write noise from the distribution of the random calibration."""
+    path = tmp_path_factory.mktemp("toy_noise") / "noise.png"
+    rng = np.random.default_rng(1)
+    noise = rng.normal(_CALIB_MEAN, _CALIB_STD, (_SIZE, _SIZE, 3))
+    cv2.imwrite(str(path), np.clip(noise, 0, 255).astype(np.uint8))
     return path
 
 
@@ -202,18 +209,14 @@ def _assert_correct(
     config_path: Path,
     output_name: str,
     image: Path,
-    floor: float,
+    limit: float,
+    record_property: RecordProperty,
 ) -> None:
     cfg, _, _ = get_configs(platform, str(config_path), list(precision.opts))
     stage = next(iter(cfg.stages.values()))
-    input_configs = {inp.name: inp for inp in stage.inputs}
+    input_names = [inp.name for inp in stage.inputs]
 
-    reference = golden_reference_outputs(
-        Path(stage.input_model),
-        input_configs,
-        OUTPUTS_DIR / f"{output_name}_golden",
-        float(_CALIB_VALUE),
-    )
+    reference = ONNXReferenceInferer.from_stage(stage).infer(image)
     model_path = locate_converted_model(
         OUTPUTS_DIR / output_name, platform.value
     )
@@ -224,13 +227,15 @@ def _assert_correct(
         OUTPUTS_DIR / f"{output_name}_infer",
         stage,
     )
-    converted = inferer.infer(dict.fromkeys(input_configs, image))
+    converted = inferer.infer(dict.fromkeys(input_names, image))
 
     for name, ref in reference.items():
-        cos = cosine_similarity(ref, converted[name])
-        assert cos >= floor, (
-            f"{platform.value} {precision.name} output {name!r}: "
-            f"cosine {cos:.5f} < {floor}"
+        check_relative_error(
+            record_property,
+            f"{platform.value} {precision.name} {name}",
+            ref,
+            converted[name],
+            limit,
         )
 
 
@@ -251,7 +256,8 @@ def test_toy_integration(
     platform_name: str,
     precision: Precision,
     toy_config: Path,
-    constant_image: Path,
+    inference_image: Path,
+    record_property: RecordProperty,
 ):
     platform = Platform(platform_name)
     output_name = f"_toy-{platform_name}-{precision.name}"
@@ -264,14 +270,15 @@ def test_toy_integration(
     )
     assert_produced(output_name)
 
-    if precision.correctness is not None:
+    if precision.error_limit is not None:
         _assert_correct(
             platform,
             precision,
             config_path=toy_config,
             output_name=output_name,
-            image=constant_image,
-            floor=precision.correctness,
+            image=inference_image,
+            limit=precision.error_limit,
+            record_property=record_property,
         )
 
 

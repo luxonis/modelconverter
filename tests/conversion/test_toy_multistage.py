@@ -12,11 +12,13 @@ that combines ``second``'s two outputs. Stage order in the config is topological
 so the upstream stages are converted before ``third``'s linked calibration runs
 their inferers.
 
-Conversion is checked on every platform; correctness against an fp32 golden
-pipeline on rvc2/rvc4, matching the single-stage toy -- their preprocessing goes
-through the golden path and their DLC/IR runs on the CI CPU backend. On
-rvc2/rvc4 the correctness test is also the conversion check, so the plain
-conversion test runs only on the other platforms.
+Conversion is checked on every platform; correctness on rvc2/rvc4, whose
+DLC/IR runs on the CI CPU backend. The correctness test runs the converted
+stages one after the other, as a device would, and compares the result with the
+original ONNX models, run with the preprocessing applied in numpy and the same
+link script. The images are noise from one distribution, so each channel and
+each pixel differs. On rvc2/rvc4 the correctness test is also the conversion
+check, so the plain conversion test runs only on the other platforms.
 
 A second toy model is a two-stage NN Archive: a main model and a
 postprocessor that a head of the archive names. That is the only multistage
@@ -55,17 +57,19 @@ from tests.helpers.onnx_factory import (
     build_toy_conv_onnx,
     build_toy_integration_onnx,
 )
+from tests.helpers.onnx_reference import ONNXReferenceInferer
 from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import ALL_PLATFORMS, platform_params
 from tests.helpers.precision import (
-    cosine_similarity,
-    golden_reference_outputs,
+    RecordProperty,
+    check_relative_error,
     locate_converted_model,
 )
 
 _SIZE = 64
-_CALIB_VALUE = 100
-_THRESHOLD = 0.9
+_CALIB_MEAN = 100
+_CALIB_STD = 20
+_ERROR_LIMIT = 0.25
 
 CORRECTNESS_PLATFORMS = ("rvc2", "rvc4")
 CONVERSION_ONLY_PLATFORMS = tuple(
@@ -86,6 +90,13 @@ _CONVERT_XFAILS = {
 }
 
 
+def _write_noise(path: Path, seed: int) -> Path:
+    rng = np.random.default_rng(seed)
+    noise = rng.normal(_CALIB_MEAN, _CALIB_STD, (_SIZE, _SIZE, 3))
+    cv2.imwrite(str(path), np.clip(noise, 0, 255).astype(np.uint8))
+    return path
+
+
 @pytest.fixture(scope="module")
 def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
     workdir = tmp_path_factory.mktemp("toy_multistage")
@@ -95,14 +106,11 @@ def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
     # Upstream stages need image calibration (a directory): the multistage
     # exporter copies those images to run each stage's inferer for `third`'s
-    # linked calibration. Constant images keep quantization near-lossless.
+    # linked calibration.
     calib_dir = workdir / "calib"
     calib_dir.mkdir()
     for i in range(8):
-        cv2.imwrite(
-            str(calib_dir / f"{i}.png"),
-            np.full((_SIZE, _SIZE, 3), _CALIB_VALUE, dtype=np.uint8),
-        )
+        _write_noise(calib_dir / f"{i}.png", seed=i)
 
     def toy_stage(model: Path) -> dict:
         return {
@@ -168,48 +176,44 @@ def test_toy_multistage(platform_name: str, multistage_config: Path):
     assert_produced(output_name)
 
 
-def _golden_pipeline(
-    cfg: Config, work: Path
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Fp32 reference for the whole pipeline on the constant input.
+def _golden_pipeline(cfg: Config, image: Path) -> np.ndarray:
+    """Run the original ONNX models of the pipeline on the image.
 
-    Returns ``third``'s fp32 output plus the two fp32 upstream tensors that feed
-    it -- the same ones the converted ``third`` gets. ``third`` has no
-    preprocessing, so its golden is a plain onnxruntime run.
+    ``first`` and ``second`` get the image with their preprocessing applied
+    in numpy, and ``third`` gets their outputs through the link script.
     """
-    first, second, third = (
-        cfg.stages["first"],
-        cfg.stages["second"],
-        cfg.stages["third"],
-    )
-    g_first = golden_reference_outputs(
-        Path(first.input_model),
-        {i.name: i for i in first.inputs},
-        work / "g_first",
-        float(_CALIB_VALUE),
-    )
-    g_second = golden_reference_outputs(
-        Path(second.input_model),
-        {i.name: i for i in second.inputs},
-        work / "g_second",
-        float(_CALIB_VALUE),
-    )
-    from_first = g_first["output"]
-    from_second = g_second["output"] + g_second["pooled"]  # the link script
-
+    first = ONNXReferenceInferer.from_stage(cfg.stages["first"]).infer(image)
+    second = ONNXReferenceInferer.from_stage(cfg.stages["second"]).infer(image)
     session = ort.InferenceSession(
-        str(third.input_model), providers=["CPUExecutionProvider"]
+        str(cfg.stages["third"].input_model),
+        providers=["CPUExecutionProvider"],
     )
     (out,) = session.run(
-        ["out"], {"from_first": from_first, "from_second": from_second}
+        ["out"],
+        {
+            "from_first": first["output"],
+            "from_second": second["output"] + second["pooled"],
+        },
     )
-    return np.asarray(out), from_first, from_second
+    return np.asarray(out)
+
+
+@pytest.fixture(scope="module")
+def inference_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Write noise from the distribution of the calibration images."""
+    path = tmp_path_factory.mktemp("toy_multistage_image") / "noise.png"
+    return _write_noise(path, seed=100)
 
 
 @pytest.mark.parametrize(
     "platform_name", platform_params(CORRECTNESS_PLATFORMS)
 )
-def test_toy_multistage_precision(platform_name: str, multistage_config: Path):
+def test_toy_multistage_precision(
+    platform_name: str,
+    multistage_config: Path,
+    inference_image: Path,
+    record_property: RecordProperty,
+):
     platform = Platform(platform_name)
     options = platform_options(platform)
     output_name = f"_toy-multistage-prec-{platform_name}"
@@ -225,39 +229,54 @@ def test_toy_multistage_precision(platform_name: str, multistage_config: Path):
     work = OUTPUTS_DIR / f"{output_name}_work"
     work.mkdir(parents=True, exist_ok=True)
     cfg, _, _ = get_configs(platform, str(multistage_config), list(options))
-    golden, from_first_arr, from_second_arr = _golden_pipeline(cfg, work)
+    golden = _golden_pipeline(cfg, inference_image)
 
-    # Feed the converted `third` the same fp32 upstream tensors as the golden.
+    def run_stage(stage: str, feed: dict[str, Path]) -> dict[str, np.ndarray]:
+        model_path = locate_converted_model(
+            OUTPUTS_DIR / output_name / stage, platform_name
+        )
+        return get_inferer(
+            platform,
+            str(model_path),
+            next(iter(feed.values())).parent,
+            OUTPUTS_DIR / f"{output_name}_infer_{stage}",
+            cfg.stages[stage],
+        ).infer(feed)
+
+    def image_feed(stage: str) -> dict[str, Path]:
+        return {inp.name: inference_image for inp in cfg.stages[stage].inputs}
+
+    first = run_stage("first", image_feed("first"))
+    second = run_stage("second", image_feed("second"))
+
     # The vendor inferer reads a `.npy` verbatim, so it must already be in the
     # layout that backend expects: SNPE (rvc4) consumes NHWC, OpenVINO (rvc2)
-    # NCHW, and `from_*_arr` is NCHW.
-    def as_input(arr: np.ndarray) -> np.ndarray:
-        return arr[0].transpose(1, 2, 0) if platform_name == "rvc4" else arr
+    # NCHW. Both inferers return NCHW outputs.
+    def save_input(name: str, arr: np.ndarray) -> Path:
+        arr = np.asarray(arr, dtype=np.float32)
+        if platform_name == "rvc4":
+            arr = arr[0].transpose(1, 2, 0)
+        path = work / f"{name}.npy"
+        np.save(path, arr)
+        return path
 
-    from_first = work / "from_first.npy"
-    from_second = work / "from_second.npy"
-    np.save(from_first, as_input(from_first_arr))
-    np.save(from_second, as_input(from_second_arr))
-
-    model_path = locate_converted_model(
-        OUTPUTS_DIR / output_name / "third", platform_name
-    )
-    inferer = get_inferer(
-        platform,
-        str(model_path),
-        work,
-        OUTPUTS_DIR / f"{output_name}_infer",
-        cfg.stages["third"],
-    )
-    converted = inferer.infer(
-        {"from_first": from_first, "from_second": from_second}
+    third = run_stage(
+        "third",
+        {
+            "from_first": save_input("from_first", first["output"]),
+            "from_second": save_input(
+                "from_second", second["output"] + second["pooled"]
+            ),
+        },
     )
 
-    (conv_out,) = converted.values()
-    cos = cosine_similarity(golden, conv_out)
-    assert cos >= _THRESHOLD, (
-        f"{platform_name} multistage final output: "
-        f"cosine {cos:.5f} < {_THRESHOLD}"
+    (conv_out,) = third.values()
+    check_relative_error(
+        record_property,
+        f"{platform_name} out",
+        golden,
+        conv_out,
+        _ERROR_LIMIT,
     )
 
 

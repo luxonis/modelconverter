@@ -32,7 +32,12 @@ from tests.helpers.conversion import HAILO_NO_COMPILE_OPTS
 from tests.helpers.data import TEST_IMAGE
 from tests.helpers.onnx_reference import ONNXReferenceInferer
 from tests.helpers.platform_options import platform_options
-from tests.helpers.precision import cosine_similarity, locate_converted_model
+from tests.helpers.precision import (
+    RecordProperty,
+    cosine_similarity,
+    locate_converted_model,
+    relative_error,
+)
 
 GS = "gs://luxonis-test-bucket/modelconverter"
 
@@ -75,7 +80,9 @@ _PARAMS = [
 
 
 @pytest.mark.parametrize(("platform_name", "case"), _PARAMS)
-def test_precision(platform_name: str, case: PrecisionCase):
+def test_precision(
+    platform_name: str, case: PrecisionCase, record_property: RecordProperty
+):
     platform = Platform(platform_name)
     options = platform_options(platform)
     if platform is Platform.HAILO:
@@ -112,6 +119,11 @@ def test_precision(platform_name: str, case: PrecisionCase):
     threshold = case.thresholds.get(platform_name, DEFAULT_THRESHOLD)
     for name, ref in reference.items():
         cos = cosine_similarity(ref, converted[name])
+        label = f"{platform_name} {case.id} {name}"
+        record_property(f"{label} cosine", round(cos, 5))
+        record_property(
+            f"{label} error", round(relative_error(ref, converted[name]), 5)
+        )
         assert cos >= threshold, (
             f"{platform_name} {case.id} output {name!r}: "
             f"cosine {cos:.4f} < {threshold}"
