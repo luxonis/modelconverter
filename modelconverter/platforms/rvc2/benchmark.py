@@ -61,7 +61,7 @@ class RVC2Benchmark(Benchmark):
     @property
     @override
     def all_configurations(self) -> list[Configuration]:
-        """Return the configurations used by the full benchmark.
+        """The configurations used by the full benchmark.
 
         Covers one, two and three inference threads, leaving the
         remaining options to the caller.

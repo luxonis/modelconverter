@@ -214,7 +214,7 @@ class Exporter(ABC):
 
     @property
     def inference_model_path(self) -> Path:
-        """Return the path of the model to run inference with.
+        """The path of the model to run inference with.
 
         Raises:
             ValueError: If the export has not been run yet, so no such

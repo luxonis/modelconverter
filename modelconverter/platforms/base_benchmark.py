@@ -176,12 +176,12 @@ class Benchmark(ABC):
     @property
     @abstractmethod
     def default_configuration(self) -> Configuration:
-        """Return the configuration a plain benchmark run uses."""
+        """The configuration a plain benchmark run uses."""
 
     @property
     @abstractmethod
     def all_configurations(self) -> list[Configuration]:
-        """Return the configurations a full benchmark run sweeps."""
+        """The configurations a full benchmark run sweeps."""
 
     def print_results(
         self, results: list[tuple[Configuration, Result]]

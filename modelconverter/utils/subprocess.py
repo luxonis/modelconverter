@@ -146,7 +146,7 @@ class SubprocessHandle:
 
     @property
     def proc(self) -> subprocess.Popen:
-        """Return the underlying ``subprocess.Popen`` object.
+        """The underlying ``subprocess.Popen`` object.
 
         Raises:
             RuntimeError: If the process has not been started yet.
@@ -161,7 +161,7 @@ class SubprocessHandle:
 
     @property
     def ps_proc(self) -> psutil.Process:
-        """Return the ``psutil.Process`` wrapping the process.
+        """The ``psutil.Process`` wrapping the process.
 
         Raises:
             RuntimeError: If the process has not been started yet.

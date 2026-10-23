@@ -356,17 +356,17 @@ class InputConfig(OutputConfig):
 
     @property
     def encoding_mismatch(self) -> bool:
-        """Return whether the ``from`` and ``to`` encodings differ."""
+        """Whether the ``from`` and ``to`` encodings differ."""
         return self.encoding.from_ != self.encoding.to
 
     @property
     def is_color_input(self) -> bool:
-        """Return whether the input is fed with color image data."""
+        """Whether the input is fed with color image data."""
         return self.encoding.from_ in {Encoding.RGB, Encoding.BGR}
 
     @property
     def is_raw_input(self) -> bool:
-        """Return whether the input is fed with non-image data."""
+        """Whether the input is fed with non-image data."""
         return (
             self.encoding.from_ == Encoding.NONE
             and self.encoding.to == Encoding.NONE
@@ -374,7 +374,7 @@ class InputConfig(OutputConfig):
 
     @property
     def channel_count(self) -> int | None:
-        """Return the positive channel count when ``C`` is trustworthy."""
+        """The positive channel count when ``C`` is trustworthy."""
         if self.shape is None or self.layout is None or "C" not in self.layout:
             return None
         if (

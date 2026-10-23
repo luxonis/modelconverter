@@ -38,7 +38,7 @@ class RVC3Benchmark(Benchmark):
     @property
     @override
     def all_configurations(self) -> list[Configuration]:
-        """Return the configurations used by the full benchmark.
+        """The configurations used by the full benchmark.
 
         Covers one to five concurrent inference requests.
         """

@@ -164,7 +164,7 @@ class RVC4Benchmark(Benchmark):
     @property
     @override
     def all_configurations(self) -> list[Configuration]:
-        """Return every SNPE profile at one and at two threads."""
+        """Every SNPE profile at one and at two threads."""
         return [
             {"profile": profile, "num_threads": threads}
             for profile in PROFILES
