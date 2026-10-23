@@ -176,6 +176,9 @@ ignore = [
   "W191",
 ]
 unfixable = ["B905", "PLC0208"]
+# Preview rules apply only when they are selected by their full code.
+preview = true
+explicit-preview-rules = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
