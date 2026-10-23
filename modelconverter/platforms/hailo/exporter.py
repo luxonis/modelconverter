@@ -202,7 +202,7 @@ class HailoExporter(Exporter):
     ) -> dict[str, np.ndarray]:
         data = {}
         for orig_name, inp in self._inputs.items():
-            name, shape = self._get_hn_layer_info(runner, orig_name)
+            name, shape = self.get_hn_layer_info(runner, orig_name)
             shape = shape[1:]
 
             calib = inp.calibration
@@ -290,9 +290,22 @@ class HailoExporter(Exporter):
         return str(quantized_model_har_path)
 
     @staticmethod
-    def _get_hn_layer_info(
+    def get_hn_layer_info(
         runner: ClientRunner, name: str
     ) -> tuple[str, list[int]]:
+        """Find the HN layer that an original layer name maps to.
+
+        Args:
+            runner: Runner that holds the translated model.
+            name: Name of the layer in the source model.
+
+        Returns:
+            The HN layer name and its input shape, with a batch size of 1.
+
+        Raises:
+            RuntimeError: If no HN layer has ``name`` as an original name.
+
+        """
         for hn_name, params in runner.get_hn_dict()["layers"].items():
             if name in params.get("original_names", []):
                 return hn_name, [1, *(params["input_shapes"][0])[1:]]
@@ -314,7 +327,7 @@ class HailoExporter(Exporter):
 
             safe_name = name.replace(".", "")
 
-            hn_name, _ = self._get_hn_layer_info(runner, name)
+            hn_name, _ = self.get_hn_layer_info(runner, name)
 
             if inp.shape is None:
                 exit_with(

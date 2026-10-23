@@ -1412,7 +1412,7 @@ def test_publishing_reraises_an_unexpected_error(
     monkeypatch.setattr(Path, "rename", refuse_rename)
 
     with pytest.raises(OSError, match="denied"):
-        input_staging._publish_directory(tmp_path / "src", tmp_path / "dest")
+        input_staging.publish_directory(tmp_path / "src", tmp_path / "dest")
 
 
 def test_an_unreadable_config_is_staged_verbatim(
@@ -1654,4 +1654,4 @@ def test_a_file_that_cannot_be_stat_ed_is_hashed_directly(
 
     _break_stat(monkeypatch, "model.dlc")
 
-    assert input_staging._hash_file_memoized(path) == expected
+    assert input_staging.hash_file_memoized(path) == expected

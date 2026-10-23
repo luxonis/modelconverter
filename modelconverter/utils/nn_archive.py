@@ -52,8 +52,8 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.input_staging import (
-    _hash_file_memoized,
-    _publish_directory,
+    hash_file_memoized,
+    publish_directory,
 )
 from modelconverter.utils.layout import (
     guess_new_layout,
@@ -153,8 +153,8 @@ def process_nn_archive(
     )
     # Single-stage shorthand must update the imported inputs/outputs, not
     # become root defaults that are ignored for fields already in the stage.
-    Config._merge_overrides(main_stage_config, stage_overrides)
-    Config._merge_overrides(config, root_overrides)
+    Config.merge_overrides(main_stage_config, stage_overrides)
+    Config.merge_overrides(config, root_overrides)
     if platform is Platform.RVC4:
         _apply_archive_encodings(
             config,
@@ -252,7 +252,7 @@ def _unpack_archive(path: Path) -> Path:
     if not tarfile.is_tarfile(path):
         raise RuntimeError(f"Unknown NN Archive path: `{path}`")
 
-    digest = _hash_file_memoized(path)
+    digest = hash_file_memoized(path)
     untar_path = MISC_DIR / path.stem
     if untar_path.suffix == ".tar":
         untar_path = MISC_DIR / untar_path.stem
@@ -266,7 +266,7 @@ def _unpack_archive(path: Path) -> Path:
             with tarfile.open(path, mode="r") as tf:
                 for member in _safe_members(tf):
                     tf.extract(member, path=tmp_path)
-            _publish_directory(tmp_path, untar_path)
+            publish_directory(tmp_path, untar_path)
     os.utime(untar_path, None)
     return untar_path
 

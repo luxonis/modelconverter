@@ -391,7 +391,7 @@ def _stage_value(value: str, inputs_dir: Path) -> str | None:
 
 
 def _stage_file(src: Path, inputs_dir: Path) -> Path:
-    digest = _hash_file_memoized(src)
+    digest = hash_file_memoized(src)
     entry = inputs_dir / digest
     dest = entry / src.name
     # The claim goes in before the entry is trusted, not after it is used:
@@ -495,13 +495,13 @@ def _publish_bundle(destinations: dict[Path, Path], dest_dir: Path) -> None:
             size += file_size
             _log_copy(src, file_size)
             shutil.copy2(src, tmp_dest)
-        _publish_directory(tmp_dir, dest_dir)
+        publish_directory(tmp_dir, dest_dir)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
     _record_size(dest_dir, size)
 
 
-def _publish_directory(src: Path, dest: Path) -> None:
+def publish_directory(src: Path, dest: Path) -> None:
     """Rename ``src`` to ``dest``, accepting a concurrent winner."""
     try:
         src.rename(dest)
@@ -886,7 +886,7 @@ def _stage_dir(src: Path, inputs_dir: Path) -> Path:
         tmp_dest = tmp_root / src.name
         try:
             _copy_input_files(files, tmp_dest)
-            _publish_directory(tmp_dest, dest)
+            publish_directory(tmp_dest, dest)
         finally:
             shutil.rmtree(tmp_root, ignore_errors=True)
         _record_size(digest_dir, size)
@@ -1312,7 +1312,7 @@ def _hash_file(path: Path) -> str:
     return h.hexdigest()[:16]
 
 
-def _hash_file_memoized(path: Path) -> str:
+def hash_file_memoized(path: Path) -> str:
     """Content digest of ``path``, memoized on its stat fingerprint.
 
     Staging would otherwise re-read every staged file in full on each
@@ -1348,7 +1348,7 @@ def _hash_files(paths: list[Path]) -> str:
     h = hashlib.sha256()
     for path in sorted(paths):
         h.update(path.name.encode())
-        h.update(_hash_file_memoized(path).encode())
+        h.update(hash_file_memoized(path).encode())
     return h.hexdigest()[:16]
 
 

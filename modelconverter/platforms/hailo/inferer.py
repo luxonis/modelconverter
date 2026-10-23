@@ -83,9 +83,7 @@ class HailoInferer(Inferer):
         """
         stdout = stderr = StringIO()
         arr_inputs = {
-            HailoExporter._get_hn_layer_info(self._runner, name)[
-                0
-            ]: read_image(
+            HailoExporter.get_hn_layer_info(self._runner, name)[0]: read_image(
                 path,
                 shape=self.in_shapes[name],
                 encoding=self.encoding[name],

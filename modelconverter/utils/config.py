@@ -192,6 +192,16 @@ class ImageCalibrationConfig(BaseCalibrationConfig):
             and not self.generated_from_random
         )
 
+    def mark_generated_from_random(self, layout: str) -> None:
+        """Mark the files as written from random calibration data.
+
+        Args:
+            layout: Layout of the generated tensors.
+
+        """
+        self._generated_from_random = True
+        self._generated_layout = layout
+
     @field_validator("path", mode="before")
     @staticmethod
     def _download_calibration_data(value: ParamValue) -> Path | None:
@@ -343,6 +353,12 @@ class InputConfig(OutputConfig):
     def calibration_preprocessing(self) -> CalibrationPreprocessing | None:
         """Preprocessing moved out of the model but retained for calibration."""
         return self._calibration_preprocessing
+
+    @calibration_preprocessing.setter
+    def calibration_preprocessing(
+        self, value: CalibrationPreprocessing | None
+    ) -> None:
+        self._calibration_preprocessing = value
 
     @model_validator(mode="wrap")
     @classmethod
@@ -1316,6 +1332,18 @@ class Config(LuxonisConfig):
             config.name = stage.input_model.stem
             config.stages = {config.name: stage}
         return config
+
+    @classmethod
+    def merge_overrides(cls, data: Params, overrides: Params) -> None:
+        """Merge overrides into raw config data, in place.
+
+        Args:
+            data: Raw config data to update.
+            overrides: Overrides keyed by dotted paths, such as
+                ``"stages.main.inputs"``.
+
+        """
+        cls._merge_overrides(data, overrides)
 
 
 def broadcast_preprocessing_values(

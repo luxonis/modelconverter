@@ -199,6 +199,7 @@ reportImportCycles = "error"
 reportInconsistentConstructor = "error"
 reportMatchNotExhaustive = "error"
 reportMissingParameterType = "error"
+reportPrivateUsage = "error"
 reportPropertyTypeMismatch = "error"
 reportShadowedImports = "error"
 reportTypeCommentUsage = "error"
@@ -220,6 +221,12 @@ strictSetInference = true
 deprecateTypingAliases = true
 # Suppress a finding only with `# pyright: ignore[rule]`, which names it.
 enableTypeIgnoreComments = false
+
+# The tests check private helpers directly.
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+extraPaths = ["."]
+reportPrivateUsage = "none"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/conversion"]

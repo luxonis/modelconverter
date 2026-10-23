@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 
 class _HnLayer(TypedDict):
-    """HN layer fields read by `HailoExporter._get_hn_layer_info`."""
+    """HN layer fields read by `HailoExporter.get_hn_layer_info`."""
 
     original_names: list[str]
     input_shapes: list[list[int]]

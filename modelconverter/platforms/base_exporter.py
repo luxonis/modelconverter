@@ -430,9 +430,8 @@ class Exporter(ABC):
                 _save_random_sample(arr, inp, dest, i)
 
             calibration = calib.to_image_calibration(dest)
-            calibration._generated_from_random = True
             assert inp.layout is not None
-            calibration._generated_layout = inp.layout
+            calibration.mark_generated_from_random(inp.layout)
             self._inputs[name].calibration = calibration
 
     @staticmethod

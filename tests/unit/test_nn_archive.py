@@ -567,7 +567,7 @@ def test_concurrent_archive_extractions_publish_one_complete_directory(
     onnx = work_dir / "dummy_model.onnx"
     expected_model = onnx.read_bytes()
     barrier = Barrier(2, timeout=10)
-    publish = nn_archive._publish_directory
+    publish = nn_archive.publish_directory
 
     def publish_together(src: Path, dest: Path) -> None:
         assert not dest.exists()
@@ -576,7 +576,7 @@ def test_concurrent_archive_extractions_publish_one_complete_directory(
         barrier.wait()
         publish(src, dest)
 
-    monkeypatch.setattr(nn_archive, "_publish_directory", publish_together)
+    monkeypatch.setattr(nn_archive, "publish_directory", publish_together)
     with ThreadPoolExecutor(max_workers=2) as pool:
         first, second = pool.map(nn_archive._unpack_archive, [tar, tar])
 
