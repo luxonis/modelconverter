@@ -51,7 +51,7 @@ def ensure_onnx_helper_compatibility() -> None:
         def float32_to_float8e4m3(
             value: float, *, fn: bool = True, uz: bool = False
         ) -> int:
-            return _convert_scalar(value, dtype_map[(fn, uz)], np.uint8)
+            return _convert_scalar(value, dtype_map[fn, uz], np.uint8)
 
         helper.float32_to_float8e4m3 = float32_to_float8e4m3  # type: ignore[attr-defined]
 

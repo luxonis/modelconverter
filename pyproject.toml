@@ -138,6 +138,7 @@ select = [
   "RET",
   "RSE",
   "RUF",
+  "RUF031",
   "S",
   "SIM",
   "SLOT",
