@@ -498,7 +498,7 @@ def _download_file(
     tmp_path: Path | None = None
     try:
         request = Request(url, headers={"User-Agent": "modelconverter"})  # noqa: S310
-        with urlopen(request, timeout=30) as response:  # noqa: S310
+        with urlopen(request, timeout=30) as response:  # noqa: S310  # nosemgrep: dynamic-urllib-use-detected
             if response.status >= 400:
                 raise RuntimeError(
                     f"HTTP {response.status} while downloading {url}"
