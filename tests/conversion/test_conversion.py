@@ -80,15 +80,9 @@ SCENARIOS: list[Scenario] = [
     # No RVC3 case: RVC3 cannot quantize the multi-input `mult` stage, and it
     # fails on that only after it has converted the whole first stage. The toy
     # tests reach the same check in seconds.
-    Scenario(
-        "multistage-config-to-archive",
-        "configs/multistage.yaml",
-        "nn_archive",
-        # Hailo fails on this model before the archive step, see the native
-        # case below.
-        platforms=("rvc2", "rvc4"),
-        main_stage="yolov5n-seg",
-    ),
+    #
+    # No NN Archive output: only a two-stage NN Archive input can become a
+    # multistage NN Archive, see `test_toy_multistage`.
     Scenario(
         "multistage-config-to-native",
         "configs/multistage.yaml",

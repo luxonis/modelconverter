@@ -18,11 +18,18 @@ through the golden path and their DLC/IR runs on the CI CPU backend. On
 rvc2/rvc4 the correctness test is also the conversion check, so the plain
 conversion test runs only on the other platforms.
 
+A second toy model is a two-stage NN Archive: a main model and a
+postprocessor that a head of the archive names. That is the only multistage
+input that converts to an NN Archive, so it is converted to one on every
+platform.
+
 Run inside the platform Docker image, e.g.::
 
     modelconverter shell rvc4 --dev -c 'python -m pytest -k toy_multistage'
 """
 
+import json
+import tarfile
 from pathlib import Path
 
 import cv2
@@ -36,6 +43,7 @@ from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.config import Config
 from modelconverter.utils.constants import OUTPUTS_DIR
 from modelconverter.utils.types import Platform
+from tests.helpers.archive_factory import pack_archive
 from tests.helpers.conversion import (
     HAILO_FAST_OPTS,
     assert_produced,
@@ -44,6 +52,7 @@ from tests.helpers.conversion import (
 )
 from tests.helpers.onnx_factory import (
     build_toy_aggregator_onnx,
+    build_toy_conv_onnx,
     build_toy_integration_onnx,
 )
 from tests.helpers.platform_options import platform_options
@@ -250,3 +259,88 @@ def test_toy_multistage_precision(platform_name: str, multistage_config: Path):
         f"{platform_name} multistage final output: "
         f"cosine {cos:.5f} < {_THRESHOLD}"
     )
+
+
+@pytest.fixture(scope="module")
+def two_stage_archive(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Pack a toy NN Archive whose head names a postprocessor model."""
+    workdir = tmp_path_factory.mktemp("toy_two_stage_archive")
+    # The postprocessor also takes a 3-channel image, so the random
+    # calibration of its stage works on every platform.
+    main = build_toy_conv_onnx(workdir / "main.onnx", out_channels=3)
+    post = build_toy_conv_onnx(workdir / "post.onnx")
+    config = {
+        "config_version": "1.0",
+        "model": {
+            "metadata": {
+                "name": "main",
+                "path": "main.onnx",
+                "precision": "float32",
+            },
+            "inputs": [
+                {
+                    "name": "img",
+                    "dtype": "float32",
+                    "input_type": "image",
+                    "shape": [1, 3, 32, 32],
+                    "layout": "NCHW",
+                    "preprocessing": {
+                        "mean": [128, 128, 128],
+                        "scale": [58, 58, 58],
+                        "dai_type": "BGR888p",
+                    },
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "out",
+                    "dtype": "float32",
+                    "shape": [1, 3, 32, 32],
+                    "layout": "NCHW",
+                }
+            ],
+            "heads": [
+                {
+                    "parser": "Classification",
+                    "metadata": {"postprocessor_path": "post.onnx"},
+                    "outputs": ["out"],
+                }
+            ],
+        },
+    }
+    return pack_archive(
+        workdir / "two_stage.tar",
+        main,
+        config,
+        extra_files={"post.onnx": post},
+    )
+
+
+@pytest.mark.parametrize("platform_name", platform_params())
+def test_two_stage_archive_to_archive(
+    platform_name: str, two_stage_archive: Path
+):
+    platform = Platform(platform_name)
+    output_name = f"_toy-two-stage-archive-{platform_name}"
+    extra = HAILO_FAST_OPTS if platform_name == "hailo" else ()
+    convert(
+        platform,
+        # An NN Archive is the default output, so keep the RVC2 default
+        # superblob too.
+        *platform_options(platform, superblob=True),
+        *extra,
+        path=str(two_stage_archive),
+        output_dir=output_name,
+        to="nn_archive",
+    )
+
+    (archive,) = (OUTPUTS_DIR / output_name).glob("*.tar.xz")
+    with tarfile.open(archive) as tar:
+        members = set(tar.getnames())
+        config_file = tar.extractfile("config.json")
+        assert config_file is not None
+        model = json.load(config_file)["model"]
+    # The archive holds both converted models, and its head points to the
+    # converted postprocessor.
+    assert model["metadata"]["path"] in members
+    assert model["heads"][0]["metadata"]["postprocessor_path"] in members
