@@ -92,7 +92,8 @@ def _write_encodings_file(
                 },
                 "param_encodings": {},
             }
-        )
+        ),
+        encoding="utf-8",
     )
     return path
 

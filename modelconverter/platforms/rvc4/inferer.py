@@ -68,7 +68,7 @@ class RVC4Inferer(Inferer):
         self._raw_images_path.mkdir(parents=True)
         shutil.rmtree(outputs_path, ignore_errors=True)
 
-        with Path("input_list.txt").open("w") as f:
+        with Path("input_list.txt").open("w", encoding="utf-8") as f:
             f.write(self._header + "\n")
             for input_name, path in inputs.items():
                 raw_path = Path(f"raw_images/{input_name}.raw")

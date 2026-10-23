@@ -200,7 +200,7 @@ class RVC4Benchmark(Benchmark):
                 ],
                 silent=True,
             )
-            content = csv_path.read_text()
+            content = csv_path.read_text(encoding="utf-8")
             csv_path.unlink()
         elif (
             self._handler is not None

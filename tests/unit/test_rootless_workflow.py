@@ -76,7 +76,9 @@ def _launch(
     ) -> subprocess.CompletedProcess:
         nonlocal launch
         compose_file = Path(argv[argv.index("-f") + 1])
-        compose = _mapping(yaml.safe_load(compose_file.read_text()))
+        compose = _mapping(
+            yaml.safe_load(compose_file.read_text(encoding="utf-8"))
+        )
         launch = _Launch(argv, compose)
         return subprocess.CompletedProcess(argv, 0)
 

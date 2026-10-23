@@ -88,7 +88,7 @@ class Analyzer(ABC):
             ],
             silent=True,
         )
-        content = csv_path.read_text()
+        content = csv_path.read_text(encoding="utf-8")
         csv_path.unlink()
 
         start_marker = "Input Name,Dimensions,Type,Encoding Info"
@@ -155,7 +155,7 @@ class Analyzer(ABC):
             ],
             silent=True,
         )
-        lines = csv_path.read_text().splitlines()
+        lines = csv_path.read_text(encoding="utf-8").splitlines()
         start_row = next(
             i
             for i, line in enumerate(lines)

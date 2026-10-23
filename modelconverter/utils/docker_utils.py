@@ -822,7 +822,7 @@ def get_container_memory_limit() -> int:
     # cgroup v2 (common on modern Linux/Docker)
     cgroup_v2_path = Path("/sys/fs/cgroup/memory.max")
     if cgroup_v2_path.exists():
-        val = cgroup_v2_path.read_text().strip()
+        val = cgroup_v2_path.read_text(encoding="utf-8").strip()
         if val.isdigit():
             return int(val)
         if val == "max":
@@ -830,7 +830,7 @@ def get_container_memory_limit() -> int:
     # fallback to cgroup v1
     cgroup_v1_path = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
     if cgroup_v1_path.exists():
-        val = cgroup_v1_path.read_text().strip()
+        val = cgroup_v1_path.read_text(encoding="utf-8").strip()
         if val.isdigit():
             return int(val)
     return psutil.virtual_memory().available

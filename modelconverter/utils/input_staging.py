@@ -518,7 +518,7 @@ def _stage_config(src: Path, inputs_dir: Path) -> Path:
     never a reason to copy the directory it happens to live in.
     """
     try:
-        data = yaml.safe_load(src.read_text())
+        data = yaml.safe_load(src.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, yaml.YAMLError):
         # Not a config we can read. Hand it over as-is and let the container
         # report what is wrong with it.
