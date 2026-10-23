@@ -33,7 +33,6 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.preprocessing import (
     channels_last_4d_layout,
-    is_user_calibration_tensor,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -243,7 +242,7 @@ class HailoExporter(Exporter):
         shape: list[int],
     ) -> np.ndarray:
         """Read one calibration sample in the sample shape of Hailo."""
-        if is_user_calibration_tensor(path, calib):
+        if calib.is_user_tensor(path):
             img = read_user_calibration_tensor(
                 path,
                 raw_shape=shape,

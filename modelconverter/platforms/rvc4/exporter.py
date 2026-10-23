@@ -36,7 +36,6 @@ from modelconverter.utils.config import (
 from modelconverter.utils.encodings import validate_quantization_override_names
 from modelconverter.utils.preprocessing import (
     channels_last_image_layout,
-    is_user_calibration_tensor,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -375,7 +374,7 @@ class RVC4Exporter(Exporter):
         Returns:
             Path to the raw file.
         """
-        if is_user_calibration_tensor(entry.path, entry.calib):
+        if entry.calib.is_user_tensor(entry.path):
             if entry.path.suffix.lower() == ".raw":
                 return entry.path
             img = read_user_calibration_tensor(

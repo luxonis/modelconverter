@@ -19,7 +19,7 @@ from typing import Final, Literal
 from loguru import logger
 from typing_extensions import Self
 
-from modelconverter.utils import DeviceHandler
+from modelconverter.utils.device_handlers import DeviceHandler
 
 
 class DeviceMonitor:

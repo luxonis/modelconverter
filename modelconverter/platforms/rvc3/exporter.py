@@ -25,7 +25,6 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.preprocessing import (
     channels_last_4d_layout,
-    is_user_calibration_tensor,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -273,7 +272,7 @@ class RVC3Exporter(RVC2Exporter):
         directory = self.intermediate_outputs_dir / "calibration_tensors"
         directory.mkdir(exist_ok=True)
         for index, file in enumerate(files):
-            if is_user_calibration_tensor(file, calib):
+            if calib.is_user_tensor(file):
                 array = read_user_calibration_tensor(
                     file,
                     raw_shape=expected_shape,

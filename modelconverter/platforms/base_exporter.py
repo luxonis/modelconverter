@@ -44,7 +44,6 @@ from modelconverter.utils.onnx_compatibility import (
 )
 from modelconverter.utils.preprocessing import (
     apply_calibration_preprocessing,
-    is_user_calibration_tensor,
 )
 from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import InputFileType, Platform
@@ -447,7 +446,7 @@ class Exporter(ABC):
             raise ValueError(
                 f"Input shape must be provided for calibration input '{inp.name}'."
             )
-        if is_user_calibration_tensor(path, calib):
+        if calib.is_user_tensor(path):
             raise ValueError(
                 "User calibration tensors must use read_user_calibration_tensor."
             )

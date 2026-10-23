@@ -33,7 +33,6 @@ from onnx import TypeProto
 from pydantic import (
     Field,
     ModelWrapValidatorHandler,
-    PlainSerializer,
     PositiveInt,
     PrivateAttr,
     SerializerFunctionWrapHandler,
@@ -45,7 +44,7 @@ from typing_extensions import Self, assert_never
 
 from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
-from modelconverter.utils.encodings import parse_encodings
+from modelconverter.utils.encodings import Encodings, parse_encodings
 from modelconverter.utils.filesystem_utils import resolve_path
 from modelconverter.utils.layout import (
     is_image_input_shape,
@@ -185,6 +184,13 @@ class ImageCalibrationConfig(BaseCalibrationConfig):
     def generated_layout(self) -> str:
         """Layout used when generated tensor calibration was materialized."""
         return self._generated_layout
+
+    def is_user_tensor(self, path: Path) -> bool:
+        """Whether a tensor file uses the backend-ready calibration contract."""
+        return (
+            path.suffix.lower() in {".npy", ".raw"}
+            and not self.generated_from_random
+        )
 
     @field_validator("path", mode="before")
     @staticmethod
@@ -692,55 +698,6 @@ class RVC3Config(BlobBaseConfig):
     """
 
     pot_target_device: PotDevice = PotDevice.VPU
-
-
-class QuantizationOverridesItem(BaseModelExtraForbid):
-    """Quantization encoding of a single tensor.
-
-    Follows the AIMET encoding specification and is used to override the
-    quantization parameters computed during the RVC4 conversion.
-
-    Attributes:
-        bitwidth: Number of bits used to represent the tensor.
-        is_symmetric: Whether the quantization is symmetric.
-        dtype: Whether the tensor is quantized as an integer or a float.
-        max: Largest representable value.
-        min: Smallest representable value.
-        offset: Zero-point offset of the quantization grid.
-        scale: Step size of the quantization grid.
-
-    """
-
-    bitwidth: Annotated[int, Literal[4, 8, 16, 32]] | None = None
-    # Encoding files hold the flag as the string "True" or "False".
-    is_symmetric: Annotated[
-        bool | None,
-        PlainSerializer(
-            lambda value: None if value is None else str(value),
-            return_type=str | None,
-            when_used="json",
-        ),
-    ] = None
-    dtype: Literal["int", "float"] | None = None
-    max: float | None = None
-    min: float | None = None
-    offset: int | None = None
-    scale: float | None = None
-
-
-class Encodings(BaseModelExtraForbid):
-    """Set of quantization encodings overriding the computed ones.
-
-    Attributes:
-        activation_encodings: Encodings of the activation tensors, keyed
-            by tensor name.
-        param_encodings: Encodings of the parameter tensors, keyed by
-            tensor name.
-
-    """
-
-    activation_encodings: dict[str, list[QuantizationOverridesItem]]
-    param_encodings: dict[str, list[QuantizationOverridesItem]]
 
 
 class QuantizationOverrides(BaseModelExtraForbid):

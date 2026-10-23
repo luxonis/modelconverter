@@ -8,15 +8,11 @@ the source model, not of a model that carries the preprocessing nodes.
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 
 from modelconverter.utils.exceptions import ModelconverterException
 from modelconverter.utils.types import DataType, Encoding
-
-if TYPE_CHECKING:
-    from modelconverter.utils.config import ImageCalibrationConfig
 
 
 def normalization_required(
@@ -163,16 +159,6 @@ def channels_last_4d_layout(layout: str) -> str:
     if len(layout) == 4 and layout.count("C") == 1:
         return layout.replace("C", "") + "C"
     return layout
-
-
-def is_user_calibration_tensor(
-    path: Path, calib: "ImageCalibrationConfig"
-) -> bool:
-    """Whether a tensor file uses the backend-ready calibration contract."""
-    return (
-        path.suffix.lower() in {".npy", ".raw"}
-        and not calib.generated_from_random
-    )
 
 
 def read_user_calibration_tensor(
