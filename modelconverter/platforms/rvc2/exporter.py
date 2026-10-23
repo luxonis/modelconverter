@@ -310,6 +310,9 @@ class RVC2Exporter(Exporter):
 
         The default fits the available RAM. A count that the user sets
         wins, with a warning when it exceeds the default.
+
+        Returns:
+            The number of parallel compiles, at least 1.
         """
         avail_ram = _get_available_memory()
         n_workers = int(
@@ -487,6 +490,10 @@ def _mo_preprocessing_args(inputs: dict[str, InputConfig]) -> list[str]:
     """Build the mean, scale and channel reversal flags of the model optimizer.
 
     Mean values of all zeros and scale values of all ones are left out.
+
+    Returns:
+        The flags and their values as ``mo`` arguments, or an empty
+        list when no input needs a flag.
     """
     args = []
     means = {
@@ -597,6 +604,9 @@ def _write_superblob(
 
     The header holds the size of the reference blob and one size per
     SHAVE count from 1 to 16, zero where no patch exists.
+
+    Raises:
+        RuntimeError: If ``blobs_directory`` holds no ``.patch`` file.
     """
     idx2patch = {
         int(patch_name.stem.split("_")[-1][:-5]): patch_name

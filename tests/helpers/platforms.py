@@ -18,6 +18,9 @@ def platform_marks(
     on the xfail. ``skip`` is for cases the current tool version will not run --
     unsupported, or too slow to be worth it -- which is not the same as a case
     that is expected to fail.
+
+    Returns:
+        The platform marker, then the xfail and the skip marks if given.
     """
     marks = [getattr(pytest.mark, platform)]
     if xfail is not None:
@@ -35,6 +38,10 @@ def platform_params(
 ) -> list:
     """One ``pytest.param`` per platform name, for a ``"platform_name"``
     parametrization.
+
+    Returns:
+        The params, each with its platform marker and the xfail that
+        ``xfails`` gives it, if any.
     """
     return [
         pytest.param(

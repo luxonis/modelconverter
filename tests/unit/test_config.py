@@ -91,6 +91,9 @@ def _named_node_onnx(path: Path) -> Path:
     ``mynode`` produces tensor ``y`` (described in ``value_info``), so a
     lookup by node name misses the tensor search and falls through to
     the node search -- the branch the standard fixtures cannot reach.
+
+    Returns:
+        The ``path`` that the model is saved to.
     """
     inp = helper.make_tensor_value_info(
         "input0", TensorProto.FLOAT, [1, 3, 8, 8]
