@@ -36,7 +36,7 @@ def ensure_onnx_helper_compatibility() -> None:
         return arr.view(container).item()
 
     if not hasattr(helper, "float32_to_bfloat16"):
-        helper.float32_to_bfloat16 = lambda value: _convert_scalar(  # type: ignore[attr-defined]
+        helper.float32_to_bfloat16 = lambda value: _convert_scalar(  # pyright: ignore[reportAttributeAccessIssue]
             value, ml_dtypes.bfloat16, np.uint16
         )
 
@@ -53,7 +53,7 @@ def ensure_onnx_helper_compatibility() -> None:
         ) -> int:
             return _convert_scalar(value, dtype_map[fn, uz], np.uint8)
 
-        helper.float32_to_float8e4m3 = float32_to_float8e4m3  # type: ignore[attr-defined]
+        helper.float32_to_float8e4m3 = float32_to_float8e4m3  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def save_onnx_model(

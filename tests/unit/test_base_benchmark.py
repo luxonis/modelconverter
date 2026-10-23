@@ -125,6 +125,6 @@ def test_get_input_fps_rejects_invalid_numeric_values(input_fps: float):
 
 
 @pytest.mark.parametrize("input_fps", ["30", True])
-def test_get_input_fps_rejects_non_numeric_values(input_fps: object):
+def test_get_input_fps_rejects_non_numeric_values(*, input_fps: str | bool):
     with pytest.raises(TypeError, match="must be of type 'float'"):
-        get_input_fps({"input_fps": input_fps})  # type: ignore[dict-item]
+        get_input_fps({"input_fps": input_fps})

@@ -1127,7 +1127,7 @@ def _fabricated_file(
     )
     for name, value in stat_fields.items():
         setattr(stat, name, value)
-    return input_staging._InputFile("sample.npy", path, stat)  # type: ignore[arg-type]
+    return input_staging._InputFile("sample.npy", path, stat)  # pyright: ignore[reportArgumentType]
 
 
 def test_directory_digest_separates_matching_inodes_on_other_devices(
@@ -1333,7 +1333,7 @@ def test_path_flags_of_an_uninspectable_command() -> None:
     """Staging follows the command signature, so a command it cannot
     read leaves every token alone rather than guessing.
     """
-    assert input_staging.path_flags_for(object()) == set()  # type: ignore[arg-type]
+    assert input_staging.path_flags_for(object()) == set()  # pyright: ignore[reportArgumentType]
 
 
 def test_stages_a_path_joined_to_its_flag(

@@ -400,7 +400,9 @@ def test_layout_must_be_a_string():
     anything there.
     """
     with pytest.raises(TypeError, match="`layout` must be a string"):
-        OutputConfig(name="o", shape=[1, 10], layout=5)  # type: ignore[arg-type]
+        OutputConfig.model_validate(
+            {"name": "o", "shape": [1, 10], "layout": 5}
+        )
 
 
 def test_encoding_config_defaults():

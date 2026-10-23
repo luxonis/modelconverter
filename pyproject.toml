@@ -217,6 +217,8 @@ strictDictionaryInference = true
 strictListInference = true
 strictSetInference = true
 deprecateTypingAliases = true
+# Suppress a finding only with `# pyright: ignore[rule]`, which names it.
+enableTypeIgnoreComments = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/conversion"]

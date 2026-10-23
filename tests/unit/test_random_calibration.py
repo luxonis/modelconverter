@@ -40,7 +40,7 @@ def _prepare(
     stub = SimpleNamespace(
         _inputs={"x": inp}, intermediate_outputs_dir=tmp_path
     )
-    Exporter._prepare_random_calibration_data(stub)  # type: ignore[arg-type]
+    Exporter._prepare_random_calibration_data(stub)  # pyright: ignore[reportArgumentType]
     return sorted(p.suffix for p in (tmp_path / "random" / "x").iterdir())
 
 

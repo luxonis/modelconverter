@@ -208,8 +208,8 @@ def test_ir_load_failure_raises(
 
     openvino = ModuleType("openvino")
     runtime = ModuleType("openvino.runtime")
-    runtime.Core = _Core  # type: ignore[attr-defined]
-    openvino.runtime = runtime  # type: ignore[attr-defined]
+    monkeypatch.setattr(runtime, "Core", _Core, raising=False)
+    monkeypatch.setattr(openvino, "runtime", runtime, raising=False)
     monkeypatch.setitem(sys.modules, "openvino", openvino)
     monkeypatch.setitem(sys.modules, "openvino.runtime", runtime)
 
@@ -227,7 +227,12 @@ def test_tflite_missing_subgraph_raises(
         return SimpleNamespace(Subgraphs=no_subgraph)
 
     tflite = ModuleType("tflite")
-    tflite.Model = SimpleNamespace(GetRootAsModel=get_root)  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        tflite,
+        "Model",
+        SimpleNamespace(GetRootAsModel=get_root),
+        raising=False,
+    )
     monkeypatch.setitem(sys.modules, "tflite", tflite)
 
     path = work_dir / "model.tflite"
