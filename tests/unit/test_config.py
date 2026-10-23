@@ -71,7 +71,7 @@ def _rvc4_config(**data: ParamValue) -> RVC4Config:
 def _models_dir() -> Path:
     """Return the models directory of the cache.
 
-    Re-rooted into the temp dir by ``_isolate_cwd``.
+    Re-rooted into the temp dir by ``isolate_cwd``.
     """
     return MODELS_DIR
 

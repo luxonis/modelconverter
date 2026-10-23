@@ -203,6 +203,7 @@ reportUntypedClassDecorator = "error"
 reportUntypedFunctionDecorator = "error"
 reportUntypedNamedTuple = "error"
 reportUnusedClass = "error"
+reportUnusedFunction = "error"
 strictDictionaryInference = true
 strictListInference = true
 strictSetInference = true

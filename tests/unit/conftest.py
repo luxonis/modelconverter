@@ -4,7 +4,7 @@ Every test runs inside its own ``tmp_path`` working directory with the
 cache re-rooted there. The ``modelconverter.utils.constants`` ``*_DIR``
 values are absolute (the hidden cache directory, ``./output``) and are
 read once at import time, so ``monkeypatch.chdir`` alone would not move
-them: ``_isolate_cwd`` rebinds them wherever they were imported. Nothing
+them: ``isolate_cwd`` rebinds them wherever they were imported. Nothing
 ever writes into the real ``~/.cache/modelconverter`` and tests are safe
 under ``pytest -n auto``.
 """
@@ -56,7 +56,7 @@ def _redirect_dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def isolate_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Chdir into an isolated temp dir and re-root the cache into it."""
     monkeypatch.chdir(tmp_path)
     _redirect_dirs(monkeypatch, tmp_path)
