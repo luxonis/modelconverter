@@ -102,7 +102,7 @@ class Environ(BaseEnviron):
         if data.get("HUBAI_API_KEY"):
             return data
 
-        api_key = None
+        api_key = data.get("HUBAI_API_KEY")
         with suppress(Exception):
             api_key = get_password_with_timeout("ModelConverter", "api_key")
 
