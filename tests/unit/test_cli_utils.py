@@ -103,6 +103,7 @@ def test_output_dir_default_name():
 )
 def test_display_output_path(
     monkeypatch: pytest.MonkeyPatch,
+    *,
     in_docker_context: bool,
     host_output_dir: str | None,
     path: Path,

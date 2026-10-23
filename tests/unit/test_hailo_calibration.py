@@ -387,6 +387,7 @@ def test_tf_tensor_shapes_follow_the_dfc_version(
     hailo_exporter_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
     version: str | None,
+    *,
     expected: bool,
 ) -> None:
     if version is None:

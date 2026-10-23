@@ -1168,7 +1168,9 @@ def _iter_cache_entries(cache: Path) -> Iterator[_CacheEntry]:
     """
     downloads_evictable = not _claimed_by_another_process(cache)
     for entry in _cache_children(cache / "inputs"):
-        yield _CacheEntry(entry, _entry_size(entry), _used_time(entry), True)
+        yield _CacheEntry(
+            entry, _entry_size(entry), _used_time(entry), evictable=True
+        )
     for name in _DOWNLOAD_SUBDIRS:
         for entry in _cache_children(cache / name):
             yield _CacheEntry(

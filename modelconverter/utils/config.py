@@ -33,10 +33,10 @@ from onnx import TypeProto
 from pydantic import (
     Field,
     ModelWrapValidatorHandler,
+    PlainSerializer,
     PositiveInt,
     PrivateAttr,
     SerializerFunctionWrapHandler,
-    field_serializer,
     field_validator,
     model_serializer,
     model_validator,
@@ -712,29 +712,20 @@ class QuantizationOverridesItem(BaseModelExtraForbid):
     """
 
     bitwidth: Annotated[int, Literal[4, 8, 16, 32]] | None = None
-    is_symmetric: bool | None = None
+    # Encoding files hold the flag as the string "True" or "False".
+    is_symmetric: Annotated[
+        bool | None,
+        PlainSerializer(
+            lambda value: None if value is None else str(value),
+            return_type=str | None,
+            when_used="json",
+        ),
+    ] = None
     dtype: Literal["int", "float"] | None = None
     max: float | None = None
     min: float | None = None
     offset: int | None = None
     scale: float | None = None
-
-    @field_serializer("is_symmetric", when_used="json")
-    @staticmethod
-    def serialize_is_symmetric(value: bool | None) -> str | None:
-        """Serialize ``is_symmetric`` as a string in JSON output.
-
-        Args:
-            value: Value of the ``is_symmetric`` field.
-
-        Returns:
-            The string representation of the value, or ``None`` if the
-            value is ``None``.
-
-        """
-        if value is None:
-            return None
-        return str(value)
 
 
 class Encodings(BaseModelExtraForbid):

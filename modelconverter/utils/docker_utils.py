@@ -144,6 +144,7 @@ def rvc4_tag_version(version: str) -> str:
 
 def generate_compose_config(
     image: str,
+    *,
     gpu: bool = False,
     memory: int | None = None,
     cpus: float | None = None,

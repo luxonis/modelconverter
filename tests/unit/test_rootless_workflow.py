@@ -199,6 +199,7 @@ def test_host_identity_follows_the_daemon(
     work_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
     namespace_mode: str,
+    *,
     identity_passed: bool,
 ):
     config = _project(work_dir)

@@ -16,7 +16,7 @@ def _normalize_underscores(s: str) -> str:
     return re.sub(r"_+", "_", s)
 
 
-def sanitize_net_name(name: str, with_suffix: bool = False) -> str:
+def sanitize_net_name(name: str, *, with_suffix: bool = False) -> str:
     """Sanitize net name or path.
 
     If input is a path, only sanitize the basename. If input is a name,

@@ -124,6 +124,7 @@ def test_normalize_io_encodings_default_true():
 @pytest.mark.parametrize("normalize_io_encodings", [True, False])
 def test_normalize_io_encodings_controls_exposed_tensor_rewrite(
     work_dir: Path,
+    *,
     normalize_io_encodings: bool,
 ):
     exporter = _make_exporter(
@@ -190,7 +191,7 @@ def test_path_quantization_overrides_passthrough_without_io_normalization(
     ("normalize_io_encodings", "multistage"), [(True, False), (False, True)]
 )
 def test_snpe_encodings_are_archived_after_intermediate_cleanup(
-    work_dir: Path, normalize_io_encodings: bool, multistage: bool
+    work_dir: Path, *, normalize_io_encodings: bool, multistage: bool
 ):
     exporter = _make_exporter(
         work_dir,
@@ -876,7 +877,7 @@ def test_user_numpy_calibration_is_serialized_without_shape_interpretation(
 
 @pytest.mark.parametrize("joined", [False, True])
 def test_externalized_preprocessing_rejects_custom_input_list(
-    tmp_path: Path, joined: bool
+    tmp_path: Path, *, joined: bool
 ):
     custom_list = tmp_path / "custom-list.txt"
     custom_list.write_text("input0:=sample.raw\n")

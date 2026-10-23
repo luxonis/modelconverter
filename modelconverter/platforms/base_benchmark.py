@@ -329,7 +329,7 @@ class Benchmark(ABC):
         logger.info(f"Benchmark results saved to {file}.")
 
     def run(
-        self, full: bool = True, save: bool = False, **kwargs: ConfigValue
+        self, *, full: bool = True, save: bool = False, **kwargs: ConfigValue
     ) -> None:
         """Benchmark the model and report the results.
 

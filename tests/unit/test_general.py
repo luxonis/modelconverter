@@ -71,7 +71,7 @@ def test_collapse(value: str, expected: str):
         ("dir/no@ext", True, "dir/no_ext"),
     ],
 )
-def test_sanitize(name: str, with_suffix: bool, expected: str):
+def test_sanitize(name: str, *, with_suffix: bool, expected: str):
     assert sanitize_net_name(name, with_suffix=with_suffix) == expected
 
 
@@ -92,7 +92,7 @@ def test_underscore_runs_always_collapse(value: str):
 
 
 @given(name=_paths, with_suffix=st.booleans())
-def test_sanitizing_is_idempotent(name: str, with_suffix: bool):
+def test_sanitizing_is_idempotent(name: str, *, with_suffix: bool):
     once = sanitize_net_name(name, with_suffix=with_suffix)
     assert sanitize_net_name(once, with_suffix=with_suffix) == once
 
@@ -117,7 +117,7 @@ def test_with_suffix_preserves_the_extension_verbatim(name: str):
 
 
 @given(name=_paths, with_suffix=st.booleans())
-def test_only_the_basename_is_rewritten(name: str, with_suffix: bool):
+def test_only_the_basename_is_rewritten(name: str, *, with_suffix: bool):
     """A model kept in a directory stays in that directory."""
     sanitized = sanitize_net_name(name, with_suffix=with_suffix)
     assert Path(sanitized).parent == Path(name).parent

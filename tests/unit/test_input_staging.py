@@ -1561,7 +1561,7 @@ def test_claiming_an_unwritable_cache_is_not_fatal(
     monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache)
 
     def refuse_mkdir(
-        self: Path, parents: bool = False, exist_ok: bool = False
+        self: Path, *, parents: bool = False, exist_ok: bool = False
     ) -> None:
         raise OSError("read-only file system")
 

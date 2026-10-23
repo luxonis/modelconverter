@@ -436,6 +436,7 @@ class ONNXModifier:
         self,
         model_path: Path,
         output_path: Path,
+        *,
         skip_optimization: bool = False,
         skip_constant_folding: bool = False,
     ) -> None:
@@ -548,7 +549,7 @@ class ONNXModifier:
 
         return True
 
-    def compare_outputs(self, from_modelproto: bool = False) -> bool:
+    def compare_outputs(self, *, from_modelproto: bool = False) -> bool:
         """Compare the outputs of two ONNX models.
 
         Args:

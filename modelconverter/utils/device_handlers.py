@@ -24,7 +24,7 @@ class DeviceHandler(ABC):
     over a concrete transport such as SSH or ADB.
     """
 
-    def __init__(self, silent: bool = True) -> None:
+    def __init__(self, *, silent: bool = True) -> None:
         """Initialize the device handler.
 
         Args:
@@ -132,7 +132,7 @@ class DeviceHandler(ABC):
 class SSHHandler(DeviceHandler):
     """Device handler implementation based on SSH and SCP."""
 
-    def __init__(self, ip: str, silent: bool = True) -> None:
+    def __init__(self, ip: str, *, silent: bool = True) -> None:
         """Initialize an SSH handler for the target device.
 
         Args:
@@ -140,7 +140,7 @@ class SSHHandler(DeviceHandler):
             silent: If ``True``, suppress command logging.
 
         """
-        super().__init__(silent)
+        super().__init__(silent=silent)
         self._address = f"root@{ip}"
 
     @override
@@ -186,7 +186,7 @@ class AdbHandler(DeviceHandler):
     """Device handler implementation based on Android Debug Bridge."""
 
     def __init__(
-        self, device_id: str | None = None, silent: bool = True
+        self, device_id: str | None = None, *, silent: bool = True
     ) -> None:
         """Initialize an ADB handler for the target device.
 
@@ -205,7 +205,7 @@ class AdbHandler(DeviceHandler):
                 available.
 
         """
-        super().__init__(silent)
+        super().__init__(silent=silent)
         device_id = self._check_adb_connection(device_id)
         self._device_args = ["-s", device_id] if device_id else []
 

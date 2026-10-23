@@ -112,6 +112,7 @@ select = [
   "ERA",
   "EXE",
   "F",
+  "FBT",
   "FLY",
   "FURB",
   "G",
