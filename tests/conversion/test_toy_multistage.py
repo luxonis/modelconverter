@@ -158,9 +158,8 @@ def _golden_pipeline(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Fp32 reference for the whole pipeline on the constant input.
 
-    Returns ``third``'s fp32 output plus the two fp32 upstream tensors that feed
-    it -- the same ones the converted ``third`` gets. ``third`` has no
-    preprocessing, so its golden is a plain onnxruntime run.
+    The two upstream tensors also feed the converted ``third``. Since
+    ``third`` has no preprocessing, its golden is a plain onnxruntime run.
 
     Returns:
         The output of ``third``, then its inputs ``from_first`` and

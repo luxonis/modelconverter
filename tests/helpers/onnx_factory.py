@@ -249,12 +249,10 @@ def weights_only_external_onnx(
 ) -> list[Path]:
     """Build a model that is nothing but externally stored weights.
 
-    Returns the companion files, in sorted order. Anything walking a
-    model's external data has to find every one of them, so
-    ``single_file=False`` stores one tensor per file -- what
-    ``all_tensors_to_one_file=False`` produces -- and the default packs
-    them into the single sibling ``<name>_data`` that a real large model
-    uses.
+    Anything walking a model's external data has to find every companion file.
+    ``single_file=False`` stores one tensor per file, which is what
+    ``all_tensors_to_one_file=False`` produces. The default packs them into
+    the single sibling ``<name>_data`` that a real large model uses.
 
     The graph declares no inputs or outputs: these are subjects for the
     file bookkeeping around a model, never for a conversion, and leaving
