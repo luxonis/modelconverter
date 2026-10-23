@@ -69,7 +69,8 @@ from tests.helpers.precision import (
 _SIZE = 64
 _CALIB_MEAN = 100
 _CALIB_STD = 20
-_ERROR_LIMIT = 0.25
+# About three times the worst relative error that CI measures (0.0028, RVC4).
+_ERROR_LIMIT = 0.01
 
 CORRECTNESS_PLATFORMS = ("rvc2", "rvc4")
 CONVERSION_ONLY_PLATFORMS = tuple(

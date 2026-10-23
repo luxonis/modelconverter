@@ -51,7 +51,9 @@ _SIZE = 64
 # comes from the same distribution, so the quantized range covers it.
 _CALIB_MEAN = 100
 _CALIB_STD = 20
-_ERROR_LIMIT = 0.25
+# About five times the worst relative error that CI measures (0.0018, RVC4
+# int8).
+_ERROR_LIMIT = 0.01
 
 
 @dataclass(frozen=True)

@@ -36,8 +36,9 @@ from tests.helpers.precision import RecordProperty, locate_converted_model
 from tests.helpers.tflite_factory import build_toy_tflite
 
 PLATFORMS = ("rvc2", "rvc3", "rvc4")
-# A few steps of 8-bit quantization over the 0-255 calibration range.
-_TOLERANCE = 3.0
+# One step of 8-bit quantization over the 0-255 calibration range. CI
+# measures no error at all.
+_TOLERANCE = 1.0
 # Three distinct channel values inside the default random-calibration range
 # (mean 127.5, std 35). Positive so the Relu is a clean identity, and
 # well-separated so the quantizers keep them apart.

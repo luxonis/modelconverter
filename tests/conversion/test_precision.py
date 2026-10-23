@@ -16,7 +16,7 @@ settings the conversion tests use destroy numeric fidelity, and a
 full-optimization resnet18 is far too slow for CI.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -42,7 +42,14 @@ from tests.helpers.precision import (
 GS = "gs://luxonis-test-bucket/modelconverter"
 
 DEFAULT_PLATFORMS = ("rvc2", "rvc3", "rvc4")
-DEFAULT_THRESHOLD: Final[float] = 0.8
+# Below the lowest cosine that CI measures on each platform: rvc2 0.99993
+# (fp16), rvc4 0.99908, hailo 0.99856 and rvc3 0.99397 (int8 mnist).
+COSINE_FLOORS: Final[dict[str, float]] = {
+    "rvc2": 0.999,
+    "rvc3": 0.98,
+    "rvc4": 0.995,
+    "hailo": 0.99,
+}
 
 
 @dataclass(frozen=True)
@@ -53,8 +60,6 @@ class PrecisionCase:
     # A config (or archive) whose `input_model` is the reference ONNX.
     config: str
     platforms: tuple[str, ...] = DEFAULT_PLATFORMS
-    # Per-platform cosine floors, falling back to DEFAULT_THRESHOLD.
-    thresholds: dict[str, float] = field(default_factory=dict)
     image: Path = TEST_IMAGE
 
 
@@ -116,7 +121,7 @@ def test_precision(
     assert set(reference) == set(converted), (
         f"output names mismatch: {list(reference)} vs {list(converted)}"
     )
-    threshold = case.thresholds.get(platform_name, DEFAULT_THRESHOLD)
+    threshold = COSINE_FLOORS[platform_name]
     for name, ref in reference.items():
         cos = cosine_similarity(ref, converted[name])
         label = f"{platform_name} {case.id} {name}"

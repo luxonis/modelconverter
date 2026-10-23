@@ -52,10 +52,10 @@ from tests.helpers.precision import (
 )
 
 _SIZE = 32
-_ERROR_LIMIT = 0.25
-# Both quantized paths run the same graph on the same numbers, so they have to
-# agree with each other much more closely than either does with the ONNX.
-_EQUIVALENCE_LIMIT = 0.1
+# About three times the worst relative error that CI measures (0.016, Hailo),
+# also between the embedded and the externalized model. A lost channel swap or a
+# wrong mean or scale gives an error far above it.
+_ERROR_LIMIT = 0.05
 
 _PLATFORM_OPTS: dict[str, tuple[str, ...]] = {
     "hailo": HAILO_NO_COMPILE_OPTS,
@@ -246,5 +246,5 @@ def test_externalized_calibration_matches_embedded_model(
             f"{label} embedded vs externalized",
             embedded_output,
             externalized_output,
-            _EQUIVALENCE_LIMIT,
+            _ERROR_LIMIT,
         )
