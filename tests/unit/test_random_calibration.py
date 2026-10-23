@@ -17,6 +17,7 @@ import pytest
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils.config import InputConfig, RandomCalibrationConfig
+from modelconverter.utils.types import DataType
 
 
 def _prepare(
@@ -25,6 +26,7 @@ def _prepare(
     layout: str | None,
     *,
     encoding: str | None = None,
+    data_type: DataType = DataType.FLOAT32,
 ) -> list[str]:
     """Run the calibration prep for one input, returning the written suffixes."""
     data: dict = {"name": "x", "shape": shape}
@@ -33,7 +35,9 @@ def _prepare(
     if encoding is not None:
         data["encoding"] = encoding
     inp = InputConfig.model_validate(data)
-    inp.calibration = RandomCalibrationConfig(max_images=2)
+    inp.calibration = RandomCalibrationConfig(
+        max_images=2, data_type=data_type
+    )
 
     # The method only touches `_inputs` and `intermediate_outputs_dir`, so a
     # lightweight stand-in stands in for a fully constructed exporter.
@@ -74,4 +78,15 @@ def test_random_calibration_output_format(
     assert _prepare(tmp_path, shape, layout, encoding=encoding) == [
         suffix,
         suffix,
+    ]
+
+
+@pytest.mark.parametrize("data_type", [DataType.BOOLEAN, DataType.STRING])
+def test_image_samples_without_a_numeric_dtype_are_saved_by_numpy(
+    tmp_path: Path, data_type: DataType
+):
+    """OpenCV writes only integer and float pixels."""
+    assert _prepare(tmp_path, [1, 3, 8, 8], None, data_type=data_type) == [
+        ".npy",
+        ".npy",
     ]

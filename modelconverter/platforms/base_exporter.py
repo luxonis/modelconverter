@@ -18,9 +18,11 @@ from typing import Literal
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import onnx
 from loguru import logger
 from luxonis_ml.typing import Params, PathType
+from typing_extensions import TypeIs
 
 from modelconverter.utils import (
     ModelconverterException,
@@ -49,19 +51,28 @@ from modelconverter.utils.subprocess import SubprocessResult
 from modelconverter.utils.types import InputFileType, Platform
 
 
+def _is_numeric(
+    arr: npt.NDArray[np.generic],
+) -> TypeIs[npt.NDArray[np.integer | np.floating]]:
+    """Whether OpenCV can write the array, which needs ints or floats."""
+    return np.issubdtype(arr.dtype, np.integer) or np.issubdtype(
+        arr.dtype, np.floating
+    )
+
+
 def _save_random_sample(
     arr: np.ndarray, inp: InputConfig, dest: Path, index: int
 ) -> None:
     """Save one random calibration sample as an image or an array.
 
     An image input with a 2D or 3D sample, or a 4D sample with a batch
-    of one, is written as a channels-last PNG. Any other sample is
-    written as a NumPy array.
+    of one, is written as a channels-last PNG if its dtype is an integer
+    or a float. Any other sample is written as a NumPy array.
     """
     is_image = not inp.is_raw_input and (
         arr.ndim in {2, 3} or (arr.ndim == 4 and arr.shape[0] == 1)
     )
-    if is_image:
+    if is_image and _is_numeric(arr):
         cv2.imwrite(
             str(dest / f"{index}.png"), _channels_last(arr, inp.layout)
         )
