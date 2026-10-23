@@ -48,10 +48,16 @@ class Scenario:
 
 
 SCENARIOS: list[Scenario] = [
-    # Single-stage (resnet18). There is no archive-to-native case: `to` only
-    # adds the archive packaging after the same export, so archive-to-archive
-    # covers it.
+    # Single-stage (resnet18).
     Scenario("archive-to-archive", f"{GS}/resnet18.tar.xz", "nn_archive"),
+    # On rvc2/rvc4, `test_model_evaluation` converts HubAI NN Archives to
+    # native models.
+    Scenario(
+        "archive-to-native",
+        f"{GS}/resnet18.tar.xz",
+        "native",
+        platforms=("rvc3", "hailo"),
+    ),
     Scenario(
         "config-to-archive",
         f"{GS}/resnet18.yaml",
@@ -74,6 +80,15 @@ SCENARIOS: list[Scenario] = [
     # No RVC3 case: RVC3 cannot quantize the multi-input `mult` stage, and it
     # fails on that only after it has converted the whole first stage. The toy
     # tests reach the same check in seconds.
+    Scenario(
+        "multistage-config-to-archive",
+        "configs/multistage.yaml",
+        "nn_archive",
+        # Hailo fails on this model before the archive step, see the native
+        # case below.
+        platforms=("rvc2", "rvc4"),
+        main_stage="yolov5n-seg",
+    ),
     Scenario(
         "multistage-config-to-native",
         "configs/multistage.yaml",
@@ -137,7 +152,11 @@ def test_convert(platform_name: str, scenario: Scenario):
     convert(
         platform,
         *_scenario_options(platform_name, scenario),
-        *platform_options(platform),
+        # An NN Archive is the default output, so the archive cases also keep
+        # the RVC2 default superblob.
+        *platform_options(
+            platform, superblob=scenario.to_format == "nn_archive"
+        ),
         *extra,
         path=scenario.path,
         output_dir=output_name,

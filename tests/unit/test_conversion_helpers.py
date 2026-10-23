@@ -27,6 +27,18 @@ def test_platform_options(platform: Platform, expected: tuple[str, ...]):
 
 
 @pytest.mark.parametrize(
+    ("version", "expected"),
+    [("2022.3.0", ()), ("2021.4.0", ("rvc2.superblob", "False"))],
+)
+def test_platform_options_keeps_the_default_superblob(
+    monkeypatch: pytest.MonkeyPatch, version: str, expected: tuple[str, ...]
+):
+    monkeypatch.setenv("MODELCONVERTER_TOOL_VERSION", version)
+
+    assert platform_options(Platform.RVC2, superblob=True) == expected
+
+
+@pytest.mark.parametrize(
     ("version", "skipped"),
     [("2021.4.0", True), ("2022.3.0", False)],
 )

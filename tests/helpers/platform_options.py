@@ -14,26 +14,36 @@ def superblob_skip_reason() -> str | None:
     """Why superblob is not exercised on this tool version, if it is not.
 
     A superblob compiles one patch per shave count, and on OpenVINO 2021.4.0
-    that is slow enough to dominate the CI job -- so the dedicated superblob
-    case is skipped there. It is a runtime budget, not a capability: superblob
-    works on 2021.4.0, it is just too expensive to compile on every run.
+    that is slow enough to dominate the CI job -- so the superblob cases
+    build a plain blob there, or are skipped. It is a runtime budget, not a
+    capability: superblob works on 2021.4.0, it is just too expensive to
+    compile on every run.
     """
     if os.getenv("MODELCONVERTER_TOOL_VERSION") == "2021.4.0":
         return "superblob compilation is too slow on OpenVINO 2021.4.0"
     return None
 
 
-def platform_options(platform: Platform) -> tuple[str, ...]:
+def platform_options(
+    platform: Platform, *, superblob: bool = False
+) -> tuple[str, ...]:
     """Conversion overrides that every conversion test applies.
 
     Every conversion test threads these into ``convert`` (and into any
     ``get_configs`` call that has to agree with it), so the settings are
     handled in one place rather than per test.
 
-    RVC2 builds a plain blob. A superblob compiles one blob per SHAVE
-    count, and only the superblob case of ``test_toy_integration`` checks
-    one.
+    RVC2 builds a plain blob unless the test asks for the RVC2 default,
+    a superblob. A superblob compiles one blob per SHAVE count, so only
+    the tests of the default usage build one.
+
+    Args:
+        platform: Platform the test converts for.
+        superblob: Keep the RVC2 default superblob, unless
+            `superblob_skip_reason` rules it out on this tool version.
     """
-    if platform is Platform.RVC2:
+    if platform is Platform.RVC2 and (
+        not superblob or superblob_skip_reason() is not None
+    ):
         return ("rvc2.superblob", "False")
     return ()
