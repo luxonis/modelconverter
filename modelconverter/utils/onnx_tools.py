@@ -980,8 +980,8 @@ class ONNXModifier:
         Each node of a chain reads the first output of the node before.
 
         Returns:
-            The chains that match a whole pattern, in the order of
-            ``patterns``.
+            The chains that match a whole pattern, at most one for each
+            start node and pattern, in the order of ``patterns``.
         """
         sequences = []
         for pattern in patterns:

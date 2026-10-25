@@ -80,7 +80,8 @@ def locate_converted_model(output_dir: Path, platform: str) -> Path:
     OpenVINO IR ``.xml``).
 
     Returns:
-        The first matching path in sorted order.
+        The first direct match in sorted order, else the first nested
+        one.
     """
     pattern = _MODEL_GLOB[platform]
     matches = sorted(output_dir.glob(pattern)) or sorted(
