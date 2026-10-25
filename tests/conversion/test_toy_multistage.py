@@ -158,12 +158,13 @@ def _golden_pipeline(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Fp32 reference for the whole pipeline on the constant input.
 
-    The two upstream tensors also feed the converted ``third``. Since
-    ``third`` has no preprocessing, its golden is a plain onnxruntime run.
+    ``third`` has no preprocessing, so its golden is a plain onnxruntime
+    run.
 
     Returns:
         The output of ``third``, then its inputs ``from_first`` and
-        ``from_second``.
+        ``from_second``, which the test also feeds the converted
+        ``third``.
     """
     first, second, third = (
         cfg.stages["first"],

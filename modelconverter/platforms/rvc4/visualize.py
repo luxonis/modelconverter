@@ -160,7 +160,7 @@ class RVC4Visualizer(Visualizer):
         on.
 
         Returns:
-            The layer names of all models, merged into one order.
+            The merged layer names.
         """
         queues = [deque(layers) for layers in layer_lists if layers]
         x_labels: list[str] = []

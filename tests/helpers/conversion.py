@@ -138,7 +138,7 @@ def write_toy_conv_config(
     external_data: bool = False,
     calibration: Literal["png", "raw", "npy", "none"] = "png",
 ) -> Path:
-    """Build the toy conv ONNX plus a matching config, returning the yaml path.
+    """Build the toy conv ONNX plus a matching config.
 
     Shared by the single-input conversion tests (precision, external-data,
     hailo-compile, rvc4-encodings). The config carries mean/scale and an

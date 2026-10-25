@@ -57,8 +57,7 @@ def entrypoint(tmp_path: Path) -> Path:
 
 
 def _entrypoint_env(tmp_path: Path, body: str) -> dict[str, str]:
-    """Put a fake ``modelconverter`` on PATH and return the
-    environment to run the entrypoint with.
+    """Put a fake ``modelconverter`` on PATH for the entrypoint.
 
     Returns:
         A copy of the current environment with ``tmp_path`` first on

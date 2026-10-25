@@ -142,8 +142,7 @@ def _pack_single_input(
     shape: list[int] | None = None,
     layout: str = "NCHW",
 ) -> Path:
-    """Build a matching dummy ONNX + single-input archive and return
-    the ``.tar`` path.
+    """Build a matching dummy ONNX + single-input archive.
 
     Returns:
         The path of ``model.tar`` in ``work_dir``.

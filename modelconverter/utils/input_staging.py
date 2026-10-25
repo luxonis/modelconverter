@@ -144,9 +144,7 @@ def _is_path_parameter(name: str, annotation: object) -> bool:
 
 
 def stage_inputs(tokens: list[str], path_flags: Collection[str]) -> list[str]:
-    """Copy path arguments among ``tokens`` into the cache and return
-    a new token list with those paths rewritten to their container-side
-    locations.
+    """Copy the path arguments among ``tokens`` into the cache.
 
     ``path_flags`` are the flags whose value is a path, as returned by
     `path_flags_for`. Non-path tokens, remote URLs and non-existent
@@ -315,9 +313,8 @@ def _is_path_like(value: str) -> bool:
     Anything else has to be written with a ``./`` prefix to be staged.
 
     Returns:
-        ``True`` if ``value`` names an existing local path whose shape
-        marks it as one, or an existing file with a known extension,
-        else ``False``.
+        ``True`` if ``value`` exists and counts as a path by these
+        rules, else ``False``.
     """
     if value in _PLATFORM_NAMES:
         return False
@@ -334,7 +331,7 @@ def _is_path_like(value: str) -> bool:
 
 
 def _as_path(value: str) -> Path | None:
-    """Interprets ``value`` as a local path, or returns ``None``.
+    """Interprets ``value`` as a local path.
 
     A CLI override or a config field may legitimately hold something that
     is not a path at all -- an inline encodings JSON, a calibration
@@ -382,9 +379,7 @@ def _exists(path: Path) -> bool:
 
 
 def _stage_value(value: str, inputs_dir: Path) -> str | None:
-    """Copy the file/dir at ``value`` into the cache and return the
-    container-side path, or ``None`` if it cannot/should not be
-    staged.
+    """Copy the file/dir at ``value`` into the cache.
 
     Returns:
         The container-side path of the staged copy, or ``None`` if
@@ -590,11 +585,11 @@ def _rewrite_config_paths(
     key: str | None = None,
     parent: str | None = None,
 ) -> tuple[ParamValue, bool]:
-    """Stages the local paths ``value`` names and returns it with those
-    references replaced by their container-side paths.
+    """Stages the local paths that ``value`` names.
 
     Returns:
-        The rewritten value, and whether any path in it was staged.
+        ``value`` with each staged path replaced by its container-side
+        path, and whether any path in it was staged.
     """
     if isinstance(value, dict):
         changed = False
@@ -701,7 +696,7 @@ def _is_path_field(key: str | None, parent: str | None) -> bool:
 def _stage_config_reference(
     value: str, config_dir: Path, inputs_dir: Path
 ) -> str | None:
-    """Stages one path referenced by a config, or returns ``None``.
+    """Stages one path referenced by a config.
 
     Relative references are resolved the way the container resolves
     them: against the config file's directory first, then against the
@@ -1385,8 +1380,7 @@ def _hash_file_memoized(path: Path) -> str:
     keyed on stays a description of the bytes.
 
     Returns:
-        The first 16 hex digits of the SHA-256 of the file, read from
-        the memo when it holds a valid digest for this fingerprint.
+        The first 16 hex digits of the SHA-256 of the file.
     """
     try:
         st = path.stat()
