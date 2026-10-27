@@ -74,6 +74,11 @@ def _channels_last(arr: np.ndarray, layout: str | None) -> np.ndarray:
 
     Without a channel axis in ``layout``, a first axis of 1 or 3 is
     taken for the channels.
+
+    Returns:
+        ``arr`` with a leading axis of 1 dropped if it has more than
+        two axes, then moved to channels last if it is 3D and channels
+        first.
     """
     if arr.shape[0] == 1 and arr.ndim > 2:
         arr = arr.squeeze(0)

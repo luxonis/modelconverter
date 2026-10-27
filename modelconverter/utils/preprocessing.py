@@ -92,6 +92,15 @@ def apply_calibration_preprocessing(
     ``layout`` describes the array as it exists at this point. It may omit a
     singleton batch axis even when the configured model layout has one, which
     is how a decoded image normally arrives.
+
+    Returns:
+        The preprocessed array, cast to the NumPy type of
+        ``preprocessing.data_type``.
+
+    Raises:
+        ModelconverterException: If ``layout`` does not match the rank
+            of ``array``, or if the channels or the data type do not
+            suit the requested channel reversal or normalization.
     """
     if len(layout) != array.ndim:
         raise ModelconverterException(
@@ -187,6 +196,15 @@ def read_user_calibration_tensor(
     NumPy files carry their own shape and are returned unchanged. Raw buffers
     require ``raw_shape`` and are reshaped without reordering after their
     element count is validated.
+
+    Returns:
+        The array of the file, reshaped to ``raw_shape`` if it is a raw
+        buffer.
+
+    Raises:
+        ValueError: If a raw buffer comes without ``raw_shape``.
+        ModelconverterException: If the element count of a raw buffer
+            does not match ``raw_shape``.
     """
     if path.suffix.lower() == ".npy":
         return np.load(path)

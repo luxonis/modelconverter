@@ -20,6 +20,9 @@ from modelconverter.utils import input_staging
 def cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Create a non-empty cache that both the CLI and input staging
     resolve to.
+
+    Returns:
+        The cache directory, which holds the file ``entry``.
     """
     cache = tmp_path / "modelconverter"
     cache.mkdir()
@@ -101,6 +104,9 @@ def _claimed_by(cache: Path, pid: int) -> Path:
     """Create a staged input entry claimed by ``pid``.
 
     Mirrors how a launcher marks the ones its container has open.
+
+    Returns:
+        The entry directory, ``inputs/digest`` under ``cache``.
     """
     entry = cache / "inputs" / "digest"
     entry.mkdir(parents=True)

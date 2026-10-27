@@ -158,6 +158,9 @@ class RVC4Visualizer(Visualizer):
         once. Otherwise, a next layer that another model does not hold
         further on is an insertion: it is taken, and its model moves
         on.
+
+        Returns:
+            The merged layer names.
         """
         queues = [deque(layers) for layers in layer_lists if layers]
         x_labels: list[str] = []
@@ -197,6 +200,10 @@ def _align_metrics(
     """Line up the metric values of a model with the x labels.
 
     A layer that the model does not hold gets ``None``.
+
+    Returns:
+        The x labels under ``x_axis``, and the values of each metric
+        under its name, in the order of the labels.
     """
     layer_names = df["layer_name"].to_list()
     data: dict[str, list] = {"x_axis": x_labels}

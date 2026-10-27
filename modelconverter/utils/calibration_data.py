@@ -61,6 +61,10 @@ def _find_content_root(path: Path) -> Path:
 
     Hidden entries and the clutter that archivers and file browsers
     leave behind do not count.
+
+    Returns:
+        The first directory, from ``path`` down, that holds a file or
+        does not hold exactly one subdirectory.
     """
     current = path
     while True:

@@ -161,6 +161,10 @@ def _inline_model_path(
     Returns:
         The path that is left for `get_configs`, ``None`` once the model
         went into the overrides, and the overrides.
+
+    Raises:
+        ValueError: If ``path`` names an OpenVINO IR file (``.xml`` or
+            ``.bin``) and ``platform`` is neither RVC2 nor RVC3.
     """
     if path is None:
         return None, overrides
@@ -388,6 +392,14 @@ def _export(
 
     When the preprocessing cannot be embedded into the model, the
     export runs once more with the preprocessing in the NN Archive.
+
+    Returns:
+        The exporter that ran and the paths of the models it exported.
+
+    Raises:
+        PreprocessingEmbeddingError: If the exporter cannot embed the
+            preprocessing and the export cannot fall back to the NN
+            Archive.
     """
     record.summary = plan.summary(record.run_id)
     try:
@@ -580,6 +592,13 @@ def convert(
             ``to="nn_archive"``. Without this option, preprocessing is first
             embedded when possible and otherwise falls back to archive
             metadata for NN Archive output.
+
+    Raises:
+        SystemExit: If the conversion fails or is interrupted. The exit
+            status is 130 on Ctrl-C or ``SIGTERM``, 1 on a
+            ``ModelconverterException`` and 2 on any other
+            ``Exception``. A ``SystemExit`` from the conversion itself
+            keeps its own status.
 
     """
     signal.signal(signal.SIGTERM, _exit_on_signal)
@@ -793,6 +812,38 @@ def benchmark(
     get_benchmark(platform, model_path).run(full=full, save=save, **kwargs)
 
 
+def _image_dirs_by_input(
+    image_dirs: list[str], image_subset: int | None
+) -> dict[str, str]:
+    """Check the analysis arguments and pair each input with its images.
+
+    Args:
+        image_dirs: One image directory, or input names and image
+            directories in turn.
+        image_subset: The number of files to analyze per directory.
+
+    Returns:
+        The image directory of each input, keyed by input name. A single
+        directory is keyed by ``"default"``.
+
+    Raises:
+        ValueError: If ``image_subset`` is given and not positive, or if
+            the input names and the directories do not come in pairs.
+
+    """
+    if image_subset is not None and image_subset <= 0:
+        raise ValueError("image_subset must be a positive integer.")
+    if len(image_dirs) == 1:
+        return {"default": image_dirs[0]}
+    if len(image_dirs) % 2 != 0:
+        raise ValueError(
+            "Please supply the same amount of model input names and test image directories."
+        )
+    return {
+        image_dirs[i]: image_dirs[i + 1] for i in range(0, len(image_dirs), 2)
+    }
+
+
 @app.meta.command(group=device_commands)
 def analyze(
     *,
@@ -834,20 +885,7 @@ def analyze(
     """
     with catch_exceptions():
         logger.info("Starting analysis")
-        if image_subset is not None and image_subset <= 0:
-            raise ValueError("image_subset must be a positive integer.")
-        if len(image_dirs) == 1:
-            image_dirs_dict = {"default": image_dirs[0]}
-        else:
-            if len(image_dirs) % 2 != 0:
-                raise ValueError(
-                    "Please supply the same amount of model input names and test image directories."
-                )
-            image_dirs_dict = {
-                image_dirs[i]: image_dirs[i + 1]
-                for i in range(0, len(image_dirs), 2)
-            }
-
+        image_dirs_dict = _image_dirs_by_input(image_dirs, image_subset)
         analyzer = get_analyzer(
             Platform.RVC4,
             device_ip,
@@ -1058,6 +1096,10 @@ def _refuse_while_in_use(console: Console, root: Path) -> bool:
     The cache is bind-mounted into every running container, so emptying it
     would pull the staged inputs -- and the downloads the container writes
     as it runs -- out from under a conversion that is still using them.
+
+    Returns:
+        ``True`` if a live process still uses the cache, after printing
+        a notice to ``console``; ``False`` otherwise.
     """
     if not cache_is_in_use():
         return False
@@ -1075,6 +1117,10 @@ def _confirm(question: str) -> bool:
     raise ``EOFError``, and Ctrl-C at the prompt raises
     ``KeyboardInterrupt``. A destructive command must not abort with a
     traceback on either, nor read silence for consent nobody gave.
+
+    Returns:
+        ``True`` if the user answers yes; ``False`` on no, on closed
+        stdin or on Ctrl-C.
     """
     try:
         return Confirm.ask(question)
@@ -1226,6 +1272,10 @@ def launcher(
         cpus: Number of CPU cores to allocate to the docker container.
             Can be a fractional number, e.g. ``0.5`` for half a core. By
             default, uses all available CPU cores.
+
+    Raises:
+        ValueError: If ``memory`` is not a positive size or ``cpus`` is
+            not a positive number.
 
     """
     command, bound, _ = app.parse_args(tokens)

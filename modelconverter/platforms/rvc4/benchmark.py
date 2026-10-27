@@ -566,6 +566,13 @@ class RVC4Benchmark(Benchmark):
 
         The input specs come from the DLC, or from the archive when
         the DLC cannot be read.
+
+        Returns:
+            The path of the unpacked DLC and the specs of its inputs.
+
+        Raises:
+            ValueError: If nothing in the unpacked archive matches the
+                model path that its ``config.json`` names.
         """
         model_archive = _resolve_archive(model_path)
         tmp_dir = model_archive.parent / "tmp"

@@ -253,6 +253,13 @@ def _normalization_values(
     Returns:
         The channel count, and the mean and scale values broadcast to
         it. With ``reverse_only``, both value lists are ``None``.
+
+    Raises:
+        ONNXException: If ``cfg.validate_preprocessing`` rejects the
+            input.
+        PreprocessingEmbeddingError: If the layout is neither ``NCHW``
+            nor ``NHWC``, or if the input needs mean or scale
+            normalization and is not of a floating-point type.
     """
     try:
         n_channels = cfg.validate_preprocessing(reverse_only=reverse_only)
@@ -301,6 +308,13 @@ def _reverse_channel_nodes(
 
     From opset 13, the split lengths are an input, which is appended to
     ``initializers``.
+
+    Returns:
+        The ``Split`` node and the ``Concat`` node, in this order.
+
+    Raises:
+        PreprocessingEmbeddingError: If the model declares no default
+            domain opset.
     """
     try:
         opset = get_opset_version(model)
@@ -553,6 +567,9 @@ class ONNXModifier:
         Returns:
             ``True`` if the outputs of both models match,
             ``False`` otherwise.
+
+        Raises:
+            ONNXException: If a model output is not a tensor.
 
         """
         import onnxruntime as ort
@@ -881,6 +898,9 @@ class ONNXModifier:
 
         Such a node is not substituted, because SNPE 2.32.6 fails to
         convert the result.
+
+        Returns:
+            Whether an ``Erf`` node reads the first output of ``node``.
         """
         return any(
             n.op == "Erf"
@@ -958,6 +978,10 @@ class ONNXModifier:
         """Find the node chains whose operations follow a pattern.
 
         Each node of a chain reads the first output of the node before.
+
+        Returns:
+            The chains that match a whole pattern, at most one for each
+            start node and pattern, in the order of ``patterns``.
         """
         sequences = []
         for pattern in patterns:
@@ -1220,6 +1244,11 @@ class ONNXModifier:
         Returns:
             ``False`` when the Conv does not have 1 or 3 channels on the
             axis of the split.
+
+        Raises:
+            ValueError: If the ``Split`` and the ``Concat`` have
+                different axes.
+            TypeError: If the axis of the ``Split`` is not an integer.
         """
         conv_weights = intermediate_nodes[-1].inputs[1]
 
@@ -1384,6 +1413,9 @@ def _batch_norm_node(
     """Build a ``BatchNormalization`` node that computes ``x * scale + bias``.
 
     The mean is zero and the variance is one on every channel.
+
+    Returns:
+        The new node, named ``name``.
     """
     assert input_tensor.shape is not None
     conv_channels = int(input_tensor.shape[1])
@@ -1449,6 +1481,10 @@ def _shift_conv_bias(
 
     ``weights`` are the Conv weights that the added value passes
     through.
+
+    Raises:
+        ValueError: If the new bias fails its shape check against the
+            old bias, or against ``weights`` when the Conv has no bias.
     """
     shift = np.sum(add_value * weights.values, axis=(1, 2, 3))
     if len(conv_node.inputs) > 2:

@@ -220,7 +220,7 @@ class DeviceMonitor:
             _, out, _ = self._device_handler.shell(
                 f"cat /sys/class/hwmon/{hwmon}/power1_input"
             )
-            return int(out) / 1_000_000  # µW -> W
+            return int(out) / 1_000_000  # microwatts -> watts
         except Exception:
             logger.warning(f"Failed to read {hwmon} power value.")
             return None
