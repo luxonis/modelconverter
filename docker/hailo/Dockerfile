@@ -3,6 +3,9 @@ ARG DALI_VERSION=1.49.0
 
 FROM hailo_ai_sw_suite_${VERSION//./-}:1
 
+# The tools and the entrypoint run as root. On exit, the entrypoint
+# gives the mounts back to the host user (docker/entrypoint_common.sh).
+# nosemgrep: last-user-is-root
 USER root
 
 ARG VERSION

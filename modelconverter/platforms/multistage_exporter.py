@@ -196,7 +196,7 @@ def _run_calibration_script(
         # script can `import numpy` etc.
         scope = {}
         try:
-            exec(script, scope)  # nosemgrep  # noqa: S102
+            exec(script, scope)  # nosemgrep: exec-detected  # noqa: S102
         except Exception as e:  # pragma: no cover
             raise RuntimeError("Error executing script") from e
 
