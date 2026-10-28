@@ -92,7 +92,8 @@ def _write_encodings_file(
                 },
                 "param_encodings": {},
             }
-        )
+        ),
+        encoding="utf-8",
     )
     return path
 
@@ -363,6 +364,7 @@ def test_strict_true_validates_raw_override_names(
 @pytest.mark.parametrize("strict", [False, True])
 def test_strict_validation_preserves_raw_override_payload(
     work_dir: Path,
+    *,
     strict: bool,
 ):
     model = _probe_model(work_dir / "probe.onnx")

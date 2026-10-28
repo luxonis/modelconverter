@@ -261,7 +261,7 @@ def extract_preprocessing(
         scale = _broadcast(inp.scale_values, inp.channel_count)
 
         # Remember the preprocessing for calibration before it is cleared.
-        inp._calibration_preprocessing = CalibrationPreprocessing(
+        inp.calibration_preprocessing = CalibrationPreprocessing(
             encoding_from=inp.encoding.from_,
             encoding_to=inp.encoding.to,
             mean_values=None if mean is None else tuple(mean),

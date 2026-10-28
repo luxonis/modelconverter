@@ -85,7 +85,7 @@ def _input_config(**data: ParamValue) -> InputConfig:
     ("is_raw_input", "expected"), [(True, "raw"), (False, "image")]
 )
 def test_default_archive_input_type(
-    is_raw_input: bool, expected: Literal["raw", "image"]
+    *, is_raw_input: bool, expected: Literal["raw", "image"]
 ):
     assert default_archive_input_type(is_raw_input=is_raw_input) == expected
 
@@ -213,6 +213,7 @@ def test_archive_name_override_preserves_main_stage_lookup(
     work_dir: Path,
     overrides: Params | list[str] | None,
     name: str | None,
+    *,
     packed: bool,
 ):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
@@ -255,7 +256,7 @@ def test_archive_name_override_preserves_main_stage_lookup(
 
 @pytest.mark.parametrize("explicit_stage", [False, True])
 def test_single_stage_archive_field_overrides(
-    work_dir: Path, explicit_stage: bool
+    work_dir: Path, *, explicit_stage: bool
 ):
     tar = _pack_single_input(
         work_dir, {"mean": [10, 20, 30], "scale": [2, 3, 4]}
@@ -332,7 +333,7 @@ def test_archive_package_suffixes(
 @pytest.mark.parametrize("name", [None, "custom.ONNX.TAR.XZ"])
 @pytest.mark.parametrize("packed", [False, True])
 def test_archive_suffix_normalization_respects_name_source(
-    work_dir: Path, name: str | None, packed: bool
+    work_dir: Path, name: str | None, *, packed: bool
 ):
     directory = work_dir / "bundle.onnx"
     directory.mkdir()
@@ -511,7 +512,7 @@ def test_explicit_encodings_override_skips_invalid_archive_file(
 
 @pytest.mark.parametrize("new_sidecar", [False, True])
 def test_same_named_archives_do_not_reuse_encodings(
-    work_dir: Path, new_sidecar: bool, monkeypatch: pytest.MonkeyPatch
+    work_dir: Path, *, new_sidecar: bool, monkeypatch: pytest.MonkeyPatch
 ):
     old_encodings = write_json(ENCODINGS, work_dir / "old.json")
     tar = _pack_encoding_archive(
@@ -572,7 +573,7 @@ def test_concurrent_archive_extractions_publish_one_complete_directory(
     onnx = work_dir / "dummy_model.onnx"
     expected_model = onnx.read_bytes()
     barrier = Barrier(2, timeout=10)
-    publish = nn_archive._publish_directory
+    publish = nn_archive.publish_directory
 
     def publish_together(src: Path, dest: Path) -> None:
         assert not dest.exists()
@@ -581,7 +582,7 @@ def test_concurrent_archive_extractions_publish_one_complete_directory(
         barrier.wait()
         publish(src, dest)
 
-    monkeypatch.setattr(nn_archive, "_publish_directory", publish_together)
+    monkeypatch.setattr(nn_archive, "publish_directory", publish_together)
     with ThreadPoolExecutor(max_workers=2) as pool:
         first, second = pool.map(nn_archive._unpack_archive, [tar, tar])
 
@@ -616,7 +617,7 @@ def test_failed_archive_extraction_is_not_published(
 
 @pytest.mark.parametrize("stage_override", [False, True])
 def test_archive_encodings_preserve_multistage_rvc4_overrides(
-    work_dir: Path, stage_override: bool
+    work_dir: Path, *, stage_override: bool
 ):
     onnx = standard_dummy_onnx(work_dir / "dummy_model.onnx")
     post = single_io_onnx(work_dir / "post.onnx")
@@ -672,7 +673,11 @@ def test_encodings_ignored_for_non_rvc4(work_dir: Path):
     [(False, True), (False, False), (True, True)],
 )
 def test_archive_requires_used_encodings_except_fp16(
-    tmp_path: Path, dummy_onnx: Path, fp16: bool, normalize_io_encodings: bool
+    tmp_path: Path,
+    dummy_onnx: Path,
+    *,
+    fp16: bool,
+    normalize_io_encodings: bool,
 ):
     config = _config_from_overrides(
         dummy_onnx, **{"rvc4.encodings": ENCODINGS}
@@ -844,6 +849,7 @@ def test_explicit_batchless_archive_image_preserves_image_contract(
 )
 def test_legacy_interleaved_layout_mismatch_keeps_archive_layout(
     work_dir: Path,
+    *,
     interleaved_to_planar: bool,
     shape: list[int],
     layout: str,

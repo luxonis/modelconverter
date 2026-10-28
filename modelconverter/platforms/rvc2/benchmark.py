@@ -11,6 +11,7 @@ from pathlib import Path
 import depthai as dai
 import numpy as np
 from luxonis_ml.typing import PathType
+from typing_extensions import override
 
 from modelconverter.platforms.base_benchmark import (
     Benchmark,
@@ -30,6 +31,7 @@ class RVC2Benchmark(Benchmark):
     _HUBAI_PLATFORM = "RVC2"
 
     @property
+    @override
     def default_configuration(self) -> Configuration:
         """Default configuration for RVC2 benchmarking.
 
@@ -57,14 +59,16 @@ class RVC2Benchmark(Benchmark):
         }
 
     @property
+    @override
     def all_configurations(self) -> list[Configuration]:
-        """Return the configurations used by the full benchmark.
+        """The configurations used by the full benchmark.
 
         Covers one, two and three inference threads, leaving the
         remaining options to the caller.
         """
         return [{"num_threads": i} for i in [1, 2, 3]]
 
+    @override
     def benchmark(self, configuration: Configuration) -> Result:
         """Run a single benchmark of the model on the device.
 
@@ -165,7 +169,8 @@ def _random_input_data(model: dai.NNArchive | Path) -> dai.NNData:
         ]
 
     input_data = dai.NNData()
+    rng = np.random.default_rng()
     for name, size in sizes:
-        img = np.random.randint(0, 255, (size[1], size[0], 3), np.uint8)
+        img = rng.integers(0, 255, (size[1], size[0], 3), np.uint8)
         input_data.addTensor(name, img)
     return input_data

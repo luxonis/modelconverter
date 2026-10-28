@@ -13,11 +13,12 @@ pixel values never affect which branch runs.
 from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
 import pytest
+from luxonis_ml.typing import Params
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils.config import InputConfig, RandomCalibrationConfig
+from modelconverter.utils.types import DataType
 
 
 def _prepare(
@@ -26,22 +27,25 @@ def _prepare(
     layout: str | None,
     *,
     encoding: str | None = None,
+    data_type: DataType = DataType.FLOAT32,
 ) -> list[str]:
     """Run the calibration prep for one input, returning the written suffixes."""
-    data: dict = {"name": "x", "shape": shape}
+    data: Params = {"name": "x", "shape": shape}
     if layout is not None:
         data["layout"] = layout
     if encoding is not None:
         data["encoding"] = encoding
     inp = InputConfig.model_validate(data)
-    inp.calibration = RandomCalibrationConfig(max_images=2)
+    inp.calibration = RandomCalibrationConfig(
+        max_images=2, data_type=data_type
+    )
 
     # The method only touches `_inputs` and `intermediate_outputs_dir`, so a
     # lightweight stand-in stands in for a fully constructed exporter.
     stub = SimpleNamespace(
         _inputs={"x": inp}, intermediate_outputs_dir=tmp_path
     )
-    Exporter._prepare_random_calibration_data(stub)  # type: ignore[arg-type]
+    Exporter._prepare_random_calibration_data(stub)  # pyright: ignore[reportArgumentType]
     return sorted(p.suffix for p in (tmp_path / "random" / "x").iterdir())
 
 
@@ -72,8 +76,18 @@ def test_random_calibration_output_format(
     encoding: str | None,
     suffix: str,
 ):
-    np.random.seed(0)
     assert _prepare(tmp_path, shape, layout, encoding=encoding) == [
         suffix,
         suffix,
+    ]
+
+
+@pytest.mark.parametrize("data_type", [DataType.BOOLEAN, DataType.STRING])
+def test_image_samples_without_a_numeric_dtype_are_saved_by_numpy(
+    tmp_path: Path, data_type: DataType
+):
+    """OpenCV writes only integer and float pixels."""
+    assert _prepare(tmp_path, [1, 3, 8, 8], None, data_type=data_type) == [
+        ".npy",
+        ".npy",
     ]

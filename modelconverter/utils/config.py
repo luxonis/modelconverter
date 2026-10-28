@@ -36,16 +36,15 @@ from pydantic import (
     PositiveInt,
     PrivateAttr,
     SerializerFunctionWrapHandler,
-    field_serializer,
     field_validator,
     model_serializer,
     model_validator,
 )
-from typing_extensions import Self
+from typing_extensions import Self, assert_never
 
 from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
-from modelconverter.utils.encodings import parse_encodings
+from modelconverter.utils.encodings import Encodings, parse_encodings
 from modelconverter.utils.filesystem_utils import resolve_path
 from modelconverter.utils.layout import (
     is_image_input_shape,
@@ -185,6 +184,23 @@ class ImageCalibrationConfig(BaseCalibrationConfig):
     def generated_layout(self) -> str:
         """Layout used when generated tensor calibration was materialized."""
         return self._generated_layout
+
+    def is_user_tensor(self, path: Path) -> bool:
+        """Whether a tensor file uses the backend-ready calibration contract."""
+        return (
+            path.suffix.lower() in {".npy", ".raw"}
+            and not self.generated_from_random
+        )
+
+    def mark_generated_from_random(self, layout: str) -> None:
+        """Mark the files as written from random calibration data.
+
+        Args:
+            layout: Layout of the generated tensors.
+
+        """
+        self._generated_from_random = True
+        self._generated_layout = layout
 
     @field_validator("path", mode="before")
     @staticmethod
@@ -338,10 +354,16 @@ class InputConfig(OutputConfig):
         """Preprocessing moved out of the model but retained for calibration."""
         return self._calibration_preprocessing
 
+    @calibration_preprocessing.setter
+    def calibration_preprocessing(
+        self, value: CalibrationPreprocessing | None
+    ) -> None:
+        self._calibration_preprocessing = value
+
     @model_validator(mode="wrap")
     @classmethod
     def _track_layout_source(
-        cls, data: Any, handler: ModelWrapValidatorHandler[Self]
+        cls, data: object, handler: ModelWrapValidatorHandler[Self]
     ) -> Self:
         """Remember whether ``C`` came from the user or layout inference."""
         if isinstance(data, cls):
@@ -356,17 +378,17 @@ class InputConfig(OutputConfig):
 
     @property
     def encoding_mismatch(self) -> bool:
-        """Return whether the ``from`` and ``to`` encodings differ."""
+        """Whether the ``from`` and ``to`` encodings differ."""
         return self.encoding.from_ != self.encoding.to
 
     @property
     def is_color_input(self) -> bool:
-        """Return whether the input is fed with color image data."""
+        """Whether the input is fed with color image data."""
         return self.encoding.from_ in {Encoding.RGB, Encoding.BGR}
 
     @property
     def is_raw_input(self) -> bool:
-        """Return whether the input is fed with non-image data."""
+        """Whether the input is fed with non-image data."""
         return (
             self.encoding.from_ == Encoding.NONE
             and self.encoding.to == Encoding.NONE
@@ -374,7 +396,7 @@ class InputConfig(OutputConfig):
 
     @property
     def channel_count(self) -> int | None:
-        """Return the positive channel count when ``C`` is trustworthy."""
+        """The positive channel count when ``C`` is trustworthy."""
         if self.shape is None or self.layout is None or "C" not in self.layout:
             return None
         if (
@@ -694,64 +716,6 @@ class RVC3Config(BlobBaseConfig):
     pot_target_device: PotDevice = PotDevice.VPU
 
 
-class QuantizationOverridesItem(BaseModelExtraForbid):
-    """Quantization encoding of a single tensor.
-
-    Follows the AIMET encoding specification and is used to override the
-    quantization parameters computed during the RVC4 conversion.
-
-    Attributes:
-        bitwidth: Number of bits used to represent the tensor.
-        is_symmetric: Whether the quantization is symmetric.
-        dtype: Whether the tensor is quantized as an integer or a float.
-        max: Largest representable value.
-        min: Smallest representable value.
-        offset: Zero-point offset of the quantization grid.
-        scale: Step size of the quantization grid.
-
-    """
-
-    bitwidth: Annotated[int, Literal[4, 8, 16, 32]] | None = None
-    is_symmetric: bool | None = None
-    dtype: Literal["int", "float"] | None = None
-    max: float | None = None
-    min: float | None = None
-    offset: int | None = None
-    scale: float | None = None
-
-    @field_serializer("is_symmetric", when_used="json")
-    @staticmethod
-    def serialize_is_symmetric(value: bool | None) -> str | None:
-        """Serialize ``is_symmetric`` as a string in JSON output.
-
-        Args:
-            value: Value of the ``is_symmetric`` field.
-
-        Returns:
-            The string representation of the value, or ``None`` if the
-            value is ``None``.
-
-        """
-        if value is None:
-            return None
-        return str(value)
-
-
-class Encodings(BaseModelExtraForbid):
-    """Set of quantization encodings overriding the computed ones.
-
-    Attributes:
-        activation_encodings: Encodings of the activation tensors, keyed
-            by tensor name.
-        param_encodings: Encodings of the parameter tensors, keyed by
-            tensor name.
-
-    """
-
-    activation_encodings: dict[str, list[QuantizationOverridesItem]]
-    param_encodings: dict[str, list[QuantizationOverridesItem]]
-
-
 class QuantizationOverrides(BaseModelExtraForbid):
     """Raw RVC4 quantization overrides to pass to SNPE.
 
@@ -786,7 +750,7 @@ class QuantizationOverrides(BaseModelExtraForbid):
         if self.payload is not None:
             return copy.deepcopy(self.payload)
         assert self.source_path is not None
-        with open(self.source_path) as f:
+        with self.source_path.open() as f:
             value = json.load(f)
         if not isinstance(value, dict):
             raise TypeError(
@@ -1119,6 +1083,7 @@ class SingleStageConfig(BaseModelExtraForbid):
             return self.rvc3
         if platform == Platform.RVC4:  # pragma: no branch
             return self.rvc4
+        assert_never(platform)
 
     @model_validator(mode="before")
     @classmethod
@@ -1319,7 +1284,7 @@ class Config(LuxonisConfig):
     @model_validator(mode="wrap")
     @classmethod
     def _validate_stages(
-        cls, data: Any, handler: ModelWrapValidatorHandler[Self]
+        cls, data: object, handler: ModelWrapValidatorHandler[Self]
     ) -> Self:
         """Fill implicit stage names without changing explicit stage keys."""
         if not isinstance(data, dict):
@@ -1374,6 +1339,18 @@ class Config(LuxonisConfig):
             config.name = stage.input_model.stem
             config.stages = {config.name: stage}
         return config
+
+    @classmethod
+    def merge_overrides(cls, data: Params, overrides: Params) -> None:
+        """Merge overrides into raw config data, in place.
+
+        Args:
+            data: Raw config data to update.
+            overrides: Overrides keyed by dotted paths, such as
+                ``"stages.main.inputs"``.
+
+        """
+        cls._merge_overrides(data, overrides)
 
 
 def broadcast_preprocessing_values(

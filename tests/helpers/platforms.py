@@ -5,13 +5,14 @@ selects only the RVC2 conversions.
 """
 
 import pytest
+from _pytest.mark import ParameterSet
 
 ALL_PLATFORMS = ("rvc2", "rvc3", "rvc4", "hailo")
 
 
 def platform_marks(
     platform: str, xfail: str | None = None, skip: str | None = None
-) -> list:
+) -> list[pytest.MarkDecorator]:
     """Build the platform marker, plus an xfail or a skip when given a reason.
 
     A failing conversion exits rather than raising, hence ``raises=SystemExit``
@@ -35,7 +36,7 @@ def platform_marks(
 def platform_params(
     platforms: tuple[str, ...] = ALL_PLATFORMS,
     xfails: dict[str, str] | None = None,
-) -> list:
+) -> list[ParameterSet]:
     """One ``pytest.param`` per platform name, for a ``"platform_name"``
     parametrization.
 

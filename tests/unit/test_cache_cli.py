@@ -90,7 +90,7 @@ def test_cache_clean_cleans_an_unreadable_cache(
 def test_cache_clean_yes_skips_confirmation(
     cache: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def unexpected_prompt(*_args, **_kwargs) -> bool:
+    def unexpected_prompt(_question: str) -> bool:
         raise AssertionError("confirmation prompt should be skipped")
 
     monkeypatch.setattr(cli.Confirm, "ask", unexpected_prompt)

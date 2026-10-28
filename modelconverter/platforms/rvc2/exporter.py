@@ -21,6 +21,7 @@ from typing import Final, NamedTuple
 import tflite2onnx
 from loguru import logger
 from luxonis_ml.typing import Params
+from typing_extensions import override
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
@@ -73,7 +74,7 @@ class RVC2Exporter(Exporter):
 
     platform: Platform = Platform.RVC2
 
-    def __init__(self, config: SingleStageConfig, output_dir: Path):
+    def __init__(self, config: SingleStageConfig, output_dir: Path) -> None:
         """Initialize the exporter from the RVC2 configuration.
 
         Args:
@@ -104,7 +105,9 @@ class RVC2Exporter(Exporter):
 
     def _export_openvino_ir(self) -> Path:
         args = self._mo_args
-        self._add_args(args, ["--output_dir", self.intermediate_outputs_dir])
+        self._add_args(
+            args, ["--output_dir", str(self.intermediate_outputs_dir)]
+        )
         self._add_args(args, ["--output", ",".join(self._outputs)])
         if self._compress_to_fp16:
             if OV_2021:
@@ -133,7 +136,7 @@ class RVC2Exporter(Exporter):
 
         args.extend(_mo_preprocessing_args(self._inputs))
 
-        self._add_args(args, ["--input_model", self._input_model])
+        self._add_args(args, ["--input_model", str(self._input_model)])
 
         self._subprocess_run(["mo", *args], meta_name="model_optimizer")
 
@@ -227,6 +230,7 @@ class RVC2Exporter(Exporter):
                 self._mo_args, ["--layout", ",".join(layout_mappings)]
             )
 
+    @override
     def export(self) -> Path:
         """Convert the model and compile it for RVC2.
 
@@ -266,7 +270,7 @@ class RVC2Exporter(Exporter):
 
         return self._compile_blob(args).blob_path
 
-    def _compile_blob(self, args: list) -> CompileResult:
+    def _compile_blob(self, args: list[str]) -> CompileResult:
         """Compile the OpenVINO IR into a blob with ``compile_tool``.
 
         Args:
@@ -287,7 +291,7 @@ class RVC2Exporter(Exporter):
 
         if "-o" not in args:
             blob_output_path = output_path.with_suffix(".blob")
-            args += ["-o", blob_output_path]
+            args += ["-o", str(blob_output_path)]
         else:
             blob_output_path = Path(args[args.index("-o") + 1])
 
@@ -367,8 +371,10 @@ class RVC2Exporter(Exporter):
             [
                 *orig_args,
                 "-o",
-                blobs_directory
-                / f"{self._model_name}_{DEFAULT_SUPER_SHAVES}shave.blob",
+                str(
+                    blobs_directory
+                    / f"{self._model_name}_{DEFAULT_SUPER_SHAVES}shave.blob"
+                ),
                 "-c",
                 self._write_config(DEFAULT_SUPER_SHAVES, DEFAULT_SUPER_SHAVES),
             ]
@@ -416,7 +422,7 @@ class RVC2Exporter(Exporter):
             )
 
         t = time.time()
-        futures: set[Future] = set()
+        futures: set[Future[None]] = set()
         with ThreadPool(n_workers) as executor:
             for shave in shave_list:
                 futures.add(
@@ -435,6 +441,7 @@ class RVC2Exporter(Exporter):
         logger.info(f"Superblob compiled to {superblob_path}")
         return superblob_path
 
+    @override
     def exporter_buildinfo(self) -> Params:
         """Return the RVC2-specific build information.
 
@@ -474,9 +481,8 @@ def _mo_input_spec(inp: InputConfig, *, fp16: bool) -> str:
     spec = inp.name
     if inp.shape is not None:
         spec += _lst_join(inp.shape, sep=" ")
-    if inp.data_type is not None:
-        data_type = DataType("float16") if fp16 else inp.data_type
-        spec += f"{{{data_type.as_openvino_dtype()}}}"
+    data_type = DataType("float16") if fp16 else inp.data_type
+    spec += f"{{{data_type.as_openvino_dtype()}}}"
     if inp.frozen_value is not None:
         if len(inp.frozen_value) == 1:
             value = inp.frozen_value[0]
@@ -613,7 +619,7 @@ def _write_superblob(
         for patch_name in blobs_directory.glob("*.patch")
     }
 
-    with open(superblob_path, "wb") as superblob_file:
+    with superblob_path.open("wb") as superblob_file:
         header = default_blob_path.stat().st_size.to_bytes(8, "big")
         for patch_idx in range(1, 17):
             patch = idx2patch.get(patch_idx)

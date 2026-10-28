@@ -148,7 +148,9 @@ def _table_to_csv(section: str) -> str:
     return "\n".join(cleaned_lines)
 
 
-def _dlc_tensor_metadata(csv_text: str, typ: str) -> dict[str, dict]:
+def _dlc_tensor_metadata(
+    csv_text: str, typ: str
+) -> dict[str, dict[str, list[int]] | dict[str, DataType]]:
     """Read the shapes and the data types of the tensors of a table."""
     import polars as pl
 
@@ -253,7 +255,7 @@ def _get_metadata_onnx(onnx_path: Path) -> Metadata:
 def _get_metadata_tflite(model_path: Path) -> Metadata:
     import tflite
 
-    with open(model_path, "rb") as f:
+    with model_path.open("rb") as f:
         data = f.read()
 
     subgraph = tflite.Model.GetRootAsModel(data, 0).Subgraphs(0)

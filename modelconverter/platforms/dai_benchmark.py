@@ -81,7 +81,7 @@ def run_dai_benchmark(
             benchmark_in = pipeline.create(dai.node.BenchmarkIn)
             benchmark_in.setRunOnHost(False)
             benchmark_in.sendReportEveryNMessages(num_messages)
-            benchmark_in.logReportsAsWarnings(False)
+            benchmark_in.logReportsAsWarnings(logReportsAsWarnings=False)
 
             benchmark_out.out.link(neural_network.input)
             neural_network.out.link(benchmark_in.input)

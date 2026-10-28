@@ -9,6 +9,7 @@ a model whose response has actually changed.
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import onnx
 import onnxruntime as ort
 
@@ -28,7 +29,9 @@ _MODEL_GLOB = {
 }
 
 
-def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+def cosine_similarity(
+    a: npt.NDArray[np.generic], b: npt.NDArray[np.generic]
+) -> float:
     """Cosine similarity between two arrays, compared as flat vectors."""
     x = np.asarray(a, dtype=np.float64).ravel()
     y = np.asarray(b, dtype=np.float64).ravel()
@@ -40,7 +43,7 @@ def golden_reference_outputs(
     input_configs: dict[str, InputConfig],
     work_dir: Path,
     value: float,
-) -> dict[str, np.ndarray]:
+) -> dict[str, npt.NDArray[np.generic]]:
     """Fp32 reference outputs the converted model should reproduce.
 
     Bakes the config's preprocessing into the ONNX with modelconverter's own

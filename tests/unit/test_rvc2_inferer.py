@@ -30,10 +30,11 @@ def _install_fake_openvino(
         }
     )
     module = ModuleType("openvino.inference_engine.ie_api")
-    module.IECore = lambda: SimpleNamespace(  # type: ignore[attr-defined]
+    ie_core = SimpleNamespace(
         read_network=lambda model, weights: net,
         load_network=lambda network, device_name: object(),
     )
+    monkeypatch.setattr(module, "IECore", lambda: ie_core, raising=False)
     monkeypatch.setitem(
         sys.modules, "openvino.inference_engine.ie_api", module
     )
@@ -69,7 +70,7 @@ def test_layout_comes_from_the_ir(
         layout={"x": config_layout},
     )
 
-    RVC2Inferer.setup(stub)  # type: ignore[arg-type]
+    RVC2Inferer.setup(stub)  # pyright: ignore[reportArgumentType]
 
     assert stub.in_shapes == {"x": list(net_shape)}
     assert stub.layout == {"x": layout}

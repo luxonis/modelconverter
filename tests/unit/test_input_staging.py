@@ -503,10 +503,10 @@ def test_a_file_lost_mid_copy_does_not_publish_an_incomplete_entry(
     expected = inputs_dir / input_staging._hash_dir(src) / src.name
     real_copy = shutil.copy2
 
-    def fail_on_second(source: Path, dest: Path, *args, **kwargs) -> None:
-        if Path(source).name == "two.jpg":
+    def fail_on_second(source: Path, dest: Path) -> None:
+        if source.name == "two.jpg":
             raise PermissionError(errno.EACCES, "Permission denied")
-        real_copy(source, dest, *args, **kwargs)
+        real_copy(source, dest)
 
     monkeypatch.setattr(shutil, "copy2", fail_on_second)
 
@@ -1131,7 +1131,7 @@ def _fabricated_file(
     )
     for name, value in stat_fields.items():
         setattr(stat, name, value)
-    return input_staging._InputFile("sample.npy", path, stat)  # type: ignore[arg-type]
+    return input_staging._InputFile("sample.npy", path, stat)  # pyright: ignore[reportArgumentType]
 
 
 def test_directory_digest_separates_matching_inodes_on_other_devices(
@@ -1337,7 +1337,7 @@ def test_path_flags_of_an_uninspectable_command() -> None:
     """Staging follows the command signature, so a command it cannot
     read leaves every token alone rather than guessing.
     """
-    assert input_staging.path_flags_for(object()) == set()  # type: ignore[arg-type]
+    assert input_staging.path_flags_for(object()) == set()  # pyright: ignore[reportArgumentType]
 
 
 def test_stages_a_path_joined_to_its_flag(
@@ -1416,7 +1416,7 @@ def test_publishing_reraises_an_unexpected_error(
     monkeypatch.setattr(Path, "rename", refuse_rename)
 
     with pytest.raises(OSError, match="denied"):
-        input_staging._publish_directory(tmp_path / "src", tmp_path / "dest")
+        input_staging.publish_directory(tmp_path / "src", tmp_path / "dest")
 
 
 def test_an_unreadable_config_is_staged_verbatim(
@@ -1565,7 +1565,7 @@ def test_claiming_an_unwritable_cache_is_not_fatal(
     monkeypatch.setattr(input_staging, "get_cache_dir", lambda: cache)
 
     def refuse_mkdir(
-        self: Path, parents: bool = False, exist_ok: bool = False
+        self: Path, *, parents: bool = False, exist_ok: bool = False
     ) -> None:
         raise OSError("read-only file system")
 
@@ -1658,4 +1658,4 @@ def test_a_file_that_cannot_be_stat_ed_is_hashed_directly(
 
     _break_stat(monkeypatch, "model.dlc")
 
-    assert input_staging._hash_file_memoized(path) == expected
+    assert input_staging.hash_file_memoized(path) == expected

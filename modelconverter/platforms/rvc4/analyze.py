@@ -14,8 +14,10 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import TypeVar
 
 import numpy as np
+import numpy.typing as npt
 import onnx
 import onnx.onnx_pb
 import onnxruntime as rt
@@ -23,10 +25,13 @@ import polars as pl
 from loguru import logger
 from PIL import Image
 from rich.progress import track
+from typing_extensions import override
 
 from modelconverter.platforms.base_analyze import Analyzer
 from modelconverter.platforms.rvc4.utils import get_device_info
 from modelconverter.utils import constants, create_handler, subprocess_run
+
+_ScalarT = TypeVar("_ScalarT", bound=np.generic)
 
 
 class RVC4Analyzer(Analyzer):
@@ -45,7 +50,7 @@ class RVC4Analyzer(Analyzer):
         dlc_model_path: str,
         image_dirs: dict[str, str],
         image_subset: int | None = None,
-    ):
+    ) -> None:
         """Initialize the analyzer and connect to the device.
 
         Args:
@@ -103,6 +108,7 @@ class RVC4Analyzer(Analyzer):
             )
         return local_output_dir
 
+    @override
     def analyze_layer_outputs(self, onnx_model_path: Path) -> None:
         """Compare the DLC layer outputs against the ONNX model.
 
@@ -187,7 +193,7 @@ class RVC4Analyzer(Analyzer):
 
     def _resize_image(
         self, img_path: str, input_sizes: list[int]
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.uint8]:
         image = Image.open(img_path)
         image = image.resize(input_sizes)
         image = np.array(image)
@@ -212,6 +218,7 @@ class RVC4Analyzer(Analyzer):
             }
         return image_names
 
+    @override
     def _check_dir_sizes(self) -> None:
         image_names = self._get_selected_image_paths()
         dir_lengths = [len(paths) for paths in image_names.values()]
@@ -237,8 +244,8 @@ class RVC4Analyzer(Analyzer):
         return input_matcher
 
     def _load_raw_input(
-        self, input_name: str, img_path: str, dtype: type[np.generic]
-    ) -> np.ndarray:
+        self, input_name: str, img_path: str, dtype: type[_ScalarT]
+    ) -> npt.NDArray[_ScalarT]:
         """Read one input file at the size of the DLC input.
 
         A ``.npy`` file must already hold the input in the right format.
@@ -411,8 +418,8 @@ class RVC4Analyzer(Analyzer):
         return all_output_path
 
     def _transpose_to_match(
-        self, src: np.ndarray, target_shape: tuple[int, ...]
-    ) -> np.ndarray:
+        self, src: npt.NDArray[_ScalarT], target_shape: tuple[int, ...]
+    ) -> npt.NDArray[_ScalarT]:
         """Transpose an array so that it matches the target shape.
 
         Tries the usual layout permutations (such as ``NHWC`` to
@@ -467,7 +474,7 @@ class RVC4Analyzer(Analyzer):
         input_matcher: dict[int, dict[str, str]],
         dlc_matcher: dict[int, Path],
         verbose: bool = True,
-    ) -> list[list]:
+    ) -> list[list[str | np.floating]]:
         if verbose:
             logger.info("Comparing ONNX and DLC layer outputs.")
         statistics = []
@@ -496,7 +503,9 @@ class RVC4Analyzer(Analyzer):
 
         return statistics
 
-    def _load_onnx_input(self, img_path: str, shape: list[int]) -> np.ndarray:
+    def _load_onnx_input(
+        self, img_path: str, shape: list[int]
+    ) -> npt.NDArray[np.generic]:
         """Read one input file in the NCHW float format of the ONNX model.
 
         A ``.npy`` file must already hold the input in that format.
@@ -522,7 +531,7 @@ class RVC4Analyzer(Analyzer):
 
     def _layer_statistics(
         self, layer_name: str, onnx_layer_output: object, dlc_output_path: Path
-    ) -> list | None:
+    ) -> list[str | np.floating] | None:
         """Compare the ONNX and the DLC output of one layer.
 
         Returns:
@@ -556,7 +565,7 @@ class RVC4Analyzer(Analyzer):
         return [layer_name, *layer_stats]
 
     def _write_layer_comparison_csv(
-        self, statistics: list[list], layer_names: list[str]
+        self, statistics: list[list[str | np.floating]], layer_names: list[str]
     ) -> None:
         output_dir = constants.OUTPUTS_DIR / "analysis" / self._model_name
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -604,8 +613,10 @@ class RVC4Analyzer(Analyzer):
         )
 
     def _calculate_statistics(
-        self, onnx_output: np.ndarray, dlc_output: np.ndarray
-    ) -> list:
+        self,
+        onnx_output: npt.NDArray[np.floating | np.integer | np.bool_],
+        dlc_output: npt.NDArray[np.float32],
+    ) -> list[np.floating]:
         max_abs_diff = np.max(np.abs(onnx_output - dlc_output))
         mse = np.mean((onnx_output - dlc_output) ** 2)
 
@@ -700,6 +711,7 @@ class RVC4Analyzer(Analyzer):
                         shutil.rmtree(entry.path)
 
     # layer execution times
+    @override
     def analyze_layer_cycles(self) -> None:
         """Measure how long each layer takes on the device.
 

@@ -110,6 +110,7 @@ def encodings_config(
 )
 def test_rvc4_encodings(
     encodings_config: tuple[Path, Path],
+    *,
     normalize_io_encodings: bool,
 ):
     config_path, encodings_path = encodings_config

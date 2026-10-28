@@ -25,8 +25,10 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import onnxruntime as ort
 import pytest
+from luxonis_ml.typing import Params
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
@@ -90,7 +92,7 @@ def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
             np.full((_SIZE, _SIZE, 3), _CALIB_VALUE, dtype=np.uint8),
         )
 
-    def toy_stage(model: Path) -> dict:
+    def toy_stage(model: Path) -> Params:
         return {
             "input_model": str(model),
             "inputs": toy_net_image_inputs(
@@ -155,7 +157,9 @@ def test_toy_multistage(platform_name: str, multistage_config: Path):
 
 def _golden_pipeline(
     cfg: Config, work: Path
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[
+    npt.NDArray[np.generic], npt.NDArray[np.generic], npt.NDArray[np.generic]
+]:
     """Fp32 reference for the whole pipeline on the constant input.
 
     ``third`` has no preprocessing, so its golden is a plain onnxruntime
@@ -184,7 +188,9 @@ def _golden_pipeline(
         float(_CALIB_VALUE),
     )
     from_first = g_first["output"]
-    from_second = g_second["output"] + g_second["pooled"]  # the link script
+    from_second = np.add(
+        g_second["output"], g_second["pooled"]
+    )  # the link script
 
     session = ort.InferenceSession(
         str(third.input_model), providers=["CPUExecutionProvider"]
@@ -220,7 +226,7 @@ def test_toy_multistage_precision(platform_name: str, multistage_config: Path):
     # The vendor inferer reads a `.npy` verbatim, so it must already be in the
     # layout that backend expects: SNPE (rvc4) consumes NHWC, OpenVINO (rvc2)
     # NCHW, and `from_*_arr` is NCHW.
-    def as_input(arr: np.ndarray) -> np.ndarray:
+    def as_input(arr: npt.NDArray[np.generic]) -> npt.NDArray[np.generic]:
         return arr[0].transpose(1, 2, 0) if platform_name == "rvc4" else arr
 
     from_first = work / "from_first.npy"

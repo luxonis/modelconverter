@@ -22,12 +22,23 @@ from luxonis_ml.nn_archive import ArchiveGenerator
 from luxonis_ml.nn_archive.config import CONFIG_VERSION
 from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 from luxonis_ml.nn_archive.config_building_blocks import (
-    Input as NNArchiveInput,
+    DataType as NNArchiveDataType,
 )
 from luxonis_ml.nn_archive.config_building_blocks import (
+    HeadType,
     InputType,
     PreprocessingBlock,
 )
+from luxonis_ml.nn_archive.config_building_blocks import (
+    Input as NNArchiveInput,
+)
+from luxonis_ml.nn_archive.config_building_blocks import (
+    Metadata as NNArchiveMetadata,
+)
+from luxonis_ml.nn_archive.config_building_blocks import (
+    Output as NNArchiveOutput,
+)
+from luxonis_ml.nn_archive.model import Model as NNArchiveModel
 from luxonis_ml.typing import Params, PathType
 from pydantic import BaseModel
 
@@ -41,8 +52,8 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.constants import MISC_DIR
 from modelconverter.utils.input_staging import (
-    _hash_file_memoized,
-    _publish_directory,
+    hash_file_memoized,
+    publish_directory,
 )
 from modelconverter.utils.layout import (
     guess_new_layout,
@@ -106,7 +117,7 @@ def process_nn_archive(
     if not (untar_path / "config.json").exists():
         raise RuntimeError(f"NN Archive config not found in `{untar_path}`")
 
-    with open(untar_path / "config.json") as f:
+    with (untar_path / "config.json").open() as f:
         archive_config = NNArchiveConfig(**json.load(f))
     package_name = _package_name(path)
 
@@ -142,8 +153,8 @@ def process_nn_archive(
     )
     # Single-stage shorthand must update the imported inputs/outputs, not
     # become root defaults that are ignored for fields already in the stage.
-    Config._merge_overrides(main_stage_config, stage_overrides)
-    Config._merge_overrides(config, root_overrides)
+    Config.merge_overrides(main_stage_config, stage_overrides)
+    Config.merge_overrides(config, root_overrides)
     if platform is Platform.RVC4:
         _apply_archive_encodings(
             config,
@@ -247,7 +258,7 @@ def _unpack_archive(path: Path) -> Path:
     if not tarfile.is_tarfile(path):
         raise RuntimeError(f"Unknown NN Archive path: `{path}`")
 
-    digest = _hash_file_memoized(path)
+    digest = hash_file_memoized(path)
     untar_path = MISC_DIR / path.stem
     if untar_path.suffix == ".tar":
         untar_path = MISC_DIR / untar_path.stem
@@ -261,7 +272,7 @@ def _unpack_archive(path: Path) -> Path:
             with tarfile.open(path, mode="r") as tf:
                 for member in _safe_members(tf):
                     tf.extract(member, path=tmp_path)
-            _publish_directory(tmp_path, untar_path)
+            publish_directory(tmp_path, untar_path)
     os.utime(untar_path, None)
     return untar_path
 
@@ -602,7 +613,7 @@ def _archive_input_preprocessing(
     input_type: Literal["raw", "image"],
     block: PreprocessingBlock | None,
     orig_nn: NNArchiveConfig | None,
-) -> Params:
+) -> PreprocessingBlock:
     """Build the archive preprocessing of an input.
 
     Without a supplied block, the preprocessing is identity. An image
@@ -625,7 +636,7 @@ def _archive_input_preprocessing(
         and "resize_mode" in PreprocessingBlock.model_fields
     ):
         _set_resize_mode(preprocessing_cfg, inp, orig_nn)
-    return preprocessing_cfg
+    return PreprocessingBlock.model_validate(preprocessing_cfg)
 
 
 def _set_resize_mode(
@@ -747,20 +758,9 @@ def modelconverter_config_to_nn(
     cfg = config.stages[main_stage_key]
     platform_cfg = cfg.get_platform_config(platform)
 
-    archive_cfg = {
-        "config_version": CONFIG_VERSION,
-        "model": {
-            "metadata": {
-                "name": model_name.stem,
-                "path": str(model_name),
-                "precision": _archive_precision(platform, platform_cfg).value,
-            },
-            "inputs": [],
-            "outputs": [],
-            "heads": orig_nn.model.heads if orig_nn else [],
-        },
-    }
+    precision = _archive_precision(platform, platform_cfg)
 
+    inputs: list[NNArchiveInput] = []
     input_name_map = _match_tensor_names(
         cfg.inputs, model_metadata.input_shapes, kind="input"
     )
@@ -777,21 +777,21 @@ def modelconverter_config_to_nn(
             mode="input",
         )
         input_type = _archive_input_type(inp, preprocessing_input_types)
-        archive_cfg["model"]["inputs"].append(
-            {
-                "name": metadata_name,
-                "shape": new_shape,
-                "layout": layout,
-                "dtype": dtype,
-                "input_type": input_type,
-                "preprocessing": _archive_input_preprocessing(
+        inputs.append(
+            NNArchiveInput(
+                name=metadata_name,
+                shape=new_shape,
+                layout=layout,
+                dtype=NNArchiveDataType(dtype),
+                input_type=InputType(input_type),
+                preprocessing=_archive_input_preprocessing(
                     inp,
                     layout,
                     input_type,
                     preprocessing.get(inp.name),
                     orig_nn,
                 ),
-            }
+            )
         )
     metadata_output_names = list(model_metadata.output_shapes)
     configured_output_names = [out.name for out in cfg.outputs]
@@ -810,28 +810,32 @@ def modelconverter_config_to_nn(
         for old_name, new_name in output_name_map.items()
         if old_name != new_name
     }
-    if orig_nn is not None and renamed_outputs:
-        archive_cfg["model"]["heads"] = _replace_names(
-            orig_nn.model.heads, renamed_outputs
-        )
+    heads = orig_nn.model.heads if orig_nn else []
+    if heads and renamed_outputs:
+        heads = [
+            HeadType.model_validate(_replace_names(head, renamed_outputs))
+            for head in heads
+        ]
+    outputs: list[NNArchiveOutput] = []
     for out in cfg.outputs:
         metadata_name = output_name_map[out.name]
         _warn_if_renamed("output", out.name, metadata_name)
 
         new_shape = model_metadata.output_shapes[metadata_name]
-        archive_cfg["model"]["outputs"].append(
-            {
-                "name": metadata_name,
-                "shape": new_shape,
-                "layout": _output_layout(out, new_shape),
-                "dtype": _get_io_dtype(
-                    platform,
-                    metadata_name,
-                    model_metadata,
-                    platform_cfg,
-                    mode="output",
-                ),
-            }
+        dtype = _get_io_dtype(
+            platform,
+            metadata_name,
+            model_metadata,
+            platform_cfg,
+            mode="output",
+        )
+        outputs.append(
+            NNArchiveOutput(
+                name=metadata_name,
+                shape=new_shape,
+                layout=_output_layout(out, new_shape),
+                dtype=NNArchiveDataType(dtype),
+            )
         )
 
     input_names = {inp.name for inp in cfg.inputs}
@@ -840,7 +844,19 @@ def modelconverter_config_to_nn(
         names = ", ".join(sorted(unknown_preprocessing))
         raise ValueError(f"Preprocessing input(s) not found: {names}")
 
-    archive = NNArchiveConfig(**archive_cfg)
+    archive = NNArchiveConfig(
+        config_version=CONFIG_VERSION,
+        model=NNArchiveModel(
+            metadata=NNArchiveMetadata(
+                name=model_name.stem,
+                path=str(model_name),
+                precision=NNArchiveDataType(precision.value),
+            ),
+            inputs=inputs,
+            outputs=outputs,
+            heads=heads,
+        ),
+    )
     if len(config.stages) > 1:
         _attach_postprocessor(archive, config, main_stage_key, model_name)
     return archive
@@ -1092,50 +1108,50 @@ def archive_from_model(model_path: Path) -> NNArchiveConfig:
     """
     metadata = get_metadata(model_path)
 
-    archive_cfg = {
-        "config_version": CONFIG_VERSION,
-        "model": {
-            "metadata": {
-                "name": model_path.stem,
-                "path": model_path.name,
-            },
-            "inputs": [],
-            "outputs": [],
-            "heads": [],
-        },
-    }
-
+    inputs: list[NNArchiveInput] = []
     for name, shape in metadata.input_shapes.items():
         layout = make_default_layout(shape)
-        input_type = "image" if is_image_input_shape(shape, layout) else "raw"
-        archive_cfg["model"]["inputs"].append(
-            {
-                "name": name,
-                "shape": shape,
-                "layout": layout,
-                "dtype": metadata.input_dtypes[name].value,
-                "input_type": input_type,
-                "preprocessing": {
-                    "mean": None,
-                    "scale": None,
-                    "reverse_channels": None,
-                    "interleaved_to_planar": None,
-                    "dai_type": None,
-                },
-            }
+        is_image = is_image_input_shape(shape, layout)
+        inputs.append(
+            NNArchiveInput(
+                name=name,
+                shape=shape,
+                layout=layout,
+                dtype=NNArchiveDataType(metadata.input_dtypes[name].value),
+                input_type=InputType.IMAGE if is_image else InputType.RAW,
+                preprocessing=PreprocessingBlock(
+                    mean=None,
+                    scale=None,
+                    reverse_channels=None,
+                    interleaved_to_planar=None,
+                    dai_type=None,
+                ),
+            )
         )
 
-    for name, shape in metadata.output_shapes.items():
-        archive_cfg["model"]["outputs"].append(
-            {
-                "name": name,
-                "shape": shape,
-                "layout": make_default_layout(shape),
-                "dtype": metadata.output_dtypes[name].value,
-            }
+    outputs = [
+        NNArchiveOutput(
+            name=name,
+            shape=shape,
+            layout=make_default_layout(shape),
+            dtype=NNArchiveDataType(metadata.output_dtypes[name].value),
         )
+        for name, shape in metadata.output_shapes.items()
+    ]
 
-    return NNArchiveConfig(**archive_cfg)
+    return NNArchiveConfig(
+        config_version=CONFIG_VERSION,
+        model=NNArchiveModel(
+            metadata=NNArchiveMetadata(
+                name=model_path.stem,
+                path=model_path.name,
+                precision=NNArchiveDataType.FLOAT32,
+            ),
+            inputs=inputs,
+            outputs=outputs,
+            heads=[],
+        ),
+    )
 
 
 def generate_archive(

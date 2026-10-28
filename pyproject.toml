@@ -100,11 +100,14 @@ docstring-code-format = true
 
 [tool.ruff.lint]
 select = [
+  "A",
   "ANN",
   "ASYNC",
   "B",
   "C4",
+  "C90",
   "D",
+  "D421",
   "DOC201",
   "DOC402",
   "DOC501",
@@ -113,19 +116,24 @@ select = [
   "ERA",
   "EXE",
   "F",
+  "FBT",
   "FLY",
   "FURB",
+  "FURB113",
   "G",
   "I",
   "ICN",
   "INP",
   "INT",
   "ISC",
+  "LOG",
+  "N",
   "NPY",
   "PERF",
   "PGH",
   "PIE",
   "PL",
+  "PLW1514",
   "PT",
   "PTH",
   "PYI",
@@ -133,6 +141,7 @@ select = [
   "RET",
   "RSE",
   "RUF",
+  "RUF031",
   "S",
   "SIM",
   "SLOT",
@@ -145,38 +154,16 @@ select = [
   "YTT",
 ]
 ignore = [
-  "ANN002",
-  "ANN003",
-  "ANN204",
-  "ANN401",
-  "D202",
-  "D203",
   "D205",
-  "D212",
-  "D213",
   "E501",
-  "ICN002",
-  "NPY002",
-  "PERF203",
   "PLC0415",
-  "PLR0911",
-  "PLR0912",
   "PLR0913",
-  "PLR0915",
-  "G004",
   "PLR2004",
-  "PLW2901",
-  "PTH123",
-  "RET503",
   "RUF012",
   "S101",
-  "S311",
   "S603",
   "S607",
-  "SIM108",
   "TRY003",
-  "TRY301",
-  "W191",
 ]
 unfixable = ["B905", "PLC0208"]
 # Preview rules apply only when they are selected by their full code.
@@ -192,7 +179,6 @@ ignore-one-line-docstrings = true
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN201", "D103"]
-"__main__.py" = ["ANN201"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "__future__".msg = "Do not use imports from __future__."
@@ -204,12 +190,50 @@ wrap-summaries = 72
 wrap-descriptions = 72
 
 [tool.pyright]
-typeCheckingMode = "basic"
+typeCheckingMode = "standard"
 # The benchmark suite runs on the internal Luxonis HIL testbed and imports
 # `hil_framework`, which is not published. No environment outside the testbed
 # can resolve it, so these files are not type checked. The first three entries
 # are pyright's own defaults, which a custom `exclude` would otherwise drop.
 exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests/test_benchmark"]
+# Checks that the standard mode leaves off.
+reportCallInDefaultInitializer = "error"
+reportConstantRedefinition = "error"
+reportDeprecated = "error"
+reportDuplicateImport = "error"
+reportImplicitOverride = "error"
+reportImportCycles = "error"
+reportInconsistentConstructor = "error"
+reportMatchNotExhaustive = "error"
+reportMissingParameterType = "error"
+reportMissingTypeArgument = "error"
+reportPrivateUsage = "error"
+reportPropertyTypeMismatch = "error"
+reportTypeCommentUsage = "error"
+reportUninitializedInstanceVariable = "error"
+reportUnnecessaryCast = "error"
+reportUnnecessaryComparison = "error"
+reportUnnecessaryContains = "error"
+reportUnnecessaryIsInstance = "error"
+reportUnnecessaryTypeIgnoreComment = "error"
+reportUntypedBaseClass = "error"
+reportUntypedClassDecorator = "error"
+reportUntypedFunctionDecorator = "error"
+reportUntypedNamedTuple = "error"
+reportUnusedClass = "error"
+reportUnusedFunction = "error"
+strictDictionaryInference = true
+strictListInference = true
+strictSetInference = true
+deprecateTypingAliases = true
+# Suppress a finding only with `# pyright: ignore[rule]`, which names it.
+enableTypeIgnoreComments = false
+
+# The tests check private helpers directly.
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+extraPaths = ["."]
+reportPrivateUsage = "none"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/conversion"]
