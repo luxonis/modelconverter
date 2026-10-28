@@ -61,6 +61,10 @@ def toy_net_image_inputs(calib: Params, *, size: int = 64) -> list[Params]:
 
     Shared by the toy-integration and toy-multistage tests, which differ only in
     the calibration (a random constant vs. an image directory).
+
+    Returns:
+        The ``inputs`` config entries of ``bgr``, ``rgb`` and ``gray``,
+        each ``size`` pixels square.
     """
     return [
         {
@@ -135,7 +139,7 @@ def write_toy_conv_config(
     external_data: bool = False,
     calibration: Literal["png", "raw", "npy", "none"] = "png",
 ) -> Path:
-    """Build the toy conv ONNX plus a matching config, returning the yaml path.
+    """Build the toy conv ONNX plus a matching config.
 
     Shared by the single-input conversion tests (precision, external-data,
     hailo-compile, rvc4-encodings). The config carries mean/scale and an
@@ -143,6 +147,9 @@ def write_toy_conv_config(
 
     ``calibration="none"`` leaves the input to fall back to random calibration
     (for a ``disable_calibration`` run).
+
+    Returns:
+        The path of the config, ``toy_conv.yaml`` in ``workdir``.
     """
     onnx_path = workdir / "toy_conv.onnx"
     build_toy_conv_onnx(

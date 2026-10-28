@@ -50,6 +50,10 @@ def run_dai_benchmark(
     Returns:
         The mean ``fps`` and the mean ``latency`` in milliseconds, or
         ``"N/A"`` when the logs hold no latency.
+
+    Raises:
+        TypeError: If the report queue returns a message that is not a
+            ``dai.BenchmarkReport``.
     """
     latencies: list[float] = []
 

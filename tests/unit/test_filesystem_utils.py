@@ -47,8 +47,9 @@ def _install_fake_fs(
 ) -> list[_RecordingFS]:
     """Patch ``filesystem_utils.LuxonisFileSystem`` with a fake.
 
-    Returns a list that collects every constructed fake instance so the
-    tests can assert on recorded calls.
+    Returns:
+        A list that collects every constructed fake instance, so the
+        tests can assert on recorded calls.
     """
     instances: list[_RecordingFS] = []
 

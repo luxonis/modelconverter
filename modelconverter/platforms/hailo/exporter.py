@@ -65,6 +65,10 @@ class HailoExporter(Exporter):
             output_dir: Directory the exported model and the
                 intermediate artifacts are written to.
 
+        Raises:
+            PreprocessingEmbeddingError: If calibration is disabled and
+                an input requests preprocessing.
+
         """
         super().__init__(config=config, output_dir=output_dir)
         self._force_onnx_names_enabled = config.hailo.force_onnx_names
@@ -439,6 +443,10 @@ def _supports_tf_tensor_shapes() -> bool:
     The image Dockerfile turns its build argument into ``VERSION`` (for
     example, ``2025.07`` becomes ``2025-07``). Hailo removed the option in
     2025.07, so retain it for older or unknown installations.
+
+    Returns:
+        ``True`` if ``VERSION`` is unset, cannot be parsed or names a
+        release before 2025.07, otherwise ``False``.
     """
     version = os.environ.get("VERSION")
     if version is None:

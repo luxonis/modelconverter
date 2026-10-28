@@ -102,6 +102,10 @@ def _single_input_archive_config(
     """Build a one-input / one-output NN-archive ``config.json`` dict.
 
     The single input's ``preprocessing`` block is fully controllable.
+
+    Returns:
+        The config dict, with the input ``input0`` and the output
+        ``output0``.
     """
     return {
         "config_version": "1.0",
@@ -138,8 +142,10 @@ def _pack_single_input(
     shape: list[int] | None = None,
     layout: str = "NCHW",
 ) -> Path:
-    """Build a matching dummy ONNX + single-input archive and return
-    the ``.tar`` path.
+    """Build a matching dummy ONNX + single-input archive.
+
+    Returns:
+        The path of ``model.tar`` in ``work_dir``.
     """
     model_path = work_dir / "model.onnx"
     if grayscale:
@@ -989,6 +995,10 @@ def _config_to_nn(
 ) -> NNArchiveConfig:
     """``modelconverter_config_to_nn`` with the fixed test boilerplate (output
     name + model path) filled in, exposing only what tests vary.
+
+    Returns:
+        The NN Archive config that ``modelconverter_config_to_nn``
+        builds.
     """
     return modelconverter_config_to_nn(
         config,

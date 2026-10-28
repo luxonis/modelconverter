@@ -75,6 +75,9 @@ def dummy_onnx() -> Path:
 
     Absolute so ``resolve_path`` short-circuits on ``Path.exists()`` and
     no remote download is attempted.
+
+    Returns:
+        The resolved path of the model in ``MODELS_DIR``.
     """
     return standard_dummy_onnx(
         constants.MODELS_DIR / "dummy_model.onnx"

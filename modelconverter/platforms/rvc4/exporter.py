@@ -109,6 +109,10 @@ class RVC4Exporter(Exporter):
             config: Configuration of the stage to export.
             output_dir: Directory the exported model is written to.
 
+        Raises:
+            PreprocessingEmbeddingError: If an input requests
+                preprocessing and the input model is not ONNX.
+
         """
         super().__init__(config=config, output_dir=output_dir)
 
@@ -347,6 +351,9 @@ class RVC4Exporter(Exporter):
 
         Terminates the process if an input has no shape or a dynamic
         one.
+
+        Returns:
+            One list per input, with an entry for each calibration file.
         """
         entries = []
         for name, inp in self._inputs.items():
@@ -565,6 +572,9 @@ class RVC4Exporter(Exporter):
 
         An input with a layout that SNPE does not know is left out,
         with a warning.
+
+        Returns:
+            The SNPE layouts, keyed by input name.
         """
         layouts = {}
         for name, inp in self._inputs.items():

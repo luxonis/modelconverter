@@ -81,6 +81,10 @@ def _to_nchw(
 
     The Hailo inferer returns spatial outputs channels-last; the others,
     and the golden reference, are already NCHW.
+
+    Returns:
+        A rank-3 Hailo output as ``[1, C, H, W]``; any other output
+        unchanged.
     """
     arr = np.asarray(arr)
     if arr.ndim == 3 and platform_name == "hailo":

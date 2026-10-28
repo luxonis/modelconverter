@@ -498,7 +498,7 @@ def _download_file(
     tmp_path: Path | None = None
     try:
         request = Request(url, headers={"User-Agent": "modelconverter"})  # noqa: S310
-        with urlopen(request, timeout=30) as response:  # noqa: S310
+        with urlopen(request, timeout=30) as response:  # noqa: S310  # nosemgrep: dynamic-urllib-use-detected
             headers: HTTPMessage = response.headers
             length = headers.get("Content-Length")
             total = int(length) if length and length.isdigit() else None

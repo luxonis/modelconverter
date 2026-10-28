@@ -174,6 +174,11 @@ def _run_calibration_script(
 
     Each sample of the linked stage goes through ``run_script`` of the
     script, and the result is saved as a NumPy array in ``dest``.
+
+    Raises:
+        RuntimeError: If the script raises an exception while it loads,
+            or if it defines no ``run_script`` function.
+
     """
     # One directory per model output. The inferer also leaves a marker file
     # in there to recognize its own results, so take only the directories.
@@ -191,7 +196,7 @@ def _run_calibration_script(
         # script can `import numpy` etc.
         scope = {}
         try:
-            exec(script, scope)  # nosemgrep  # noqa: S102
+            exec(script, scope)  # nosemgrep: exec-detected  # noqa: S102
         except Exception as e:  # pragma: no cover
             raise RuntimeError("Error executing script") from e
 

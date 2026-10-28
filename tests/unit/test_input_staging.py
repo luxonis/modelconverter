@@ -1121,6 +1121,10 @@ def _fabricated_file(
 
     Two filesystems cannot be mounted from a unit test, so the one
     property that distinguishes them -- `st_dev` -- has to be supplied.
+
+    Returns:
+        An ``_InputFile`` for ``path`` with the relative name
+        ``sample.npy`` and a fake stat updated with ``stat_fields``.
     """
     stat = SimpleNamespace(
         st_size=4, st_mtime_ns=1, st_ctime_ns=1, st_dev=1, st_ino=7

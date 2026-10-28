@@ -81,6 +81,15 @@ def get_input_fps(configuration: Configuration) -> float:
 
     ``-1`` lets the benchmark run without a rate limit. Otherwise the
     value must be a positive, finite number.
+
+    Returns:
+        The input rate, or ``-1`` for no rate limit.
+
+    Raises:
+        TypeError: If ``input_fps`` is missing, a boolean or not a
+            number.
+        ValueError: If ``input_fps`` is neither ``-1`` nor a positive,
+            finite number.
     """
     value = configuration.get("input_fps")
     if isinstance(value, bool) or not isinstance(value, int | float):
@@ -239,6 +248,13 @@ class Benchmark(ABC):
     ) -> Iterable[str]:
         """Shared row cells for each result (configuration + fps +
         latency).
+
+        Yields:
+            A cell for each configuration value, then the FPS cell and
+            the latency cell, each with its color markup.
+
+        Raises:
+            TypeError: If ``result`` has no numeric ``"fps"`` entry.
         """
         # configuration values
         for x in configuration.values():

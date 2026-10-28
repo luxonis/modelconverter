@@ -144,13 +144,15 @@ def _is_path_parameter(name: str, annotation: object) -> bool:
 
 
 def stage_inputs(tokens: list[str], path_flags: Collection[str]) -> list[str]:
-    """Copy path arguments among ``tokens`` into the cache and return
-    a new token list with those paths rewritten to their container-side
-    locations.
+    """Copy the path arguments among ``tokens`` into the cache.
 
     ``path_flags`` are the flags whose value is a path, as returned by
     `path_flags_for`. Non-path tokens, remote URLs and non-existent
     paths are left untouched.
+
+    Returns:
+        A copy of ``tokens`` with every staged path replaced by its
+        container-side path.
     """
     inputs_dir = get_cache_dir() / "inputs"
     new_tokens: list[str] = []
@@ -228,6 +230,9 @@ def _is_flag(token: str) -> bool:
     Single-dash aliases count: the value after ``-c`` is no more an input
     path than one after ``--config``. A negative number is a value,
     whether it leads with a digit (``-5``) or a decimal point (``-.5``).
+
+    Returns:
+        ``True`` if ``token`` is an option, ``False`` if it is a value.
     """
     if len(token) <= 1 or token[0] != "-" or token[1].isdigit():
         return False
@@ -250,6 +255,10 @@ def _override_key_kind(key: str) -> str | None:
 
     Overrides are dotted paths into the config (``calibration.path``), so
     the same schema tables that drive config-file staging apply here.
+
+    Returns:
+        ``"output"`` for a destination, ``"args"`` for an argument
+        list, ``"path"`` for a local path, or ``None`` otherwise.
     """
     head, _, leaf = key.rpartition(".")
     parent = head.rsplit(".", 1)[-1] or None
@@ -278,6 +287,10 @@ def _stage_arg_list_token(
 
     Relative paths resolve against the working directory: the user typed
     this one in a shell, not inside a config file.
+
+    Returns:
+        The ``repr`` of the rewritten list, or ``None`` if ``token`` is
+        not a list literal or no path in it was staged.
     """
     try:
         # `literal_eval` is documented to hit the AST compiler's stack limit
@@ -308,6 +321,10 @@ def _is_path_like(value: str) -> bool:
     override. A token therefore only counts as a path when its *shape*
     says so, or when it is a file with a known model/config extension.
     Anything else has to be written with a ``./`` prefix to be staged.
+
+    Returns:
+        ``True`` if ``value`` exists and counts as a path by these
+        rules, else ``False``.
     """
     if value in _PLATFORM_NAMES:
         return False
@@ -324,11 +341,15 @@ def _is_path_like(value: str) -> bool:
 
 
 def _as_path(value: str) -> Path | None:
-    """Interprets ``value`` as a local path, or returns ``None``.
+    """Interprets ``value`` as a local path.
 
     A CLI override or a config field may legitimately hold something that
     is not a path at all -- an inline encodings JSON, a calibration
     script -- and ``Path`` rejects some of those outright.
+
+    Returns:
+        ``value`` as a ``Path`` with ``~`` expanded, or ``None`` if
+        ``Path`` or the ``~`` expansion rejects it.
     """
     try:
         return Path(value).expanduser()
@@ -343,6 +364,9 @@ def _absolute(path: Path) -> Path:
     user asked for. Resolving would name it after the symlink's target,
     and a content-addressed blob (DVC, git-annex, Nix) carries neither
     the model's name nor the suffix the container dispatches on.
+
+    Returns:
+        The absolute, normalized ``path``, with symlinks unresolved.
     """
     return Path(os.path.abspath(path))  # noqa: PTH100
 
@@ -353,6 +377,10 @@ def _exists(path: Path) -> bool:
     An inline JSON blob has no ``/`` but is far longer than a filename may
     be, so ``exists`` raises ``OSError`` (``ENAMETOOLONG``) instead of
     answering ``False``.
+
+    Returns:
+        ``True`` if ``path`` exists, ``False`` if it does not or cannot
+        be checked.
     """
     try:
         return path.exists()
@@ -361,9 +389,11 @@ def _exists(path: Path) -> bool:
 
 
 def _stage_value(value: str, inputs_dir: Path) -> str | None:
-    """Copy the file/dir at ``value`` into the cache and return the
-    container-side path, or ``None`` if it cannot/should not be
-    staged.
+    """Copy the file/dir at ``value`` into the cache.
+
+    Returns:
+        The container-side path of the staged copy, or ``None`` if
+        ``value`` names no existing local path.
     """
     if get_protocol(value) != "file":
         return None
@@ -516,6 +546,10 @@ def _stage_config(src: Path, inputs_dir: Path) -> Path:
     Each local path named by the config is staged on its own and the
     staged copy points at the container-side location, so a config is
     never a reason to copy the directory it happens to live in.
+
+    Returns:
+        The host path of the staged copy, rewritten if any path the
+        config names was staged.
     """
     try:
         data = yaml.safe_load(src.read_text(encoding="utf-8"))
@@ -538,6 +572,9 @@ def _stage_config_text(content: str, src: Path, inputs_dir: Path) -> Path:
     The rewritten paths carry the digests of everything the config
     references, so a change to any input yields a new entry instead of
     overwriting one a concurrent run may still be reading.
+
+    Returns:
+        The host path of the staged config in the cache.
     """
     digest = hashlib.sha256(content.encode()).hexdigest()[:16]
     entry = inputs_dir / digest
@@ -558,8 +595,11 @@ def _rewrite_config_paths(
     key: str | None = None,
     parent: str | None = None,
 ) -> tuple[ParamValue, bool]:
-    """Stages the local paths ``value`` names and returns it with those
-    references replaced by their container-side paths.
+    """Stages the local paths that ``value`` names.
+
+    Returns:
+        ``value`` with each staged path replaced by its container-side
+        path, and whether any path in it was staged.
     """
     if isinstance(value, dict):
         changed = False
@@ -616,6 +656,9 @@ def _rewrite_arg_list(
     The list is passed to the conversion tool verbatim, so everything
     else in it -- the flags themselves, numeric options, tool-specific
     switches -- has to survive untouched.
+
+    Returns:
+        The rewritten list, and whether any path in it was staged.
     """
     rewritten: list[ParamValue] = []
     changed = False
@@ -663,7 +706,7 @@ def _is_path_field(key: str | None, parent: str | None) -> bool:
 def _stage_config_reference(
     value: str, config_dir: Path, inputs_dir: Path
 ) -> str | None:
-    """Stages one path referenced by a config, or returns ``None``.
+    """Stages one path referenced by a config.
 
     Relative references are resolved the way the container resolves
     them: against the config file's directory first, then against the
@@ -671,6 +714,10 @@ def _stage_config_reference(
     `modelconverter.utils.filesystem_utils.get_input_bases`). A
     reference that exists under neither is left untouched so the config
     validation can report it.
+
+    Returns:
+        The container-side path of the staged copy, or ``None`` if
+        ``value`` names no existing local path.
     """
     if get_protocol(value) != "file":
         return None
@@ -758,6 +805,10 @@ def _excluded_dirs() -> set[Path]:
     directory under ``$HOME``, say) would otherwise make the copy
     recurse into its own output. ``./output`` is separately mounted into
     the container and accumulates the results of every previous run.
+
+    Returns:
+        The resolved cache directory and the resolved ``./output``
+        directory.
     """
     return {
         get_cache_dir().resolve(),
@@ -821,6 +872,9 @@ def _dirs_to_enter(
     """Pick the subdirectories that the walk enters.
 
     The chain of each picked directory goes into ``chains``.
+
+    Returns:
+        The names from ``dir_names`` that the walk enters, in order.
     """
     kept = []
     for name in dir_names:
@@ -980,6 +1034,10 @@ def _is_in_use(entry: Path, ignore_pid: int | None = None) -> bool:
     ``ignore_pid`` skips one process's claims, which is how the budget
     sweep asks whether anyone *else* is using the cache: its own claims
     are on everything the current conversion just staged.
+
+    Returns:
+        ``True`` if a claim on ``entry`` that is not by ``ignore_pid``
+        may still belong to a live process, else ``False``.
     """
     in_use = False
     try:
@@ -1228,6 +1286,10 @@ def _used_time(entry: Path) -> float:
     its own -- nothing reads it host-side -- so its modification time
     stands in, which orders downloads by when they arrived rather than
     by when they were last needed.
+
+    Returns:
+        The stamp written on the last use, else the modification time
+        of ``entry``, or ``0.0`` if ``entry`` cannot be stat'ed.
     """
     try:
         return float((entry / _USED_MARKER).read_text())
@@ -1265,6 +1327,10 @@ def _evict(entry: Path) -> bool:
     rather than reading a directory being deleted underneath it. A claim
     that landed between the check and the rename is still visible on the
     renamed entry, which is then put back.
+
+    Returns:
+        ``False`` if ``entry`` could not be renamed aside or a claim was
+        found on it, else ``True``.
     """
     trash = entry.with_name(f"{_TRASH_PREFIX}{os.getpid()}-{entry.name}")
     try:
@@ -1294,6 +1360,9 @@ def _to_container(dest: Path) -> str:
     The container runs Linux whatever the host is, so the rewritten
     token must keep forward slashes even when the host's native paths
     do not.
+
+    Returns:
+        The container-side path, as a string with forward slashes.
     """
     relative = dest.relative_to(get_cache_dir())
     return str(CONTAINER_SHARED_DIR / relative.as_posix())
@@ -1321,6 +1390,9 @@ def hash_file_memoized(path: Path) -> str:
     the same metadata as `_hash_dir` (and shares its caveat about
     filesystems without a change time), while the digest the cache is
     keyed on stays a description of the bytes.
+
+    Returns:
+        The first 16 hex digits of the SHA-256 of the file.
     """
     try:
         st = path.stat()
@@ -1369,6 +1441,10 @@ def _hash_dir(path: Path, files: list[_InputFile] | None = None) -> str:
     a filesystem that does not maintain a change time (FAT, some network
     mounts) can hide an in-place edit that keeps the size and the
     modification time.
+
+    Returns:
+        The first 16 hex digits of a SHA-256 over the name of ``path``
+        and the relative path and stat metadata of each staged file.
     """
     if files is None:
         files = sorted(_iter_input_files(path), key=lambda f: f.relative)
