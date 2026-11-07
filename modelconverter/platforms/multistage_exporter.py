@@ -124,9 +124,13 @@ class MultiStageExporter:
 
             dest_dir = self._infer_linked_stage(calib.stage)
             if calib.output is not None:
-                inp_config.calibration = calib.to_image_calibration(
+                calibration = calib.to_image_calibration(
                     dest_dir / calib.output
                 )
+                self._mark_direct_linked_layout(
+                    calibration, inp_config.shape, inp_config.layout
+                )
+                inp_config.calibration = calibration
             elif calib.script is not None:
                 # Keyed by the receiving input, not just the linked stage:
                 # several inputs of this stage may link to the same previous
@@ -139,7 +143,31 @@ class MultiStageExporter:
                     / "script"
                 )
                 _run_calibration_script(calib.script, dest_dir, dest)
-                inp_config.calibration = calib.to_image_calibration(dest)
+                calibration = calib.to_image_calibration(dest)
+                self._mark_script_linked_layout(calibration, calib.layout)
+                inp_config.calibration = calibration
+
+    def _mark_direct_linked_layout(
+        self,
+        calibration: ImageCalibrationConfig,
+        shape: list[int] | None,
+        layout: str | None,
+    ) -> None:
+        """Record a platform inferer's direct rank-four output layout."""
+        if shape is None or len(shape) != 4 or layout is None:
+            return
+        if self.platform is Platform.RVC4:
+            calibration.mark_generated_from_link("NCHW")
+        elif self.platform is Platform.RVC3:
+            calibration.mark_generated_from_link(layout)
+
+    @staticmethod
+    def _mark_script_linked_layout(
+        calibration: ImageCalibrationConfig, layout: str | None
+    ) -> None:
+        """Record the declared layout of a script result."""
+        if layout is not None:
+            calibration.mark_generated_from_link(layout)
 
     def _infer_linked_stage(self, stage: str) -> Path:
         """Run the model of a linked stage on its calibration data.

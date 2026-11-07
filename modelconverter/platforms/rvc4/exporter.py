@@ -393,14 +393,17 @@ class RVC4Exporter(Exporter):
             img, layout = self._read_calibration_file(
                 entry.inp, entry.calib, entry.path
             )
-            if entry.calib.generated_from_random and _was_image_input(
-                entry.inp
+            if entry.calib.generated_from_link or (
+                entry.calib.generated_from_random
+                and _was_image_input(entry.inp)
             ):
                 target_layout = channels_last_image_layout(layout)
-                # A layout with a repeated letter is returned unchanged, and
-                # cannot be transposed either.
-                if target_layout != layout:
-                    img = reorder_layout(img, layout, target_layout)
+            else:
+                target_layout = layout
+            # A layout with a repeated letter is returned unchanged, and
+            # cannot be transposed either.
+            if target_layout != layout:
+                img = reorder_layout(img, layout, target_layout)
         raw_path = self._raw_img_dir / f"{index}.raw"
         img.tofile(raw_path)
         return raw_path

@@ -399,6 +399,7 @@ jobs:
             --tool-version "${VERSION}" \
             -c "${ML_INSTALL_COMMAND} \
               python -m pytest tests/conversion -m '${PACKAGE}' -x \
+                --durations 25 \
                 --junitxml output/junit-${PACKAGE}-${VERSION}.xml \
                 -o junit_family=legacy \
                 --cov --cov-report term-missing \

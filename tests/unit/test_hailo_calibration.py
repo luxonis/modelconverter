@@ -267,8 +267,9 @@ def test_user_tensor_with_wrong_shape_is_rejected(
         exporter._get_calibration_data(_Runner([1, 2, 2, 3]))
 
 
+@pytest.mark.parametrize("origin", ["random", "link"])
 def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
-    hailo_exporter_module: ModuleType, tmp_path: Path
+    hailo_exporter_module: ModuleType, tmp_path: Path, origin: str
 ) -> None:
     calibration_dir = tmp_path / "calibration"
     calibration_dir.mkdir()
@@ -284,8 +285,10 @@ def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
     calibration = inp.calibration
     assert isinstance(calibration, ImageCalibrationConfig)
     assert inp.layout == "NCHW"
-    calibration._generated_from_random = True
-    calibration._generated_layout = inp.layout
+    if origin == "random":
+        calibration.mark_generated_from_random(inp.layout)
+    else:
+        calibration.mark_generated_from_link(inp.layout)
 
     actual = exporter._get_calibration_data(_Runner([1, 3, 3, 3]))[
         "hailo_input"

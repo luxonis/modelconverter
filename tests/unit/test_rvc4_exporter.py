@@ -843,6 +843,42 @@ def test_user_raw_calibration_is_referenced_without_rewriting(tmp_path: Path):
     )
 
 
+def test_linked_numpy_calibration_is_serialized_channels_last(tmp_path: Path):
+    shape = [1, 3, 2, 4]
+    model = single_io_onnx(
+        tmp_path / "linked.onnx", shape=shape, output_shape=shape
+    ).resolve()
+    calibration_dir = tmp_path / "linked-calibration"
+    calibration_dir.mkdir()
+    source = np.arange(24, dtype=np.float32).reshape(shape)
+    np.save(calibration_dir / "sample.npy", source)
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": shape,
+            "layout": "NCHW",
+            "encoding": "NONE",
+            "calibration": {"path": str(calibration_dir)},
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4.quantization_mode": "CUSTOM",
+        },
+    )
+    output_dir = tmp_path / "linked-output"
+    output_dir.mkdir()
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+    calibration = exporter.inputs["input0"].calibration
+    assert isinstance(calibration, ImageCalibrationConfig)
+    calibration.mark_generated_from_link("NCHW")
+
+    input_list = exporter._prepare_calibration_data()
+
+    raw_path = Path(input_list.read_text().split(":=", 1)[1].strip())
+    actual = np.fromfile(raw_path, dtype=np.float32).reshape(1, 2, 4, 3)
+    np.testing.assert_array_equal(actual, source.transpose(0, 2, 3, 1))
+
+
 def test_user_numpy_calibration_is_serialized_without_shape_interpretation(
     tmp_path: Path,
 ):

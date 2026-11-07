@@ -262,19 +262,18 @@ class HailoExporter(Exporter):
             return img
 
         img, layout = self._read_calibration_file(inp, calib, path)
+        # Managed tensors carry their source layout. Reorder before equal
+        # axis sizes can hide that Hailo expects a batchless channel-last sample.
         if (
-            calib.generated_from_random
+            (calib.generated_from_random or calib.generated_from_link)
             and img.ndim == 4
             and len(shape) == 3
             and "N" in layout
             and layout.count("C") == 1
         ):
-            # Hailo moves the channel axis last even for non-image inputs.
-            # Shape equality cannot reveal that move when the axes have
-            # equal sizes.
             sample_layout = channels_last_4d_layout(layout).replace("N", "", 1)
             return reorder_layout(img, layout, sample_layout)
-        if img.shape != tuple(shape):
+        if calib.generated_from_link or img.shape != tuple(shape):
             return _fit_hailo_sample(img, shape, layout)
         return img
 
@@ -428,10 +427,10 @@ def _fit_hailo_sample(
     array: npt.NDArray[_ScalarT], shape: list[int], layout: str
 ) -> npt.NDArray[_ScalarT]:
     """Drop the batch axis, or reorder the axes, to match the Hailo input."""
-    if array.shape == (1, *shape):
-        return array[0]
     if _is_hwc_sample(shape, layout):
         return reorder_layout(array, layout, "HWC")
+    if array.shape == (1, *shape):
+        return array[0]
     if "N" in layout and array.shape[layout.index("N")] == 1:
         return reorder_layout(array, layout, layout.replace("N", ""))
     return array

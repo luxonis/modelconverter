@@ -127,6 +127,8 @@ class LinkCalibrationConfig(BaseCalibrationConfig):
             Either the source code itself or a path to a ``.py`` file,
             whose contents are read during validation. Either ``output``
             or ``script`` must be provided.
+        layout: Layout of arrays returned by ``script``. When omitted, the
+            arrays use the backend-ready calibration tensor contract.
         resize_method: Image resize policy, also retained for inference
             and output archive metadata. Prepared tensors are not resized.
 
@@ -135,6 +137,7 @@ class LinkCalibrationConfig(BaseCalibrationConfig):
     stage: str
     output: str | None = None
     script: str | None = None
+    layout: str | None = None
 
     @model_validator(mode="after")
     def _validate(self) -> Self:
@@ -143,6 +146,12 @@ class LinkCalibrationConfig(BaseCalibrationConfig):
                 "Either `output` or `script` must be provided for calibration."
             )
         return self
+
+    @field_validator("layout", mode="after")
+    @staticmethod
+    def _normalize_layout(layout: str | None) -> str | None:
+        """Normalize a declared script result layout."""
+        return None if layout is None else layout.upper()
 
     @field_validator("script", mode="after")
     @staticmethod
@@ -173,6 +182,7 @@ class ImageCalibrationConfig(BaseCalibrationConfig):
     path: Path
     max_images: int = -1
     _generated_from_random: bool = PrivateAttr(default=False)
+    _generated_from_link: bool = PrivateAttr(default=False)
     _generated_layout: str = PrivateAttr(default="")
 
     @property
@@ -181,15 +191,19 @@ class ImageCalibrationConfig(BaseCalibrationConfig):
         return self._generated_from_random
 
     @property
+    def generated_from_link(self) -> bool:
+        """Whether this file source was materialized from a stage link."""
+        return self._generated_from_link
+
+    @property
     def generated_layout(self) -> str:
         """Layout used when generated tensor calibration was materialized."""
         return self._generated_layout
 
     def is_user_tensor(self, path: Path) -> bool:
         """Whether a tensor file uses the backend-ready calibration contract."""
-        return (
-            path.suffix.lower() in {".npy", ".raw"}
-            and not self.generated_from_random
+        return path.suffix.lower() in {".npy", ".raw"} and not (
+            self.generated_from_random or self.generated_from_link
         )
 
     def mark_generated_from_random(self, layout: str) -> None:
@@ -200,6 +214,16 @@ class ImageCalibrationConfig(BaseCalibrationConfig):
 
         """
         self._generated_from_random = True
+        self._generated_layout = layout
+
+    def mark_generated_from_link(self, layout: str) -> None:
+        """Mark the files as written from linked inference results.
+
+        Args:
+            layout: Layout of the generated tensors.
+
+        """
+        self._generated_from_link = True
         self._generated_layout = layout
 
     @field_validator("path", mode="before")

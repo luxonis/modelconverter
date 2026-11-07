@@ -129,7 +129,7 @@ class RVC2Exporter(Exporter):
 
         self._validate_requested_preprocessing()
 
-        if not self._check_reverse_channels():
+        if not self._check_reverse_channels() or self._mo_skips_reversal():
             self._reverse_channels_in_onnx()
         if not self._onnx_optimizations.all_disabled():
             self._optimize_onnx(skip_optimization=True)
@@ -146,6 +146,25 @@ class RVC2Exporter(Exporter):
     def _check_reverse_channels(self) -> bool:
         reverses = [inp.encoding_mismatch for inp in self._inputs.values()]
         return all(reverses) or not any(reverses)
+
+    def _mo_skips_reversal(self) -> bool:
+        """Whether the model optimizer would skip a channel reversal.
+
+        The OpenVINO 2021.4 model optimizer reverses only inputs with the
+        channels at axis 1. It skips inputs such as the ``NHWC`` input that
+        ``tflite2onnx`` makes from a TFLite model, with a warning.
+
+        Returns:
+            Whether this conversion must move channel reversal into ONNX.
+
+        """
+        return OV_2021 and any(
+            inp.encoding_mismatch
+            and inp.layout is not None
+            and "C" in inp.layout
+            and inp.layout.index("C") != 1
+            for inp in self._inputs.values()
+        )
 
     def _validate_ir_preprocessing_contract(self) -> None:
         """Reject preprocessing that cannot be added to an existing IR."""
@@ -174,13 +193,14 @@ class RVC2Exporter(Exporter):
         """Reverse the input channels in the ONNX model itself.
 
         The model optimizer reverses the channels of every input or of
-        none, so a model that needs it for only some inputs gets the
+        none, and the OpenVINO 2021.4 model optimizer does not reverse
+        an ``NHWC`` input. So a model that needs the reversal for only
+        some inputs, or for an ``NHWC`` input on 2021.4, gets the
         reversal attached to the graph.
         """
         logger.warning(
-            "The model optimizer does not support reversing "
-            "input channels for only some inputs. "
-            "Attempting to modify the ONNX model."
+            "The model optimizer cannot reverse the input channels of "
+            "this model. Attempting to modify the ONNX model."
         )
         self._input_model = onnx_attach_normalization_to_inputs(
             self._input_model,
@@ -414,7 +434,9 @@ class RVC2Exporter(Exporter):
                 res = handle.result()
 
             patch_file = blob_path.with_suffix(".patch")
-            bsdiff4.file_diff(default_blob_path, blob_path, patch_file)
+            bsdiff4.file_diff(
+                str(default_blob_path), str(blob_path), str(patch_file)
+            )
             peaks.append(res.peak_memory * 1.5)
             logger.info(
                 f"Compiled {shaves}-shave patch in {res.total_time:.2f} s, "

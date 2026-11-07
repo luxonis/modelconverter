@@ -4,10 +4,10 @@ A hand-built single-op ``.tflite`` is converted on rvc2/rvc3/rvc4, exercising ea
 backend's distinct TFLite entry path -- ``tflite2onnx`` (rvc2/rvc3) and
 ``snpe-tflite-to-dlc`` (rvc4).
 
-The model has no weights and no math beyond a ``Relu``, so a raw image
-round-trips to a channel-permuted, quantized copy of itself. Comparing the
-*sorted* output values to the sorted reference is robust to each backend's output
-layout and channel order while still catching quantization error.
+The model has no weights and no math beyond a ``Relu``, so the converted model
+has to return its input image. The conversion feeds the model RGB, as the TFLite
+model expects, so each output pixel must hold the RGB values of the image, within
+the quantization step.
 
 Hailo is left out: its quantizer only flakily handles this weightless
 pass-through (the ``bgr_to_rgb`` layer degenerates to 0 dB SNR and sometimes
@@ -29,14 +29,19 @@ from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
 from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
+from modelconverter.utils.preprocessing import reorder_layout
 from modelconverter.utils.types import Platform
 from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import platform_params
-from tests.helpers.precision import cosine_similarity, locate_converted_model
+from tests.helpers.precision import RecordProperty, locate_converted_model
 from tests.helpers.tflite_factory import build_toy_tflite
 
 PLATFORMS = ("rvc2", "rvc3", "rvc4")
-_THRESHOLD = 0.9
+_HEIGHT = 6
+_WIDTH = 8
+# One step of 8-bit quantization over the 0-255 calibration range. CI
+# measures no error at all.
+_TOLERANCE = 1.0
 # Three distinct channel values inside the default random-calibration range
 # (mean 127.5, std 35). Positive so the Relu is a clean identity, and
 # well-separated so the quantizers keep them apart.
@@ -56,20 +61,28 @@ def _conversion_options(platform: Platform) -> tuple[str, ...]:
 @pytest.fixture(scope="module")
 def toy_tflite(tmp_path_factory: pytest.TempPathFactory) -> Path:
     workdir = tmp_path_factory.mktemp("toy_tflite")
-    return build_toy_tflite(workdir / "toy.tflite")
+    return build_toy_tflite(
+        workdir / "toy.tflite", shape=(1, _HEIGHT, _WIDTH, 3)
+    )
 
 
 @pytest.fixture(scope="module")
 def solid_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Create an 8x8 image with a distinct constant value per channel."""
+    """Create an image with a distinct constant value per channel."""
     path = tmp_path_factory.mktemp("toy_tflite_img") / "solid.png"
-    cv2.imwrite(str(path), np.full((8, 8, 3), _CHANNEL_VALUES, dtype=np.uint8))
+    cv2.imwrite(
+        str(path),
+        np.full((_HEIGHT, _WIDTH, 3), _CHANNEL_VALUES, dtype=np.uint8),
+    )
     return path
 
 
 @pytest.mark.parametrize("platform_name", _PARAMS)
 def test_toy_tflite_precision(
-    platform_name: str, toy_tflite: Path, solid_image: Path
+    platform_name: str,
+    toy_tflite: Path,
+    solid_image: Path,
+    record_property: RecordProperty,
 ):
     platform = Platform(platform_name)
     options = _conversion_options(platform)
@@ -102,27 +115,19 @@ def test_toy_tflite_precision(
 
     (output,) = converted.values()
     output_array = np.asarray(output, dtype=np.float32)
-    if platform is Platform.RVC4:
-        # RVC4Inferer exposes four-dimensional outputs as NCHW. OpenCV writes
-        # the fixture as BGR, while the RVC4 input contract reads it as RGB,
-        # so the identity model must preserve the reversed channel order.
-        assert output_array.ndim == 4
-        assert output_array.shape[1] == 3
-        channel_means = output_array.mean(axis=(0, 2, 3))
-        expected_rgb = np.asarray(_CHANNEL_VALUES[::-1], dtype=np.float32)
-        assert np.array_equal(
-            np.argsort(channel_means), np.argsort(expected_rgb)
-        ), (
-            "rvc4 tflite changed RGB channel order: "
-            f"expected {expected_rgb.tolist()}, got {channel_means.tolist()}"
-        )
-
-    values = np.sort(output_array.ravel())
-    per_channel = values.size // len(_CHANNEL_VALUES)
-    reference = np.sort(
-        np.repeat(np.array(_CHANNEL_VALUES, dtype=np.float32), per_channel)
+    output_config = stage.outputs[0]
+    output_layout = (
+        "NCHW" if platform is Platform.RVC4 else output_config.layout
     )
-    cos = cosine_similarity(reference, values)
-    assert cos >= _THRESHOLD, (
-        f"{platform_name} tflite precision: cosine {cos:.5f} < {_THRESHOLD}"
+    assert output_layout is not None
+    pixels = reorder_layout(output_array, output_layout, "NHWC")
+    assert pixels.shape == (1, _HEIGHT, _WIDTH, 3)
+    # OpenCV wrote the image as BGR, and the model gets it as RGB.
+    expected_rgb = np.asarray(_CHANNEL_VALUES[::-1], dtype=np.float32)
+    max_error = float(np.abs(pixels - expected_rgb).max())
+    record_property(f"{platform_name} max error", round(max_error, 3))
+    assert max_error <= _TOLERANCE, (
+        f"{platform_name} tflite output differs from the RGB input by "
+        f"{max_error:.3f}: expected {expected_rgb.tolist()}, got channel "
+        f"means {pixels.reshape(-1, 3).mean(axis=0).tolist()}"
     )

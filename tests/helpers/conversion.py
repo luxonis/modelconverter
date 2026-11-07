@@ -22,6 +22,10 @@ HAILO_FAST_OPTS = (
     "True",
 )
 
+# Skip only the HEF compile. A fidelity check runs the quantized HAR, which
+# needs the default optimization but no HEF.
+HAILO_NO_COMPILE_OPTS = ("hailo.disable_compilation", "True")
+
 
 def assert_produced(output_name: str, to_format: str = "native") -> None:
     """Assert a conversion wrote an artifact into its output dir."""
@@ -53,7 +57,9 @@ def assert_produced_suffix(output_name: str, suffix: str) -> None:
     )
 
 
-def toy_net_image_inputs(calib: Params, *, size: int = 64) -> list[Params]:
+def toy_net_image_inputs(
+    calib: Params, *, size: int = 64, mean_offset: float = 0.0
+) -> list[Params]:
     """Build the toy integration net's image inputs.
 
     The ``bgr``/``rgb``/``gray`` inputs each carry their own
@@ -61,6 +67,11 @@ def toy_net_image_inputs(calib: Params, *, size: int = 64) -> list[Params]:
 
     Shared by the toy-integration and toy-multistage tests, which differ only in
     the calibration (a random constant vs. an image directory).
+
+    Args:
+        calib: Calibration configuration shared by the image inputs.
+        size: Input image height and width.
+        mean_offset: Value added to each preprocessing mean.
 
     Returns:
         The ``inputs`` config entries of ``bgr``, ``rgb`` and ``gray``,
@@ -71,7 +82,11 @@ def toy_net_image_inputs(calib: Params, *, size: int = 64) -> list[Params]:
             "name": "bgr",
             "shape": [1, 3, size, size],
             "data_type": "float32",
-            "mean_values": [10, 20, 30],
+            "mean_values": [
+                10 + mean_offset,
+                20 + mean_offset,
+                30 + mean_offset,
+            ],
             "scale_values": [2, 4, 8],
             "encoding": {"from": "BGR", "to": "BGR"},
             "calibration": calib,
@@ -80,7 +95,11 @@ def toy_net_image_inputs(calib: Params, *, size: int = 64) -> list[Params]:
             "name": "rgb",
             "shape": [1, 3, size, size],
             "data_type": "float32",
-            "mean_values": [5, 6, 7],
+            "mean_values": [
+                5 + mean_offset,
+                6 + mean_offset,
+                7 + mean_offset,
+            ],
             "scale_values": [3, 2, 1],
             "encoding": {"from": "RGB", "to": "BGR"},
             "calibration": calib,
@@ -89,7 +108,7 @@ def toy_net_image_inputs(calib: Params, *, size: int = 64) -> list[Params]:
             "name": "gray",
             "shape": [1, 1, size, size],
             "data_type": "float32",
-            "mean_values": [128],
+            "mean_values": [128 + mean_offset],
             "scale_values": [255],
             "encoding": "GRAY",
             "calibration": calib,
@@ -142,8 +161,10 @@ def write_toy_conv_config(
     """Build the toy conv ONNX plus a matching config.
 
     Shared by the single-input conversion tests (precision, external-data,
-    hailo-compile, rvc4-encodings). The config carries mean/scale and an
-    RGB->BGR reversal, so the converted model gets the full baked preprocessing.
+    hailo-compile, rvc4-encodings). The config carries a different mean and
+    scale for each channel and an RGB->BGR reversal, so the converted model
+    gets the full baked preprocessing, and a precision check can see a
+    channel in the wrong place.
 
     ``calibration="none"`` leaves the input to fall back to random calibration
     (for a ``disable_calibration`` run).
@@ -163,8 +184,8 @@ def write_toy_conv_config(
         "name": "img",
         "shape": [1, 3, size, size],
         "data_type": "float32",
-        "mean_values": [128, 128, 128],
-        "scale_values": [58, 58, 58],
+        "mean_values": [100, 128, 150],
+        "scale_values": [40, 58, 70],
         "encoding": {"from": "RGB", "to": "BGR"},
     }
     if calibration != "none":
