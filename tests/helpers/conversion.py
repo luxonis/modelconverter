@@ -6,6 +6,7 @@ from typing import Literal
 import cv2
 import numpy as np
 import yaml
+from luxonis_ml.typing import Params
 
 from modelconverter.utils.constants import OUTPUTS_DIR
 from tests.helpers.onnx_factory import build_toy_conv_onnx
@@ -56,7 +57,9 @@ def assert_produced_suffix(output_name: str, suffix: str) -> None:
     )
 
 
-def toy_net_image_inputs(calib: dict, *, size: int = 64) -> list[dict]:
+def toy_net_image_inputs(
+    calib: Params, *, size: int = 64, mean_offset: float = 0.0
+) -> list[Params]:
     """Build the toy integration net's image inputs.
 
     The ``bgr``/``rgb``/``gray`` inputs each carry their own
@@ -64,13 +67,26 @@ def toy_net_image_inputs(calib: dict, *, size: int = 64) -> list[dict]:
 
     Shared by the toy-integration and toy-multistage tests, which differ only in
     the calibration (a random constant vs. an image directory).
+
+    Args:
+        calib: Calibration configuration shared by the image inputs.
+        size: Input image height and width.
+        mean_offset: Value added to each preprocessing mean.
+
+    Returns:
+        The ``inputs`` config entries of ``bgr``, ``rgb`` and ``gray``,
+        each ``size`` pixels square.
     """
     return [
         {
             "name": "bgr",
             "shape": [1, 3, size, size],
             "data_type": "float32",
-            "mean_values": [10, 20, 30],
+            "mean_values": [
+                10 + mean_offset,
+                20 + mean_offset,
+                30 + mean_offset,
+            ],
             "scale_values": [2, 4, 8],
             "encoding": {"from": "BGR", "to": "BGR"},
             "calibration": calib,
@@ -79,7 +95,11 @@ def toy_net_image_inputs(calib: dict, *, size: int = 64) -> list[dict]:
             "name": "rgb",
             "shape": [1, 3, size, size],
             "data_type": "float32",
-            "mean_values": [5, 6, 7],
+            "mean_values": [
+                5 + mean_offset,
+                6 + mean_offset,
+                7 + mean_offset,
+            ],
             "scale_values": [3, 2, 1],
             "encoding": {"from": "RGB", "to": "BGR"},
             "calibration": calib,
@@ -88,7 +108,7 @@ def toy_net_image_inputs(calib: dict, *, size: int = 64) -> list[dict]:
             "name": "gray",
             "shape": [1, 1, size, size],
             "data_type": "float32",
-            "mean_values": [128],
+            "mean_values": [128 + mean_offset],
             "scale_values": [255],
             "encoding": "GRAY",
             "calibration": calib,
@@ -96,7 +116,7 @@ def toy_net_image_inputs(calib: dict, *, size: int = 64) -> list[dict]:
     ]
 
 
-def write_config(workdir: Path, name: str, config: dict) -> Path:
+def write_config(workdir: Path, name: str, config: Params) -> Path:
     """Write a conversion config as yaml, returning its path."""
     path = workdir / f"{name}.yaml"
     path.write_text(yaml.safe_dump(config, sort_keys=False))
@@ -138,7 +158,7 @@ def write_toy_conv_config(
     external_data: bool = False,
     calibration: Literal["png", "raw", "npy", "none"] = "png",
 ) -> Path:
-    """Build the toy conv ONNX plus a matching config, returning the yaml path.
+    """Build the toy conv ONNX plus a matching config.
 
     Shared by the single-input conversion tests (precision, external-data,
     hailo-compile, rvc4-encodings). The config carries a different mean and
@@ -148,6 +168,9 @@ def write_toy_conv_config(
 
     ``calibration="none"`` leaves the input to fall back to random calibration
     (for a ``disable_calibration`` run).
+
+    Returns:
+        The path of the config, ``toy_conv.yaml`` in ``workdir``.
     """
     onnx_path = workdir / "toy_conv.onnx"
     build_toy_conv_onnx(
@@ -157,7 +180,7 @@ def write_toy_conv_config(
         external_data=external_data,
     )
 
-    input_cfg: dict = {
+    input_cfg: Params = {
         "name": "img",
         "shape": [1, 3, size, size],
         "data_type": "float32",

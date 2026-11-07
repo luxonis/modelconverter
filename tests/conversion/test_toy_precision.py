@@ -29,6 +29,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 from modelconverter.__main__ import convert
@@ -80,11 +81,17 @@ def inference_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
-def _to_nchw(arr: np.ndarray, platform_name: str) -> np.ndarray:
+def _to_nchw(
+    arr: npt.NDArray[np.generic], platform_name: str
+) -> npt.NDArray[np.generic]:
     """Normalize a platform's spatial output to NCHW.
 
     The Hailo inferer returns spatial outputs channels-last; the others,
     and the reference, are already NCHW.
+
+    Returns:
+        A rank-3 Hailo output as ``[1, C, H, W]``; any other output
+        unchanged.
     """
     arr = np.asarray(arr)
     if arr.ndim == 3 and platform_name == "hailo":
@@ -180,6 +187,19 @@ def test_externalized_calibration_matches_embedded_model(
     cfg, _, _ = get_configs(platform, str(toy_conv_config), list(options))
     stage = next(iter(cfg.stages.values()))
     reference = ONNXReferenceInferer.from_stage(stage).infer(inference_image)
+
+    archive_dir = OUTPUTS_DIR / externalized_name
+    archives = [*archive_dir.glob("*.tar.xz"), *archive_dir.glob("*.tar")]
+    (archive_path,) = archives
+    archived_cfg, _, _ = get_configs(platform, str(archive_path), [])
+    archived_stage = next(iter(archived_cfg.stages.values()))
+    archived_input = archived_stage.inputs[0]
+    source_input = stage.inputs[0]
+    assert archived_input.mean_values == source_input.mean_values
+    assert archived_input.scale_values == source_input.scale_values
+    assert archived_input.encoding == source_input.encoding
+    assert archived_input.layout == source_input.layout
+    assert Path(archived_stage.input_model).is_file()
 
     externalized_cfg = cfg.model_copy(deep=True)
     extract_preprocessing(externalized_cfg)

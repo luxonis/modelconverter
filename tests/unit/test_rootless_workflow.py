@@ -73,10 +73,12 @@ def _launch(
 
     def fake_run(
         argv: list[str], **_kwargs: object
-    ) -> subprocess.CompletedProcess:
+    ) -> subprocess.CompletedProcess[bytes]:
         nonlocal launch
         compose_file = Path(argv[argv.index("-f") + 1])
-        compose = _mapping(yaml.safe_load(compose_file.read_text()))
+        compose = _mapping(
+            yaml.safe_load(compose_file.read_text(encoding="utf-8"))
+        )
         launch = _Launch(argv, compose)
         return subprocess.CompletedProcess(argv, 0)
 
@@ -199,6 +201,7 @@ def test_host_identity_follows_the_daemon(
     work_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
     namespace_mode: str,
+    *,
     identity_passed: bool,
 ):
     config = _project(work_dir)

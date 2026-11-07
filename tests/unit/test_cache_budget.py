@@ -40,11 +40,14 @@ def budget(monkeypatch: pytest.MonkeyPatch) -> SetBudget:
     return set_budget
 
 
-def _stage(src: Path, cache_dir: Path, released: bool = True) -> Path:
+def _stage(src: Path, cache_dir: Path, *, released: bool = True) -> Path:
     """Stages ``src`` and, by default, drops the claim on it.
 
     A released entry stands for one staged by a conversion that has since
     finished, which is the only kind the sweep may evict.
+
+    Returns:
+        The cache entry that holds the staged copy of ``src``.
     """
     entry = input_staging._stage_file(src, cache_dir / "inputs").parent
     if released:
@@ -62,6 +65,9 @@ def _model(tmp_path: Path, name: str, size: int) -> Path:
 
     Entries are keyed by content, so two models of the same size have to
     differ in their bytes to be two entries at all.
+
+    Returns:
+        The path of the new file, ``name`` in ``tmp_path``.
     """
     src = tmp_path / name
     src.write_bytes((name.encode() * size)[:size])

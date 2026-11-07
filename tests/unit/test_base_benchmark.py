@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from typing_extensions import override
 
 from modelconverter.platforms.base_benchmark import (
     Benchmark,
@@ -25,18 +26,21 @@ DEFAULTS: Configuration = {
 class _FakeBenchmark(Benchmark):
     """A benchmark that records the configurations it received."""
 
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str) -> None:
         super().__init__(model_path)
         self.seen: list[Configuration] = []
 
     @property
+    @override
     def default_configuration(self) -> Configuration:
         return dict(DEFAULTS)
 
     @property
+    @override
     def all_configurations(self) -> list[Configuration]:
         return [{"num_threads": threads} for threads in (1, 2)]
 
+    @override
     def benchmark(self, configuration: Configuration) -> Result:
         self.seen.append(dict(configuration))
         return {"fps": 1.0, "latency": 1.0}
@@ -121,6 +125,6 @@ def test_get_input_fps_rejects_invalid_numeric_values(input_fps: float):
 
 
 @pytest.mark.parametrize("input_fps", ["30", True])
-def test_get_input_fps_rejects_non_numeric_values(input_fps: object):
+def test_get_input_fps_rejects_non_numeric_values(*, input_fps: str | bool):
     with pytest.raises(TypeError, match="must be of type 'float'"):
-        get_input_fps({"input_fps": input_fps})  # type: ignore[dict-item]
+        get_input_fps({"input_fps": input_fps})

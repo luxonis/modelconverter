@@ -54,6 +54,9 @@ def shape_permutations(
     Drawing the pair as a unit is what makes ``guess_new_layout``
     testable: it rejects any new shape that is not a rearrangement of
     the old one, so two independent shape draws would be filtered away.
+
+    Returns:
+        The drawn shape and a permutation of it.
     """
     shape = draw(shapes(min_rank, max_rank))
     order = draw(st.permutations(range(len(shape))))
@@ -99,6 +102,10 @@ def encoding_items(
     both the private normalisation helpers and the public ``parse_encodings``.
     With ``vector_length``, every per-channel field is drawn as a list of that
     length -- mismatched lengths are a rejected input with its own test.
+
+    Returns:
+        The entry, with a random subset of the per-channel and scalar
+        fields.
     """
     item: Params = {}
     for key, values in _ENCODING_FIELDS.items():

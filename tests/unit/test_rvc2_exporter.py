@@ -351,15 +351,24 @@ def test_selective_bgr_to_rgb_reversal_preserves_runtime_encoding(
 
 
 @pytest.mark.parametrize("ov_2021", [True, False], ids=["2021.4", "2022.3"])
-def test_nhwc_reversal_moves_into_onnx_on_openvino_2021(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ov_2021: bool
+@pytest.mark.parametrize(
+    ("layout", "shape", "channel_axis"),
+    [("NHWC", [1, 8, 8, 3], 3), ("HWC", [8, 8, 3], 2)],
+)
+def test_channels_last_reversal_moves_into_onnx_on_openvino_2021(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    ov_2021: bool,
+    layout: str,
+    shape: list[int],
+    channel_axis: int,
 ):
-    """The 2021.4 model optimizer skips an NHWC input, so the ONNX
-    reverses it instead.
+    """The 2021.4 model optimizer skips channels-last inputs, so the
+    ONNX reverses them instead.
     """
-    shape = [1, 8, 8, 3]
     model = build_onnx(
-        tmp_path / "nhwc.onnx",
+        tmp_path / f"{layout.lower()}.onnx",
         [("input", shape, TensorProto.FLOAT)],
         [("output", shape, TensorProto.FLOAT)],
     ).resolve()
@@ -370,7 +379,7 @@ def test_nhwc_reversal_moves_into_onnx_on_openvino_2021(
             "inputs": [
                 {
                     "name": "input",
-                    "layout": "NHWC",
+                    "layout": layout,
                     "encoding": {"from": "RGB", "to": "BGR"},
                 }
             ],
@@ -382,7 +391,7 @@ def test_nhwc_reversal_moves_into_onnx_on_openvino_2021(
     monkeypatch.setattr(
         "modelconverter.platforms.rvc2.exporter.OV_2021", ov_2021
     )
-    output_dir = tmp_path / "out-rvc2-nhwc"
+    output_dir = tmp_path / f"out-rvc2-{layout.lower()}"
     output_dir.mkdir()
     exporter = RVC2Exporter(next(iter(config.stages.values())), output_dir)
     commands: list[list[str]] = []
@@ -404,7 +413,7 @@ def test_nhwc_reversal_moves_into_onnx_on_openvino_2021(
         if attribute.name == "axis"
     ]
     assert ("--reverse_input_channels" in command) is not ov_2021
-    assert split_axes == ([3] if ov_2021 else [])
+    assert split_axes == ([channel_axis] if ov_2021 else [])
 
 
 @pytest.mark.parametrize(

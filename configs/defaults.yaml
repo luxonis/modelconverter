@@ -62,6 +62,10 @@ stages:
       # Either `output` or `script` must be provided.
       # script: ~
 
+      # Layout of the array returned by `script`. When omitted, the script
+      # must return a backend-ready calibration tensor.
+      # layout: ~
+
     # Scale values to be used for the input image per channel.
     # Can be either:
     #  - a single value to be used for all channels.

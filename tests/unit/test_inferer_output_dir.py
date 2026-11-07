@@ -13,7 +13,9 @@ exercised through a minimal stand-in subclass.
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import pytest
+from typing_extensions import override
 
 from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.utils import ModelconverterException
@@ -25,9 +27,13 @@ class _StubInferer(Inferer):
     before anything vendor-specific would.
     """
 
+    @override
     def setup(self) -> None: ...
 
-    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+    @override
+    def infer(
+        self, inputs: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         return {}
 
 

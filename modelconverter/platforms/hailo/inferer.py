@@ -12,7 +12,9 @@ from io import StringIO
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 from hailo_sdk_client import ClientRunner, InferenceContext
+from typing_extensions import override
 
 from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.platforms.hailo.exporter import HailoExporter
@@ -22,6 +24,7 @@ from modelconverter.utils import read_image
 class HailoInferer(Inferer):
     """Inferer for Hailo HAR models based on the Hailo SDK client."""
 
+    @override
     def setup(self) -> None:
         """Load the HAR model and collect the output names.
 
@@ -60,7 +63,10 @@ class HailoInferer(Inferer):
             if hn_name in output_hn_names:
                 self._output_names.extend(params["original_names"])
 
-    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+    @override
+    def infer(
+        self, inputs: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         """Run the model on a single set of input files.
 
         Every file is read according to the input it belongs to: an
@@ -80,9 +86,7 @@ class HailoInferer(Inferer):
         """
         stdout = stderr = StringIO()
         arr_inputs = {
-            HailoExporter._get_hn_layer_info(self._runner, name)[
-                0
-            ]: read_image(
+            HailoExporter.get_hn_layer_info(self._runner, name)[0]: read_image(
                 path,
                 shape=self.in_shapes[name],
                 encoding=self.encoding[name],

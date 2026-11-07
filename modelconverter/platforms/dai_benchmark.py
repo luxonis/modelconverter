@@ -50,6 +50,10 @@ def run_dai_benchmark(
     Returns:
         The mean ``fps`` and the mean ``latency`` in milliseconds, or
         ``"N/A"`` when the logs hold no latency.
+
+    Raises:
+        TypeError: If the report queue returns a message that is not a
+            ``dai.BenchmarkReport``.
     """
     latencies: list[float] = []
 
@@ -77,7 +81,7 @@ def run_dai_benchmark(
             benchmark_in = pipeline.create(dai.node.BenchmarkIn)
             benchmark_in.setRunOnHost(False)
             benchmark_in.sendReportEveryNMessages(num_messages)
-            benchmark_in.logReportsAsWarnings(False)
+            benchmark_in.logReportsAsWarnings(logReportsAsWarnings=False)
 
             benchmark_out.out.link(neural_network.input)
             neural_network.out.link(benchmark_in.input)

@@ -8,13 +8,14 @@ calculates the task metrics.
 from collections.abc import Iterable
 
 import numpy as np
+import numpy.typing as npt
 
 from modelconverter.utils.types import ResizeMethod
 
 
 def ordered_outputs(
-    outputs: dict[str, np.ndarray], output_names: Iterable[str]
-) -> list[np.ndarray]:
+    outputs: dict[str, npt.NDArray[np.generic]], output_names: Iterable[str]
+) -> list[npt.NDArray[np.generic]]:
     """Order backend outputs by the model configuration, not dict order."""
     names = list(output_names)
     missing = [name for name in names if name not in outputs]

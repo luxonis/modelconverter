@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 from loguru import logger
 from luxonis_ml.typing import Params
+from typing_extensions import override
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.platforms.rvc2.exporter import RVC2Exporter
@@ -24,7 +25,6 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.preprocessing import (
     channels_last_4d_layout,
-    is_user_calibration_tensor,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -47,7 +47,7 @@ class RVC3Exporter(RVC2Exporter):
 
     platform: Platform = Platform.RVC3
 
-    def __init__(self, config: SingleStageConfig, output_dir: Path):
+    def __init__(self, config: SingleStageConfig, output_dir: Path) -> None:
         """Initialize the exporter from the RVC3 configuration.
 
         Args:
@@ -66,6 +66,7 @@ class RVC3Exporter(RVC2Exporter):
         self._device = "VPUX.3400"
         self._device_specific_buildinfo = {}
 
+    @override
     def export(self) -> Path:
         """Convert the model and compile it for RVC3.
 
@@ -207,7 +208,7 @@ class RVC3Exporter(RVC2Exporter):
 
         pot_config_path = self.intermediate_outputs_dir / "pot_config.json"
 
-        with open(pot_config_path, "w") as f:
+        with pot_config_path.open("w") as f:
             json.dump(config, f, indent=4)
 
         logger.info(f"Executing POT pipeline for {xml_path}")
@@ -271,7 +272,7 @@ class RVC3Exporter(RVC2Exporter):
         directory = self.intermediate_outputs_dir / "calibration_tensors"
         directory.mkdir(exist_ok=True)
         for index, file in enumerate(files):
-            if is_user_calibration_tensor(file, calib):
+            if calib.is_user_tensor(file):
                 array = read_user_calibration_tensor(
                     file,
                     raw_shape=expected_shape,
@@ -326,7 +327,9 @@ class RVC3Exporter(RVC2Exporter):
                 data_type=DataType.UINT8,
                 transpose=False,
             )
-            cv2.imwrite(str(directory / file.name), img)
+            cv2.imwrite(
+                str(directory / file.name), img.astype(np.uint8, copy=False)
+            )
 
         dataset: Params = {
             "name": "calibration",

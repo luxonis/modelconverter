@@ -1,9 +1,6 @@
-"""Tests for the per-target conversion option helpers.
+"""Tests for conversion test helpers."""
 
-Covers the target-specific CLI options and the conditions under which the
-superblob option is skipped.
-"""
-
+import numpy as np
 import pytest
 
 from modelconverter.utils.types import Platform
@@ -11,6 +8,7 @@ from tests.helpers.platform_options import (
     platform_options,
     superblob_skip_reason,
 )
+from tests.helpers.precision import relative_error
 
 
 @pytest.mark.parametrize(
@@ -24,6 +22,11 @@ from tests.helpers.platform_options import (
 )
 def test_platform_options(platform: Platform, expected: tuple[str, ...]):
     assert platform_options(platform) == expected
+
+
+def test_relative_error_rejects_different_shapes():
+    with pytest.raises(AssertionError, match="output shape mismatch"):
+        relative_error(np.zeros((1, 2)), np.zeros((2, 1)))
 
 
 @pytest.mark.parametrize(
@@ -43,7 +46,7 @@ def test_platform_options_keeps_the_default_superblob(
     [("2021.4.0", True), ("2022.3.0", False)],
 )
 def test_superblob_skip_reason(
-    monkeypatch: pytest.MonkeyPatch, version: str, skipped: bool
+    monkeypatch: pytest.MonkeyPatch, version: str, *, skipped: bool
 ):
     monkeypatch.setenv("MODELCONVERTER_TOOL_VERSION", version)
 

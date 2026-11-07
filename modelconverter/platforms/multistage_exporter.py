@@ -61,7 +61,7 @@ class MultiStageExporter:
         )
         self._intermediate_outputs_dir.mkdir(parents=True, exist_ok=True)
 
-        with open(self.output_dir / "config.yaml", "w") as f:
+        with (self.output_dir / "config.yaml").open("w") as f:
             f.write(config.model_dump_json(indent=4))
 
         logger.info(f"Output directory: {self.output_dir}")
@@ -93,11 +93,11 @@ class MultiStageExporter:
             self._produce_calibration_data(exporter=exporter)
             logger.info(f"Running stage {stage_name}.")
             output_paths.append(exporter.run())
-            with open(exporter.output_dir / "buildinfo.json") as f:
+            with (exporter.output_dir / "buildinfo.json").open() as f:
                 buildinfo[stage_name] = json.load(f)
             logger.info(f"Stage {stage_name} completed.")
 
-        with open(self.output_dir / "buildinfo.json", "w") as f:
+        with (self.output_dir / "buildinfo.json").open("w") as f:
             json.dump(buildinfo, f, indent=4)
         return output_paths
 
@@ -124,9 +124,13 @@ class MultiStageExporter:
 
             dest_dir = self._infer_linked_stage(calib.stage)
             if calib.output is not None:
-                inp_config.calibration = calib.to_image_calibration(
+                calibration = calib.to_image_calibration(
                     dest_dir / calib.output
                 )
+                self._mark_direct_linked_layout(
+                    calibration, inp_config.shape, inp_config.layout
+                )
+                inp_config.calibration = calibration
             elif calib.script is not None:
                 # Keyed by the receiving input, not just the linked stage:
                 # several inputs of this stage may link to the same previous
@@ -139,7 +143,31 @@ class MultiStageExporter:
                     / "script"
                 )
                 _run_calibration_script(calib.script, dest_dir, dest)
-                inp_config.calibration = calib.to_image_calibration(dest)
+                calibration = calib.to_image_calibration(dest)
+                self._mark_script_linked_layout(calibration, calib.layout)
+                inp_config.calibration = calibration
+
+    def _mark_direct_linked_layout(
+        self,
+        calibration: ImageCalibrationConfig,
+        shape: list[int] | None,
+        layout: str | None,
+    ) -> None:
+        """Record a platform inferer's direct rank-four output layout."""
+        if shape is None or len(shape) != 4 or layout is None:
+            return
+        if self.platform is Platform.RVC4:
+            calibration.mark_generated_from_link("NCHW")
+        elif self.platform is Platform.RVC3:
+            calibration.mark_generated_from_link(layout)
+
+    @staticmethod
+    def _mark_script_linked_layout(
+        calibration: ImageCalibrationConfig, layout: str | None
+    ) -> None:
+        """Record the declared layout of a script result."""
+        if layout is not None:
+            calibration.mark_generated_from_link(layout)
 
     def _infer_linked_stage(self, stage: str) -> Path:
         """Run the model of a linked stage on its calibration data.
@@ -174,6 +202,11 @@ def _run_calibration_script(
 
     Each sample of the linked stage goes through ``run_script`` of the
     script, and the result is saved as a NumPy array in ``dest``.
+
+    Raises:
+        RuntimeError: If the script raises an exception while it loads,
+            or if it defines no ``run_script`` function.
+
     """
     # One directory per model output. The inferer also leaves a marker file
     # in there to recognize its own results, so take only the directories.
@@ -191,7 +224,7 @@ def _run_calibration_script(
         # script can `import numpy` etc.
         scope = {}
         try:
-            exec(script, scope)  # nosemgrep  # noqa: S102
+            exec(script, scope)  # nosemgrep: exec-detected  # noqa: S102
         except Exception as e:  # pragma: no cover
             raise RuntimeError("Error executing script") from e
 

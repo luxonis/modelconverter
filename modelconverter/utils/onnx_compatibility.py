@@ -36,7 +36,7 @@ def ensure_onnx_helper_compatibility() -> None:
         return arr.view(container).item()
 
     if not hasattr(helper, "float32_to_bfloat16"):
-        helper.float32_to_bfloat16 = lambda value: _convert_scalar(  # type: ignore[attr-defined]
+        helper.float32_to_bfloat16 = lambda value: _convert_scalar(  # pyright: ignore[reportAttributeAccessIssue]
             value, ml_dtypes.bfloat16, np.uint16
         )
 
@@ -51,9 +51,9 @@ def ensure_onnx_helper_compatibility() -> None:
         def float32_to_float8e4m3(
             value: float, *, fn: bool = True, uz: bool = False
         ) -> int:
-            return _convert_scalar(value, dtype_map[(fn, uz)], np.uint8)
+            return _convert_scalar(value, dtype_map[fn, uz], np.uint8)
 
-        helper.float32_to_float8e4m3 = float32_to_float8e4m3  # type: ignore[attr-defined]
+        helper.float32_to_float8e4m3 = float32_to_float8e4m3  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def save_onnx_model(
@@ -151,6 +151,10 @@ def get_external_data_paths(model_path: PathType) -> list[Path]:
 
     A model saved with ``all_tensors_to_one_file=False`` keeps one file
     per tensor, so there is not necessarily just one.
+
+    Raises:
+        ValueError: If a tensor's external data location resolves to a
+            path outside the model's directory.
     """
     model_path = Path(model_path)
     model = onnx.load(str(model_path), load_external_data=False)
@@ -182,5 +186,9 @@ def has_external_data(model_path: PathType) -> bool:
     Callers that re-save the model consolidate every tensor into one new
     file, so they only need to know *whether* there is external data --
     not where it currently lives.
+
+    Returns:
+        ``True`` if any tensor of the model has its data in a companion
+        file.
     """
     return bool(get_external_data_paths(model_path))

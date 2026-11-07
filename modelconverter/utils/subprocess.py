@@ -19,7 +19,7 @@ from types import TracebackType
 import psutil
 from loguru import logger
 from luxonis_ml.typing import PathType
-from typing_extensions import Self
+from typing_extensions import Self, override
 
 
 class SubprocessResult(subprocess.CompletedProcess[bytes]):
@@ -33,20 +33,29 @@ class SubprocessResult(subprocess.CompletedProcess[bytes]):
 
     """
 
-    def __init__(self, *args, peak_memory: int, total_time: float, **kwargs):
+    def __init__(
+        self,
+        args: list[str],
+        returncode: int,
+        stdout: bytes | None = None,
+        stderr: bytes | None = None,
+        *,
+        peak_memory: int,
+        total_time: float,
+    ) -> None:
         """Initialize the result.
 
         Args:
-            *args: Positional arguments passed to
-                ``subprocess.CompletedProcess``.
+            args: Command that was run.
+            returncode: Exit status of the process.
+            stdout: Captured standard output.
+            stderr: Captured standard error.
             peak_memory: Peak memory usage of the process and its
                 children, in bytes.
             total_time: Wall-clock run time of the process, in seconds.
-            **kwargs: Keyword arguments passed to
-                ``subprocess.CompletedProcess``.
 
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(args, returncode, stdout, stderr)
         self.peak_memory = peak_memory
         self.total_time = total_time
 
@@ -60,6 +69,7 @@ class SubprocessResult(subprocess.CompletedProcess[bytes]):
             mem /= 1024
         return f"{mem:.2f} GB"
 
+    @override
     def __repr__(self) -> str:
         """Return the base representation with memory and run time."""
         base = super().__repr__()
@@ -69,6 +79,7 @@ class SubprocessResult(subprocess.CompletedProcess[bytes]):
             f"total_time={round(self.total_time, 3)}s)"
         )
 
+    @override
     def __str__(self) -> str:
         """Return the representation of the result."""
         return repr(self)
@@ -101,7 +112,7 @@ class SubprocessHandle:
         *,
         silent: bool = False,
         timeout: float | None = None,
-    ):
+    ) -> None:
         """Initialize the subprocess handle.
 
         Args:
@@ -130,12 +141,12 @@ class SubprocessHandle:
 
         self._threads: list[threading.Thread] = []
         self._start_time: float = 0.0
-        self._proc: subprocess.Popen | None = None
+        self._proc: subprocess.Popen[str] | None = None
         self._ps_proc: psutil.Process | None = None
 
     @property
-    def proc(self) -> subprocess.Popen:
-        """Return the underlying ``subprocess.Popen`` object.
+    def proc(self) -> subprocess.Popen[str]:
+        """The underlying ``subprocess.Popen`` object.
 
         Raises:
             RuntimeError: If the process has not been started yet.
@@ -150,7 +161,7 @@ class SubprocessHandle:
 
     @property
     def ps_proc(self) -> psutil.Process:
-        """Return the ``psutil.Process`` wrapping the process.
+        """The ``psutil.Process`` wrapping the process.
 
         Raises:
             RuntimeError: If the process has not been started yet.
@@ -266,8 +277,8 @@ class SubprocessHandle:
         self._ps_proc = psutil.Process(self._proc.pid)
 
         def _reader(stream: io.TextIOWrapper, buf: list[str]) -> None:
-            for line in iter(stream.readline, ""):
-                line = strip_ansi(line)
+            for raw_line in iter(stream.readline, ""):
+                line = strip_ansi(raw_line)
                 buf.append(line)
                 if not self._silent:
                     logger.info(line.strip())
@@ -398,10 +409,7 @@ def subprocess_run(
         Result of the command.
 
     """
-    if isinstance(cmd, str):
-        args = cmd.split()
-    else:
-        args = [str(arg) for arg in cmd]
+    args = cmd.split() if isinstance(cmd, str) else [str(arg) for arg in cmd]
 
     with SubprocessHandle(args, silent=silent, timeout=timeout) as proc:
         while proc:

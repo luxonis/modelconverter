@@ -55,6 +55,15 @@ def resolve_output_dir(output_dir: str) -> Path:
     container-only location and lost when the container is removed. A
     native run writes straight to the host filesystem, where every path
     the user names is reachable, so any path is honored there.
+
+    Returns:
+        ``OUTPUTS_DIR`` joined with ``output_dir``, or ``output_dir``
+        itself if it is absolute.
+
+    Raises:
+        ModelconverterException: If the run is in a container and
+            ``output_dir`` is empty or ``.``, absolute, or contains
+            ``..``.
     """
     relative = Path(output_dir)
     if in_docker() and (
@@ -252,7 +261,7 @@ def extract_preprocessing(
         scale = _broadcast(inp.scale_values, inp.channel_count)
 
         # Remember the preprocessing for calibration before it is cleared.
-        inp._calibration_preprocessing = CalibrationPreprocessing(
+        inp.calibration_preprocessing = CalibrationPreprocessing(
             encoding_from=inp.encoding.from_,
             encoding_to=inp.encoding.to,
             mean_values=None if mean is None else tuple(mean),
@@ -288,6 +297,10 @@ def _archive_preprocessing(
     """Build the archive preprocessing block of one input.
 
     A raw input without mean and scale values needs no block.
+
+    Returns:
+        The block, or ``None`` for a raw input without mean and scale
+        values.
     """
     if inp.is_raw_input:
         if mean is None and scale is None:

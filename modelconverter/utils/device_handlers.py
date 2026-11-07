@@ -24,7 +24,7 @@ class DeviceHandler(ABC):
     over a concrete transport such as SSH or ADB.
     """
 
-    def __init__(self, silent: bool = True) -> None:
+    def __init__(self, *, silent: bool = True) -> None:
         """Initialize the device handler.
 
         Args:
@@ -88,7 +88,7 @@ class DeviceHandler(ABC):
         """
 
     def run(
-        self, *args, check: bool = False, silent: bool = True, **kwargs
+        self, *args: PathType, check: bool = False, silent: bool = True
     ) -> tuple[int, str, str]:
         """Run a subprocess command and return its result.
 
@@ -102,8 +102,6 @@ class DeviceHandler(ABC):
             check: If ``True``, propagate subprocess failures as
                 exceptions.
             silent: If ``True``, suppress command logging.
-            **kwargs: Additional keyword arguments forwarded to
-                ``subprocess.run``.
 
         Returns:
             A tuple containing return code, stdout, and stderr.
@@ -113,12 +111,11 @@ class DeviceHandler(ABC):
                 the subprocess exits with a non-zero status.
 
         """
-        args = list(map(str, args))
+        command = [str(arg) for arg in args]
         if not silent:
-            logger.info(f"{' '.join(args)}")
+            logger.info(f"{' '.join(command)}")
         result = subprocess.run(
-            args,
-            **kwargs,
+            command,
             capture_output=True,
             check=check,
         )
@@ -135,7 +132,7 @@ class DeviceHandler(ABC):
 class SSHHandler(DeviceHandler):
     """Device handler implementation based on SSH and SCP."""
 
-    def __init__(self, ip: str, silent: bool = True) -> None:
+    def __init__(self, ip: str, *, silent: bool = True) -> None:
         """Initialize an SSH handler for the target device.
 
         Args:
@@ -143,7 +140,7 @@ class SSHHandler(DeviceHandler):
             silent: If ``True``, suppress command logging.
 
         """
-        super().__init__(silent)
+        super().__init__(silent=silent)
         self._address = f"root@{ip}"
 
     @override
@@ -189,7 +186,7 @@ class AdbHandler(DeviceHandler):
     """Device handler implementation based on Android Debug Bridge."""
 
     def __init__(
-        self, device_id: str | None = None, silent: bool = True
+        self, device_id: str | None = None, *, silent: bool = True
     ) -> None:
         """Initialize an ADB handler for the target device.
 
@@ -208,19 +205,21 @@ class AdbHandler(DeviceHandler):
                 available.
 
         """
-        super().__init__(silent)
+        super().__init__(silent=silent)
         device_id = self._check_adb_connection(device_id)
         self._device_args = ["-s", device_id] if device_id else []
 
     @override
-    def run(self, *args, check: bool = True, **kwargs) -> tuple[int, str, str]:
+    def run(
+        self, *args: PathType, check: bool = True, silent: bool = True
+    ) -> tuple[int, str, str]:
         subprocess.run(
             ["adb", *map(str, self._device_args), "root"],
             capture_output=True,
             check=check,
         )
         return super().run(
-            "adb", *self._device_args, *args, check=check, **kwargs
+            "adb", *self._device_args, *args, check=check, silent=silent
         )
 
     @override

@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 from loguru import logger
 from typing_extensions import Self
 
@@ -66,7 +67,7 @@ class Inferer(ABC):
     layout: dict[str, str | None] = field(default_factory=dict)
     config: SingleStageConfig | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Prepare the output directory and set up the runtime.
 
         The recreated directory is tagged with a marker file, which is
@@ -166,7 +167,9 @@ class Inferer(ABC):
         """
 
     @abstractmethod
-    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+    def infer(
+        self, inputs: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         """Run the model on a single set of inputs.
 
         Args:

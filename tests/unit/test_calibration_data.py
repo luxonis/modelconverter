@@ -5,10 +5,11 @@ network access or cloud credentials are ever required.
 """
 
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -179,11 +180,11 @@ def test_calibration_data_downloaded_from_remote(
 
 
 @pytest.fixture
-def recorded_ldf(monkeypatch: pytest.MonkeyPatch) -> list:
+def recorded_ldf(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]]:
     """Replace ``load_from_ldf``, recording the arguments it is given."""
-    calls: list = []
+    calls: list[tuple[str, ...]] = []
 
-    def record(*args) -> Path:
+    def record(*args: str) -> Path:
         calls.append(args)
         return Path("out")
 
@@ -191,14 +192,14 @@ def recorded_ldf(monkeypatch: pytest.MonkeyPatch) -> list:
     return calls
 
 
-def test_ldf_two_part(recorded_ldf: list):
+def test_ldf_two_part(recorded_ldf: list[tuple[str, ...]]):
     assert cd.download_calibration_data("dataset:train") == Path("out")
     # The two-part `match` case calls load_from_ldf with two positional
     # args (loader_plugin defaults inside load_from_ldf).
     assert recorded_ldf == [("dataset", "train")]
 
 
-def test_ldf_three_part(recorded_ldf: list):
+def test_ldf_three_part(recorded_ldf: list[tuple[str, ...]]):
     assert cd.download_calibration_data("dataset:train:plug") == Path("out")
     assert recorded_ldf == [("dataset", "train", "plug")]
 
@@ -213,11 +214,14 @@ def test_ldf_malformed_too_many_parts():
         cd.download_calibration_data("a:b:c:d")
 
 
+_Sample = tuple[npt.NDArray[np.uint8] | dict[str, int], None]
+
+
 class _FakeLoader:
-    def __init__(self, items: list):
+    def __init__(self, items: list[_Sample]) -> None:
         self._items = items
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[_Sample]:
         return iter(self._items)
 
 

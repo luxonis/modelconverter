@@ -11,8 +11,10 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from luxonis_ml.typing import ParamValue
+from typing_extensions import override
 
 from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.platforms.rvc4.inferer import RVC4Inferer
@@ -26,9 +28,13 @@ class _StubInferer(Inferer):
     more.
     """
 
+    @override
     def setup(self) -> None: ...
 
-    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+    @override
+    def infer(
+        self, inputs: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         return {}
 
 

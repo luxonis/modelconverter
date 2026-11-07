@@ -6,9 +6,11 @@ from typing import Literal, NoReturn
 from unittest.mock import Mock
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from luxonis_ml.nn_archive import Config as NNArchiveConfig
 from luxonis_ml.typing import Params
+from typing_extensions import override
 
 import modelconverter.__main__ as main_module
 from modelconverter.platforms.base_exporter import Exporter
@@ -44,17 +46,21 @@ class _FakeExporter(Exporter):
         self.output_dir = output_dir
         self._inference_model_path = output_dir / "model.dlc"
 
+    @override
     def exporter_buildinfo(self) -> Params:
         raise AssertionError("run() is overridden")
 
+    @override
     def export(self) -> Path:
         raise AssertionError("run() is overridden")
 
+    @override
     def run(self) -> Path:
         return self.inference_model_path
 
 
 class _FakeRunEmbeddingFailureExporter(_FakeExporter):
+    @override
     def run(self) -> Path:
         if any(
             inp.requires_input_preprocessing() for inp in self.config.inputs
@@ -418,12 +424,16 @@ def test_fallback_regenerates_random_calibration_for_externalized_domain(
     main_stage = next(iter(cfg.stages))
     output_dir = tmp_path / "retry-output"
     generated_suffixes: list[str] = []
-    prepared_samples: list[tuple[np.ndarray, np.ndarray]] = []
+    prepared_samples: list[
+        tuple[npt.NDArray[np.generic], npt.NDArray[np.generic]]
+    ] = []
 
     class RetryExporter(Exporter):
         platform = Platform.RVC4
 
-        def __init__(self, config: SingleStageConfig, output_dir: Path):
+        def __init__(
+            self, config: SingleStageConfig, output_dir: Path
+        ) -> None:
             super().__init__(config, output_dir)
             calibration = config.inputs[0].calibration
             assert isinstance(calibration, ImageCalibrationConfig)
@@ -434,12 +444,15 @@ def test_fallback_regenerates_random_calibration_for_externalized_domain(
                     "retry with archive preprocessing"
                 )
 
+        @override
         def exporter_buildinfo(self) -> Params:
             raise AssertionError("run() is overridden")
 
+        @override
         def export(self) -> Path:
             raise AssertionError("run() is overridden")
 
+        @override
         def run(self) -> Path:
             inp = self.config.inputs[0]
             calibration = inp.calibration
@@ -475,7 +488,9 @@ def test_fallback_regenerates_random_calibration_for_externalized_domain(
     assert generated_suffixes == [".png", ".npy"]
     assert len(prepared_samples) == 1
     source, prepared = prepared_samples[0]
-    np.testing.assert_allclose(prepared, (source - 10) / 2)
+    np.testing.assert_allclose(
+        prepared.astype(np.float64), np.subtract(source, 10) / 2
+    )
 
 
 @pytest.mark.parametrize(

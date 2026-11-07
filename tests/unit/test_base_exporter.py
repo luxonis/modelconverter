@@ -11,6 +11,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from luxonis_ml.typing import Params
+from typing_extensions import override
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import ModelconverterException
@@ -29,10 +31,12 @@ class StubExporter(Exporter):
 
     platform = Platform.RVC2
 
-    def exporter_buildinfo(self) -> dict:
+    @override
+    def exporter_buildinfo(self) -> Params:
         """Return empty build info."""
         return {}
 
+    @override
     def export(self) -> Path:
         """Return the input model unchanged."""
         return self._input_model

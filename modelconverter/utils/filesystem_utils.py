@@ -53,7 +53,9 @@ def get_input_bases() -> list[Path]:
 def resolve_input_path(string: str) -> Path | None:
     """Resolve a relative local path against the input bases.
 
-    Returns ``None`` if the path exists under none of them.
+    Returns:
+        The path under the first base where it exists, or ``None`` if
+        the path exists under none of them.
     """
     for base in get_input_bases():
         candidate = base / string

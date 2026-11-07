@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Any, Final, NamedTuple, NoReturn
 
 from loguru import logger
-from luxonis_ml.typing import Params
+from luxonis_ml.typing import Params, ParamValue
+from typing_extensions import override
 
 from modelconverter.platforms.base_exporter import Exporter
 from modelconverter.utils import (
@@ -35,7 +36,6 @@ from modelconverter.utils.config import (
 from modelconverter.utils.encodings import validate_quantization_override_names
 from modelconverter.utils.preprocessing import (
     channels_last_image_layout,
-    is_user_calibration_tensor,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -93,7 +93,7 @@ class RVC4Exporter(Exporter):
         "zero_point_shift",
     }
 
-    def __init__(self, config: SingleStageConfig, output_dir: Path):
+    def __init__(self, config: SingleStageConfig, output_dir: Path) -> None:
         """Initialize the exporter and pre-process the input model.
 
         The SNPE arguments and the quantization options are taken from
@@ -108,6 +108,10 @@ class RVC4Exporter(Exporter):
         Args:
             config: Configuration of the stage to export.
             output_dir: Directory the exported model is written to.
+
+        Raises:
+            PreprocessingEmbeddingError: If an input requests
+                preprocessing and the input model is not ONNX.
 
         """
         super().__init__(config=config, output_dir=output_dir)
@@ -177,6 +181,7 @@ class RVC4Exporter(Exporter):
                 "verified or transformed for the bare converted model."
             )
 
+    @override
     def export(self) -> Path:
         """Convert, quantize and graph-prepare the model.
 
@@ -200,8 +205,8 @@ class RVC4Exporter(Exporter):
 
         logger.info("Performing offline graph preparation.")
         args = self._snpe_dlc_graph_prepare
-        self._add_args(args, ["--input_dlc", quantized_dlc_path])
-        self._add_args(args, ["--output_dlc", out_dlc_path])
+        self._add_args(args, ["--input_dlc", str(quantized_dlc_path)])
+        self._add_args(args, ["--output_dlc", str(out_dlc_path)])
         self._add_args(
             args,
             ["--set_output_tensors", ",".join(name for name in self._outputs)],
@@ -259,8 +264,8 @@ class RVC4Exporter(Exporter):
         quantized_dlc_path = self._attach_suffix(
             self._input_model, "quantized.dlc"
         )
-        self._add_args(args, ["--input_dlc", dlc_path])
-        self._add_args(args, ["--output_dlc", quantized_dlc_path])
+        self._add_args(args, ["--input_dlc", str(dlc_path)])
+        self._add_args(args, ["--output_dlc", str(quantized_dlc_path)])
 
         # INT16_STD uses the native W16A16 path; per-channel
         # quantization caused severe degradation on the device.
@@ -322,14 +327,13 @@ class RVC4Exporter(Exporter):
             Path to the written input list.
 
         """
-
         entries = self._calibration_entries()
         if self._raw_img_dir.exists():  # pragma: no cover
             logger.warning("Removing existing raw_images directory.")
             shutil.rmtree(self._raw_img_dir)
         self._raw_img_dir.mkdir(exist_ok=True)
         i = 0
-        with open(self._input_list_path, "w") as f:
+        with self._input_list_path.open("w") as f:
             for sample_idx, sample in enumerate(zip(*entries, strict=True)):
                 parts = []
                 for entry in sample:
@@ -347,6 +351,9 @@ class RVC4Exporter(Exporter):
 
         Terminates the process if an input has no shape or a dynamic
         one.
+
+        Returns:
+            One list per input, with an entry for each calibration file.
         """
         entries = []
         for name, inp in self._inputs.items():
@@ -356,8 +363,6 @@ class RVC4Exporter(Exporter):
                 exit_with(
                     ValueError(f"Input `{name}` has no shape specified.")
                 )
-            if not all(x is not None for x in inp.shape):
-                exit_with(ValueError(f"Input `{name}` has dynamic shape."))
             entries.append(
                 [
                     _CalibrationEntry(path=path, inp=inp, calib=calib)
@@ -376,7 +381,7 @@ class RVC4Exporter(Exporter):
         Returns:
             Path to the raw file.
         """
-        if is_user_calibration_tensor(entry.path, entry.calib):
+        if entry.calib.is_user_tensor(entry.path):
             if entry.path.suffix.lower() == ".raw":
                 return entry.path
             img = read_user_calibration_tensor(
@@ -388,14 +393,17 @@ class RVC4Exporter(Exporter):
             img, layout = self._read_calibration_file(
                 entry.inp, entry.calib, entry.path
             )
-            if entry.calib.generated_from_random and _was_image_input(
-                entry.inp
+            if entry.calib.generated_from_link or (
+                entry.calib.generated_from_random
+                and _was_image_input(entry.inp)
             ):
                 target_layout = channels_last_image_layout(layout)
-                # A layout with a repeated letter is returned unchanged, and
-                # cannot be transposed either.
-                if target_layout != layout:
-                    img = reorder_layout(img, layout, target_layout)
+            else:
+                target_layout = layout
+            # A layout with a repeated letter is returned unchanged, and
+            # cannot be transposed either.
+            if target_layout != layout:
+                img = reorder_layout(img, layout, target_layout)
         raw_path = self._raw_img_dir / f"{index}.raw"
         img.tofile(raw_path)
         return raw_path
@@ -435,7 +443,7 @@ class RVC4Exporter(Exporter):
         if self._normalize_io_encodings:
             self._normalize_exposed_io_encodings(encodings_dict)
         encodings_path = self.intermediate_outputs_dir / "encodings.json"
-        with open(encodings_path, "w") as encodings_file:
+        with encodings_path.open("w") as encodings_file:
             json.dump(encodings_dict, encodings_file, indent=4)
         return encodings_path
 
@@ -520,7 +528,7 @@ class RVC4Exporter(Exporter):
         )
 
     def _normalize_encoding_entry(
-        self, name: str, entry: Any, default_encoding: dict[str, Any]
+        self, name: str, entry: ParamValue, default_encoding: dict[str, Any]
     ) -> None:
         """Normalize the encodings of one exposed tensor in the dict form.
 
@@ -554,6 +562,7 @@ class RVC4Exporter(Exporter):
 
     @staticmethod
     def _raise_io_normalization_error(reason: str) -> NoReturn:
+        """Raise a ``TypeError`` for overrides that IO normalization rejects."""
         raise TypeError(
             "Could not apply `rvc4.normalize_io_encodings=True` to the "
             f"configured quantization overrides: {reason}. Disable IO "
@@ -566,6 +575,9 @@ class RVC4Exporter(Exporter):
 
         An input with a layout that SNPE does not know is left out,
         with a warning.
+
+        Returns:
+            The SNPE layouts, keyed by input name.
         """
         layouts = {}
         for name, inp in self._inputs.items():
@@ -586,7 +598,7 @@ class RVC4Exporter(Exporter):
                 )
         return layouts
 
-    def _add_io_args(self, args: list) -> None:
+    def _add_io_args(self, args: list[str]) -> None:
         """Add the input and output flags that ``args`` does not set.
 
         The flags are the input shapes, data types and layouts and the
@@ -607,7 +619,6 @@ class RVC4Exporter(Exporter):
                 {
                     name: inp.data_type.as_snpe_dtype()
                     for name, inp in self._inputs.items()
-                    if inp.data_type is not None
                 },
             )
         if "--out_name" not in args:
@@ -616,7 +627,7 @@ class RVC4Exporter(Exporter):
         if "--input_layout" not in args:
             args += _per_input_args("--input_layout", self._snpe_layouts())
 
-    def _add_quantization_args(self, args: list) -> None:
+    def _add_quantization_args(self, args: list[str]) -> None:
         """Add the float bit width or the quantization overrides."""
         if self._quantization_mode == QuantizationMode.FP16_STD:
             self._add_args(args, ["--float_bitwidth", "16"])
@@ -649,7 +660,7 @@ class RVC4Exporter(Exporter):
         """
         logger.info("Exporting for RVC4")
         args = self._snpe_onnx_to_dlc
-        self._add_args(args, ["-i", self._input_model])
+        self._add_args(args, ["-i", str(self._input_model)])
         self._add_io_args(args)
 
         self._add_quantization_args(args)
@@ -662,6 +673,7 @@ class RVC4Exporter(Exporter):
         logger.info("Exported for RVC4")
         return self._input_model.with_suffix(".dlc")
 
+    @override
     def exporter_buildinfo(self) -> Params:
         """Collect the RVC4-specific build information.
 

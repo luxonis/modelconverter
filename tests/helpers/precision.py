@@ -16,6 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 
 _MODEL_GLOB = {
     "rvc2": "*.xml",
@@ -27,15 +28,23 @@ _MODEL_GLOB = {
 RecordProperty = Callable[[str, object], None]
 
 
-def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+def cosine_similarity(
+    a: npt.NDArray[np.generic], b: npt.NDArray[np.generic]
+) -> float:
     """Cosine similarity between two arrays, compared as flat vectors."""
     x = np.asarray(a, dtype=np.float64).ravel()
     y = np.asarray(b, dtype=np.float64).ravel()
     return float(np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y)))
 
 
-def relative_error(reference: np.ndarray, converted: np.ndarray) -> float:
+def relative_error(
+    reference: npt.NDArray[np.generic],
+    converted: npt.NDArray[np.generic],
+) -> float:
     """L2 norm of the difference, relative to the L2 norm of the reference."""
+    assert reference.shape == converted.shape, (
+        f"output shape mismatch: {reference.shape} vs {converted.shape}"
+    )
     x = np.asarray(reference, dtype=np.float64).ravel()
     y = np.asarray(converted, dtype=np.float64).ravel()
     return float(np.linalg.norm(x - y) / np.linalg.norm(x))
@@ -44,8 +53,8 @@ def relative_error(reference: np.ndarray, converted: np.ndarray) -> float:
 def check_relative_error(
     record_property: RecordProperty,
     label: str,
-    reference: np.ndarray,
-    converted: np.ndarray,
+    reference: npt.NDArray[np.generic],
+    converted: npt.NDArray[np.generic],
     limit: float,
 ) -> None:
     """Record the relative error of an output and assert the limit."""
@@ -59,9 +68,13 @@ def locate_converted_model(output_dir: Path, platform: str) -> Path:
 
     Prefers the final artifact directly in ``output_dir`` -- running an
     intermediate DLC would test the un-quantized graph -- and falls back to a
-    nested match for backends whose runnable model lives deeper (the rvc2/rvc3
-    OpenVINO IR ``.xml``). A calibrated RVC3 blob is compiled from the INT8
-    IR, so that IR wins over the FP16 IR next to it.
+    nested match for backends whose runnable model lives deeper. A calibrated
+    RVC3 blob is compiled from the INT8 IR, so that IR wins over the FP16 IR
+    next to it.
+
+    Returns:
+        The first RVC3 INT8 IR when one exists. Otherwise, the first direct
+        artifact match or the first nested match, in sorted order.
     """
     if platform == "rvc3" and (
         quantized := sorted(output_dir.rglob("optimized/*-int8.xml"))

@@ -55,11 +55,10 @@ def create_progress_handler(
             f"[magenta]Time Elapsed (mm:ss) [cyan]00:00 / {_format_time(total)}",
             total=total,
         )
-        state = _PBState(True, total, time.time(), 0, task_id)
     else:
         progress = Progress()
         task_id = progress.add_task("[magenta]Repetition", total=total)
-        state = _PBState(False, total, time.time(), 0, task_id)
+    state = _PBState(use_time, total, time.time(), 0, task_id)
 
     def should_continue() -> bool:
         if state.use_time:

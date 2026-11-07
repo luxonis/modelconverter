@@ -68,6 +68,10 @@ def _model_slugs(benchmark_platform: str) -> list[str]:
 def _model_id(slug: str) -> str:
     """Take out the `luxonis` and use the remainder of the slug to name
     the test.
+
+    Returns:
+        The part of ``slug`` after its last ``/``, or all of ``slug``
+        if it has none.
     """
     return slug.rsplit("/", 1)[-1]
 

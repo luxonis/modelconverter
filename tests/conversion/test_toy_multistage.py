@@ -36,8 +36,10 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import onnxruntime as ort
 import pytest
+from luxonis_ml.typing import Params
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
@@ -113,11 +115,13 @@ def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
     for i in range(8):
         _write_noise(calib_dir / f"{i}.png", seed=i)
 
-    def toy_stage(model: Path) -> dict:
+    def toy_stage(model: Path, *, mean_offset: float = 0.0) -> Params:
         return {
             "input_model": str(model),
             "inputs": toy_net_image_inputs(
-                {"path": str(calib_dir), "max_images": 8}, size=_SIZE
+                {"path": str(calib_dir), "max_images": 8},
+                size=_SIZE,
+                mean_offset=mean_offset,
             ),
             "outputs": [{"name": "output"}, {"name": "pooled"}],
         }
@@ -129,7 +133,7 @@ def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
             "name": "toy_multistage",
             "stages": {
                 "first": toy_stage(first),
-                "second": toy_stage(second),
+                "second": toy_stage(second, mean_offset=10),
                 "third": {
                     "input_model": str(third),
                     "inputs": [
@@ -147,6 +151,7 @@ def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
                             "calibration": {
                                 "stage": "second",
                                 "script": _LINK_SCRIPT,
+                                "layout": "NCHW",
                             },
                         },
                     ],
@@ -177,11 +182,15 @@ def test_toy_multistage(platform_name: str, multistage_config: Path):
     assert_produced(output_name)
 
 
-def _golden_pipeline(cfg: Config, image: Path) -> np.ndarray:
+def _golden_pipeline(cfg: Config, image: Path) -> npt.NDArray[np.generic]:
     """Run the original ONNX models of the pipeline on the image.
 
     ``first`` and ``second`` get the image with their preprocessing applied
     in numpy, and ``third`` gets their outputs through the link script.
+
+    Returns:
+        The output of ``third``.
+
     """
     first = ONNXReferenceInferer.from_stage(cfg.stages["first"]).infer(image)
     second = ONNXReferenceInferer.from_stage(cfg.stages["second"]).infer(image)
@@ -193,7 +202,7 @@ def _golden_pipeline(cfg: Config, image: Path) -> np.ndarray:
         ["out"],
         {
             "from_first": first["output"],
-            "from_second": second["output"] + second["pooled"],
+            "from_second": np.add(second["output"], second["pooled"]),
         },
     )
     return np.asarray(out)
@@ -232,7 +241,9 @@ def test_toy_multistage_precision(
     cfg, _, _ = get_configs(platform, str(multistage_config), list(options))
     golden = _golden_pipeline(cfg, inference_image)
 
-    def run_stage(stage: str, feed: dict[str, Path]) -> dict[str, np.ndarray]:
+    def run_stage(
+        stage: str, feed: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         model_path = locate_converted_model(
             OUTPUTS_DIR / output_name / stage, platform_name
         )
@@ -253,7 +264,7 @@ def test_toy_multistage_precision(
     # The vendor inferer reads a `.npy` verbatim, so it must already be in the
     # layout that backend expects: SNPE (rvc4) consumes NHWC, OpenVINO (rvc2)
     # NCHW. Both inferers return NCHW outputs.
-    def save_input(name: str, arr: np.ndarray) -> Path:
+    def save_input(name: str, arr: npt.NDArray[np.generic]) -> Path:
         arr = np.asarray(arr, dtype=np.float32)
         if platform_name == "rvc4":
             arr = arr[0].transpose(1, 2, 0)
@@ -266,7 +277,8 @@ def test_toy_multistage_precision(
         {
             "from_first": save_input("from_first", first["output"]),
             "from_second": save_input(
-                "from_second", second["output"] + second["pooled"]
+                "from_second",
+                np.add(second["output"], second["pooled"]),
             ),
         },
     )
@@ -362,5 +374,8 @@ def test_two_stage_archive_to_archive(
         model = json.load(config_file)["model"]
     # The archive holds both converted models, and its head points to the
     # converted postprocessor.
-    assert model["metadata"]["path"] in members
-    assert model["heads"][0]["metadata"]["postprocessor_path"] in members
+    main_path = model["metadata"]["path"]
+    post_path = model["heads"][0]["metadata"]["postprocessor_path"]
+    assert main_path != post_path
+    assert main_path in members
+    assert post_path in members

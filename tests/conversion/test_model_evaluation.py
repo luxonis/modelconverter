@@ -174,6 +174,9 @@ def _calibration_images() -> list[Path]:
 def _link_options(cfg: Config, stage: str) -> list[str]:
     """Build the overrides wiring yolov8-seg's postprocessor to its
     upstream stage.
+
+    Returns:
+        A flat list that alternates override keys and values.
     """
     post_stage, post_config = next(
         (name, config) for name, config in cfg.stages.items() if name != stage

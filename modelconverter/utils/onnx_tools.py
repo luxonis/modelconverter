@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Final, cast
 
 import numpy as np
+import numpy.typing as npt
 import onnx
 import onnxruntime as ort
 from loguru import logger
@@ -253,6 +254,13 @@ def _normalization_values(
     Returns:
         The channel count, and the mean and scale values broadcast to
         it. With ``reverse_only``, both value lists are ``None``.
+
+    Raises:
+        ONNXException: If ``cfg.validate_preprocessing`` rejects the
+            input.
+        PreprocessingEmbeddingError: If the layout is neither ``NCHW``
+            nor ``NHWC``, or if the input needs mean or scale
+            normalization and is not of a floating-point type.
     """
     try:
         n_channels = cfg.validate_preprocessing(reverse_only=reverse_only)
@@ -301,6 +309,13 @@ def _reverse_channel_nodes(
 
     From opset 13, the split lengths are an input, which is appended to
     ``initializers``.
+
+    Returns:
+        The ``Split`` node and the ``Concat`` node, in this order.
+
+    Raises:
+        PreprocessingEmbeddingError: If the model declares no default
+            domain opset.
     """
     try:
         opset = get_opset_version(model)
@@ -436,6 +451,7 @@ class ONNXModifier:
         self,
         model_path: Path,
         output_path: Path,
+        *,
         skip_optimization: bool = False,
         skip_constant_folding: bool = False,
     ) -> None:
@@ -455,7 +471,13 @@ class ONNXModifier:
         self.output_path = output_path
         self._skip_optimization = skip_optimization
         self._skip_constant_folding = skip_constant_folding
-        self._load_onnx()
+        self._onnx_model = self._load_onnx()
+        input_type = self._onnx_model.graph.input[0].type.tensor_type
+        self._dtype = helper.tensor_dtype_to_np_dtype(input_type.elem_type)
+        self._has_dynamic_shape = any(
+            dim.dim_value == 0 for dim in input_type.shape.dim
+        )
+        self._onnx_gs = gs.import_onnx(self._onnx_model)
         self._prev_onnx_model = self._onnx_model
         self._prev_onnx_gs = self._onnx_gs
 
@@ -542,7 +564,7 @@ class ONNXModifier:
 
         return True
 
-    def compare_outputs(self, from_modelproto: bool = False) -> bool:
+    def compare_outputs(self, *, from_modelproto: bool = False) -> bool:
         """Compare the outputs of two ONNX models.
 
         Args:
@@ -553,6 +575,9 @@ class ONNXModifier:
         Returns:
             ``True`` if the outputs of both models match,
             ``False`` otherwise.
+
+        Raises:
+            ONNXException: If a model output is not a tensor.
 
         """
         import onnxruntime as ort
@@ -569,11 +594,12 @@ class ONNXModifier:
         ort_session_1 = ort.InferenceSession(onnx_model_1)
         ort_session_2 = ort.InferenceSession(onnx_model_2)
 
+        rng = np.random.default_rng()
         inputs = {
-            input.name: np.random.rand(*input.shape).astype(
-                _ORT_INPUT_TYPES[input.type]
+            model_input.name: rng.random(model_input.shape).astype(
+                _ORT_INPUT_TYPES[model_input.type]
             )
-            for input in ort_session_1.get_inputs()
+            for model_input in ort_session_1.get_inputs()
         }
 
         outputs_1 = ort_session_1.run(None, inputs)
@@ -595,14 +621,12 @@ class ONNXModifier:
 
         return equal_outputs
 
-    def _load_onnx(self) -> None:
-        """Load the ONNX model and store it as ``onnx.ModelProto`` and
-        ``onnx_graphsurgeon`` graph.
-        """
+    def _load_onnx(self) -> onnx.ModelProto:
+        """Load, simplify and check the ONNX model."""
         logger.info(f"Loading model: {self.model_path.stem}")
 
         try:
-            self._onnx_model, _ = simplify(
+            onnx_model, _ = simplify(
                 self.model_path.as_posix(),
                 perform_optimization=not self._skip_optimization,
                 skip_constant_folding=self._skip_constant_folding,
@@ -611,23 +635,9 @@ class ONNXModifier:
             logger.warning(
                 f"Failed to load and simplify ONNX model: {self.model_path.stem} with error: {e}\nLoading without simplification."
             )
-            self._onnx_model = onnx.load(self.model_path.as_posix())
-        onnx.checker.check_model(self._onnx_model)
-
-        self._dtype = helper.tensor_dtype_to_np_dtype(
-            self._onnx_model.graph.input[0].type.tensor_type.elem_type
-        )
-        self._input_shape = [
-            dim.dim_value
-            for dim in self._onnx_model.graph.input[
-                0
-            ].type.tensor_type.shape.dim
-        ]
-        self._has_dynamic_shape = any(
-            dim == 0 or dim is None for dim in self._input_shape
-        )
-
-        self._onnx_gs = gs.import_onnx(self._onnx_model)
+            onnx_model = onnx.load(self.model_path.as_posix())
+        onnx.checker.check_model(onnx_model)
+        return onnx_model
 
     def _optimize_onnx(self) -> None:
         """Optimize and simplify the ONNX model's graph."""
@@ -715,7 +725,9 @@ class ONNXModifier:
                 self._onnx_gs.outputs.append(tensor)
         self._onnx_model = gs.export_onnx(self._onnx_gs)
 
-    def _get_constant_map(self, graph: gs.Graph) -> dict[str, np.ndarray]:
+    def _get_constant_map(
+        self, graph: gs.Graph
+    ) -> dict[str, npt.NDArray[np.generic]]:
         """Extract constant tensors from the GraphSurgeon graph.
 
         Args:
@@ -734,8 +746,8 @@ class ONNXModifier:
 
     @staticmethod
     def _get_constant_value(
-        node: gs.Node, constant_map: dict[str, np.ndarray]
-    ) -> tuple[np.ndarray, int] | None:
+        node: gs.Node, constant_map: dict[str, npt.NDArray[np.generic]]
+    ) -> tuple[npt.NDArray[np.generic], int] | None:
         """Return the constant value of a node if it is a constant node.
 
         Args:
@@ -748,9 +760,9 @@ class ONNXModifier:
             no constant input.
 
         """
-        for idx, input in enumerate(node.inputs):
-            if input.name in constant_map:
-                return (constant_map[input.name], idx)
+        for idx, tensor in enumerate(node.inputs):
+            if tensor.name in constant_map:
+                return (constant_map[tensor.name], idx)
 
         return None
 
@@ -766,9 +778,9 @@ class ONNXModifier:
             variable input.
 
         """
-        for idx, input in enumerate(node.inputs):
-            if isinstance(input, gs.Variable):
-                return (input, idx)
+        for idx, tensor in enumerate(node.inputs):
+            if isinstance(tensor, gs.Variable):
+                return (tensor, idx)
 
         return None
 
@@ -796,8 +808,8 @@ class ONNXModifier:
 
         for old_input, new_input in connections_to_fix:
             for node in nodes:
-                for idx, input in enumerate(node.inputs):
-                    if input == old_input:
+                for idx, tensor in enumerate(node.inputs):
+                    if tensor == old_input:
                         node.inputs[idx] = new_input
 
         for node in nodes_to_remove:
@@ -881,6 +893,9 @@ class ONNXModifier:
 
         Such a node is not substituted, because SNPE 2.32.6 fails to
         convert the result.
+
+        Returns:
+            Whether an ``Erf`` node reads the first output of ``node``.
         """
         return any(
             n.op == "Erf"
@@ -958,6 +973,10 @@ class ONNXModifier:
         """Find the node chains whose operations follow a pattern.
 
         Each node of a chain reads the first output of the node before.
+
+        Returns:
+            The chains that match a whole pattern, at most one for each
+            start node and pattern, in the order of ``patterns``.
         """
         sequences = []
         for pattern in patterns:
@@ -993,8 +1012,13 @@ class ONNXModifier:
         return sequence
 
     def _fold_sequence(
-        self, sequence: list[gs.Node], constant_map: dict[str, np.ndarray]
-    ) -> tuple[float | np.ndarray, float | np.ndarray] | None:
+        self,
+        sequence: list[gs.Node],
+        constant_map: dict[str, npt.NDArray[np.generic]],
+    ) -> (
+        tuple[float | npt.NDArray[np.generic], float | npt.NDArray[np.generic]]
+        | None
+    ):
         """Fold the constants after the leading Conv into a scale and a
         bias.
 
@@ -1009,9 +1033,9 @@ class ONNXModifier:
                 return None
             constant_val, _ = constant
             if seq_node.op == "Add":
-                bias += constant_val
+                bias = np.add(bias, constant_val)
             else:
-                scale *= constant_val
+                scale = np.multiply(scale, constant_val)
         return scale, bias
 
     def _fuse_single_add_mul_to_conv(self) -> None:
@@ -1042,7 +1066,9 @@ class ONNXModifier:
         )
 
     def _fuse_mul_into_next_conv(
-        self, mul_node: gs.Node, constant_map: dict[str, np.ndarray]
+        self,
+        mul_node: gs.Node,
+        constant_map: dict[str, npt.NDArray[np.generic]],
     ) -> bool:
         """Fold a constant ``Mul`` into the weights of the Conv after it.
 
@@ -1061,7 +1087,9 @@ class ONNXModifier:
         return True
 
     def _fuse_add_into_next_conv(
-        self, add_node: gs.Node, constant_map: dict[str, np.ndarray]
+        self,
+        add_node: gs.Node,
+        constant_map: dict[str, npt.NDArray[np.generic]],
     ) -> bool:
         """Fold a constant ``Add`` into the bias of the Conv after it.
 
@@ -1121,7 +1149,9 @@ class ONNXModifier:
         )
 
     def _fuse_mul_add_into_conv(
-        self, mul_node: gs.Node, constant_map: dict[str, np.ndarray]
+        self,
+        mul_node: gs.Node,
+        constant_map: dict[str, npt.NDArray[np.generic]],
     ) -> gs.Node | None:
         """Fold a constant ``Mul -> Add`` into the Conv after it.
 
@@ -1145,7 +1175,9 @@ class ONNXModifier:
         return add_node
 
     def _fuse_add_mul_into_conv(
-        self, add_node: gs.Node, constant_map: dict[str, np.ndarray]
+        self,
+        add_node: gs.Node,
+        constant_map: dict[str, npt.NDArray[np.generic]],
     ) -> gs.Node | None:
         """Fold a constant ``Add -> Mul`` into the Conv after it.
 
@@ -1165,7 +1197,7 @@ class ONNXModifier:
 
         add_value, _ = add_constant
         mul_value, _ = mul_constant
-        add_value *= mul_value
+        np.multiply(add_value, mul_value, out=add_value)
         conv_weights = conv_node.inputs[1]
         _shift_conv_bias(conv_node, add_value, conv_weights)
         _scale_conv_weights(conv_node, mul_value)
@@ -1220,6 +1252,11 @@ class ONNXModifier:
         Returns:
             ``False`` when the Conv does not have 1 or 3 channels on the
             axis of the split.
+
+        Raises:
+            ValueError: If the ``Split`` and the ``Concat`` have
+                different axes.
+            TypeError: If the axis of the ``Split`` is not an integer.
         """
         conv_weights = intermediate_nodes[-1].inputs[1]
 
@@ -1294,7 +1331,7 @@ class ONNXModifier:
         self._onnx_gs = self._prev_onnx_gs
 
     def _apply_optimization_step(
-        self, step_name: str, optimization_func: Callable
+        self, step_name: str, optimization_func: Callable[[], None]
     ) -> None:
         """Apply a single optimization step to the ONNX model.
 
@@ -1376,14 +1413,17 @@ def _longest_sequences(
 def _batch_norm_node(
     name: str,
     input_tensor: gs.Variable,
-    scale: float | np.ndarray,
-    bias: float | np.ndarray,
+    scale: float | npt.NDArray[np.generic],
+    bias: float | npt.NDArray[np.generic],
     *,
-    dtype: np.dtype,
+    dtype: np.dtype[np.generic],
 ) -> gs.Node:
     """Build a ``BatchNormalization`` node that computes ``x * scale + bias``.
 
     The mean is zero and the variance is one on every channel.
+
+    Returns:
+        The new node, named ``name``.
     """
     assert input_tensor.shape is not None
     conv_channels = int(input_tensor.shape[1])
@@ -1434,7 +1474,9 @@ def _conv_after(node: gs.Node, op: str) -> tuple[gs.Node, gs.Node] | None:
     return second, conv_node
 
 
-def _scale_conv_weights(conv_node: gs.Node, mul_value: np.ndarray) -> None:
+def _scale_conv_weights(
+    conv_node: gs.Node, mul_value: npt.NDArray[np.generic]
+) -> None:
     """Fold the value of a ``Mul`` before a Conv into the Conv weights."""
     conv_weights = conv_node.inputs[1]
     conv_node.inputs[1] = gs.Constant(
@@ -1443,12 +1485,18 @@ def _scale_conv_weights(conv_node: gs.Node, mul_value: np.ndarray) -> None:
 
 
 def _shift_conv_bias(
-    conv_node: gs.Node, add_value: np.ndarray, weights: gs.Constant
+    conv_node: gs.Node,
+    add_value: npt.NDArray[np.generic],
+    weights: gs.Constant,
 ) -> None:
     """Fold the value of an ``Add`` before a Conv into the Conv bias.
 
     ``weights`` are the Conv weights that the added value passes
     through.
+
+    Raises:
+        ValueError: If the new bias fails its shape check against the
+            old bias, or against ``weights`` when the Conv has no bias.
     """
     shift = np.sum(add_value * weights.values, axis=(1, 2, 3))
     if len(conv_node.inputs) > 2:

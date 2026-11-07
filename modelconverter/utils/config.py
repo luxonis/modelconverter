@@ -36,16 +36,15 @@ from pydantic import (
     PositiveInt,
     PrivateAttr,
     SerializerFunctionWrapHandler,
-    field_serializer,
     field_validator,
     model_serializer,
     model_validator,
 )
-from typing_extensions import Self
+from typing_extensions import Self, assert_never
 
 from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
-from modelconverter.utils.encodings import parse_encodings
+from modelconverter.utils.encodings import Encodings, parse_encodings
 from modelconverter.utils.filesystem_utils import resolve_path
 from modelconverter.utils.layout import (
     is_image_input_shape,
@@ -128,6 +127,8 @@ class LinkCalibrationConfig(BaseCalibrationConfig):
             Either the source code itself or a path to a ``.py`` file,
             whose contents are read during validation. Either ``output``
             or ``script`` must be provided.
+        layout: Layout of arrays returned by ``script``. When omitted, the
+            arrays use the backend-ready calibration tensor contract.
         resize_method: Image resize policy, also retained for inference
             and output archive metadata. Prepared tensors are not resized.
 
@@ -136,6 +137,7 @@ class LinkCalibrationConfig(BaseCalibrationConfig):
     stage: str
     output: str | None = None
     script: str | None = None
+    layout: str | None = None
 
     @model_validator(mode="after")
     def _validate(self) -> Self:
@@ -144,6 +146,12 @@ class LinkCalibrationConfig(BaseCalibrationConfig):
                 "Either `output` or `script` must be provided for calibration."
             )
         return self
+
+    @field_validator("layout", mode="after")
+    @staticmethod
+    def _normalize_layout(layout: str | None) -> str | None:
+        """Normalize a declared script result layout."""
+        return None if layout is None else layout.upper()
 
     @field_validator("script", mode="after")
     @staticmethod
@@ -174,6 +182,7 @@ class ImageCalibrationConfig(BaseCalibrationConfig):
     path: Path
     max_images: int = -1
     _generated_from_random: bool = PrivateAttr(default=False)
+    _generated_from_link: bool = PrivateAttr(default=False)
     _generated_layout: str = PrivateAttr(default="")
 
     @property
@@ -182,9 +191,40 @@ class ImageCalibrationConfig(BaseCalibrationConfig):
         return self._generated_from_random
 
     @property
+    def generated_from_link(self) -> bool:
+        """Whether this file source was materialized from a stage link."""
+        return self._generated_from_link
+
+    @property
     def generated_layout(self) -> str:
         """Layout used when generated tensor calibration was materialized."""
         return self._generated_layout
+
+    def is_user_tensor(self, path: Path) -> bool:
+        """Whether a tensor file uses the backend-ready calibration contract."""
+        return path.suffix.lower() in {".npy", ".raw"} and not (
+            self.generated_from_random or self.generated_from_link
+        )
+
+    def mark_generated_from_random(self, layout: str) -> None:
+        """Mark the files as written from random calibration data.
+
+        Args:
+            layout: Layout of the generated tensors.
+
+        """
+        self._generated_from_random = True
+        self._generated_layout = layout
+
+    def mark_generated_from_link(self, layout: str) -> None:
+        """Mark the files as written from linked inference results.
+
+        Args:
+            layout: Layout of the generated tensors.
+
+        """
+        self._generated_from_link = True
+        self._generated_layout = layout
 
     @field_validator("path", mode="before")
     @staticmethod
@@ -338,10 +378,16 @@ class InputConfig(OutputConfig):
         """Preprocessing moved out of the model but retained for calibration."""
         return self._calibration_preprocessing
 
+    @calibration_preprocessing.setter
+    def calibration_preprocessing(
+        self, value: CalibrationPreprocessing | None
+    ) -> None:
+        self._calibration_preprocessing = value
+
     @model_validator(mode="wrap")
     @classmethod
     def _track_layout_source(
-        cls, data: Any, handler: ModelWrapValidatorHandler[Self]
+        cls, data: object, handler: ModelWrapValidatorHandler[Self]
     ) -> Self:
         """Remember whether ``C`` came from the user or layout inference."""
         if isinstance(data, cls):
@@ -356,17 +402,17 @@ class InputConfig(OutputConfig):
 
     @property
     def encoding_mismatch(self) -> bool:
-        """Return whether the ``from`` and ``to`` encodings differ."""
+        """Whether the ``from`` and ``to`` encodings differ."""
         return self.encoding.from_ != self.encoding.to
 
     @property
     def is_color_input(self) -> bool:
-        """Return whether the input is fed with color image data."""
+        """Whether the input is fed with color image data."""
         return self.encoding.from_ in {Encoding.RGB, Encoding.BGR}
 
     @property
     def is_raw_input(self) -> bool:
-        """Return whether the input is fed with non-image data."""
+        """Whether the input is fed with non-image data."""
         return (
             self.encoding.from_ == Encoding.NONE
             and self.encoding.to == Encoding.NONE
@@ -374,7 +420,7 @@ class InputConfig(OutputConfig):
 
     @property
     def channel_count(self) -> int | None:
-        """Return the positive channel count when ``C`` is trustworthy."""
+        """The positive channel count when ``C`` is trustworthy."""
         if self.shape is None or self.layout is None or "C" not in self.layout:
             return None
         if (
@@ -694,64 +740,6 @@ class RVC3Config(BlobBaseConfig):
     pot_target_device: PotDevice = PotDevice.VPU
 
 
-class QuantizationOverridesItem(BaseModelExtraForbid):
-    """Quantization encoding of a single tensor.
-
-    Follows the AIMET encoding specification and is used to override the
-    quantization parameters computed during the RVC4 conversion.
-
-    Attributes:
-        bitwidth: Number of bits used to represent the tensor.
-        is_symmetric: Whether the quantization is symmetric.
-        dtype: Whether the tensor is quantized as an integer or a float.
-        max: Largest representable value.
-        min: Smallest representable value.
-        offset: Zero-point offset of the quantization grid.
-        scale: Step size of the quantization grid.
-
-    """
-
-    bitwidth: Annotated[int, Literal[4, 8, 16, 32]] | None = None
-    is_symmetric: bool | None = None
-    dtype: Literal["int", "float"] | None = None
-    max: float | None = None
-    min: float | None = None
-    offset: int | None = None
-    scale: float | None = None
-
-    @field_serializer("is_symmetric", when_used="json")
-    @staticmethod
-    def serialize_is_symmetric(value: bool | None) -> str | None:
-        """Serialize ``is_symmetric`` as a string in JSON output.
-
-        Args:
-            value: Value of the ``is_symmetric`` field.
-
-        Returns:
-            The string representation of the value, or ``None`` if the
-            value is ``None``.
-
-        """
-        if value is None:
-            return None
-        return str(value)
-
-
-class Encodings(BaseModelExtraForbid):
-    """Set of quantization encodings overriding the computed ones.
-
-    Attributes:
-        activation_encodings: Encodings of the activation tensors, keyed
-            by tensor name.
-        param_encodings: Encodings of the parameter tensors, keyed by
-            tensor name.
-
-    """
-
-    activation_encodings: dict[str, list[QuantizationOverridesItem]]
-    param_encodings: dict[str, list[QuantizationOverridesItem]]
-
-
 class QuantizationOverrides(BaseModelExtraForbid):
     """Raw RVC4 quantization overrides to pass to SNPE.
 
@@ -786,7 +774,7 @@ class QuantizationOverrides(BaseModelExtraForbid):
         if self.payload is not None:
             return copy.deepcopy(self.payload)
         assert self.source_path is not None
-        with open(self.source_path) as f:
+        with self.source_path.open() as f:
             value = json.load(f)
         if not isinstance(value, dict):
             raise TypeError(
@@ -1119,6 +1107,7 @@ class SingleStageConfig(BaseModelExtraForbid):
             return self.rvc3
         if platform == Platform.RVC4:  # pragma: no branch
             return self.rvc4
+        assert_never(platform)
 
     @model_validator(mode="before")
     @classmethod
@@ -1319,7 +1308,7 @@ class Config(LuxonisConfig):
     @model_validator(mode="wrap")
     @classmethod
     def _validate_stages(
-        cls, data: Any, handler: ModelWrapValidatorHandler[Self]
+        cls, data: object, handler: ModelWrapValidatorHandler[Self]
     ) -> Self:
         """Fill implicit stage names without changing explicit stage keys."""
         if not isinstance(data, dict):
@@ -1347,6 +1336,13 @@ class Config(LuxonisConfig):
 
         The stage takes the ``name`` of the config, or the stem of its
         input model.
+
+        Returns:
+            The validated config, with ``data`` as its only stage.
+
+        Raises:
+            TypeError: If the ``name`` in ``data`` is neither a string
+                nor ``None``.
         """
         name = data.pop("name", None)
         if name is not None and not isinstance(name, str):
@@ -1368,6 +1364,18 @@ class Config(LuxonisConfig):
             config.stages = {config.name: stage}
         return config
 
+    @classmethod
+    def merge_overrides(cls, data: Params, overrides: Params) -> None:
+        """Merge overrides into raw config data, in place.
+
+        Args:
+            data: Raw config data to update.
+            overrides: Overrides keyed by dotted paths, such as
+                ``"stages.main.inputs"``.
+
+        """
+        cls._merge_overrides(data, overrides)
+
 
 def broadcast_preprocessing_values(
     values: list[float], channels: int | None
@@ -1384,6 +1392,9 @@ def _default_encoding(data: Params) -> dict[str, str]:
     An input with a static shape that does not describe an image is a
     raw tensor. Any other input is an RGB image that the model takes
     as BGR.
+
+    Returns:
+        The encoding, as a mapping with the keys ``from`` and ``to``.
     """
     shape = data.get("shape")
     layout = data.get("layout")
@@ -1420,6 +1431,11 @@ def _yolo_metadata(raw_shape: ParamValue) -> Metadata:
 
     ``raw_shape`` is the ``yolo_input_shape`` of the config: two sizes
     split by a space, one size for a square input, or a list of sizes.
+
+    Returns:
+        Metadata with the ``FLOAT32`` input ``images``, whose shape is
+        the sizes in reverse order, and the placeholder output
+        ``dummy``.
     """
     logger.info("Detected PyTorch model. Only YOLO models are supported.")
     if isinstance(raw_shape, str):
@@ -1449,6 +1465,9 @@ def _fill_input(
     A field takes the top-level value from ``defaults`` first, and then
     the value that the model holds. An input that is not an input of
     the model is read as an intermediate tensor.
+
+    Raises:
+        ValueError: If ``inp`` has no ``name``.
     """
     if "name" not in inp:
         raise ValueError(f"Unable to determine name for input: `{inp}`.")

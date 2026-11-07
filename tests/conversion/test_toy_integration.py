@@ -30,6 +30,7 @@ from modelconverter.utils.types import Platform
 from tests.helpers.conversion import (
     HAILO_FAST_OPTS,
     assert_produced,
+    assert_produced_suffix,
     toy_net_image_inputs,
     write_config,
 )
@@ -195,13 +196,19 @@ def frozen_toy_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="module")
-def inference_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Write noise from the distribution of the random calibration."""
-    path = tmp_path_factory.mktemp("toy_noise") / "noise.png"
-    rng = np.random.default_rng(1)
-    noise = rng.normal(_CALIB_MEAN, _CALIB_STD, (_SIZE, _SIZE, 3))
-    cv2.imwrite(str(path), np.clip(noise, 0, 255).astype(np.uint8))
-    return path
+def inference_images(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> dict[str, Path]:
+    """Write distinct inputs from the calibration distribution."""
+    directory = tmp_path_factory.mktemp("toy_noise")
+    images = {}
+    for seed, name in enumerate(("bgr", "rgb", "gray"), start=1):
+        path = directory / f"{name}.png"
+        rng = np.random.default_rng(seed)
+        noise = rng.normal(_CALIB_MEAN, _CALIB_STD, (_SIZE, _SIZE, 3))
+        cv2.imwrite(str(path), np.clip(noise, 0, 255).astype(np.uint8))
+        images[name] = path
+    return images
 
 
 def _assert_correct(
@@ -210,26 +217,27 @@ def _assert_correct(
     *,
     config_path: Path,
     output_name: str,
-    image: Path,
+    images: dict[str, Path],
     limit: float,
     record_property: RecordProperty,
 ) -> None:
     cfg, _, _ = get_configs(platform, str(config_path), list(precision.opts))
     stage = next(iter(cfg.stages.values()))
     input_names = [inp.name for inp in stage.inputs]
+    assert set(input_names) == set(images)
 
-    reference = ONNXReferenceInferer.from_stage(stage).infer(image)
+    reference = ONNXReferenceInferer.from_stage(stage).infer(images)
     model_path = locate_converted_model(
         OUTPUTS_DIR / output_name, platform.value
     )
     inferer = get_inferer(
         platform,
         str(model_path),
-        image.parent,
+        next(iter(images.values())).parent,
         OUTPUTS_DIR / f"{output_name}_infer",
         stage,
     )
-    converted = inferer.infer(dict.fromkeys(input_names, image))
+    converted = inferer.infer(images)
 
     for name, ref in reference.items():
         check_relative_error(
@@ -258,7 +266,7 @@ def test_toy_integration(
     platform_name: str,
     precision: Precision,
     toy_config: Path,
-    inference_image: Path,
+    inference_images: dict[str, Path],
     record_property: RecordProperty,
 ):
     platform = Platform(platform_name)
@@ -270,7 +278,10 @@ def test_toy_integration(
         output_dir=output_name,
         to="native",
     )
-    assert_produced(output_name)
+    if platform is Platform.RVC2:
+        assert_produced_suffix(output_name, f".{precision.name}")
+    else:
+        assert_produced(output_name)
 
     if precision.error_limit is not None:
         _assert_correct(
@@ -278,7 +289,7 @@ def test_toy_integration(
             precision,
             config_path=toy_config,
             output_name=output_name,
-            image=inference_image,
+            images=inference_images,
             limit=precision.error_limit,
             record_property=record_property,
         )

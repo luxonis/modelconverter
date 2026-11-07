@@ -7,6 +7,7 @@ from types import ModuleType, SimpleNamespace
 from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from PIL import Image
 
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
 
 
 class _HnLayer(TypedDict):
-    """HN layer fields read by `HailoExporter._get_hn_layer_info`."""
+    """HN layer fields read by `HailoExporter.get_hn_layer_info`."""
 
     original_names: list[str]
     input_shapes: list[list[int]]
@@ -266,8 +267,9 @@ def test_user_tensor_with_wrong_shape_is_rejected(
         exporter._get_calibration_data(_Runner([1, 2, 2, 3]))
 
 
+@pytest.mark.parametrize("origin", ["random", "link"])
 def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
-    hailo_exporter_module: ModuleType, tmp_path: Path
+    hailo_exporter_module: ModuleType, tmp_path: Path, origin: str
 ) -> None:
     calibration_dir = tmp_path / "calibration"
     calibration_dir.mkdir()
@@ -283,8 +285,10 @@ def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
     calibration = inp.calibration
     assert isinstance(calibration, ImageCalibrationConfig)
     assert inp.layout == "NCHW"
-    calibration._generated_from_random = True
-    calibration._generated_layout = inp.layout
+    if origin == "random":
+        calibration.mark_generated_from_random(inp.layout)
+    else:
+        calibration.mark_generated_from_link(inp.layout)
 
     actual = exporter._get_calibration_data(_Runner([1, 3, 3, 3]))[
         "hailo_input"
@@ -297,7 +301,7 @@ def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
 
 def _generate_random_sample(
     hailo_exporter_module: ModuleType, tmp_path: Path, inp: InputConfig
-) -> tuple["HailoExporter", np.ndarray]:
+) -> tuple["HailoExporter", npt.NDArray[np.generic]]:
     """Generate one random calibration sample for ``inp`` and load it."""
     inp.calibration = RandomCalibrationConfig(max_images=1)
     exporter: HailoExporter = object.__new__(
@@ -387,6 +391,7 @@ def test_tf_tensor_shapes_follow_the_dfc_version(
     hailo_exporter_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
     version: str | None,
+    *,
     expected: bool,
 ) -> None:
     if version is None:

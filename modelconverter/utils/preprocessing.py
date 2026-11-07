@@ -8,15 +8,15 @@ the source model, not of a model that carries the preprocessing nodes.
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TypeVar
 
 import numpy as np
+import numpy.typing as npt
 
 from modelconverter.utils.exceptions import ModelconverterException
 from modelconverter.utils.types import DataType, Encoding
 
-if TYPE_CHECKING:
-    from modelconverter.utils.config import ImageCalibrationConfig
+_ScalarT = TypeVar("_ScalarT", bound=np.generic)
 
 
 def normalization_required(
@@ -82,16 +82,25 @@ class CalibrationPreprocessing:
 
 
 def apply_calibration_preprocessing(
-    array: np.ndarray,
+    array: npt.NDArray[np.generic],
     preprocessing: CalibrationPreprocessing,
     *,
     layout: str,
-) -> np.ndarray:
+) -> npt.NDArray[np.generic]:
     """Apply externalized color conversion and normalization to an array.
 
     ``layout`` describes the array as it exists at this point. It may omit a
     singleton batch axis even when the configured model layout has one, which
     is how a decoded image normally arrives.
+
+    Returns:
+        The preprocessed array, cast to the NumPy type of
+        ``preprocessing.data_type``.
+
+    Raises:
+        ModelconverterException: If ``layout`` does not match the rank
+            of ``array``, or if the channels or the data type do not
+            suit the requested channel reversal or normalization.
     """
     if len(layout) != array.ndim:
         raise ModelconverterException(
@@ -118,8 +127,8 @@ def apply_calibration_preprocessing(
 
 
 def reorder_layout(
-    array: np.ndarray, source_layout: str, target_layout: str
-) -> np.ndarray:
+    array: npt.NDArray[_ScalarT], source_layout: str, target_layout: str
+) -> npt.NDArray[_ScalarT]:
     """Reorder axes, adding or removing only a singleton batch dimension."""
     result = array
     current = source_layout
@@ -165,28 +174,27 @@ def channels_last_4d_layout(layout: str) -> str:
     return layout
 
 
-def is_user_calibration_tensor(
-    path: Path, calib: "ImageCalibrationConfig"
-) -> bool:
-    """Whether a tensor file uses the backend-ready calibration contract."""
-    return (
-        path.suffix.lower() in {".npy", ".raw"}
-        and not calib.generated_from_random
-    )
-
-
 def read_user_calibration_tensor(
     path: Path,
     *,
     raw_shape: list[int] | tuple[int, ...] | None = None,
     data_type: DataType,
     input_name: str,
-) -> np.ndarray:
+) -> npt.NDArray[np.generic]:
     """Load an opaque user tensor in a backend-required sample shape.
 
     NumPy files carry their own shape and are returned unchanged. Raw buffers
     require ``raw_shape`` and are reshaped without reordering after their
     element count is validated.
+
+    Returns:
+        The array of the file, reshaped to ``raw_shape`` if it is a raw
+        buffer.
+
+    Raises:
+        ValueError: If a raw buffer comes without ``raw_shape``.
+        ModelconverterException: If the element count of a raw buffer
+            does not match ``raw_shape``.
     """
     if path.suffix.lower() == ".npy":
         return np.load(path)
@@ -204,8 +212,11 @@ def read_user_calibration_tensor(
 
 
 def _normalize(
-    array: np.ndarray, preprocessing: CalibrationPreprocessing, *, layout: str
-) -> np.ndarray:
+    array: npt.NDArray[np.generic],
+    preprocessing: CalibrationPreprocessing,
+    *,
+    layout: str,
+) -> npt.NDArray[np.floating]:
     """Subtract the mean and divide by the scale along the channel axis."""
     target_dtype = preprocessing.data_type.as_numpy_dtype()
     if not np.issubdtype(target_dtype, np.floating):
@@ -249,7 +260,7 @@ def _per_channel(
     channels: int,
     name: str,
     dtype: type[np.float32] | type[np.float64],
-) -> np.ndarray | None:
+) -> npt.NDArray[np.floating] | None:
     """Expand preprocessing values to one value per channel."""
     if values is None:
         return None

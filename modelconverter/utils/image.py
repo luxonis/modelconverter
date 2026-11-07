@@ -10,6 +10,7 @@ from itertools import chain
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 from luxonis_ml.typing import PathType
 from PIL import Image, ImageOps
 
@@ -26,7 +27,7 @@ def read_image(
     data_type: DataType | None = None,
     transpose: bool = True,
     layout: str | None = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.generic]:
     """Read a single calibration or inference input from a file.
 
     ``.npy`` files are loaded as they are and ``.raw`` files are read as
@@ -122,6 +123,13 @@ def _image_size(shape: list[int], layout: str | None) -> tuple[int, int, int]:
 
     Without a usable layout, the axes are guessed from the number of
     dimensions.
+
+    Returns:
+        The height, the width and the channel count.
+
+    Raises:
+        ModelconverterException: If the layout is not usable and
+            ``shape`` has fewer than 2 or more than 4 dimensions.
     """
     if (
         layout is not None
@@ -151,6 +159,9 @@ def _convert_color(img: Image.Image, encoding: Encoding) -> Image.Image:
     """Convert an image to the channel order of ``encoding``.
 
     Any other encoding keeps the image as it is.
+
+    Returns:
+        The converted image, or ``img`` itself.
     """
     if encoding == Encoding.BGR:
         return Image.fromarray(np.array(img.convert("RGB"))[..., ::-1])
@@ -167,6 +178,9 @@ def _fit_image(
     """Fit an image to a width and height with ``resize_method``.
 
     ``PAD`` is the remaining method.
+
+    Returns:
+        The fitted image of ``w`` by ``h`` pixels.
     """
     if resize_method == ResizeMethod.CROP:
         return ImageOps.fit(img, (w, h), method=Image.Resampling.BICUBIC)
@@ -183,6 +197,9 @@ def _pad_image(img: Image.Image, w: int, h: int) -> Image.Image:
     """Resize an image to fit inside ``w`` by ``h`` and pad it with black.
 
     The image keeps its aspect ratio and sits in the center.
+
+    Returns:
+        The padded image of ``w`` by ``h`` pixels.
     """
     orig_ratio = img.size[0] / img.size[1]
     new_ratio = w / h

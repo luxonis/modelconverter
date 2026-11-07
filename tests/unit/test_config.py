@@ -71,7 +71,7 @@ def _rvc4_config(**data: ParamValue) -> RVC4Config:
 def _models_dir() -> Path:
     """Return the models directory of the cache.
 
-    Re-rooted into the temp dir by ``_isolate_cwd``.
+    Re-rooted into the temp dir by ``isolate_cwd``.
     """
     return MODELS_DIR
 
@@ -91,6 +91,9 @@ def _named_node_onnx(path: Path) -> Path:
     ``mynode`` produces tensor ``y`` (described in ``value_info``), so a
     lookup by node name misses the tensor search and falls through to
     the node search -- the branch the standard fixtures cannot reach.
+
+    Returns:
+        The ``path`` that the model is saved to.
     """
     inp = helper.make_tensor_value_info(
         "input0", TensorProto.FLOAT, [1, 3, 8, 8]
@@ -174,7 +177,9 @@ def test_config_instance_validates_as_itself():
 
 
 @pytest.mark.parametrize("explicit_stages", [False, True])
-def test_cli_name_overrides_yaml_name(tmp_path: Path, explicit_stages: bool):
+def test_cli_name_overrides_yaml_name(
+    tmp_path: Path, *, explicit_stages: bool
+):
     dummy = _dummy()
     path = tmp_path / "config.yaml"
     stages = (
@@ -398,7 +403,9 @@ def test_layout_must_be_a_string():
     anything there.
     """
     with pytest.raises(TypeError, match="`layout` must be a string"):
-        OutputConfig(name="o", shape=[1, 10], layout=5)  # type: ignore[arg-type]
+        OutputConfig.model_validate(
+            {"name": "o", "shape": [1, 10], "layout": 5}
+        )
 
 
 def test_encoding_config_defaults():
@@ -802,8 +809,9 @@ def test_link_with_output():
 
 
 def test_link_with_inline_script():
-    cal = LinkCalibrationConfig(stage="s", script="print('hi')")
+    cal = LinkCalibrationConfig(stage="s", script="print('hi')", layout="nchw")
     assert cal.script == "print('hi')"
+    assert cal.layout == "NCHW"
 
 
 def test_link_with_script_file():
@@ -1153,7 +1161,7 @@ def test_disable_onnx_simplification_false_is_a_noop():
 
 
 @pytest.mark.parametrize("value", ["all", True])
-def test_onnx_optimizations_enabling_values(value: str | bool):
+def test_onnx_optimizations_enabling_values(*, value: str | bool):
     config = Config.get_config(
         None, {"input_model": str(_dummy()), "onnx_optimizations": value}
     )
@@ -1161,7 +1169,7 @@ def test_onnx_optimizations_enabling_values(value: str | bool):
 
 
 @pytest.mark.parametrize("value", ["none", False, None])
-def test_onnx_optimizations_disabling_values(value: str | bool | None):
+def test_onnx_optimizations_disabling_values(*, value: str | bool | None):
     config = Config.get_config(
         None, {"input_model": str(_dummy()), "onnx_optimizations": value}
     )

@@ -130,4 +130,7 @@ RUN <<EOF
 
 EOF
 
+# The tools and the entrypoint run as root. On exit, the entrypoint
+# gives the mounts back to the host user (docker/entrypoint_common.sh).
+# nosemgrep: missing-user-entrypoint
 ENTRYPOINT ["/app/entrypoint.sh"]

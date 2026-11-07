@@ -11,9 +11,11 @@ Host-side and dependency-light (onnxruntime + numpy) on purpose, so it runs
 anywhere the unit tests do, unlike the vendor inferers.
 """
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import onnx
 import onnxruntime as ort
 from luxonis_ml.typing import PathType
@@ -89,7 +91,7 @@ class ONNXReferenceInferer:
 
     def _preprocess(
         self, inp: InputConfig, image_path: PathType
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.floating]:
         # Feed the original model its native (`from`) encoding, matching what
         # the baked reverse-channel step produces inside the converted model.
         # read_image yields CHW float in [0, 255], unnormalized.
@@ -119,23 +121,34 @@ class ONNXReferenceInferer:
 
         return arr[np.newaxis, ...]
 
-    def infer(self, image_path: PathType) -> dict[str, np.ndarray]:
-        """Run the model on one image, preprocessed per the config.
+    def infer(
+        self, image_path: PathType | Mapping[str, PathType]
+    ) -> dict[str, npt.NDArray[np.generic]]:
+        """Run the model on images preprocessed per the config.
 
         Args:
-            image_path: Path to the image to run on. It is fed to every
-                input, each preprocessed with that input's own settings.
+            image_path: One image path for every input, or paths keyed by
+                input name.
 
         Returns:
             Mapping of output name to output array.
 
         """
-        # Config inputs pair with the session inputs positionally.
+        inputs = {inp.name: inp for inp in self.stage.inputs}
+        assert set(self._input_names) == set(inputs), (
+            f"input names mismatch: {self._input_names} vs {list(inputs)}"
+        )
+        paths = (
+            dict.fromkeys(self._input_names, image_path)
+            if isinstance(image_path, (str, Path))
+            else image_path
+        )
+        assert set(self._input_names) == set(paths), (
+            f"input image names mismatch: {self._input_names} vs {list(paths)}"
+        )
         feed = {
-            name: self._preprocess(inp, image_path)
-            for name, inp in zip(
-                self._input_names, self.stage.inputs, strict=True
-            )
+            name: self._preprocess(inputs[name], paths[name])
+            for name in self._input_names
         }
         outputs = self.session.run(self._output_names, feed)
         return dict(

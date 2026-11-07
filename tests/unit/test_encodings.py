@@ -14,9 +14,9 @@ from hypothesis import given
 from hypothesis import strategies as st
 from luxonis_ml.typing import Params, ParamValue
 
-from modelconverter.utils.config import Encodings
 from modelconverter.utils.encodings import (
     ALLOWED_ENCODING_KEYS,
+    Encodings,
     _expand_encoding_item,
     _normalize_encoding_group,
     _normalize_encoding_item,

@@ -11,7 +11,9 @@ what the linking code has to read back.
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import pytest
+from typing_extensions import override
 
 from modelconverter.platforms import multistage_exporter
 from modelconverter.platforms.base_inferer import Inferer
@@ -65,10 +67,14 @@ class StubExporter:
 class StubInferer(Inferer):
     """A real ``Inferer`` with the vendor runtime replaced by ones."""
 
+    @override
     def setup(self) -> None:
         """Do nothing -- there is no vendor runtime to set up."""
 
-    def infer(self, inputs: dict[str, Path]) -> dict[str, np.ndarray]:
+    @override
+    def infer(
+        self, inputs: dict[str, Path]
+    ) -> dict[str, npt.NDArray[np.generic]]:
         """Return an array of ones for every output.
 
         Args:
@@ -168,7 +174,9 @@ def test_script_calibration_uses_only_the_output_dirs(
     """
     exporter._produce_calibration_data(exporter.exporters["second"])
 
-    path = _resolved_calibration(config).path
+    calibration = _resolved_calibration(config)
+    assert not calibration.generated_from_link
+    path = calibration.path
     produced = sorted(p.name for p in path.iterdir())
     assert produced == [f"{i}.npy" for i in range(N_CALIBRATION_IMAGES)]
     # (1, 10) and (1, 5, 5, 5) flattened and concatenated.
@@ -209,6 +217,42 @@ def test_linked_output_calibration_points_at_the_output_dir(
     assert sorted(p.name for p in path.iterdir()) == [
         f"{i}.npy" for i in range(N_CALIBRATION_IMAGES)
     ]
+
+
+@pytest.mark.parametrize("platform", [Platform.RVC3, Platform.RVC4])
+def test_direct_link_records_nchw_layout(
+    exporter: MultiStageExporter, config: Config, platform: Platform
+):
+    exporter.platform = platform
+    second = config.stages["second"]
+    second.inputs[0].calibration = LinkCalibrationConfig(
+        stage="first", output="output1"
+    )
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+
+    calibration = _resolved_calibration(config)
+    assert calibration.generated_from_link
+    assert calibration.generated_layout == "NCHW"
+
+
+@pytest.mark.parametrize("platform", list(Platform))
+def test_script_link_records_declared_layout(
+    exporter: MultiStageExporter, config: Config, platform: Platform
+):
+    exporter.platform = platform
+    second = config.stages["second"]
+    second.inputs[0].calibration = LinkCalibrationConfig(
+        stage="first",
+        script="def run_script(outputs):\n    return outputs['output1']\n",
+        layout="NCHW",
+    )
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+
+    calibration = _resolved_calibration(config)
+    assert calibration.generated_from_link
+    assert calibration.generated_layout == "NCHW"
 
 
 def test_two_script_linked_inputs_calibrate_with_their_own_scripts(

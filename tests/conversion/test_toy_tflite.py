@@ -29,6 +29,7 @@ from modelconverter.__main__ import convert
 from modelconverter.cli.utils import get_configs
 from modelconverter.platforms.getters import get_inferer
 from modelconverter.utils.constants import OUTPUTS_DIR
+from modelconverter.utils.preprocessing import reorder_layout
 from modelconverter.utils.types import Platform
 from tests.helpers.platform_options import platform_options
 from tests.helpers.platforms import platform_params
@@ -36,6 +37,8 @@ from tests.helpers.precision import RecordProperty, locate_converted_model
 from tests.helpers.tflite_factory import build_toy_tflite
 
 PLATFORMS = ("rvc2", "rvc3", "rvc4")
+_HEIGHT = 6
+_WIDTH = 8
 # One step of 8-bit quantization over the 0-255 calibration range. CI
 # measures no error at all.
 _TOLERANCE = 1.0
@@ -58,14 +61,19 @@ def _conversion_options(platform: Platform) -> tuple[str, ...]:
 @pytest.fixture(scope="module")
 def toy_tflite(tmp_path_factory: pytest.TempPathFactory) -> Path:
     workdir = tmp_path_factory.mktemp("toy_tflite")
-    return build_toy_tflite(workdir / "toy.tflite")
+    return build_toy_tflite(
+        workdir / "toy.tflite", shape=(1, _HEIGHT, _WIDTH, 3)
+    )
 
 
 @pytest.fixture(scope="module")
 def solid_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Create an 8x8 image with a distinct constant value per channel."""
+    """Create an image with a distinct constant value per channel."""
     path = tmp_path_factory.mktemp("toy_tflite_img") / "solid.png"
-    cv2.imwrite(str(path), np.full((8, 8, 3), _CHANNEL_VALUES, dtype=np.uint8))
+    cv2.imwrite(
+        str(path),
+        np.full((_HEIGHT, _WIDTH, 3), _CHANNEL_VALUES, dtype=np.uint8),
+    )
     return path
 
 
@@ -107,9 +115,13 @@ def test_toy_tflite_precision(
 
     (output,) = converted.values()
     output_array = np.asarray(output, dtype=np.float32)
-    # The image is 8x8, so the channel axis is the only axis of size 3,
-    # whatever the output layout of the backend.
-    pixels = np.moveaxis(output_array, output_array.shape.index(3), -1)
+    output_config = stage.outputs[0]
+    output_layout = (
+        "NCHW" if platform is Platform.RVC4 else output_config.layout
+    )
+    assert output_layout is not None
+    pixels = reorder_layout(output_array, output_layout, "NHWC")
+    assert pixels.shape == (1, _HEIGHT, _WIDTH, 3)
     # OpenCV wrote the image as BGR, and the model gets it as RGB.
     expected_rgb = np.asarray(_CHANNEL_VALUES[::-1], dtype=np.float32)
     max_error = float(np.abs(pixels - expected_rgb).max())

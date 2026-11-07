@@ -5,10 +5,11 @@ import shutil
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import onnx
 import onnxruntime as ort
 import pytest
-from luxonis_ml.typing import ParamValue
+from luxonis_ml.typing import Params, ParamValue
 from onnx import TensorProto
 from PIL import Image
 
@@ -124,6 +125,7 @@ def test_normalize_io_encodings_default_true():
 @pytest.mark.parametrize("normalize_io_encodings", [True, False])
 def test_normalize_io_encodings_controls_exposed_tensor_rewrite(
     work_dir: Path,
+    *,
     normalize_io_encodings: bool,
 ):
     exporter = _make_exporter(
@@ -190,7 +192,7 @@ def test_path_quantization_overrides_passthrough_without_io_normalization(
     ("normalize_io_encodings", "multistage"), [(True, False), (False, True)]
 )
 def test_snpe_encodings_are_archived_after_intermediate_cleanup(
-    work_dir: Path, normalize_io_encodings: bool, multistage: bool
+    work_dir: Path, *, normalize_io_encodings: bool, multistage: bool
 ):
     exporter = _make_exporter(
         work_dir,
@@ -260,7 +262,7 @@ def test_io_normalization_preserves_unrelated_override_data(
     work_dir: Path, version: str | None
 ):
     exporter = _make_exporter(work_dir, "CUSTOM")
-    payload = {
+    payload: Params = {
         "top_level_vendor_key": {"keep": True},
         "activation_encodings": {
             "input0": [
@@ -404,7 +406,7 @@ def test_io_normalization_preserves_flat_activation_list_shape(
         if version == "1.0.0"
         else {"bitwidth": 8, "dtype": "int"}
     )
-    payload = {
+    payload: Params = {
         "activation_encodings": [
             {
                 "name": "hidden",
@@ -801,12 +803,15 @@ def test_externalized_calibration_matches_embedded_model_output(
     )
     model_array = reorder_layout(model_array, model_layout, "NCHW")
 
-    def infer(model_path: Path, array: np.ndarray) -> np.ndarray:
+    def infer(
+        model_path: Path, array: npt.NDArray[np.generic]
+    ) -> npt.NDArray[np.float32]:
         session = ort.InferenceSession(
             str(model_path), providers=["CPUExecutionProvider"]
         )
         return np.asarray(
-            session.run(None, {session.get_inputs()[0].name: array})[0]
+            session.run(None, {session.get_inputs()[0].name: array})[0],
+            dtype=np.float32,
         )
 
     embedded_output = infer(embedded._input_model, runtime_array)
@@ -836,6 +841,42 @@ def test_user_raw_calibration_is_referenced_without_rewriting(tmp_path: Path):
     np.testing.assert_array_equal(
         np.fromfile(raw_path, dtype=np.float32).reshape(source.shape), source
     )
+
+
+def test_linked_numpy_calibration_is_serialized_channels_last(tmp_path: Path):
+    shape = [1, 3, 2, 4]
+    model = single_io_onnx(
+        tmp_path / "linked.onnx", shape=shape, output_shape=shape
+    ).resolve()
+    calibration_dir = tmp_path / "linked-calibration"
+    calibration_dir.mkdir()
+    source = np.arange(24, dtype=np.float32).reshape(shape)
+    np.save(calibration_dir / "sample.npy", source)
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": shape,
+            "layout": "NCHW",
+            "encoding": "NONE",
+            "calibration": {"path": str(calibration_dir)},
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4.quantization_mode": "CUSTOM",
+        },
+    )
+    output_dir = tmp_path / "linked-output"
+    output_dir.mkdir()
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+    calibration = exporter.inputs["input0"].calibration
+    assert isinstance(calibration, ImageCalibrationConfig)
+    calibration.mark_generated_from_link("NCHW")
+
+    input_list = exporter._prepare_calibration_data()
+
+    raw_path = Path(input_list.read_text().split(":=", 1)[1].strip())
+    actual = np.fromfile(raw_path, dtype=np.float32).reshape(1, 2, 4, 3)
+    np.testing.assert_array_equal(actual, source.transpose(0, 2, 3, 1))
 
 
 def test_user_numpy_calibration_is_serialized_without_shape_interpretation(
@@ -876,7 +917,7 @@ def test_user_numpy_calibration_is_serialized_without_shape_interpretation(
 
 @pytest.mark.parametrize("joined", [False, True])
 def test_externalized_preprocessing_rejects_custom_input_list(
-    tmp_path: Path, joined: bool
+    tmp_path: Path, *, joined: bool
 ):
     custom_list = tmp_path / "custom-list.txt"
     custom_list.write_text("input0:=sample.raw\n")
