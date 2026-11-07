@@ -198,7 +198,15 @@ def test_externalized_calibration_matches_embedded_model(
     assert archived_input.mean_values == source_input.mean_values
     assert archived_input.scale_values == source_input.scale_values
     assert archived_input.encoding == source_input.encoding
-    assert archived_input.layout == source_input.layout
+    assert archived_input.shape is not None
+    assert archived_input.layout is not None
+    assert source_input.shape is not None
+    assert source_input.layout is not None
+    expected_shape = [
+        source_input.shape[source_input.layout.index(axis)]
+        for axis in archived_input.layout
+    ]
+    assert archived_input.shape == expected_shape
     assert Path(archived_stage.input_model).is_file()
 
     externalized_cfg = cfg.model_copy(deep=True)
