@@ -124,12 +124,13 @@ def test_precision(
     threshold = COSINE_FLOORS[platform_name]
     for name, ref in reference.items():
         actual = converted[name]
-        if platform is Platform.HAILO and actual.shape == (
-            ref.shape[0],
-            1,
-            *ref.shape[1:],
+        if (
+            platform is Platform.HAILO
+            and ref.ndim == 2
+            and ref.shape[0] == 1
+            and actual.shape in {(ref.shape[1],), (1, 1, ref.shape[1])}
         ):
-            actual = actual[:, 0]
+            actual = actual.reshape(ref.shape)
         cos = cosine_similarity(ref, actual)
         label = f"{platform_name} {case.id} {name}"
         record_property(f"{label} cosine", round(cos, 5))
