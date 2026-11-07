@@ -25,12 +25,14 @@ Run inside the platform Docker image, e.g.::
     modelconverter shell hailo --dev --no-gpu -c 'python -m pytest -k toy_precision'
 """
 
+import tarfile
 from pathlib import Path
 
 import cv2
 import numpy as np
 import numpy.typing as npt
 import pytest
+from luxonis_ml.nn_archive.config import Config as NNArchiveConfig
 
 from modelconverter.__main__ import convert
 from modelconverter.cli.utils import extract_preprocessing, get_configs
@@ -79,6 +81,16 @@ def inference_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
         str(path), rng.integers(0, 256, (_SIZE, _SIZE, 3), dtype=np.uint8)
     )
     return path
+
+
+def _read_generated_archive(path: Path) -> NNArchiveConfig:
+    """Read the generated config and verify its model is archived."""
+    with tarfile.open(path) as archive:
+        config_file = archive.extractfile("config.json")
+        assert config_file is not None
+        config = NNArchiveConfig.model_validate_json(config_file.read())
+        assert config.model.metadata.path in archive.getnames()
+    return config
 
 
 def _to_nchw(
@@ -191,15 +203,16 @@ def test_externalized_calibration_matches_embedded_model(
     archive_dir = OUTPUTS_DIR / externalized_name
     archives = [*archive_dir.glob("*.tar.xz"), *archive_dir.glob("*.tar")]
     (archive_path,) = archives
-    archived_cfg, _, _ = get_configs(platform, str(archive_path), [])
-    archived_stage = next(iter(archived_cfg.stages.values()))
-    archived_input = archived_stage.inputs[0]
+    archive_config = _read_generated_archive(archive_path)
+    archived_input = archive_config.model.inputs[0]
     source_input = stage.inputs[0]
-    assert archived_input.mean_values == source_input.mean_values
-    assert archived_input.scale_values == source_input.scale_values
-    assert archived_input.encoding == source_input.encoding
-    assert archived_input.shape is not None
-    assert archived_input.layout is not None
+    preprocessing = archived_input.preprocessing
+    assert preprocessing.mean == source_input.mean_values
+    assert preprocessing.scale == source_input.scale_values
+    assert preprocessing.reverse_channels is True
+    assert archived_input.layout in {"NCHW", "NHWC"}
+    expected_suffix = "i" if archived_input.layout == "NHWC" else "p"
+    assert preprocessing.dai_type == f"RGB888{expected_suffix}"
     assert source_input.shape is not None
     assert source_input.layout is not None
     expected_shape = [
@@ -207,7 +220,6 @@ def test_externalized_calibration_matches_embedded_model(
         for axis in archived_input.layout
     ]
     assert archived_input.shape == expected_shape
-    assert Path(archived_stage.input_model).is_file()
 
     externalized_cfg = cfg.model_copy(deep=True)
     extract_preprocessing(externalized_cfg)

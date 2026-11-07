@@ -16,7 +16,7 @@ settings the conversion tests use destroy numeric fidelity, and a
 full-optimization resnet18 is far too slow for CI.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -60,14 +60,11 @@ class PrecisionCase:
     # A config (or archive) whose `input_model` is the reference ONNX.
     config: str
     platforms: tuple[str, ...] = DEFAULT_PLATFORMS
-    floors: dict[str, float] = field(default_factory=dict)
     image: Path = TEST_IMAGE
 
 
 CASES: list[PrecisionCase] = [
-    # RVC3's INT8 ResNet measures about 0.886, while the other models and
-    # platforms stay above their platform floors.
-    PrecisionCase("resnet18", f"{GS}/resnet18.yaml", floors={"rvc3": 0.85}),
+    PrecisionCase("resnet18", f"{GS}/resnet18.yaml"),
     PrecisionCase(
         "mnist",
         f"{GS}/mnist.yaml",
@@ -124,7 +121,7 @@ def test_precision(
     assert set(reference) == set(converted), (
         f"output names mismatch: {list(reference)} vs {list(converted)}"
     )
-    threshold = case.floors.get(platform_name, COSINE_FLOORS[platform_name])
+    threshold = COSINE_FLOORS[platform_name]
     for name, ref in reference.items():
         cos = cosine_similarity(ref, converted[name])
         label = f"{platform_name} {case.id} {name}"
