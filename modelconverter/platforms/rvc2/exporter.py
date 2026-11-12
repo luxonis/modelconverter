@@ -414,7 +414,9 @@ class RVC2Exporter(Exporter):
                 res = handle.result()
 
             patch_file = blob_path.with_suffix(".patch")
-            bsdiff4.file_diff(default_blob_path, blob_path, patch_file)
+            bsdiff4.file_diff(
+                str(default_blob_path), str(blob_path), str(patch_file)
+            )
             peaks.append(res.peak_memory * 1.5)
             logger.info(
                 f"Compiled {shaves}-shave patch in {res.total_time:.2f} s, "
