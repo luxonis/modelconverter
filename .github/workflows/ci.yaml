@@ -57,9 +57,6 @@ on:
       CODECOV_TOKEN:
         description: "Codecov upload token"
         required: false
-      GCP_CREDENTIALS:
-        description: "Deprecated and unused: CI authenticates to Google Cloud with Workload Identity Federation. Kept only so existing callers that still pass it keep working."
-        required: false
       HUBAI_API_KEY:
         required: true
 
