@@ -14,10 +14,9 @@ import threading
 import time
 import types
 from contextlib import suppress
-from typing import Final, Literal
+from typing import Final, Literal, Self
 
 from loguru import logger
-from typing_extensions import Self
 
 from modelconverter.utils.device_handlers import DeviceHandler
 

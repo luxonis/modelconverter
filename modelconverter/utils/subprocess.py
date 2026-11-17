@@ -15,11 +15,12 @@ import time
 from collections.abc import Iterator, Sequence
 from contextlib import suppress
 from types import TracebackType
+from typing import Self
 
 import psutil
 from loguru import logger
 from luxonis_ml.typing import PathType
-from typing_extensions import Self, override
+from typing_extensions import override
 
 
 class SubprocessResult(subprocess.CompletedProcess[bytes]):
