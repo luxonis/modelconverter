@@ -1,0 +1,75 @@
+name: Python compatibility
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/python-compatibility.yaml
+      - .python-version
+      - pyproject.toml
+      - uv.lock
+      - modelconverter/**
+      - tests/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host:
+    name: Host Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    env:
+      LUXONIS_TELEMETRY_ENABLED: "false"
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: true
+
+      # Test the published ML version in the lock. The main CI separately
+      # overlays ML main and validates the SDK environments.
+      - name: Install locked host environment
+        run: uv sync --locked --python "${{ matrix.python }}"
+
+      - name: Report interpreter and dependency versions
+        run: |
+          uv run --no-sync --python "${{ matrix.python }}" python --version
+          uv pip freeze
+
+      - name: Run host unit tests
+        run: >-
+          uv run --no-sync --python "${{ matrix.python }}" pytest tests/unit
+          -n auto --junitxml junit-python-${{ matrix.python }}.xml
+
+      - name: Build docs
+        run: >-
+          uv run --no-sync --python "${{ matrix.python }}" python -m pydoctor
+          --docformat=google --warnings-as-errors
+          --project-name ModelConverter
+          --project-url https://github.com/luxonis/modelconverter
+          --html-output /tmp/modelconverter-apidocs modelconverter
+
+      - name: Upload test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: python-${{ matrix.python }}-unit-results
+          path: junit-python-${{ matrix.python }}.xml
+          if-no-files-found: ignore

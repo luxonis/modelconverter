@@ -6,7 +6,7 @@ latency under a varying number of concurrent inference requests.
 """
 
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from statistics import median
 
 from loguru import logger
@@ -79,7 +79,7 @@ class RVC3Benchmark(Benchmark):
         in_fly = set()
         iterations = 1000
         i = 0
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
         for _ in track(
             range(max(requests, iterations)),
             description="Running inference",
@@ -106,9 +106,7 @@ class RVC3Benchmark(Benchmark):
             )
             sys.exit(1)
 
-        total_duration_sec = (
-            datetime.now(timezone.utc) - start_time
-        ).total_seconds()
+        total_duration_sec = (datetime.now(UTC) - start_time).total_seconds()
         times.extend(
             infer_requests[infer_request_id].latency
             for infer_request_id in in_fly

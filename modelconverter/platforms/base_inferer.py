@@ -13,11 +13,11 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Self
 
 import numpy as np
 import numpy.typing as npt
 from loguru import logger
-from typing_extensions import Self
 
 from modelconverter.utils import ModelconverterException, resolve_path
 from modelconverter.utils.config import SingleStageConfig

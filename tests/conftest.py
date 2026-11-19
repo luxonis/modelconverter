@@ -8,14 +8,21 @@ applied at parametrization, in `tests.helpers.platforms`.
 """
 
 import os
+import warnings
 
 import pytest
 from hypothesis import settings
-from luxonis_ml.utils import setup_logging
 
 os.environ.setdefault("LUXONIS_TELEMETRY_ENABLED", "false")
 
-setup_logging()
+# Keep pytest's warning handler: routing Python 3.12's fork warning through
+# Loguru can deadlock while hubai-sdk imports and forks for its keyring lookup.
+# The warning remains visible; this does not make the SDK's fork thread-safe.
+# Import inside the context because luxonis-ml also sets up logging on import.
+with warnings.catch_warnings():
+    from luxonis_ml.utils import setup_logging
+
+    setup_logging()
 
 
 settings.register_profile(

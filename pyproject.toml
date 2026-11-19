@@ -4,14 +4,15 @@ description = "Converter for neural models into various formats."
 readme = "README.md"
 license-files = ["LICENSE"]
 license = "Apache-2.0"
-requires-python = ">=3.10"
+requires-python = ">=3.11.5,<3.13"
 authors = [{ name = "Luxonis", email = "support@luxonis.com" }]
 maintainers = [{ name = "Luxonis", email = "support@luxonis.com" }]
 keywords = ["ml", "onnx", "openvino", "nn", "ai", "embedded"]
 dynamic = ["version"]
 classifiers = [
   "Development Status :: 4 - Beta",
-  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Scientific/Engineering :: Image Processing",
   "Topic :: Scientific/Engineering :: Image Recognition",
@@ -77,10 +78,6 @@ exclude-newer-package = { luxonis-ml = false }
 # ship the same `cv2` module and overwrite each other, so keep the headless
 # build out of the resolution entirely.
 override-dependencies = ["opencv-python-headless; sys_platform == 'never'"]
-# onnxruntime 1.24 dropped Python 3.10: its metadata still allows it, but it
-# ships no cp310 wheels. Hold the 3.10 fork of the lock on the last release
-# that does.
-constraint-dependencies = ["onnxruntime<1.24; python_full_version < '3.11'"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -91,7 +88,7 @@ version = { attr = "modelconverter.__version__" }
 
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 79
 indent-width = 4
 
@@ -179,6 +176,8 @@ ignore-one-line-docstrings = true
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN201", "D103"]
+# StrEnum changes string formatting; preserve the existing telemetry contract.
+"modelconverter/utils/telemetry.py" = ["UP042"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "__future__".msg = "Do not use imports from __future__."

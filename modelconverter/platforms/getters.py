@@ -11,8 +11,7 @@ visualizer take theirs from the host environment.
 """
 
 from pathlib import Path
-
-from typing_extensions import assert_never
+from typing import assert_never
 
 from modelconverter.platforms.base_analyze import Analyzer
 from modelconverter.platforms.base_benchmark import Benchmark

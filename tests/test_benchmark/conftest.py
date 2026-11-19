@@ -6,6 +6,7 @@ reported to.
 """
 
 import os
+from datetime import UTC
 
 import pytest
 from hil_framework.lib_testbed.config.Config import Config
@@ -85,10 +86,10 @@ def benchmark_run_id(request: pytest.FixtureRequest) -> str:
     if configured_run_id:
         return configured_run_id
 
-    from datetime import datetime, timezone
+    from datetime import datetime
     from uuid import uuid4
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"benchmark-{timestamp}-{uuid4().hex[:8]}"
 
 

@@ -7,11 +7,11 @@ The single `environ` instance defined here is what the rest of the
 package reads.
 """
 
-import multiprocessing
-import multiprocessing.queues
+import json
+import subprocess
+import sys
 from contextlib import suppress
 
-import keyring
 from luxonis_ml.typing import Params
 from luxonis_ml.utils import Environ as BaseEnviron
 from pydantic import model_validator
@@ -19,7 +19,7 @@ from pydantic import model_validator
 
 def get_password_with_timeout(
     service_name: str, username: str, timeout: float = 5
-) -> str | None:  # pragma: no cover
+) -> str | None:
     """Read a password from the system keyring, giving up on a timeout.
 
     The lookup runs in a separate process so that a keyring backend
@@ -38,25 +38,26 @@ def get_password_with_timeout(
         raised, or found nothing.
 
     """
-
-    def _get_password(q: multiprocessing.queues.Queue[str | None]) -> None:
-        try:
-            result = keyring.get_password(service_name, username)
-            q.put(result)
-        except Exception:
-            q.put(None)
-
-    q: multiprocessing.queues.Queue[str | None] = multiprocessing.Queue()
-    p = multiprocessing.Process(target=_get_password, args=(q,))
-    p.start()
-    p.join(timeout)
-    if p.is_alive():
-        p.terminate()
-        p.join()
+    # Starting a multiprocessing fork after logging has created threads can
+    # deadlock on Python 3.12: the fork warning is routed through Loguru while
+    # its at-fork locks are held. A fresh interpreter avoids those locks and
+    # does not re-import this module's eager Environ instance.
+    script = (
+        "import json, sys, keyring; "
+        "print(json.dumps(keyring.get_password(sys.argv[1], sys.argv[2])))"
+    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", script, service_name, username],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=True,
+        )
+        password = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError):
         return None
-    if not q.empty():
-        return q.get()
-    return None
+    return password if isinstance(password, str) else None
 
 
 class Environ(BaseEnviron):

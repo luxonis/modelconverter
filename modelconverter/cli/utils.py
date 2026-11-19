@@ -9,7 +9,7 @@ into the model.
 
 import os
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from loguru import logger
@@ -132,7 +132,7 @@ def get_output_dir_name(
 
     """
     name = sanitize_net_name(name)
-    date = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
+    date = datetime.now(UTC).strftime("%Y_%m_%d_%H_%M_%S")
     if output_dir is not None:
         dest = resolve_output_dir(output_dir)
         if dest.exists():

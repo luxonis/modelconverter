@@ -18,7 +18,7 @@ import json
 import warnings
 from itertools import chain
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self, assert_never
 
 import onnx
 from loguru import logger
@@ -40,7 +40,6 @@ from pydantic import (
     model_serializer,
     model_validator,
 )
-from typing_extensions import Self, assert_never
 
 from modelconverter.utils.calibration_data import download_calibration_data
 from modelconverter.utils.constants import MISC_DIR, MODELS_DIR
