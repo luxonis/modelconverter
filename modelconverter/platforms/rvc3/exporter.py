@@ -265,7 +265,11 @@ class RVC3Exporter(RVC2Exporter):
         # OpenVINO input, converts an HWC sample to the model layout.
         # Persisting the full NCHW tensor here would therefore make POT
         # interpret its axes as an NHWC sample.
-        sample_layout = channels_last_4d_layout(inp.layout).replace("N", "", 1)
+        sample_layout = (
+            channels_last_spatial_layout(inp.layout)
+            if calib.generated_from_link
+            else channels_last_4d_layout(inp.layout)
+        ).replace("N", "", 1)
         expected_shape = tuple(
             shape[inp.layout.index(axis)] for axis in sample_layout
         )

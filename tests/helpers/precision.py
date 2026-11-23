@@ -25,7 +25,11 @@ def cosine_similarity(
     """Cosine similarity between two arrays, compared as flat vectors."""
     x = np.asarray(a, dtype=np.float64).ravel()
     y = np.asarray(b, dtype=np.float64).ravel()
-    return float(np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y)))
+    x_norm = np.linalg.norm(x)
+    y_norm = np.linalg.norm(y)
+    if x_norm == 0 or y_norm == 0:
+        return 1.0 if x_norm == y_norm else 0.0
+    return float(np.dot(x, y) / (x_norm * y_norm))
 
 
 def relative_error(

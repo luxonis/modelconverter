@@ -8,7 +8,7 @@ from tests.helpers.platform_options import (
     platform_options,
     superblob_skip_reason,
 )
-from tests.helpers.precision import relative_error
+from tests.helpers.precision import cosine_similarity, relative_error
 
 
 @pytest.mark.parametrize(
@@ -58,3 +58,15 @@ def test_superblob_skip_reason(
     monkeypatch.setenv("MODELCONVERTER_TOOL_VERSION", version)
 
     assert (superblob_skip_reason() is not None) is skipped
+
+
+@pytest.mark.parametrize(
+    ("reference", "converted", "expected"),
+    [(0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0), (1.0, 2.0, 1.0)],
+)
+def test_cosine_similarity_with_zero_outputs(
+    reference: float, converted: float, expected: float
+):
+    assert cosine_similarity(
+        np.full((1, 2), reference), np.full((1, 2), converted)
+    ) == pytest.approx(expected)

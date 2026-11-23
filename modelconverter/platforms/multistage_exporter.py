@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 from loguru import logger
 
+from modelconverter.utils import ModelconverterException
 from modelconverter.utils.config import (
     Config,
     ImageCalibrationConfig,
@@ -187,7 +188,7 @@ class MultiStageExporter:
             for output in self.exporters[link.stage].config.outputs
             if output.name == link.output
         )
-        # Use the upstream layout even when the receiving input reshapes it.
+        # The receiving input's layout does not describe the saved output.
         if source.shape is None or len(source.shape) != 4:
             return
         if self.platform is Platform.RVC4:
@@ -245,6 +246,12 @@ def _linked_input_layout(source: str, target: str) -> str:
     ]
     if set(source_axes) == set(target_axes):
         return target
+    if len(source_axes) != len(target_axes):
+        raise ModelconverterException(
+            f"Cannot map linked layout '{source}' to input layout '{target}'. "
+            "Use calibration.script to reshape the output explicitly and "
+            "set calibration.layout to the script result's layout."
+        )
     # Match generic spatial axes (D/E) to H/W in canonical order.
     aliases = dict(zip(target_axes, source_axes, strict=True))
     return "".join(aliases.get(axis, axis) for axis in target)

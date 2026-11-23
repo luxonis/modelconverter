@@ -1274,6 +1274,32 @@ class Config(LuxonisConfig):
     name: str
     rich_logging: bool = True
 
+    @model_validator(mode="after")
+    def _validate_spatial_links(self) -> Self:
+        spatial_outputs = {
+            (name, out.name)
+            for name, stage in self.stages.items()
+            for out in stage.outputs
+            if out.shape is not None and len(out.shape) == 4
+        }
+        for stage_name, stage in self.stages.items():
+            for inp in stage.inputs:
+                link = inp.calibration
+                if (
+                    isinstance(link, LinkCalibrationConfig)
+                    and (link.stage, link.output) in spatial_outputs
+                    and inp.shape is not None
+                    and len(inp.shape) not in {3, 4}
+                ):
+                    raise ValueError(
+                        f"Direct calibration link '{link.stage}.{link.output}' to "
+                        f"'{stage_name}.{inp.name}' changes a spatial output from "
+                        f"rank 4 to rank {len(inp.shape)}. Use calibration.script "
+                        "to reshape explicitly and set calibration.layout to "
+                        "the script result's layout."
+                    )
+        return self
+
     def get_stage_config(self, stage: str | None) -> SingleStageConfig:
         """Return the configuration of the given stage.
 

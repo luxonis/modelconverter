@@ -662,7 +662,9 @@ select a method or override the archive's value.
 > Direct links from rank-four outputs on RVC3, RVC4 and Hailo retain the
 > upstream inferer's layout (batchless `HWC` on Hailo) and are reordered for
 > calibration and subsequent stage inference automatically. Flat outputs keep
-> their existing buffer order.
+> their existing buffer order. To flatten a spatial output, use a script that
+> reshapes it in the order the receiving model expects and declare the
+> resulting layout (for example, `NC`).
 >
 > ModelConverter prepares
 > image files and its generated random calibration samples for the backend.

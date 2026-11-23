@@ -265,9 +265,9 @@ class HailoExporter(Exporter):
         # Equal axis sizes can hide a channel permutation in a shape check.
         if (
             (calib.generated_from_random or calib.generated_from_link)
-            and img.ndim == 4
+            and img.ndim in {3, 4}
             and len(shape) == 3
-            and "N" in layout
+            and len(layout.replace("N", "")) == 3
             and layout.count("C") == 1
         ):
             sample_layout = channels_last_spatial_layout(layout).replace(
