@@ -790,7 +790,7 @@ def test_externalized_calibration_matches_embedded_model_output(
     embedded_input = embedded.inputs["input0"]
     embedded_calibration = embedded_input.calibration
     assert isinstance(embedded_calibration, ImageCalibrationConfig)
-    runtime_array, runtime_layout = embedded._read_calibration_file(
+    runtime_array, runtime_layout = embedded.read_calibration_file(
         embedded_input, embedded_calibration, image_path
     )
     runtime_array = reorder_layout(runtime_array, runtime_layout, "NCHW")
@@ -798,7 +798,7 @@ def test_externalized_calibration_matches_embedded_model_output(
     externalized_input = externalized.inputs["input0"]
     externalized_calibration = externalized_input.calibration
     assert isinstance(externalized_calibration, ImageCalibrationConfig)
-    model_array, model_layout = externalized._read_calibration_file(
+    model_array, model_layout = externalized.read_calibration_file(
         externalized_input, externalized_calibration, image_path
     )
     model_array = reorder_layout(model_array, model_layout, "NCHW")

@@ -131,7 +131,7 @@ class MultiStageExporter:
         dest: Path,
     ) -> None:
         """Prepare a linked middle stage's input for its vendor inferer."""
-        array, layout = Exporter._read_calibration_file(inp, calib, file)
+        array, layout = Exporter.read_calibration_file(inp, calib, file)
         target_layout = layout
         if self.platform is Platform.RVC4:
             if len(layout) in {3, 4} and layout.count("C") == 1:

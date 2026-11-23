@@ -390,7 +390,7 @@ class RVC4Exporter(Exporter):
                 input_name=entry.inp.name,
             )
         else:
-            img, layout = self._read_calibration_file(
+            img, layout = self.read_calibration_file(
                 entry.inp, entry.calib, entry.path
             )
             if entry.calib.generated_from_link or (

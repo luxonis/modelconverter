@@ -227,7 +227,7 @@ def test_externalized_calibration_matches_embedded_model(
     externalized_input = externalized_stage.inputs[0]
     calibration = externalized_input.calibration
     assert isinstance(calibration, ImageCalibrationConfig)
-    model_array, layout = Exporter._read_calibration_file(
+    model_array, layout = Exporter.read_calibration_file(
         externalized_input, calibration, inference_image
     )
     assert layout == "HWC"

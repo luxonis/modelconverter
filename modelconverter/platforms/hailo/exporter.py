@@ -261,7 +261,7 @@ class HailoExporter(Exporter):
                 return img[0]
             return img
 
-        img, layout = self._read_calibration_file(inp, calib, path)
+        img, layout = self.read_calibration_file(inp, calib, path)
         # Managed tensors carry their source layout. Reorder before equal
         # axis sizes can hide that Hailo expects a batchless channel-last sample.
         if (

@@ -280,7 +280,7 @@ class RVC3Exporter(RVC2Exporter):
                     input_name=inp.name,
                 )
             else:
-                array, layout = self._read_calibration_file(inp, calib, file)
+                array, layout = self.read_calibration_file(inp, calib, file)
                 # A linked feature map may use the upstream model's layout
                 # (including generic NCDE axis names). POT still consumes a
                 # channel-last sample, whose shape is checked below.
