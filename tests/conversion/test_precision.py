@@ -16,7 +16,7 @@ settings the conversion tests use destroy numeric fidelity, and a
 full-optimization resnet18 is far too slow for CI.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
@@ -60,11 +60,18 @@ class PrecisionCase:
     # A config (or archive) whose `input_model` is the reference ONNX.
     config: str
     platforms: tuple[str, ...] = DEFAULT_PLATFORMS
+    calibration_images: dict[str, int] = field(default_factory=dict)
     image: Path = TEST_IMAGE
 
 
 CASES: list[PrecisionCase] = [
-    PrecisionCase("resnet18", f"{GS}/resnet18.yaml"),
+    # The shared config limits calibration to 20 images for conversion smoke
+    # tests. ResNet precision needs POT's full 300-image statistics subset.
+    PrecisionCase(
+        "resnet18",
+        f"{GS}/resnet18.yaml",
+        calibration_images={"rvc3": 300},
+    ),
     PrecisionCase(
         "mnist",
         f"{GS}/mnist.yaml",
@@ -90,6 +97,9 @@ def test_precision(
 ):
     platform = Platform(platform_name)
     options = platform_options(platform)
+    if count := case.calibration_images.get(platform_name):
+        options = (*options, "calibration.max_images", str(count))
+        record_property(f"{platform_name} {case.id} calibration images", count)
     if platform is Platform.HAILO:
         options = (*options, *HAILO_NO_COMPILE_OPTS)
     output_name = sanitize_net_name(f"prec_{platform_name}_{case.id}")
