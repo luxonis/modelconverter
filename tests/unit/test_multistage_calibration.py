@@ -385,7 +385,10 @@ def test_batchless_script_feature_map_uses_source_axes(
 @pytest.mark.parametrize(
     "platform", [Platform.RVC3, Platform.RVC4, Platform.HAILO]
 )
-@pytest.mark.parametrize("source_layout", ["NCHW", "NHWC", "CHW", "HWC"])
+@pytest.mark.parametrize(
+    "source_layout",
+    ["NCHW", "NHWC", "CHW", "HWC", "NCDE", "NDEC", "CDE", "DEC"],
+)
 @pytest.mark.parametrize("input_layout", ["NCHW", "NCDE"])
 def test_linked_inference_sources_use_runtime_layout(
     exporter: MultiStageExporter,
@@ -430,6 +433,30 @@ def test_linked_inference_sources_use_runtime_layout(
     )
     # Preparing a later stage must not rewrite the calibration source itself.
     np.testing.assert_array_equal(np.load(directory / "0.npy"), source)
+
+
+def test_linked_vector_keeps_its_buffer_order(
+    exporter: MultiStageExporter, config: Config, work_dir: Path
+):
+    exporter.platform = Platform.RVC4
+    source = np.arange(10, dtype=np.float32).reshape(1, 10)
+    directory = work_dir / "linked_vector"
+    directory.mkdir()
+    np.save(directory / "0.npy", source)
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 10]
+    inp.layout = "NC"
+    calib = ImageCalibrationConfig(path=directory)
+    calib.mark_generated_from_link("NC")
+    inp.calibration = calib
+
+    prepared = exporter._create_source_dir(
+        exporter.exporters["second"], "second"
+    )
+
+    np.testing.assert_array_equal(
+        np.load(prepared / inp.name / "0.npy"), source
+    )
 
 
 @pytest.mark.parametrize("platform", list(Platform))

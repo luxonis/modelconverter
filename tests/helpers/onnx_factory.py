@@ -197,6 +197,7 @@ def build_toy_conv_onnx(
     path: PathType,
     *,
     size: int = 32,
+    in_channels: int = 3,
     out_channels: int = 4,
     external_data: bool = False,
 ) -> Path:
@@ -217,21 +218,21 @@ def build_toy_conv_onnx(
         The path of the saved model.
     """
     inp = helper.make_tensor_value_info(
-        "img", TensorProto.FLOAT, [1, 3, size, size]
+        "img", TensorProto.FLOAT, [1, in_channels, size, size]
     )
     out = helper.make_tensor_value_info(
         "out", TensorProto.FLOAT, [1, out_channels, size, size]
     )
     rng = np.random.default_rng(0)
-    values = (rng.standard_normal((out_channels, 3, 3, 3)) * 0.1).astype(
-        np.float32
-    )
+    values = (
+        rng.standard_normal((out_channels, in_channels, 3, 3)) * 0.1
+    ).astype(np.float32)
     # ONNX only externalizes a tensor's `raw_data`, so for external_data the
     # weight has to be stored raw rather than in `float_data`.
     weight = helper.make_tensor(
         "weight",
         TensorProto.FLOAT,
-        [out_channels, 3, 3, 3],
+        [out_channels, in_channels, 3, 3],
         values.tobytes() if external_data else values.ravel(),
         raw=external_data,
     )

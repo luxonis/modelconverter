@@ -20,7 +20,10 @@ from modelconverter.utils.config import (
     InputConfig,
     LinkCalibrationConfig,
 )
-from modelconverter.utils.preprocessing import reorder_layout
+from modelconverter.utils.preprocessing import (
+    channels_last_spatial_layout,
+    reorder_layout,
+)
 from modelconverter.utils.types import Platform
 
 from .base_exporter import Exporter
@@ -134,8 +137,7 @@ class MultiStageExporter:
         array, layout = Exporter.read_calibration_file(inp, calib, file)
         target_layout = layout
         if self.platform is Platform.RVC4:
-            if len(layout) in {3, 4} and layout.count("C") == 1:
-                target_layout = layout.replace("C", "") + "C"
+            target_layout = channels_last_spatial_layout(layout)
         elif self.platform is Platform.HAILO:
             # The Hailo inferer takes one CHW sample and adds the NHWC batch.
             target_layout = "C" + layout.replace("N", "", 1).replace("C", "")

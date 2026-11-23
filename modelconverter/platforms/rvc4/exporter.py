@@ -36,6 +36,7 @@ from modelconverter.utils.config import (
 from modelconverter.utils.encodings import validate_quantization_override_names
 from modelconverter.utils.preprocessing import (
     channels_last_image_layout,
+    channels_last_spatial_layout,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -393,9 +394,10 @@ class RVC4Exporter(Exporter):
             img, layout = self.read_calibration_file(
                 entry.inp, entry.calib, entry.path
             )
-            if entry.calib.generated_from_link or (
-                entry.calib.generated_from_random
-                and _was_image_input(entry.inp)
+            if entry.calib.generated_from_link:
+                target_layout = channels_last_spatial_layout(layout)
+            elif entry.calib.generated_from_random and _was_image_input(
+                entry.inp
             ):
                 target_layout = channels_last_image_layout(layout)
             else:

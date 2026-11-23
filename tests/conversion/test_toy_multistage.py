@@ -163,8 +163,9 @@ def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.mark.rvc4
+@pytest.mark.parametrize("linked_layout", ["NCHW", "NCDE"])
 def test_serial_linked_calibration(
-    tmp_path: Path, record_property: RecordProperty
+    tmp_path: Path, record_property: RecordProperty, linked_layout: str
 ):
     """A -> B -> C calibrates C from correctly ordered inputs to B."""
     calib_dir = tmp_path / "calib"
@@ -172,6 +173,7 @@ def test_serial_linked_calibration(
     for index in range(8):
         _write_noise(calib_dir / f"{index}.png", seed=index)
     stages: Params = {}
+    channels = 8 if linked_layout == "NCDE" else 3
     for name, previous in (
         ("first", None),
         ("second", "first"),
@@ -184,28 +186,32 @@ def test_serial_linked_calibration(
             calibration = {
                 "stage": previous,
                 "script": "def run_script(outputs):\n    return outputs['out']\n",
-                "layout": "NCHW",
+                "layout": linked_layout,
             }
         else:
             calibration = {"stage": previous, "output": "out"}
         stages[name] = {
             "input_model": str(
                 build_toy_conv_onnx(
-                    tmp_path / f"chain_{name}.onnx", size=_SIZE, out_channels=3
+                    tmp_path / f"chain_{name}.onnx",
+                    size=_SIZE,
+                    in_channels=3 if previous is None else channels,
+                    out_channels=channels,
                 )
             ),
             "inputs": [
                 {
                     "name": "img",
-                    "layout": "NCHW",
+                    "layout": "NCHW" if previous is None else linked_layout,
                     "encoding": "BGR" if previous is None else "NONE",
                     "calibration": calibration,
                 }
             ],
             "outputs": [{"name": "out", "layout": "NCHW"}],
+            "rvc4": {"keep_raw_images": True},
         }
     path = write_config(tmp_path, "serial_chain", {"stages": stages})
-    output_name = "_serial-chain-rvc4"
+    output_name = f"_serial-chain-rvc4-{linked_layout}"
     convert(
         Platform.RVC4,
         path=str(path),
@@ -229,6 +235,14 @@ def test_serial_linked_calibration(
     # stored B output used to calibrate C must match that inference exactly.
     first = np.load(
         root / "intermediate_outputs/inference_output/first/img/script/0.npy"
+    )
+    # The quantizer and runtime must consume identical NHWC buffers, including
+    # generic layouts inferred for feature maps with more than three channels.
+    calibration_list = root / "second/intermediate_outputs/img_list.txt"
+    raw = Path(calibration_list.read_text().splitlines()[0].split(":=", 1)[1])
+    np.testing.assert_array_equal(
+        np.fromfile(raw, dtype=np.float32),
+        first.transpose(0, 2, 3, 1).ravel(),
     )
     second_feed = tmp_path / "second.npy"
     np.save(second_feed, first.transpose(0, 2, 3, 1))
