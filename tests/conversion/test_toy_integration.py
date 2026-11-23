@@ -1,19 +1,4 @@
-"""Toy-network integration conversion tests.
-
-One purpose-built tiny ONNX net (``build_toy_integration_onnx``) is converted on
-every platform, once per precision that platform supports, so a single small
-model covers the whole preprocessing surface: per-input mean/scale, an ``RGB`` ->
-``BGR`` reversal alongside a ``BGR`` -> ``BGR`` input that keeps its channels, a
-single-channel ``gray`` input, and two outputs of different rank.
-
-For rvc2/rvc3/rvc4 the converted outputs are also compared against the original
-ONNX model, with the preprocessing applied in numpy (``ONNXReferenceInferer``).
-Calibration draws random images around one value, and inference runs on another
-image from the same distribution, so int8 stays close to the reference while
-each channel and each pixel differs. The net is linear, so the check uses the
-relative error, which also catches a wrong scale. Hailo stays conversion-only,
-and so do the quantized RVC3 case and the RVC4 int16 and fp16 cases.
-"""
+"""Conversion and precision checks for mixed color and grayscale inputs."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,12 +33,10 @@ from tests.helpers.precision import (
 )
 
 _SIZE = 64
-# The random calibration draws pixels around this mean, and the inference image
-# comes from the same distribution, so the quantized range covers it.
+# Match inference to the calibration distribution to avoid clipping.
 _CALIB_MEAN = 100
 _CALIB_STD = 20
-# About five times the worst relative error that CI measures (0.0018, RVC4
-# int8).
+# Allows about 5x the observed RVC4 INT8 error (0.0018).
 _ERROR_LIMIT = 0.01
 
 
@@ -63,18 +46,12 @@ class Precision:
 
     name: str
     opts: tuple[str, ...] = ()
-    # Reason, if this precision is a known failure for the platform.
     xfail: str | None = None
-    # Reason, if the current tool version cannot run this precision at all.
     skip: str | None = None
-    # Relative error limit, if this precision also gets the fidelity check.
     error_limit: float | None = None
 
 
-# These two cases own the RVC2 superblob decision explicitly, so unlike the other
-# conversion tests they do not take `platform_options` -- where superblob is too
-# slow to compile the dedicated case is skipped, rather than quietly flipped to
-# `False`, which would just duplicate `blob`.
+# Skip slow superblob cases instead of substituting a duplicate blob test.
 PRECISIONS: dict[str, list[Precision]] = {
     "rvc2": [
         Precision(
@@ -120,10 +97,7 @@ PRECISIONS: dict[str, list[Precision]] = {
             ("rvc4.quantization_mode", "INT8_INT16_MIXED_ACCURACY_FOCUSED"),
             error_limit=_ERROR_LIMIT,
         ),
-        # fp16 keeps the baked preprocessing as explicit fp16 Eltwise ops, which
-        # the CPU reference backend (all CI has) cannot run, so it stays
-        # conversion-only. int8 folds preprocessing into quantization and runs
-        # on CPU, hence the correctness check on those.
+        # SNPE's CPU runtime cannot execute the FP16 preprocessing Eltwise ops.
         Precision(
             "int16",
             ("rvc4.quantization_mode", "INT16_STANDARD"),
@@ -131,9 +105,7 @@ PRECISIONS: dict[str, list[Precision]] = {
         Precision("fp16", ("rvc4.quantization_mode", "FP16_STANDARD")),
     ],
     "hailo": [
-        # The per-input mean/scale give the net channels of very different
-        # magnitudes, and Hailo's fixed-point quantizer rejects the resulting
-        # dynamic range ("shift delta > 2, cannot quantize").
+        # Hailo rejects this activation range: "shift delta > 2".
         Precision(
             "quant",
             HAILO_FAST_OPTS,
@@ -153,9 +125,6 @@ def _toy_config(workdir: Path, name: str, *, with_flag: bool = False) -> Path:
         size=_SIZE,
     )
     if with_flag:
-        # Raw (non-image) inputs frozen to a constant: RVC2-only, and these two
-        # cover both `frozen_value` branches -- a scalar and a list (joined into
-        # OpenVINO's `->` syntax).
         inputs += [
             {
                 "name": "flag",
@@ -199,7 +168,6 @@ def frozen_toy_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def inference_images(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> dict[str, Path]:
-    """Write distinct inputs from the calibration distribution."""
     directory = tmp_path_factory.mktemp("toy_noise")
     images = {}
     for seed, name in enumerate(("bgr", "rgb", "gray"), start=1):

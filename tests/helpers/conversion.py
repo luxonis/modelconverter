@@ -22,8 +22,7 @@ HAILO_FAST_OPTS = (
     "True",
 )
 
-# Skip only the HEF compile. A fidelity check runs the quantized HAR, which
-# needs the default optimization but no HEF.
+# CPU fidelity checks use the quantized HAR; HEF compilation is unnecessary.
 HAILO_NO_COMPILE_OPTS = ("hailo.disable_compilation", "True")
 
 
@@ -64,9 +63,6 @@ def toy_net_image_inputs(
 
     The ``bgr``/``rgb``/``gray`` inputs each carry their own
     mean/scale/encoding and all share one ``calib`` spec.
-
-    Shared by the toy-integration and toy-multistage tests, which differ only in
-    the calibration (a random constant vs. an image directory).
 
     Args:
         calib: Calibration configuration shared by the image inputs.
@@ -160,11 +156,8 @@ def write_toy_conv_config(
 ) -> Path:
     """Build the toy conv ONNX plus a matching config.
 
-    Shared by the single-input conversion tests (precision, external-data,
-    hailo-compile, rvc4-encodings). The config carries a different mean and
-    scale for each channel and an RGB->BGR reversal, so the converted model
-    gets the full baked preprocessing, and a precision check can see a
-    channel in the wrong place.
+    Unequal per-channel means/scales and RGB-to-BGR reversal expose channel
+    ordering mistakes.
 
     ``calibration="none"`` leaves the input to fall back to random calibration
     (for a ``disable_calibration`` run).

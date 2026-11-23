@@ -1,15 +1,6 @@
-"""Numeric-fidelity helpers for the conversion precision tests.
+"""Precision metrics for converted model outputs.
 
-A precision test compares a converted model with the original ONNX model
-on the same input. The cosine similarity compares the pattern of two
-outputs and ignores their scale, which suits a deep network whose
-quantization moves the scale a little. The relative error also catches
-the right pattern at the wrong scale, for example a lost normalization
-in front of a linear model, so the toy models use it.
-
-`record_property` keeps each measured value, and ``tests/conftest.py``
-lists the values at the end of the run, so a green run also shows the
-margin of each check.
+Relative error catches scale mistakes that cosine similarity misses.
 """
 
 from collections.abc import Callable
@@ -61,7 +52,6 @@ def check_relative_error(
     converted: npt.NDArray[np.generic],
     limit: float,
 ) -> None:
-    """Record the relative error of an output and assert the limit."""
     error = relative_error(reference, converted)
     record_property(f"{label} error", round(error, 5))
     assert error <= limit, f"{label}: relative error {error:.5f} > {limit}"

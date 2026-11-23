@@ -150,7 +150,6 @@ class LinkCalibrationConfig(BaseCalibrationConfig):
     @field_validator("layout", mode="after")
     @staticmethod
     def _normalize_layout(layout: str | None) -> str | None:
-        """Normalize a declared script result layout."""
         return None if layout is None else layout.upper()
 
     @field_validator("script", mode="after")

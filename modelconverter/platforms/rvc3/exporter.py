@@ -282,9 +282,7 @@ class RVC3Exporter(RVC2Exporter):
                 )
             else:
                 array, layout = self.read_calibration_file(inp, calib, file)
-                # A linked feature map may use the upstream model's layout
-                # (including generic NCDE axis names). POT still consumes a
-                # channel-last sample, whose shape is checked below.
+                # POT needs channels last, using the upstream feature axes.
                 tensor_layout = (
                     channels_last_spatial_layout(layout).replace("N", "", 1)
                     if calib.generated_from_link

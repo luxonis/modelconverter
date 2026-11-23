@@ -1,22 +1,6 @@
-"""Toy TFLite conversion + precision.
+"""Check TFLite channel order and OpenVINO per-channel normalization.
 
-A hand-built single-op ``.tflite`` is converted on rvc2/rvc3/rvc4, exercising each
-backend's distinct TFLite entry path -- ``tflite2onnx`` (rvc2/rvc3) and
-``snpe-tflite-to-dlc`` (rvc4).
-
-The model has no weights and no math beyond a ``Relu``, so the converted model
-has to return its input image. The conversion feeds the model RGB, as the TFLite
-model expects, so each output pixel must hold the RGB values of the image, within
-the quantization step.
-
-Hailo is left out: its quantizer only flakily handles this weightless
-pass-through (the ``bgr_to_rgb`` layer degenerates to 0 dB SNR and sometimes
-yields NaN params), so a hailo case here would be neither a dependable pass nor a
-dependable fail. That would need a weighted model.
-
-Run inside the platform Docker image, e.g.::
-
-    modelconverter shell rvc4 --dev -c 'python -m pytest -k toy_tflite'
+Hailo is excluded: its quantizer can produce NaNs for this weightless ReLU.
 """
 
 from pathlib import Path
@@ -43,12 +27,9 @@ from tests.helpers.tflite_factory import build_toy_tflite
 PLATFORMS = ("rvc2", "rvc3", "rvc4")
 _HEIGHT = 6
 _WIDTH = 8
-# One step of 8-bit quantization over the 0-255 calibration range. CI
-# measures no error at all.
+# One 8-bit quantization step over the 0-255 calibration range.
 _TOLERANCE = 1.0
-# Three distinct channel values inside the default random-calibration range
-# (mean 127.5, std 35). Positive so the Relu is a clean identity, and
-# well-separated so the quantizers keep them apart.
+# Positive, distinct channels within the default calibration range.
 _CHANNEL_VALUES = (90, 130, 170)
 
 _PARAMS = platform_params(PLATFORMS)
@@ -102,8 +83,7 @@ def test_toy_tflite_precision(
         to="native",
     )
 
-    # A bare model path is not a config file -- pass it as an `input_model`
-    # override with `path=None`, exactly as `convert` does internally.
+    # get_configs accepts a model path only through the input_model override.
     cfg, _, _ = get_configs(
         platform, None, ["input_model", str(toy_tflite), *options]
     )
@@ -129,7 +109,6 @@ def test_toy_tflite_precision(
     assert output_layout is not None
     pixels = reorder_layout(output_array, output_layout, "NHWC")
     assert pixels.shape == (1, _HEIGHT, _WIDTH, 3)
-    # OpenCV wrote the image as BGR, and the model gets it as RGB.
     image = cv2.imread(str(color_image))
     assert image is not None
     expected_rgb = image[None, ..., ::-1].astype(np.float32)
@@ -149,7 +128,6 @@ def test_toy_tflite_precision(
 def test_openvino_channel_order_with_per_channel_normalization(
     tmp_path: Path, color_image: Path, layout: str, encoding: str
 ):
-    """Channel reversal must also preserve the order of unequal means/scales."""
     shape = (
         [1, 3, _HEIGHT, _WIDTH]
         if layout == "NCHW"
@@ -160,8 +138,8 @@ def test_openvino_channel_order_with_per_channel_normalization(
         [("input", shape, TensorProto.FLOAT)],
         [("output", shape, TensorProto.FLOAT)],
     )
-    # Keep a real operation so OpenVINO does not collapse an Identity's input
-    # and output names into an alias. All normalized test values are positive.
+    # ReLU avoids OpenVINO aliasing Identity input/output names.
+    # All normalized test values remain positive.
     graph = onnx.load(model)
     graph.graph.node[0].op_type = "Relu"
     onnx.save(graph, model)

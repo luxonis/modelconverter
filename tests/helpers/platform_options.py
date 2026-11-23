@@ -1,8 +1,6 @@
-"""Conversion options shared by the conversion tests, and the skips that
-the platform's tool version forces.
+"""Shared conversion options and SDK-specific skips.
 
-``MODELCONVERTER_TOOL_VERSION`` is injected by ``modelconverter shell``, so a
-test can tell which vendor toolchain it is running against.
+modelconverter shell sets MODELCONVERTER_TOOL_VERSION for each SDK image.
 """
 
 import os
@@ -11,18 +9,7 @@ from modelconverter.utils.types import Platform
 
 
 def superblob_skip_reason() -> str | None:
-    """Why superblob is not exercised on this tool version, if it is not.
-
-    A superblob compiles one patch per shave count. On OpenVINO 2021.4.0,
-    that is slow enough to dominate the CI job, so the superblob cases
-    build a plain blob there or are skipped. It is a runtime budget, not a
-    capability: superblob works on 2021.4.0, but it is too expensive to
-    compile on every run.
-
-    Returns:
-        The reason when ``MODELCONVERTER_TOOL_VERSION`` is
-        ``2021.4.0``, otherwise ``None``.
-    """
+    """Skip costly per-SHAVE compilation on OpenVINO 2021.4."""
     if os.getenv("MODELCONVERTER_TOOL_VERSION") == "2021.4.0":
         return "superblob compilation is too slow on OpenVINO 2021.4.0"
     return None
@@ -31,26 +18,7 @@ def superblob_skip_reason() -> str | None:
 def platform_options(
     platform: Platform, *, superblob: bool = False
 ) -> tuple[str, ...]:
-    """Conversion overrides that every conversion test applies.
-
-    Every conversion test threads these into ``convert`` and into any
-    ``get_configs`` call that has to agree with it, so the settings are
-    handled in one place rather than per test.
-
-    RVC2 builds a plain blob unless the test asks for the RVC2 default,
-    a superblob. A superblob compiles one blob per SHAVE count, so only
-    the tests of the default usage build one.
-
-    Args:
-        platform: Platform the test converts for.
-        superblob: Keep the RVC2 default superblob unless
-            `superblob_skip_reason` rules it out on this tool version.
-
-    Returns:
-        The override that disables the RVC2 superblob when a plain blob
-        is requested or the tool version is too slow for a superblob.
-        Otherwise, an empty tuple.
-    """
+    """Use plain RVC2 blobs except where a test covers the default superblob."""
     if platform is Platform.RVC2 and (
         not superblob or superblob_skip_reason() is not None
     ):

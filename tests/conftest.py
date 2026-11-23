@@ -1,12 +1,4 @@
-"""Suite-wide pytest configuration.
-
-Disables telemetry, sets up logging, pins the Hypothesis profile so that
-property tests are reproducible, applies the ``unit`` marker during
-collection, and deselects the other platforms' conversion tests inside
-a platform Docker image. The per-platform markers themselves are
-applied at parametrization, in `tests.helpers.platforms`. At the end of
-a run, it lists the values that the precision tests recorded.
-"""
+"""Shared pytest setup, platform selection, and precision reporting."""
 
 import os
 
@@ -77,10 +69,7 @@ def pytest_collection_modifyitems(
 
 
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
-    """List the values that the precision tests recorded.
-
-    A green run then also shows the margin of each precision check.
-    """
+    """Show precision margins even when all checks pass."""
     reports = [
         report
         for key in ("passed", "failed")

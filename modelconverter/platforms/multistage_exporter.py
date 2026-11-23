@@ -133,7 +133,6 @@ class MultiStageExporter:
         file: Path,
         dest: Path,
     ) -> None:
-        """Prepare a linked middle stage's input for its vendor inferer."""
         array, layout = Exporter.read_calibration_file(inp, calib, file)
         target_layout = layout
         if self.platform is Platform.RVC4:
@@ -183,14 +182,12 @@ class MultiStageExporter:
         calibration: ImageCalibrationConfig,
         link: LinkCalibrationConfig,
     ) -> None:
-        """Record how the inferer saves a rank-four model output."""
         source = next(
             output
             for output in self.exporters[link.stage].config.outputs
             if output.name == link.output
         )
-        # The receiving input can have a different layout or even reshape a
-        # flat output. Only the upstream output describes the saved array.
+        # Use the upstream layout even when the receiving input reshapes it.
         if source.shape is None or len(source.shape) != 4:
             return
         if self.platform is Platform.RVC4:
@@ -205,7 +202,6 @@ class MultiStageExporter:
     def _mark_script_linked_layout(
         calibration: ImageCalibrationConfig, layout: str | None
     ) -> None:
-        """Record the declared layout of a script result."""
         if layout is not None:
             calibration.mark_generated_from_link(layout)
 
@@ -249,9 +245,7 @@ def _linked_input_layout(source: str, target: str) -> str:
     ]
     if set(source_axes) == set(target_axes):
         return target
-    # Generic feature dimensions (D/E) correspond to spatial dimensions
-    # (H/W) in order, regardless of where H and W appear in a named layout.
-    # N and C keep their semantic positions.
+    # Match generic spatial axes (D/E) to H/W in canonical order.
     aliases = dict(zip(target_axes, source_axes, strict=True))
     return "".join(aliases.get(axis, axis) for axis in target)
 

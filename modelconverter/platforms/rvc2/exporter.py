@@ -149,16 +149,7 @@ class RVC2Exporter(Exporter):
         return all(reverses) or not any(reverses)
 
     def _mo_skips_reversal(self) -> bool:
-        """Whether the model optimizer would skip a channel reversal.
-
-        The OpenVINO 2021.4 model optimizer reverses only inputs with the
-        channels at axis 1. It skips inputs such as the ``NHWC`` input that
-        ``tflite2onnx`` makes from a TFLite model, with a warning.
-
-        Returns:
-            Whether this conversion must move channel reversal into ONNX.
-
-        """
+        """OpenVINO 2021.4 only reverses inputs with channels at axis 1."""
         return OV_2021 and any(
             inp.encoding_mismatch
             and inp.layout is not None
@@ -219,13 +210,9 @@ class RVC2Exporter(Exporter):
         return conf.name
 
     def _reverse_channels_in_onnx(self) -> None:
-        """Reverse the input channels in the ONNX model itself.
+        """Embed reversals the model optimizer cannot perform.
 
-        The model optimizer reverses the channels of every input or of
-        none, and the OpenVINO 2021.4 model optimizer does not reverse
-        an ``NHWC`` input. So a model that needs the reversal for only
-        some inputs, or for an ``NHWC`` input on 2021.4, gets the
-        reversal attached to the graph.
+        MO reverses all inputs together; OpenVINO 2021.4 also skips NHWC inputs.
         """
         logger.warning(
             "The model optimizer cannot reverse the input channels of "

@@ -31,7 +31,6 @@ def test_relative_error_rejects_different_shapes():
 
 @pytest.mark.parametrize(("actual", "expected"), [(0.0, 0.0), (1.0, np.inf)])
 def test_relative_error_for_zero_reference(actual: float, expected: float):
-    """An inactive output is exact only when the conversion also returns zero."""
     assert (
         relative_error(np.zeros((1, 2)), np.full((1, 2), actual)) == expected
     )

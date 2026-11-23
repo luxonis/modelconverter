@@ -48,10 +48,8 @@ class Scenario:
 
 
 SCENARIOS: list[Scenario] = [
-    # Single-stage (resnet18).
     Scenario("archive-to-archive", f"{GS}/resnet18.tar.xz", "nn_archive"),
-    # On rvc2/rvc4, `test_model_evaluation` converts HubAI NN Archives to
-    # native models.
+    # RVC2/RVC4 archive-to-native coverage lives in test_model_evaluation.
     Scenario(
         "archive-to-native",
         f"{GS}/resnet18.tar.xz",
@@ -64,25 +62,16 @@ SCENARIOS: list[Scenario] = [
         "nn_archive",
         archive_preprocess=True,
     ),
-    # On rvc2/rvc3/rvc4, `test_precision[resnet18]` runs this exact conversion
-    # and also checks the outputs.
+    # test_precision[resnet18] covers this conversion on RVC2/RVC3/RVC4.
     Scenario(
         "config-to-native",
         f"{GS}/resnet18.yaml",
         "native",
         platforms=("hailo",),
     ),
-    # Multistage (yolov5n-seg + mult) with full linked calibration: stage-2
-    # `coeffs` via a script, `prototypes` from stage-1 `protos_output`. A raw
-    # multistage NN archive cannot reconstruct that, so its non-image stage-2
-    # inputs would fall back to random calibration and fail -- hence the config.
-    #
-    # No RVC3 case: RVC3 cannot quantize the multi-input `mult` stage, and it
-    # fails on that only after it has converted the whole first stage. The toy
-    # tests reach the same check in seconds.
-    #
-    # No NN Archive output: only a two-stage NN Archive input can become a
-    # multistage NN Archive, see `test_toy_multistage`.
+    # The config preserves linked calibration that a raw archive loses.
+    # RVC3's multi-input failure is covered by the cheaper toy tests.
+    # Multistage archive output requires a two-stage NN Archive input.
     Scenario(
         "multistage-config-to-native",
         "configs/multistage.yaml",
@@ -146,8 +135,6 @@ def test_convert(platform_name: str, scenario: Scenario):
     convert(
         platform,
         *_scenario_options(platform_name, scenario),
-        # An NN Archive is the default output, so the archive cases also keep
-        # the RVC2 default superblob.
         *platform_options(
             platform, superblob=scenario.to_format == "nn_archive"
         ),

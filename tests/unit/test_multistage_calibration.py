@@ -257,10 +257,8 @@ def test_direct_rvc3_link_uses_upstream_layout_for_feature_calibration(
     monkeypatch: pytest.MonkeyPatch,
     source_layout: str,
 ):
-    """A feature map retains its channel order when stage layouts differ."""
     exporter.platform = Platform.RVC3
-    # Include negative values and more than three channels, as a backbone's
-    # feature map would. HWC is the sample order POT's NumPy reader expects.
+    # Backbone features can be negative; POT expects HWC samples.
     expected = np.arange(160, dtype=np.float32).reshape(4, 5, 8) - 80
     source = (
         expected[None]
@@ -298,7 +296,6 @@ def test_direct_rvc3_link_uses_upstream_layout_for_feature_calibration(
 def test_direct_flat_output_is_not_mislabeled_as_rank_four(
     exporter: MultiStageExporter, config: Config
 ):
-    """RVC4 keeps opaque buffers when a vector feeds a reshaped input."""
     inp = config.stages["second"].inputs[0]
     inp.shape = [1, 10, 1, 1]
     inp.layout = "NCHW"
@@ -316,7 +313,6 @@ def test_direct_hailo_link_keeps_hwc_calibration_and_prepares_chw_inference(
     config: Config,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Hailo's batchless output must be CHW when rerunning the middle stage."""
     exporter.platform = Platform.HAILO
     source = np.arange(160, dtype=np.float32).reshape(4, 5, 8) - 80
     config.stages["first"].outputs = [
@@ -353,7 +349,6 @@ def test_batchless_script_feature_map_uses_source_axes(
     source_layout: str,
     input_layout: str,
 ):
-    """A script can drop the batch axis before feeding a generic feature input."""
     exporter.platform = Platform.RVC3
     expected = np.arange(160, dtype=np.float32).reshape(4, 5, 8) - 80
     source = (
@@ -412,7 +407,6 @@ def test_linked_inference_sources_use_runtime_layout(
     source_layout: str,
     input_layout: str,
 ):
-    """A linked middle stage must run on the same features used to calibrate it."""
     exporter.platform = platform
     nchw = np.arange(160, dtype=np.float32).reshape(1, 8, 4, 5) - 80
     source = (
@@ -446,7 +440,6 @@ def test_linked_inference_sources_use_runtime_layout(
     np.testing.assert_array_equal(
         np.load(prepared / inp.name / "0.npy"), expected
     )
-    # Preparing a later stage must not rewrite the calibration source itself.
     np.testing.assert_array_equal(np.load(directory / "0.npy"), source)
 
 

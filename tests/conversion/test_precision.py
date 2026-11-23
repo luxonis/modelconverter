@@ -1,19 +1,7 @@
-"""Conversion precision tests -- "does the converted model still behave like the
-original".
+"""Compare converted models with independently preprocessed ONNX references.
 
-Each case converts a model, then runs inference twice on the same image: the
-original ONNX via onnxruntime with the config's preprocessing applied by hand
-(``ONNXReferenceInferer``), and the converted model via its vendor inferer, which
-is fed the raw image and normalizes internally. A faithful conversion keeps every
-output's cosine similarity above a per-platform floor -- quantizing backends
-(rvc3/rvc4) legitimately diverge more than fp16 (rvc2).
-
-Adding a model is one ``PrecisionCase`` entry; nothing here is model-specific.
-
-Hailo runs only the small mnist case, at the default optimization level and
-without the HEF compile: the check runs the quantized HAR. The cheap smoke
-settings the conversion tests use destroy numeric fidelity, and a
-full-optimization resnet18 is far too slow for CI.
+Hailo uses MNIST and the quantized HAR: full ResNet optimization is too
+slow for CI, and HEF compilation is unnecessary for CPU inference.
 """
 
 from dataclasses import dataclass, field

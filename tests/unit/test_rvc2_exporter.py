@@ -366,9 +366,6 @@ def test_channels_last_reversal_moves_into_onnx_on_openvino_2021(
     shape: list[int],
     channel_axis: int,
 ):
-    """The 2021.4 model optimizer skips channels-last inputs, so the
-    ONNX reverses them instead.
-    """
     model = build_onnx(
         tmp_path / f"{layout.lower()}.onnx",
         [("input", shape, TensorProto.FLOAT)],
@@ -422,7 +419,6 @@ def test_channels_last_reversal_moves_into_onnx_on_openvino_2021(
 def test_openvino_2021_embeds_nhwc_normalization_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, encoding: str
 ):
-    """Unequal channel means/scales retain their order after a reversal."""
     shape = [1, 2, 4, 3]
     model = build_onnx(
         tmp_path / "nhwc.onnx",

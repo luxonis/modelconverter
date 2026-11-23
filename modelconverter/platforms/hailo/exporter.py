@@ -262,8 +262,7 @@ class HailoExporter(Exporter):
             return img
 
         img, layout = self.read_calibration_file(inp, calib, path)
-        # Managed tensors carry their source layout. Reorder before equal
-        # axis sizes can hide that Hailo expects a batchless channel-last sample.
+        # Equal axis sizes can hide a channel permutation in a shape check.
         if (
             (calib.generated_from_random or calib.generated_from_link)
             and img.ndim == 4

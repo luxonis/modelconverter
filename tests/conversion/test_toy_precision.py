@@ -1,28 +1,6 @@
-"""Toy conv-net numeric-fidelity tests -- **all platforms**.
+"""Compare embedded and archive preprocessing against the original ONNX.
 
-``build_toy_integration_onnx`` covers the preprocessing surface but is a poor
-fidelity subject: its output is essentially the preprocessed input, and its wide
-per-input scale spread makes the Hailo quantizer reject it, so the toy
-integration precision check does not run on Hailo.
-
-This uses the well-conditioned single-input conv toy instead, which every backend
-including Hailo can quantize and reproduce near-losslessly. It still carries a
-mean and a scale for each channel and a channel reversal in the config, so the
-full baked-preprocessing path is exercised -- the difference is only that the
-graph does real quantizable work. RVC3, RVC4, and Hailo additionally convert the
-toy with preprocessing stored in the NN Archive, feed the bare model an
-equivalent preprocessed tensor, and compare both quantized paths with each other
-and with the original ONNX.
-
-The reference is the original ONNX model, with the preprocessing applied in
-numpy (``ONNXReferenceInferer``). The image is random noise from the
-calibration distribution, so each channel and each pixel differs. The model is
-linear, so the checks use the relative error: it also catches a wrong scale,
-which the cosine similarity cannot see.
-
-Run inside the platform Docker image, e.g.::
-
-    modelconverter shell hailo --dev --no-gpu -c 'python -m pytest -k toy_precision'
+The bounded activation range keeps the convolution quantizable on Hailo.
 """
 
 import tarfile
@@ -55,9 +33,7 @@ from tests.helpers.precision import (
 )
 
 _SIZE = 32
-# About three times the worst relative error that CI measures (0.016, Hailo),
-# also between the embedded and the externalized model. A lost channel swap or a
-# wrong mean or scale gives an error far above it.
+# Allows about 3x the observed Hailo error (0.016), including both paths.
 _ERROR_LIMIT = 0.05
 
 _PLATFORM_OPTS: dict[str, tuple[str, ...]] = {
@@ -74,7 +50,6 @@ def toy_conv_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def inference_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Write uniform noise, the distribution of the calibration images."""
     path = tmp_path_factory.mktemp("toy_prec_image") / "noise.png"
     rng = np.random.default_rng(1)
     cv2.imwrite(
@@ -84,7 +59,6 @@ def inference_image(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def _read_generated_archive(path: Path) -> NNArchiveConfig:
-    """Read the generated config and verify its model is archived."""
     with tarfile.open(path) as archive:
         config_file = archive.extractfile("config.json")
         assert config_file is not None
