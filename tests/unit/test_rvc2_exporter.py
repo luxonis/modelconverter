@@ -478,7 +478,10 @@ def test_openvino_2021_embeds_nhwc_normalization_once(
         None, {"image": image, "features": features}
     )
     source = image[..., ::-1] if encoding == "RGB" else image
-    np.testing.assert_allclose(normalized, (source - [10, 20, 30]) / [2, 4, 8])
+    np.testing.assert_allclose(
+        np.asarray(normalized, dtype=np.float32),
+        (source - [10, 20, 30]) / [2, 4, 8],
+    )
     np.testing.assert_array_equal(unchanged, features)
 
 

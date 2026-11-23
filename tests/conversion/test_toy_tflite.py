@@ -130,9 +130,9 @@ def test_toy_tflite_precision(
     pixels = reorder_layout(output_array, output_layout, "NHWC")
     assert pixels.shape == (1, _HEIGHT, _WIDTH, 3)
     # OpenCV wrote the image as BGR, and the model gets it as RGB.
-    expected_rgb = cv2.imread(str(color_image))[None, ..., ::-1].astype(
-        np.float32
-    )
+    image = cv2.imread(str(color_image))
+    assert image is not None
+    expected_rgb = image[None, ..., ::-1].astype(np.float32)
     max_error = float(np.abs(pixels - expected_rgb).max())
     record_property(f"{platform_name} max error", round(max_error, 3))
     assert max_error <= _TOLERANCE, (
@@ -202,8 +202,12 @@ def test_openvino_channel_order_with_per_channel_normalization(
         stage,
     )
     actual = inferer.infer({"input": color_image})["output"]
-    pixels = reorder_layout(actual, layout, "NHWC")
-    channels = cv2.imread(str(color_image)).astype(np.float32)
+    pixels = reorder_layout(
+        np.asarray(actual, dtype=np.float32), layout, "NHWC"
+    )
+    image = cv2.imread(str(color_image))
+    assert image is not None
+    channels = image.astype(np.float32)
     if encoding == "RGB":
         channels = channels[..., ::-1]
     expected = (channels[None] - [10, 20, 30]) / [2, 4, 8]
