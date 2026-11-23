@@ -47,7 +47,11 @@ def relative_error(
     )
     x = np.asarray(reference, dtype=np.float64).ravel()
     y = np.asarray(converted, dtype=np.float64).ravel()
-    return float(np.linalg.norm(x - y) / np.linalg.norm(x))
+    reference_norm = np.linalg.norm(x)
+    difference_norm = np.linalg.norm(x - y)
+    if reference_norm == 0:
+        return 0.0 if difference_norm == 0 else float("inf")
+    return float(difference_norm / reference_norm)
 
 
 def check_relative_error(

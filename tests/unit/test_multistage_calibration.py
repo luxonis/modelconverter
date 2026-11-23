@@ -303,6 +303,48 @@ def test_direct_flat_output_is_not_mislabeled_as_rank_four(
     assert np.load(calibration.path / "0.npy").shape == (1, 10)
 
 
+@pytest.mark.parametrize("source_layout", ["CHW", "HWC"])
+@pytest.mark.parametrize("input_layout", ["NCHW", "NCDE"])
+def test_batchless_script_feature_map_uses_source_axes(
+    exporter: MultiStageExporter,
+    config: Config,
+    work_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    source_layout: str,
+    input_layout: str,
+):
+    """A script can drop the batch axis before feeding a generic feature input."""
+    exporter.platform = Platform.RVC3
+    expected = np.arange(160, dtype=np.float32).reshape(4, 5, 8) - 80
+    source = (
+        expected if source_layout == "HWC" else expected.transpose(2, 0, 1)
+    )
+    monkeypatch.setattr(
+        StubInferer, "infer", lambda _self, _inputs: {"features": source[None]}
+    )
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 8, 4, 5]
+    inp.layout = input_layout
+    inp.calibration = LinkCalibrationConfig(
+        stage="first",
+        script="def run_script(outputs):\n    return outputs['features'][0]\n",
+        layout=source_layout,
+    )
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+
+    calibration = _resolved_calibration(config)
+    pot = object.__new__(RVC3Exporter)
+    pot.intermediate_outputs_dir = work_dir
+    pot._write_calibration_tensors(
+        inp, calibration, [calibration.path / "0.npy"], shape=inp.shape
+    )
+    np.testing.assert_array_equal(
+        np.load(work_dir / "calibration_tensors/0.npy"), expected
+    )
+
+
 @pytest.mark.parametrize("platform", list(Platform))
 def test_script_link_records_declared_layout(
     exporter: MultiStageExporter, config: Config, platform: Platform

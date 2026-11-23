@@ -285,8 +285,10 @@ class RVC3Exporter(RVC2Exporter):
                 # (including generic NCDE axis names). POT still consumes a
                 # channel-last sample, whose shape is checked below.
                 tensor_layout = (
-                    channels_last_4d_layout(layout).replace("N", "", 1)
-                    if calib.generated_from_link and len(layout) == 4
+                    layout.replace("N", "", 1).replace("C", "") + "C"
+                    if calib.generated_from_link
+                    and len(layout) in {3, 4}
+                    and layout.count("C") == 1
                     else sample_layout
                 )
                 array = reorder_layout(array, layout, tensor_layout)
