@@ -112,7 +112,7 @@ jobs:
             --commands "$REMOTE_CMD"
 
   notify-bom-failure:
-    name: Notify Klemen of BOM failure on Slack
+    name: Notify #ml-devs-gh of BOM failure
     needs: [BOM-test]
     if: >
       always() && !cancelled() &&
@@ -120,16 +120,16 @@ jobs:
       needs.BOM-test.result == 'failure'
     runs-on: ubuntu-latest
     steps:
-      - name: Send Slack DM
+      - name: Post to #ml-devs-gh
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_USER_ID: U03PLCLEFU2
+          SLACK_CHANNEL_ID: C06D4HWU7SQ
         run: |
           : "${SLACK_BOT_TOKEN:?Set the SLACK_BOT_TOKEN Actions secret to send BOM alerts}"
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          message=$(printf ':rotating_light: *Modelconverter BOM tests failed*\nTest run: %s' \
+          message=$(printf '<@U03PLCLEFU2> :rotating_light: *Modelconverter BOM tests failed*\nTest run: %s' \
             "$run_url")
-          payload=$(jq -n --arg channel "$SLACK_USER_ID" --arg text "$message" \
+          payload=$(jq -n --arg channel "$SLACK_CHANNEL_ID" --arg text "$message" \
             '{channel: $channel, text: $text}')
           response=$(curl --silent --show-error --fail-with-body \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
