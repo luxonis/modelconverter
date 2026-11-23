@@ -32,6 +32,7 @@ def _install_fake_openvino(
     module = ModuleType("openvino.inference_engine.ie_api")
     ie_core = SimpleNamespace(
         read_network=lambda model, weights: net,
+        set_config=lambda config, device_name: None,
         load_network=lambda network, device_name: object(),
     )
     monkeypatch.setattr(module, "IECore", lambda: ie_core, raising=False)
@@ -66,6 +67,7 @@ def test_layout_comes_from_the_ir(
     _install_fake_openvino(monkeypatch, {"x": net_shape})
     stub = SimpleNamespace(
         model_path=Path("model.xml"),
+        _cpu_config={},
         in_shapes={"x": config_shape},
         layout={"x": config_layout},
     )

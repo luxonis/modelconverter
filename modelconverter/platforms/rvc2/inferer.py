@@ -8,6 +8,7 @@ original one.
 """
 
 from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 import numpy.typing as npt
@@ -19,6 +20,8 @@ from modelconverter.utils import read_image
 
 class RVC2Inferer(Inferer):
     """Inferer for RVC2 models, using the OpenVINO inference engine."""
+
+    _cpu_config: ClassVar[dict[str, str]] = {}
 
     @override
     def setup(self) -> None:
@@ -35,6 +38,7 @@ class RVC2Inferer(Inferer):
         self._xml_path = self.model_path
         self._bin_path = self.model_path.with_suffix(".bin")
         ie = IECore()
+        ie.set_config(self._cpu_config, "CPU")
         net = ie.read_network(model=self._xml_path, weights=self._bin_path)
         # Both the shape and the layout come from the IR. The config describes
         # the original model, whose layout the conversion need not keep, and

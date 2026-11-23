@@ -7,6 +7,9 @@ from hypothesis import settings
 from luxonis_ml.utils import setup_logging
 
 os.environ.setdefault("LUXONIS_TELEMETRY_ENABLED", "false")
+# Exercise RVC3 CPU validation on hosts without VNNI, even on newer runners.
+if os.getenv("MODELCONVERTER_PLATFORM") == "rvc3":
+    os.environ.setdefault("DNNL_MAX_CPU_ISA", "AVX2")
 
 setup_logging()
 
