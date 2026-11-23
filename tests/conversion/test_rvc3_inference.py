@@ -44,7 +44,10 @@ def test_quantized_convolution_keeps_full_int8_range(tmp_path: Path):
         encoding={"input": Encoding.BGR},
         layout={"input": "NCHW"},
     )
-    actual = inferer.infer({"input": tmp_path / "input.npy"})["output"]
+    actual = np.asarray(
+        inferer.infer({"input": tmp_path / "input.npy"})["output"],
+        dtype=np.float32,
+    )
 
     # Clipping and rounding must remain active; an unquantized FP32 graph
     # would pass an overflow-only check but give different values here.
