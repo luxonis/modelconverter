@@ -34,7 +34,7 @@ from modelconverter.utils.config import (
     broadcast_preprocessing_values,
 )
 from modelconverter.utils.preprocessing import (
-    channels_last_4d_layout,
+    channels_last_spatial_layout,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -271,7 +271,9 @@ class HailoExporter(Exporter):
             and "N" in layout
             and layout.count("C") == 1
         ):
-            sample_layout = channels_last_4d_layout(layout).replace("N", "", 1)
+            sample_layout = channels_last_spatial_layout(layout).replace(
+                "N", "", 1
+            )
             return reorder_layout(img, layout, sample_layout)
         if calib.generated_from_link or img.shape != tuple(shape):
             return _fit_hailo_sample(img, shape, layout)

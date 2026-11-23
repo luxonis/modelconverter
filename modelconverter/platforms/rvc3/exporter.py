@@ -25,6 +25,7 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.preprocessing import (
     channels_last_4d_layout,
+    channels_last_spatial_layout,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -285,7 +286,7 @@ class RVC3Exporter(RVC2Exporter):
                 # (including generic NCDE axis names). POT still consumes a
                 # channel-last sample, whose shape is checked below.
                 tensor_layout = (
-                    layout.replace("N", "", 1).replace("C", "") + "C"
+                    channels_last_spatial_layout(layout).replace("N", "", 1)
                     if calib.generated_from_link
                     and len(layout) in {3, 4}
                     and layout.count("C") == 1

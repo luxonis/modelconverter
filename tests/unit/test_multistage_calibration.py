@@ -249,7 +249,7 @@ def test_direct_link_records_inferer_output_layout(
     assert calibration.generated_layout == expected
 
 
-@pytest.mark.parametrize("source_layout", ["NHWC", "NCDE"])
+@pytest.mark.parametrize("source_layout", ["NHWC", "NCDE", "NWHC"])
 def test_direct_rvc3_link_uses_upstream_layout_for_feature_calibration(
     exporter: MultiStageExporter,
     config: Config,
@@ -267,6 +267,8 @@ def test_direct_rvc3_link_uses_upstream_layout_for_feature_calibration(
         if source_layout == "NHWC"
         else expected.transpose(2, 0, 1)[None]
     )
+    if source_layout == "NWHC":
+        source = expected.transpose(1, 0, 2)[None]
     config.stages["first"].outputs = [
         OutputConfig(
             name="features", shape=list(source.shape), layout=source_layout
@@ -387,7 +389,18 @@ def test_batchless_script_feature_map_uses_source_axes(
 )
 @pytest.mark.parametrize(
     "source_layout",
-    ["NCHW", "NHWC", "CHW", "HWC", "NCDE", "NDEC", "CDE", "DEC"],
+    [
+        "NCHW",
+        "NHWC",
+        "CHW",
+        "HWC",
+        "NCDE",
+        "NDEC",
+        "CDE",
+        "DEC",
+        "NWHC",
+        "WHC",
+    ],
 )
 @pytest.mark.parametrize("input_layout", ["NCHW", "NCDE"])
 def test_linked_inference_sources_use_runtime_layout(
@@ -405,6 +418,8 @@ def test_linked_inference_sources_use_runtime_layout(
     source = (
         nchw.transpose(0, 2, 3, 1) if source_layout.endswith("C") else nchw
     )
+    if source_layout.endswith("WHC"):
+        source = nchw.transpose(0, 3, 2, 1)
     if "N" not in source_layout:
         source = source[0]
     directory = work_dir / "linked_features"

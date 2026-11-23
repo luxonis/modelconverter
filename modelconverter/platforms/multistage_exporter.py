@@ -140,7 +140,10 @@ class MultiStageExporter:
             target_layout = channels_last_spatial_layout(layout)
         elif self.platform is Platform.HAILO:
             # The Hailo inferer takes one CHW sample and adds the NHWC batch.
-            target_layout = "C" + layout.replace("N", "", 1).replace("C", "")
+            sample_layout = channels_last_spatial_layout(layout).replace(
+                "N", "", 1
+            )
+            target_layout = "C" + sample_layout.replace("C", "")
         elif inp.layout is not None:
             target_layout = _linked_input_layout(layout, inp.layout)
         array = reorder_layout(array, layout, target_layout)
@@ -234,12 +237,21 @@ class MultiStageExporter:
 
 def _linked_input_layout(source: str, target: str) -> str:
     """Express an OpenVINO input layout using the linked tensor's axis names."""
-    source_axes = [axis for axis in source if axis not in "NC"]
-    target_axes = [axis for axis in target if axis not in "NC"]
+    source_axes = [
+        axis
+        for axis in channels_last_spatial_layout(source)
+        if axis not in "NC"
+    ]
+    target_axes = [
+        axis
+        for axis in channels_last_spatial_layout(target)
+        if axis not in "NC"
+    ]
     if set(source_axes) == set(target_axes):
         return target
     # Generic feature dimensions (D/E) correspond to spatial dimensions
-    # (H/W) in order. N and C keep their semantic positions.
+    # (H/W) in order, regardless of where H and W appear in a named layout.
+    # N and C keep their semantic positions.
     aliases = dict(zip(target_axes, source_axes, strict=True))
     return "".join(aliases.get(axis, axis) for axis in target)
 

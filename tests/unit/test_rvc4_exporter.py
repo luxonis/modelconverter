@@ -844,7 +844,19 @@ def test_user_raw_calibration_is_referenced_without_rewriting(tmp_path: Path):
 
 
 @pytest.mark.parametrize(
-    "layout", ["NCHW", "NHWC", "NCDE", "NDEC", "CHW", "HWC", "CDE", "DEC"]
+    "layout",
+    [
+        "NCHW",
+        "NHWC",
+        "NCDE",
+        "NDEC",
+        "CHW",
+        "HWC",
+        "CDE",
+        "DEC",
+        "NWHC",
+        "WHC",
+    ],
 )
 def test_linked_numpy_calibration_is_serialized_channels_last(
     tmp_path: Path, layout: str
@@ -859,6 +871,8 @@ def test_linked_numpy_calibration_is_serialized_channels_last(
     source = (
         expected if layout.endswith("C") else expected.transpose(0, 3, 1, 2)
     )
+    if layout.endswith("WHC"):
+        source = expected.transpose(0, 2, 1, 3)
     if "N" not in layout:
         source = source[0]
     np.save(calibration_dir / "sample.npy", source)

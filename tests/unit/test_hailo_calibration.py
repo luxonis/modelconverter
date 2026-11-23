@@ -299,13 +299,17 @@ def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
     np.testing.assert_array_equal(actual, expected)
 
 
-@pytest.mark.parametrize("layout", ["NCHW", "NHWC", "CHW", "HWC"])
+@pytest.mark.parametrize(
+    "layout", ["NCHW", "NHWC", "CHW", "HWC", "NWHC", "WHC"]
+)
 def test_linked_feature_map_keeps_values_in_hailo_sample_order(
     hailo_exporter_module: ModuleType, tmp_path: Path, layout: str
 ):
     """Scripts can return batched or unbatched feature maps without clipping."""
     expected = np.arange(160, dtype=np.float32).reshape(4, 5, 8) - 80
     source = expected.transpose(2, 0, 1) if layout.endswith("HW") else expected
+    if layout.endswith("WHC"):
+        source = expected.transpose(1, 0, 2)
     if layout.startswith("N"):
         source = source[None]
     calibration_dir = tmp_path / "features"
