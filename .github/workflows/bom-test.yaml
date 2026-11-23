@@ -124,12 +124,11 @@ jobs:
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_USER_ID: U03PLCLEFU2
-          BOM_RUN_URL: ${{ github.event.inputs.reservation_name }}
         run: |
           : "${SLACK_BOT_TOKEN:?Set the SLACK_BOT_TOKEN Actions secret to send BOM alerts}"
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          message=$(printf ':rotating_light: *Modelconverter BOM tests failed*\nTest run: %s\nBOM run: %s' \
-            "$run_url" "$BOM_RUN_URL")
+          message=$(printf ':rotating_light: *Modelconverter BOM tests failed*\nTest run: %s' \
+            "$run_url")
           payload=$(jq -n --arg channel "$SLACK_USER_ID" --arg text "$message" \
             '{channel: $channel, text: $text}')
           response=$(curl --silent --show-error --fail-with-body \
