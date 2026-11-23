@@ -299,6 +299,39 @@ def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
     np.testing.assert_array_equal(actual, expected)
 
 
+@pytest.mark.parametrize("layout", ["NCHW", "NHWC", "CHW", "HWC"])
+def test_linked_feature_map_keeps_values_in_hailo_sample_order(
+    hailo_exporter_module: ModuleType, tmp_path: Path, layout: str
+):
+    """Scripts can return batched or unbatched feature maps without clipping."""
+    expected = np.arange(160, dtype=np.float32).reshape(4, 5, 8) - 80
+    source = expected.transpose(2, 0, 1) if layout.endswith("HW") else expected
+    if layout.startswith("N"):
+        source = source[None]
+    calibration_dir = tmp_path / "features"
+    calibration_dir.mkdir()
+    np.save(calibration_dir / "sample.npy", source)
+    inp = InputConfig.model_validate(
+        {
+            "name": "input0",
+            "shape": [1, 8, 4, 5],
+            "layout": "NCHW",
+            "encoding": "NONE",
+            "calibration": {"path": str(calibration_dir)},
+        }
+    )
+    assert isinstance(inp.calibration, ImageCalibrationConfig)
+    inp.calibration.mark_generated_from_link(layout)
+    exporter = object.__new__(hailo_exporter_module.HailoExporter)
+    exporter._inputs = {"input0": inp}
+
+    actual = exporter._get_calibration_data(_Runner([1, 4, 5, 8]))[
+        "hailo_input"
+    ][0]
+
+    np.testing.assert_array_equal(actual, expected)
+
+
 def _generate_random_sample(
     hailo_exporter_module: ModuleType, tmp_path: Path, inp: InputConfig
 ) -> tuple["HailoExporter", npt.NDArray[np.generic]]:

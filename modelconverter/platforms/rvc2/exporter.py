@@ -129,6 +129,7 @@ class RVC2Exporter(Exporter):
 
         self._validate_requested_preprocessing()
 
+        self._embed_channels_last_normalization()
         if not self._check_reverse_channels() or self._mo_skips_reversal():
             self._reverse_channels_in_onnx()
         if not self._onnx_optimizations.all_disabled():
@@ -165,6 +166,34 @@ class RVC2Exporter(Exporter):
             and inp.layout.index("C") != 1
             for inp in self._inputs.values()
         )
+
+    def _embed_channels_last_normalization(self) -> None:
+        """Keep NHWC mean/scale off the channel-first-only 2021.4 optimizer."""
+        if not OV_2021:
+            return
+        inputs = {
+            name: inp
+            for name, inp in self._inputs.items()
+            if inp.layout == "NHWC"
+            and (
+                (inp.mean_values is not None and any(inp.mean_values))
+                or (
+                    inp.scale_values is not None
+                    and any(value != 1 for value in inp.scale_values)
+                )
+            )
+        }
+        if not inputs:
+            return
+        self._input_model = onnx_attach_normalization_to_inputs(
+            self._input_model,
+            self._attach_suffix(self._input_model, "normalized.onnx"),
+            inputs,
+        )
+        for inp in inputs.values():
+            inp.mean_values = None
+            inp.scale_values = None
+            inp.encoding.from_ = inp.encoding.to
 
     def _validate_ir_preprocessing_contract(self) -> None:
         """Reject preprocessing that cannot be added to an existing IR."""

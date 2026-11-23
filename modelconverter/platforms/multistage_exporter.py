@@ -127,9 +127,7 @@ class MultiStageExporter:
                 calibration = calib.to_image_calibration(
                     dest_dir / calib.output
                 )
-                self._mark_direct_linked_layout(
-                    calibration, inp_config.shape, inp_config.layout
-                )
+                self._mark_direct_linked_layout(calibration, calib)
                 inp_config.calibration = calibration
             elif calib.script is not None:
                 # Keyed by the receiving input, not just the linked stage:
@@ -150,16 +148,22 @@ class MultiStageExporter:
     def _mark_direct_linked_layout(
         self,
         calibration: ImageCalibrationConfig,
-        shape: list[int] | None,
-        layout: str | None,
+        link: LinkCalibrationConfig,
     ) -> None:
         """Record a platform inferer's direct rank-four output layout."""
-        if shape is None or len(shape) != 4 or layout is None:
+        source = next(
+            output
+            for output in self.exporters[link.stage].config.outputs
+            if output.name == link.output
+        )
+        # The receiving input can have a different layout or even reshape a
+        # flat output. Only the upstream output describes the saved array.
+        if source.shape is None or len(source.shape) != 4:
             return
         if self.platform is Platform.RVC4:
             calibration.mark_generated_from_link("NCHW")
-        elif self.platform is Platform.RVC3:
-            calibration.mark_generated_from_link(layout)
+        elif self.platform is Platform.RVC3 and source.layout is not None:
+            calibration.mark_generated_from_link(source.layout)
 
     @staticmethod
     def _mark_script_linked_layout(

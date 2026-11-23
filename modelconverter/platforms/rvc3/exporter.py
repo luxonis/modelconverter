@@ -281,7 +281,15 @@ class RVC3Exporter(RVC2Exporter):
                 )
             else:
                 array, layout = self._read_calibration_file(inp, calib, file)
-                array = reorder_layout(array, layout, sample_layout)
+                # A linked feature map may use the upstream model's layout
+                # (including generic NCDE axis names). POT still consumes a
+                # channel-last sample, whose shape is checked below.
+                tensor_layout = (
+                    channels_last_4d_layout(layout).replace("N", "", 1)
+                    if calib.generated_from_link and len(layout) == 4
+                    else sample_layout
+                )
+                array = reorder_layout(array, layout, tensor_layout)
             if array.shape != expected_shape:
                 raise ModelconverterException(
                     f"Calibration data for input '{inp.name}' has shape "

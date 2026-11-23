@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import numpy as np
 import onnx
 import pytest
 from onnx import TensorProto
@@ -26,6 +27,7 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.types import Encoding, InputFileType
 from tests.helpers.onnx_factory import build_onnx, single_io_onnx
+from tests.helpers.onnx_reference import _create_onnx_session
 
 
 def _mock_tflite_metadata(
@@ -414,6 +416,70 @@ def test_channels_last_reversal_moves_into_onnx_on_openvino_2021(
     ]
     assert ("--reverse_input_channels" in command) is not ov_2021
     assert split_axes == ([channel_axis] if ov_2021 else [])
+
+
+@pytest.mark.parametrize("encoding", ["RGB", "BGR"])
+def test_openvino_2021_embeds_nhwc_normalization_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, encoding: str
+):
+    """Unequal channel means/scales retain their order after a reversal."""
+    shape = [1, 2, 4, 3]
+    model = build_onnx(
+        tmp_path / "nhwc.onnx",
+        [
+            ("image", shape, TensorProto.FLOAT),
+            ("features", [1, 8], TensorProto.FLOAT),
+        ],
+        [
+            ("normalized", shape, TensorProto.FLOAT),
+            ("unchanged", [1, 8], TensorProto.FLOAT),
+        ],
+    ).resolve()
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "inputs": [
+                {
+                    "name": "image",
+                    "layout": "NHWC",
+                    "encoding": {"from": encoding, "to": "BGR"},
+                    "mean_values": [10, 20, 30],
+                    "scale_values": [2, 4, 8],
+                },
+                {"name": "features", "encoding": "NONE"},
+            ],
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+        },
+    )
+    monkeypatch.setattr("modelconverter.platforms.rvc2.exporter.OV_2021", True)
+    output_dir = tmp_path / "normalized-output"
+    output_dir.mkdir()
+    exporter = RVC2Exporter(next(iter(config.stages.values())), output_dir)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        exporter,
+        "_subprocess_run",
+        lambda command, **_kwargs: commands.append(command),
+    )
+
+    exporter._export_openvino_ir()
+
+    (command,) = commands
+    assert not {
+        "--mean_values",
+        "--scale_values",
+        "--reverse_input_channels",
+    }.intersection(command)
+    image = np.arange(24, dtype=np.float32).reshape(shape)
+    features = np.arange(8, dtype=np.float32)[None]
+    normalized, unchanged = _create_onnx_session(exporter._input_model).run(
+        None, {"image": image, "features": features}
+    )
+    source = image[..., ::-1] if encoding == "RGB" else image
+    np.testing.assert_allclose(normalized, (source - [10, 20, 30]) / [2, 4, 8])
+    np.testing.assert_array_equal(unchanged, features)
 
 
 @pytest.mark.parametrize(

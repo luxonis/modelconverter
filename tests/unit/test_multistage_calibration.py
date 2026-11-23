@@ -18,10 +18,12 @@ from typing_extensions import override
 from modelconverter.platforms import multistage_exporter
 from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.platforms.multistage_exporter import MultiStageExporter
+from modelconverter.platforms.rvc3.exporter import RVC3Exporter
 from modelconverter.utils.config import (
     Config,
     ImageCalibrationConfig,
     LinkCalibrationConfig,
+    OutputConfig,
     SingleStageConfig,
 )
 from modelconverter.utils.constants import INFERENCE_MARKER
@@ -220,7 +222,7 @@ def test_linked_output_calibration_points_at_the_output_dir(
 
 
 @pytest.mark.parametrize("platform", [Platform.RVC3, Platform.RVC4])
-def test_direct_link_records_nchw_layout(
+def test_direct_link_records_inferer_output_layout(
     exporter: MultiStageExporter, config: Config, platform: Platform
 ):
     exporter.platform = platform
@@ -233,7 +235,72 @@ def test_direct_link_records_nchw_layout(
 
     calibration = _resolved_calibration(config)
     assert calibration.generated_from_link
-    assert calibration.generated_layout == "NCHW"
+    expected = (
+        "NCHW"
+        if platform is Platform.RVC4
+        else config.stages["first"].outputs[1].layout
+    )
+    assert calibration.generated_layout == expected
+
+
+@pytest.mark.parametrize("source_layout", ["NHWC", "NCDE"])
+def test_direct_rvc3_link_uses_upstream_layout_for_feature_calibration(
+    exporter: MultiStageExporter,
+    config: Config,
+    work_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_layout: str,
+):
+    """A feature map retains its channel order when stage layouts differ."""
+    exporter.platform = Platform.RVC3
+    # Include negative values and more than three channels, as a backbone's
+    # feature map would. HWC is the sample order POT's NumPy reader expects.
+    expected = np.arange(160, dtype=np.float32).reshape(4, 5, 8) - 80
+    source = (
+        expected[None]
+        if source_layout == "NHWC"
+        else expected.transpose(2, 0, 1)[None]
+    )
+    config.stages["first"].outputs = [
+        OutputConfig(
+            name="features", shape=list(source.shape), layout=source_layout
+        )
+    ]
+    monkeypatch.setattr(
+        StubInferer, "infer", lambda _self, _inputs: {"features": source}
+    )
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 8, 4, 5]
+    inp.layout = "NCHW"
+    inp.calibration = LinkCalibrationConfig(stage="first", output="features")
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+
+    calibration = _resolved_calibration(config)
+    pot = object.__new__(RVC3Exporter)
+    pot.intermediate_outputs_dir = work_dir
+    pot._write_calibration_tensors(
+        inp, calibration, [calibration.path / "0.npy"], shape=inp.shape
+    )
+    np.testing.assert_array_equal(
+        np.load(work_dir / "calibration_tensors/0.npy"), expected
+    )
+
+
+def test_direct_flat_output_is_not_mislabeled_as_rank_four(
+    exporter: MultiStageExporter, config: Config
+):
+    """RVC4 keeps opaque buffers when a vector feeds a reshaped input."""
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 10, 1, 1]
+    inp.layout = "NCHW"
+    inp.calibration = LinkCalibrationConfig(stage="first", output="output0")
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+
+    calibration = _resolved_calibration(config)
+    assert not calibration.generated_from_link
+    assert np.load(calibration.path / "0.npy").shape == (1, 10)
 
 
 @pytest.mark.parametrize("platform", list(Platform))

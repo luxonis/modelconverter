@@ -654,7 +654,16 @@ select a method or override the archive's value.
 > a leading singleton batch axis in `.npy` files. RVC4/SNPE expects
 > channel-last image tensors (normally `NHWC`).
 >
-> This also applies to linked multi-stage tensor files. ModelConverter prepares
+> A linked calibration script can declare `calibration.layout` (for example,
+> `NCHW` or `HWC`) to let ModelConverter reorder its result for the quantizer.
+> These arrays must contain the receiving model's runtime input values; when
+> preprocessing is externalized, ModelConverter applies it before calibration.
+> Scripts without a layout keep the backend-ready tensor contract above.
+> Direct output links on RVC3 and RVC4 retain the upstream inferer's rank-four
+> layout and are reordered for calibration automatically. Flat outputs keep
+> their existing buffer order.
+>
+> ModelConverter prepares
 > image files and its generated random calibration samples for the backend.
 
 > [!NOTE]
