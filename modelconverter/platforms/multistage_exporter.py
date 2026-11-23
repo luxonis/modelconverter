@@ -178,7 +178,7 @@ class MultiStageExporter:
         calibration: ImageCalibrationConfig,
         link: LinkCalibrationConfig,
     ) -> None:
-        """Record a platform inferer's direct rank-four output layout."""
+        """Record how the inferer saves a rank-four model output."""
         source = next(
             output
             for output in self.exporters[link.stage].config.outputs
@@ -192,6 +192,9 @@ class MultiStageExporter:
             calibration.mark_generated_from_link("NCHW")
         elif self.platform is Platform.RVC3 and source.layout is not None:
             calibration.mark_generated_from_link(source.layout)
+        elif self.platform is Platform.HAILO:
+            # Hailo removes the batch axis and returns channels last.
+            calibration.mark_generated_from_link("HWC")
 
     @staticmethod
     def _mark_script_linked_layout(

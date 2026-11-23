@@ -659,8 +659,9 @@ select a method or override the archive's value.
 > These arrays must contain the receiving model's runtime input values; when
 > preprocessing is externalized, ModelConverter applies it before calibration.
 > Scripts without a layout keep the backend-ready tensor contract above.
-> Direct output links on RVC3 and RVC4 retain the upstream inferer's rank-four
-> layout and are reordered for calibration automatically. Flat outputs keep
+> Direct links from rank-four outputs on RVC3, RVC4 and Hailo retain the
+> upstream inferer's layout (batchless `HWC` on Hailo) and are reordered for
+> calibration and subsequent stage inference automatically. Flat outputs keep
 > their existing buffer order.
 >
 > ModelConverter prepares

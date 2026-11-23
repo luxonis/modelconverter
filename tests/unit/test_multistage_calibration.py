@@ -309,6 +309,37 @@ def test_direct_flat_output_is_not_mislabeled_as_rank_four(
     assert np.load(calibration.path / "0.npy").shape == (1, 10)
 
 
+def test_direct_hailo_link_keeps_hwc_calibration_and_prepares_chw_inference(
+    exporter: MultiStageExporter,
+    config: Config,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Hailo's batchless output must be CHW when rerunning the middle stage."""
+    exporter.platform = Platform.HAILO
+    source = np.arange(160, dtype=np.float32).reshape(4, 5, 8) - 80
+    config.stages["first"].outputs = [
+        OutputConfig(name="features", shape=[1, 8, 4, 5], layout="NCDE")
+    ]
+    monkeypatch.setattr(
+        StubInferer, "infer", lambda _self, _inputs: {"features": source}
+    )
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 8, 4, 5]
+    inp.layout = "NCDE"
+    inp.calibration = LinkCalibrationConfig(stage="first", output="features")
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+    calibration = _resolved_calibration(config)
+    np.testing.assert_array_equal(np.load(calibration.path / "0.npy"), source)
+    prepared = exporter._create_source_dir(
+        exporter.exporters["second"], "second"
+    )
+
+    np.testing.assert_array_equal(
+        np.load(prepared / inp.name / "0.npy"), source.transpose(2, 0, 1)
+    )
+
+
 @pytest.mark.parametrize("source_layout", ["CHW", "HWC"])
 @pytest.mark.parametrize("input_layout", ["NCHW", "NCDE"])
 def test_batchless_script_feature_map_uses_source_axes(
