@@ -17,8 +17,10 @@ from loguru import logger
 from modelconverter.utils.config import (
     Config,
     ImageCalibrationConfig,
+    InputConfig,
     LinkCalibrationConfig,
 )
+from modelconverter.utils.preprocessing import reorder_layout
 from modelconverter.utils.types import Platform
 
 from .base_exporter import Exporter
@@ -113,8 +115,34 @@ class MultiStageExporter:
             for i, file in enumerate(path.iterdir()):
                 if i == calib.max_images:
                     break
-                shutil.copy(file, inp_dest)
+                if calib.generated_from_link:
+                    self._prepare_linked_inference_file(
+                        inp_config, calib, file, inp_dest
+                    )
+                else:
+                    shutil.copy(file, inp_dest)
         return dest
+
+    def _prepare_linked_inference_file(
+        self,
+        inp: InputConfig,
+        calib: ImageCalibrationConfig,
+        file: Path,
+        dest: Path,
+    ) -> None:
+        """Prepare a linked middle stage's input for its vendor inferer."""
+        array, layout = Exporter._read_calibration_file(inp, calib, file)
+        target_layout = layout
+        if self.platform is Platform.RVC4:
+            if len(layout) in {3, 4} and layout.count("C") == 1:
+                target_layout = layout.replace("C", "") + "C"
+        elif self.platform is Platform.HAILO:
+            # The Hailo inferer takes one CHW sample and adds the NHWC batch.
+            target_layout = "C" + layout.replace("N", "", 1).replace("C", "")
+        elif inp.layout is not None:
+            target_layout = _linked_input_layout(layout, inp.layout)
+        array = reorder_layout(array, layout, target_layout)
+        np.save(dest / f"{file.stem}.npy", array)
 
     def _produce_calibration_data(self, exporter: Exporter) -> None:
         for inp_name, inp_config in exporter.inputs.items():
@@ -197,6 +225,18 @@ class MultiStageExporter:
         logger.debug(f"Initialized inferer {inferer}.")
         inferer.run()
         return dest_dir
+
+
+def _linked_input_layout(source: str, target: str) -> str:
+    """Express an OpenVINO input layout using the linked tensor's axis names."""
+    source_axes = [axis for axis in source if axis not in "NC"]
+    target_axes = [axis for axis in target if axis not in "NC"]
+    if set(source_axes) == set(target_axes):
+        return target
+    # Generic feature dimensions (D/E) correspond to spatial dimensions
+    # (H/W) in order. N and C keep their semantic positions.
+    aliases = dict(zip(target_axes, source_axes, strict=True))
+    return "".join(aliases.get(axis, axis) for axis in target)
 
 
 def _run_calibration_script(

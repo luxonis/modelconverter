@@ -162,6 +162,101 @@ def multistage_config(tmp_path_factory: pytest.TempPathFactory) -> Path:
     )
 
 
+@pytest.mark.rvc4
+def test_serial_linked_calibration(
+    tmp_path: Path, record_property: RecordProperty
+):
+    """A -> B -> C calibrates C from correctly ordered inputs to B."""
+    calib_dir = tmp_path / "calib"
+    calib_dir.mkdir()
+    for index in range(8):
+        _write_noise(calib_dir / f"{index}.png", seed=index)
+    stages: Params = {}
+    for name, previous in (
+        ("first", None),
+        ("second", "first"),
+        ("third", "second"),
+    ):
+        calibration: Params
+        if previous is None:
+            calibration = {"path": str(calib_dir), "max_images": 8}
+        elif name == "second":
+            calibration = {
+                "stage": previous,
+                "script": "def run_script(outputs):\n    return outputs['out']\n",
+                "layout": "NCHW",
+            }
+        else:
+            calibration = {"stage": previous, "output": "out"}
+        stages[name] = {
+            "input_model": str(
+                build_toy_conv_onnx(
+                    tmp_path / f"chain_{name}.onnx", size=_SIZE, out_channels=3
+                )
+            ),
+            "inputs": [
+                {
+                    "name": "img",
+                    "layout": "NCHW",
+                    "encoding": "BGR" if previous is None else "NONE",
+                    "calibration": calibration,
+                }
+            ],
+            "outputs": [{"name": "out", "layout": "NCHW"}],
+        }
+    path = write_config(tmp_path, "serial_chain", {"stages": stages})
+    output_name = "_serial-chain-rvc4"
+    convert(
+        Platform.RVC4,
+        path=str(path),
+        output_dir=output_name,
+        main_stage="third",
+        to="native",
+    )
+    cfg, _, _ = get_configs(Platform.RVC4, str(path), [])
+    root = OUTPUTS_DIR / output_name
+
+    def run_stage(name: str, feed: Path) -> npt.NDArray[np.generic]:
+        return get_inferer(
+            Platform.RVC4,
+            str(locate_converted_model(root / name, "rvc4")),
+            feed.parent,
+            root / f"check_{name}",
+            cfg.stages[name],
+        ).infer({"img": feed})["out"]
+
+    # Independently replay B with an explicitly prepared SNPE input. The
+    # stored B output used to calibrate C must match that inference exactly.
+    first = np.load(
+        root / "intermediate_outputs/inference_output/first/img/script/0.npy"
+    )
+    second_feed = tmp_path / "second.npy"
+    np.save(second_feed, first.transpose(0, 2, 3, 1))
+    second = run_stage("second", second_feed)
+    stored = root / "intermediate_outputs/chain_second_calibration/out/0.npy"
+    np.testing.assert_array_equal(np.load(stored), second)
+
+    # Also compare the full converted chain with its original ONNX models on
+    # a separate image from the same calibration distribution.
+    image = _write_noise(tmp_path / "inference.png", seed=100)
+    reference = ONNXReferenceInferer.from_stage(cfg.stages["first"]).infer(
+        image
+    )["out"]
+    actual = run_stage("first", image)
+    for name in ("second", "third"):
+        session = ort.InferenceSession(
+            str(cfg.stages[name].input_model),
+            providers=["CPUExecutionProvider"],
+        )
+        reference = np.asarray(session.run(["out"], {"img": reference})[0])
+        feed = tmp_path / f"{name}.npy"
+        np.save(feed, actual.transpose(0, 2, 3, 1))
+        actual = run_stage(name, feed)
+    check_relative_error(
+        record_property, "rvc4 serial chain", reference, actual, 0.05
+    )
+
+
 @pytest.mark.parametrize(
     "platform_name",
     platform_params(CONVERSION_ONLY_PLATFORMS, xfails=_CONVERT_XFAILS),

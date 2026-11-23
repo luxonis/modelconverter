@@ -183,6 +183,12 @@ def test_script_calibration_uses_only_the_output_dirs(
     assert produced == [f"{i}.npy" for i in range(N_CALIBRATION_IMAGES)]
     # (1, 10) and (1, 5, 5, 5) flattened and concatenated.
     assert np.load(path / "0.npy").shape == (135,)
+    prepared = exporter._create_source_dir(
+        exporter.exporters["second"], "second"
+    )
+    np.testing.assert_array_equal(
+        np.load(prepared / "input0/0.npy"), np.load(path / "0.npy")
+    )
 
 
 def test_inference_results_are_marked(exporter: MultiStageExporter):
@@ -343,6 +349,56 @@ def test_batchless_script_feature_map_uses_source_axes(
     np.testing.assert_array_equal(
         np.load(work_dir / "calibration_tensors/0.npy"), expected
     )
+
+
+@pytest.mark.parametrize(
+    "platform", [Platform.RVC3, Platform.RVC4, Platform.HAILO]
+)
+@pytest.mark.parametrize("source_layout", ["NCHW", "NHWC", "CHW", "HWC"])
+@pytest.mark.parametrize("input_layout", ["NCHW", "NCDE"])
+def test_linked_inference_sources_use_runtime_layout(
+    exporter: MultiStageExporter,
+    config: Config,
+    work_dir: Path,
+    *,
+    platform: Platform,
+    source_layout: str,
+    input_layout: str,
+):
+    """A linked middle stage must run on the same features used to calibrate it."""
+    exporter.platform = platform
+    nchw = np.arange(160, dtype=np.float32).reshape(1, 8, 4, 5) - 80
+    source = (
+        nchw.transpose(0, 2, 3, 1) if source_layout.endswith("C") else nchw
+    )
+    if "N" not in source_layout:
+        source = source[0]
+    directory = work_dir / "linked_features"
+    directory.mkdir()
+    np.save(directory / "0.npy", source)
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 8, 4, 5]
+    inp.layout = input_layout
+    calib = ImageCalibrationConfig(path=directory)
+    calib.mark_generated_from_link(source_layout)
+    inp.calibration = calib
+
+    prepared = exporter._create_source_dir(
+        exporter.exporters["second"], "second"
+    )
+
+    expected = nchw
+    if platform is Platform.RVC4:
+        expected = nchw.transpose(0, 2, 3, 1)
+        if "N" not in source_layout:
+            expected = expected[0]
+    elif platform is Platform.HAILO:
+        expected = nchw[0]
+    np.testing.assert_array_equal(
+        np.load(prepared / inp.name / "0.npy"), expected
+    )
+    # Preparing a later stage must not rewrite the calibration source itself.
+    np.testing.assert_array_equal(np.load(directory / "0.npy"), source)
 
 
 @pytest.mark.parametrize("platform", list(Platform))
