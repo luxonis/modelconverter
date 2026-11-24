@@ -110,3 +110,32 @@ jobs:
             $RESERVATION_OPTION \
             --sync-workspace --rsync-args="--exclude=venv" \
             --commands "$REMOTE_CMD"
+
+  notify-bom-failure:
+    name: Notify #ml-devs-gh of BOM failure
+    needs: [BOM-test]
+    if: >
+      always() && !cancelled() &&
+      startsWith(github.event.inputs.reservation_name, 'https://github.com/luxonis/luxonis-bom/actions/runs/') &&
+      needs.BOM-test.result == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to #ml-devs-gh
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: C06D4HWU7SQ
+        run: |
+          : "${SLACK_BOT_TOKEN:?Set the SLACK_BOT_TOKEN Actions secret to send BOM alerts}"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          message=$(printf '<@U03PLCLEFU2> :rotating_light: *Modelconverter BOM tests failed*\nTest run: %s' \
+            "$run_url")
+          payload=$(jq -n --arg channel "$SLACK_CHANNEL_ID" --arg text "$message" \
+            '{channel: $channel, text: $text}')
+          response=$(curl --silent --show-error --fail-with-body \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "$payload" https://slack.com/api/chat.postMessage)
+          jq -e '.ok == true' >/dev/null <<< "$response" || {
+            echo 'Slack rejected the BOM failure notification' >&2
+            exit 1
+          }
