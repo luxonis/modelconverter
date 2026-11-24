@@ -127,6 +127,8 @@ class LinkCalibrationConfig(BaseCalibrationConfig):
             Either the source code itself or a path to a ``.py`` file,
             whose contents are read during validation. Either ``output``
             or ``script`` must be provided.
+        layout: Layout of arrays returned by ``script``. When omitted, the
+            arrays use the backend-ready calibration tensor contract.
         resize_method: Image resize policy, also retained for inference
             and output archive metadata. Prepared tensors are not resized.
 
@@ -135,6 +137,7 @@ class LinkCalibrationConfig(BaseCalibrationConfig):
     stage: str
     output: str | None = None
     script: str | None = None
+    layout: str | None = None
 
     @model_validator(mode="after")
     def _validate(self) -> Self:
@@ -143,6 +146,11 @@ class LinkCalibrationConfig(BaseCalibrationConfig):
                 "Either `output` or `script` must be provided for calibration."
             )
         return self
+
+    @field_validator("layout", mode="after")
+    @staticmethod
+    def _normalize_layout(layout: str | None) -> str | None:
+        return None if layout is None else layout.upper()
 
     @field_validator("script", mode="after")
     @staticmethod
@@ -173,6 +181,7 @@ class ImageCalibrationConfig(BaseCalibrationConfig):
     path: Path
     max_images: int = -1
     _generated_from_random: bool = PrivateAttr(default=False)
+    _generated_from_link: bool = PrivateAttr(default=False)
     _generated_layout: str = PrivateAttr(default="")
 
     @property
@@ -181,15 +190,19 @@ class ImageCalibrationConfig(BaseCalibrationConfig):
         return self._generated_from_random
 
     @property
+    def generated_from_link(self) -> bool:
+        """Whether this file source was materialized from a stage link."""
+        return self._generated_from_link
+
+    @property
     def generated_layout(self) -> str:
         """Layout used when generated tensor calibration was materialized."""
         return self._generated_layout
 
     def is_user_tensor(self, path: Path) -> bool:
         """Whether a tensor file uses the backend-ready calibration contract."""
-        return (
-            path.suffix.lower() in {".npy", ".raw"}
-            and not self.generated_from_random
+        return path.suffix.lower() in {".npy", ".raw"} and not (
+            self.generated_from_random or self.generated_from_link
         )
 
     def mark_generated_from_random(self, layout: str) -> None:
@@ -200,6 +213,16 @@ class ImageCalibrationConfig(BaseCalibrationConfig):
 
         """
         self._generated_from_random = True
+        self._generated_layout = layout
+
+    def mark_generated_from_link(self, layout: str) -> None:
+        """Mark the files as written from linked inference results.
+
+        Args:
+            layout: Layout of the generated tensors.
+
+        """
+        self._generated_from_link = True
         self._generated_layout = layout
 
     @field_validator("path", mode="before")
@@ -1250,6 +1273,32 @@ class Config(LuxonisConfig):
     stages: Annotated[dict[str, SingleStageConfig], Field(min_length=1)]
     name: str
     rich_logging: bool = True
+
+    @model_validator(mode="after")
+    def _validate_spatial_links(self) -> Self:
+        spatial_outputs = {
+            (name, out.name)
+            for name, stage in self.stages.items()
+            for out in stage.outputs
+            if out.shape is not None and len(out.shape) == 4
+        }
+        for stage_name, stage in self.stages.items():
+            for inp in stage.inputs:
+                link = inp.calibration
+                if (
+                    isinstance(link, LinkCalibrationConfig)
+                    and (link.stage, link.output) in spatial_outputs
+                    and inp.shape is not None
+                    and len(inp.shape) not in {3, 4}
+                ):
+                    raise ValueError(
+                        f"Direct calibration link '{link.stage}.{link.output}' to "
+                        f"'{stage_name}.{inp.name}' changes a spatial output from "
+                        f"rank 4 to rank {len(inp.shape)}. Use calibration.script "
+                        "to reshape explicitly and set calibration.layout to "
+                        "the script result's layout."
+                    )
+        return self
 
     def get_stage_config(self, stage: str | None) -> SingleStageConfig:
         """Return the configuration of the given stage.

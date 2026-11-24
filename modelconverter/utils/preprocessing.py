@@ -174,6 +174,14 @@ def channels_last_4d_layout(layout: str) -> str:
     return layout
 
 
+def channels_last_spatial_layout(layout: str) -> str:
+    """Use HWC/NHWC for image axes, otherwise move a spatial tensor's C last."""
+    layout = channels_last_image_layout(layout)
+    if len(layout) in {3, 4} and layout.count("C") == 1:
+        return layout.replace("C", "") + "C"
+    return layout
+
+
 def read_user_calibration_tensor(
     path: Path,
     *,

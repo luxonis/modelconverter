@@ -1,11 +1,4 @@
-"""Suite-wide pytest configuration.
-
-Disables telemetry, sets up logging, pins the Hypothesis profile so that
-property tests are reproducible, applies the ``unit`` marker during
-collection, and deselects the other platforms' conversion tests inside
-a platform Docker image. The per-platform markers themselves are
-applied at parametrization, in `tests.helpers.platforms`.
-"""
+"""Shared pytest setup, platform selection, and precision reporting."""
 
 import os
 
@@ -14,6 +7,9 @@ from hypothesis import settings
 from luxonis_ml.utils import setup_logging
 
 os.environ.setdefault("LUXONIS_TELEMETRY_ENABLED", "false")
+# Exercise RVC3 CPU validation on hosts without VNNI, even on newer runners.
+if os.getenv("MODELCONVERTER_PLATFORM") == "rvc3":
+    os.environ.setdefault("DNNL_MAX_CPU_ISA", "AVX2")
 
 setup_logging()
 
@@ -73,3 +69,21 @@ def pytest_collection_modifyitems(
     if deselected:
         config.hook.pytest_deselected(items=deselected)
         items[:] = selected
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    """Show precision margins even when all checks pass."""
+    reports = [
+        report
+        for key in ("passed", "failed")
+        for report in terminalreporter.stats.get(key, [])
+        if report.when == "call" and report.user_properties
+    ]
+    if not reports:
+        return
+    terminalreporter.section("precision")
+    for report in reports:
+        values = ", ".join(
+            f"{name} {value}" for name, value in report.user_properties
+        )
+        terminalreporter.write_line(f"{report.nodeid}: {values}")

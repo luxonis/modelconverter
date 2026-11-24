@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import numpy as np
+import onnx
 import pytest
 from onnx import TensorProto
 
@@ -25,6 +27,7 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.types import Encoding, InputFileType
 from tests.helpers.onnx_factory import build_onnx, single_io_onnx
+from tests.helpers.onnx_reference import _create_onnx_session
 
 
 def _mock_tflite_metadata(
@@ -347,6 +350,135 @@ def test_selective_bgr_to_rgb_reversal_preserves_runtime_encoding(
     reversed_input = exporter.inputs["reversed"]
     assert reversed_input.encoding.from_ == Encoding.RGB
     assert reversed_input.encoding.to == Encoding.RGB
+
+
+@pytest.mark.parametrize("ov_2021", [True, False], ids=["2021.4", "2022.3"])
+@pytest.mark.parametrize(
+    ("layout", "shape", "channel_axis"),
+    [("NHWC", [1, 8, 8, 3], 3), ("HWC", [8, 8, 3], 2)],
+)
+def test_channels_last_reversal_moves_into_onnx_on_openvino_2021(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    ov_2021: bool,
+    layout: str,
+    shape: list[int],
+    channel_axis: int,
+):
+    model = build_onnx(
+        tmp_path / f"{layout.lower()}.onnx",
+        [("input", shape, TensorProto.FLOAT)],
+        [("output", shape, TensorProto.FLOAT)],
+    ).resolve()
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "inputs": [
+                {
+                    "name": "input",
+                    "layout": layout,
+                    "encoding": {"from": "RGB", "to": "BGR"},
+                }
+            ],
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc2.disable_calibration": True,
+        },
+    )
+    monkeypatch.setattr(
+        "modelconverter.platforms.rvc2.exporter.OV_2021", ov_2021
+    )
+    output_dir = tmp_path / f"out-rvc2-{layout.lower()}"
+    output_dir.mkdir()
+    exporter = RVC2Exporter(next(iter(config.stages.values())), output_dir)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        exporter,
+        "_subprocess_run",
+        lambda command, **_kwargs: commands.append(command),
+    )
+
+    exporter._export_openvino_ir()
+
+    (command,) = commands
+    input_model = command[command.index("--input_model") + 1]
+    split_axes = [
+        attribute.i
+        for node in onnx.load(input_model).graph.node
+        if node.op_type == "Split"
+        for attribute in node.attribute
+        if attribute.name == "axis"
+    ]
+    assert ("--reverse_input_channels" in command) is not ov_2021
+    assert split_axes == ([channel_axis] if ov_2021 else [])
+
+
+@pytest.mark.parametrize("encoding", ["RGB", "BGR"])
+def test_openvino_2021_embeds_nhwc_normalization_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, encoding: str
+):
+    shape = [1, 2, 4, 3]
+    model = build_onnx(
+        tmp_path / "nhwc.onnx",
+        [
+            ("image", shape, TensorProto.FLOAT),
+            ("features", [1, 8], TensorProto.FLOAT),
+        ],
+        [
+            ("normalized", shape, TensorProto.FLOAT),
+            ("unchanged", [1, 8], TensorProto.FLOAT),
+        ],
+    ).resolve()
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "inputs": [
+                {
+                    "name": "image",
+                    "layout": "NHWC",
+                    "encoding": {"from": encoding, "to": "BGR"},
+                    "mean_values": [10, 20, 30],
+                    "scale_values": [2, 4, 8],
+                },
+                {"name": "features", "encoding": "NONE"},
+            ],
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+        },
+    )
+    monkeypatch.setattr("modelconverter.platforms.rvc2.exporter.OV_2021", True)
+    output_dir = tmp_path / "normalized-output"
+    output_dir.mkdir()
+    exporter = RVC2Exporter(next(iter(config.stages.values())), output_dir)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        exporter,
+        "_subprocess_run",
+        lambda command, **_kwargs: commands.append(command),
+    )
+
+    exporter._export_openvino_ir()
+
+    (command,) = commands
+    assert not {
+        "--mean_values",
+        "--scale_values",
+        "--reverse_input_channels",
+    }.intersection(command)
+    image = np.arange(24, dtype=np.float32).reshape(shape)
+    features = np.arange(8, dtype=np.float32)[None]
+    normalized, unchanged = _create_onnx_session(exporter._input_model).run(
+        None, {"image": image, "features": features}
+    )
+    source = image[..., ::-1] if encoding == "RGB" else image
+    np.testing.assert_allclose(
+        np.asarray(normalized, dtype=np.float32),
+        (source - [10, 20, 30]) / [2, 4, 8],
+    )
+    np.testing.assert_array_equal(unchanged, features)
 
 
 @pytest.mark.parametrize(

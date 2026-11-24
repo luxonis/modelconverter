@@ -14,10 +14,16 @@ from pathlib import Path
 import numpy as np
 from loguru import logger
 
+from modelconverter.utils import ModelconverterException
 from modelconverter.utils.config import (
     Config,
     ImageCalibrationConfig,
+    InputConfig,
     LinkCalibrationConfig,
+)
+from modelconverter.utils.preprocessing import (
+    channels_last_spatial_layout,
+    reorder_layout,
 )
 from modelconverter.utils.types import Platform
 
@@ -113,8 +119,35 @@ class MultiStageExporter:
             for i, file in enumerate(path.iterdir()):
                 if i == calib.max_images:
                     break
-                shutil.copy(file, inp_dest)
+                if calib.generated_from_link:
+                    self._prepare_linked_inference_file(
+                        inp_config, calib, file, inp_dest
+                    )
+                else:
+                    shutil.copy(file, inp_dest)
         return dest
+
+    def _prepare_linked_inference_file(
+        self,
+        inp: InputConfig,
+        calib: ImageCalibrationConfig,
+        file: Path,
+        dest: Path,
+    ) -> None:
+        array, layout = Exporter.read_calibration_file(inp, calib, file)
+        target_layout = layout
+        if self.platform is Platform.RVC4:
+            target_layout = channels_last_spatial_layout(layout)
+        elif self.platform is Platform.HAILO:
+            # The Hailo inferer takes one CHW sample and adds the NHWC batch.
+            sample_layout = channels_last_spatial_layout(layout).replace(
+                "N", "", 1
+            )
+            target_layout = "C" + sample_layout.replace("C", "")
+        elif inp.layout is not None:
+            target_layout = _linked_input_layout(layout, inp.layout)
+        array = reorder_layout(array, layout, target_layout)
+        np.save(dest / f"{file.stem}.npy", array)
 
     def _produce_calibration_data(self, exporter: Exporter) -> None:
         for inp_name, inp_config in exporter.inputs.items():
@@ -124,9 +157,11 @@ class MultiStageExporter:
 
             dest_dir = self._infer_linked_stage(calib.stage)
             if calib.output is not None:
-                inp_config.calibration = calib.to_image_calibration(
+                calibration = calib.to_image_calibration(
                     dest_dir / calib.output
                 )
+                self._mark_direct_linked_layout(calibration, calib)
+                inp_config.calibration = calibration
             elif calib.script is not None:
                 # Keyed by the receiving input, not just the linked stage:
                 # several inputs of this stage may link to the same previous
@@ -139,7 +174,37 @@ class MultiStageExporter:
                     / "script"
                 )
                 _run_calibration_script(calib.script, dest_dir, dest)
-                inp_config.calibration = calib.to_image_calibration(dest)
+                calibration = calib.to_image_calibration(dest)
+                self._mark_script_linked_layout(calibration, calib.layout)
+                inp_config.calibration = calibration
+
+    def _mark_direct_linked_layout(
+        self,
+        calibration: ImageCalibrationConfig,
+        link: LinkCalibrationConfig,
+    ) -> None:
+        source = next(
+            output
+            for output in self.exporters[link.stage].config.outputs
+            if output.name == link.output
+        )
+        # The receiving input's layout does not describe the saved output.
+        if source.shape is None or len(source.shape) != 4:
+            return
+        if self.platform is Platform.RVC4:
+            calibration.mark_generated_from_link("NCHW")
+        elif self.platform is Platform.RVC3 and source.layout is not None:
+            calibration.mark_generated_from_link(source.layout)
+        elif self.platform is Platform.HAILO:
+            # Hailo removes the batch axis and returns channels last.
+            calibration.mark_generated_from_link("HWC")
+
+    @staticmethod
+    def _mark_script_linked_layout(
+        calibration: ImageCalibrationConfig, layout: str | None
+    ) -> None:
+        if layout is not None:
+            calibration.mark_generated_from_link(layout)
 
     def _infer_linked_stage(self, stage: str) -> Path:
         """Run the model of a linked stage on its calibration data.
@@ -165,6 +230,31 @@ class MultiStageExporter:
         logger.debug(f"Initialized inferer {inferer}.")
         inferer.run()
         return dest_dir
+
+
+def _linked_input_layout(source: str, target: str) -> str:
+    """Express an OpenVINO input layout using the linked tensor's axis names."""
+    source_axes = [
+        axis
+        for axis in channels_last_spatial_layout(source)
+        if axis not in "NC"
+    ]
+    target_axes = [
+        axis
+        for axis in channels_last_spatial_layout(target)
+        if axis not in "NC"
+    ]
+    if set(source_axes) == set(target_axes):
+        return target
+    if len(source_axes) != len(target_axes):
+        raise ModelconverterException(
+            f"Cannot map linked layout '{source}' to input layout '{target}'. "
+            "Use calibration.script to reshape the output explicitly and "
+            "set calibration.layout to the script result's layout."
+        )
+    # Match generic spatial axes (D/E) to H/W in canonical order.
+    aliases = dict(zip(target_axes, source_axes, strict=True))
+    return "".join(aliases.get(axis, axis) for axis in target)
 
 
 def _run_calibration_script(

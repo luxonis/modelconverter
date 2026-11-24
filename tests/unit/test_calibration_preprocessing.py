@@ -217,7 +217,7 @@ def test_externalized_image_is_preprocessed(dummy_onnx: Path, tmp_path: Path):
     calib = inp.calibration
     assert isinstance(calib, ImageCalibrationConfig)
 
-    array, layout = Exporter._read_calibration_file(
+    array, layout = Exporter.read_calibration_file(
         inp,
         calib,
         image_path,
@@ -293,7 +293,7 @@ def test_externalized_grayscale_image_keeps_single_channel(
     calib = inp.calibration
     assert isinstance(calib, ImageCalibrationConfig)
 
-    array, layout = Exporter._read_calibration_file(
+    array, layout = Exporter.read_calibration_file(
         inp,
         calib,
         image_path,
@@ -322,7 +322,7 @@ def test_generated_numpy_calibration_is_managed(
     assert inp.layout is not None
     calib._generated_layout = inp.layout
 
-    array, layout = Exporter._read_calibration_file(
+    array, layout = Exporter.read_calibration_file(
         inp,
         calib,
         npy_path,

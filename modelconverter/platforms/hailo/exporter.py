@@ -34,7 +34,7 @@ from modelconverter.utils.config import (
     broadcast_preprocessing_values,
 )
 from modelconverter.utils.preprocessing import (
-    channels_last_4d_layout,
+    channels_last_spatial_layout,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -261,20 +261,20 @@ class HailoExporter(Exporter):
                 return img[0]
             return img
 
-        img, layout = self._read_calibration_file(inp, calib, path)
+        img, layout = self.read_calibration_file(inp, calib, path)
+        # Equal axis sizes can hide a channel permutation in a shape check.
         if (
-            calib.generated_from_random
-            and img.ndim == 4
+            (calib.generated_from_random or calib.generated_from_link)
+            and img.ndim in {3, 4}
             and len(shape) == 3
-            and "N" in layout
+            and len(layout.replace("N", "")) == 3
             and layout.count("C") == 1
         ):
-            # Hailo moves the channel axis last even for non-image inputs.
-            # Shape equality cannot reveal that move when the axes have
-            # equal sizes.
-            sample_layout = channels_last_4d_layout(layout).replace("N", "", 1)
+            sample_layout = channels_last_spatial_layout(layout).replace(
+                "N", "", 1
+            )
             return reorder_layout(img, layout, sample_layout)
-        if img.shape != tuple(shape):
+        if calib.generated_from_link or img.shape != tuple(shape):
             return _fit_hailo_sample(img, shape, layout)
         return img
 
@@ -428,10 +428,10 @@ def _fit_hailo_sample(
     array: npt.NDArray[_ScalarT], shape: list[int], layout: str
 ) -> npt.NDArray[_ScalarT]:
     """Drop the batch axis, or reorder the axes, to match the Hailo input."""
-    if array.shape == (1, *shape):
-        return array[0]
     if _is_hwc_sample(shape, layout):
         return reorder_layout(array, layout, "HWC")
+    if array.shape == (1, *shape):
+        return array[0]
     if "N" in layout and array.shape[layout.index("N")] == 1:
         return reorder_layout(array, layout, layout.replace("N", ""))
     return array

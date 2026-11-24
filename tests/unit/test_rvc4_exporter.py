@@ -790,7 +790,7 @@ def test_externalized_calibration_matches_embedded_model_output(
     embedded_input = embedded.inputs["input0"]
     embedded_calibration = embedded_input.calibration
     assert isinstance(embedded_calibration, ImageCalibrationConfig)
-    runtime_array, runtime_layout = embedded._read_calibration_file(
+    runtime_array, runtime_layout = embedded.read_calibration_file(
         embedded_input, embedded_calibration, image_path
     )
     runtime_array = reorder_layout(runtime_array, runtime_layout, "NCHW")
@@ -798,7 +798,7 @@ def test_externalized_calibration_matches_embedded_model_output(
     externalized_input = externalized.inputs["input0"]
     externalized_calibration = externalized_input.calibration
     assert isinstance(externalized_calibration, ImageCalibrationConfig)
-    model_array, model_layout = externalized._read_calibration_file(
+    model_array, model_layout = externalized.read_calibration_file(
         externalized_input, externalized_calibration, image_path
     )
     model_array = reorder_layout(model_array, model_layout, "NCHW")
@@ -841,6 +841,66 @@ def test_user_raw_calibration_is_referenced_without_rewriting(tmp_path: Path):
     np.testing.assert_array_equal(
         np.fromfile(raw_path, dtype=np.float32).reshape(source.shape), source
     )
+
+
+@pytest.mark.parametrize(
+    "layout",
+    [
+        "NCHW",
+        "NHWC",
+        "NCDE",
+        "NDEC",
+        "CHW",
+        "HWC",
+        "CDE",
+        "DEC",
+        "NWHC",
+        "WHC",
+    ],
+)
+def test_linked_numpy_calibration_is_serialized_channels_last(
+    tmp_path: Path, layout: str
+):
+    shape = [1, 8, 4, 5]
+    model = single_io_onnx(
+        tmp_path / "linked.onnx", shape=shape, output_shape=shape
+    ).resolve()
+    calibration_dir = tmp_path / "linked-calibration"
+    calibration_dir.mkdir()
+    expected = np.arange(160, dtype=np.float32).reshape(1, 4, 5, 8) - 80
+    source = (
+        expected if layout.endswith("C") else expected.transpose(0, 3, 1, 2)
+    )
+    if layout.endswith("WHC"):
+        source = expected.transpose(0, 2, 1, 3)
+    if "N" not in layout:
+        source = source[0]
+    np.save(calibration_dir / "sample.npy", source)
+    config = Config.get_config(
+        None,
+        {
+            "input_model": str(model),
+            "shape": shape,
+            "layout": "NCDE",
+            "encoding": "NONE",
+            "calibration": {"path": str(calibration_dir)},
+            "onnx_simplification": False,
+            "onnx_optimizations": False,
+            "rvc4.quantization_mode": "CUSTOM",
+        },
+    )
+    output_dir = tmp_path / "linked-output"
+    output_dir.mkdir()
+    exporter = RVC4Exporter(next(iter(config.stages.values())), output_dir)
+    calibration = exporter.inputs["input0"].calibration
+    assert isinstance(calibration, ImageCalibrationConfig)
+    calibration.mark_generated_from_link(layout)
+
+    input_list = exporter._prepare_calibration_data()
+
+    raw_path = Path(input_list.read_text().split(":=", 1)[1].strip())
+    actual = np.fromfile(raw_path, dtype=np.float32).reshape(expected.shape)
+    np.testing.assert_array_equal(actual, expected)
 
 
 def test_user_numpy_calibration_is_serialized_without_shape_interpretation(
