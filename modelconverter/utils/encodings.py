@@ -41,9 +41,9 @@ class QuantizationOverridesItem(BaseModelExtraForbid):
     is_symmetric: Annotated[
         bool | None,
         PlainSerializer(
-            lambda value: None if value is None else str(value),
-            return_type=str | None,
-            when_used="json",
+            str,
+            return_type=str,
+            when_used="json-unless-none",
         ),
     ] = None
     dtype: Literal["int", "float"] | None = None
