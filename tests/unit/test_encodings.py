@@ -17,6 +17,7 @@ from luxonis_ml.typing import Params, ParamValue
 from modelconverter.utils.encodings import (
     ALLOWED_ENCODING_KEYS,
     Encodings,
+    QuantizationOverridesItem,
     _expand_encoding_item,
     _normalize_encoding_group,
     _normalize_encoding_item,
@@ -29,6 +30,19 @@ from tests.helpers.strategies import (
     encoding_groups,
     encoding_items,
 )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [(True, "True"), (False, "False"), (None, None)]
+)
+def test_symmetric_encoding_serialization(
+    *, value: bool | None, expected: str | None
+):
+    item = QuantizationOverridesItem(is_symmetric=value)
+
+    assert item.model_dump()["is_symmetric"] is value
+    assert item.model_dump(mode="json")["is_symmetric"] == expected
+    assert json.loads(item.model_dump_json())["is_symmetric"] == expected
 
 
 @pytest.mark.parametrize(
