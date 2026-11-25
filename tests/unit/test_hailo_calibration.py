@@ -267,8 +267,9 @@ def test_user_tensor_with_wrong_shape_is_rejected(
         exporter._get_calibration_data(_Runner([1, 2, 2, 3]))
 
 
+@pytest.mark.parametrize("origin", ["random", "link"])
 def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
-    hailo_exporter_module: ModuleType, tmp_path: Path
+    hailo_exporter_module: ModuleType, tmp_path: Path, origin: str
 ) -> None:
     calibration_dir = tmp_path / "calibration"
     calibration_dir.mkdir()
@@ -284,8 +285,10 @@ def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
     calibration = inp.calibration
     assert isinstance(calibration, ImageCalibrationConfig)
     assert inp.layout == "NCHW"
-    calibration._generated_from_random = True
-    calibration._generated_layout = inp.layout
+    if origin == "random":
+        calibration.mark_generated_from_random(inp.layout)
+    else:
+        calibration.mark_generated_from_link(inp.layout)
 
     actual = exporter._get_calibration_data(_Runner([1, 3, 3, 3]))[
         "hailo_input"
@@ -293,6 +296,58 @@ def test_generated_tensor_reorders_even_when_axis_sizes_are_equal(
 
     means = np.array([1, 2, 3], dtype=np.float32).reshape(1, 3, 1, 1)
     expected = ((source - means) / 2).transpose(0, 2, 3, 1)[0]
+    np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    "layout",
+    [
+        "NCHW",
+        "NHWC",
+        "CHW",
+        "HWC",
+        "NWHC",
+        "WHC",
+        "NCDE",
+        "NDEC",
+        "CDE",
+        "DEC",
+    ],
+)
+def test_linked_feature_map_keeps_values_in_hailo_sample_order(
+    hailo_exporter_module: ModuleType, tmp_path: Path, layout: str
+):
+    expected = np.arange(160, dtype=np.float32).reshape(4, 5, 8) - 80
+    source = (
+        expected.transpose(2, 0, 1)
+        if layout.endswith(("HW", "DE"))
+        else expected
+    )
+    if layout.endswith("WHC"):
+        source = expected.transpose(1, 0, 2)
+    if layout.startswith("N"):
+        source = source[None]
+    calibration_dir = tmp_path / "features"
+    calibration_dir.mkdir()
+    np.save(calibration_dir / "sample.npy", source)
+    inp = InputConfig.model_validate(
+        {
+            "name": "input0",
+            "shape": [1, 8, 4, 5],
+            "layout": "NCHW",
+            "encoding": "NONE",
+            "calibration": {"path": str(calibration_dir)},
+        }
+    )
+    assert isinstance(inp.calibration, ImageCalibrationConfig)
+    inp.calibration.mark_generated_from_link(layout)
+    exporter = object.__new__(hailo_exporter_module.HailoExporter)
+    exporter._inputs = {"input0": inp}
+
+    actual = exporter._get_calibration_data(_Runner([1, 4, 5, 8]))[
+        "hailo_input"
+    ][0]
+
     np.testing.assert_array_equal(actual, expected)
 
 

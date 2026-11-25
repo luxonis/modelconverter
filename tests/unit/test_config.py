@@ -809,8 +809,9 @@ def test_link_with_output():
 
 
 def test_link_with_inline_script():
-    cal = LinkCalibrationConfig(stage="s", script="print('hi')")
+    cal = LinkCalibrationConfig(stage="s", script="print('hi')", layout="nchw")
     assert cal.script == "print('hi')"
+    assert cal.layout == "NCHW"
 
 
 def test_link_with_script_file():

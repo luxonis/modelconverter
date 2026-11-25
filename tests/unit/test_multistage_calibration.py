@@ -13,15 +13,19 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 import pytest
+from pydantic import ValidationError
 from typing_extensions import override
 
 from modelconverter.platforms import multistage_exporter
 from modelconverter.platforms.base_inferer import Inferer
 from modelconverter.platforms.multistage_exporter import MultiStageExporter
+from modelconverter.platforms.rvc3.exporter import RVC3Exporter
+from modelconverter.utils import ModelconverterException
 from modelconverter.utils.config import (
     Config,
     ImageCalibrationConfig,
     LinkCalibrationConfig,
+    OutputConfig,
     SingleStageConfig,
 )
 from modelconverter.utils.constants import INFERENCE_MARKER
@@ -174,11 +178,19 @@ def test_script_calibration_uses_only_the_output_dirs(
     """
     exporter._produce_calibration_data(exporter.exporters["second"])
 
-    path = _resolved_calibration(config).path
+    calibration = _resolved_calibration(config)
+    assert not calibration.generated_from_link
+    path = calibration.path
     produced = sorted(p.name for p in path.iterdir())
     assert produced == [f"{i}.npy" for i in range(N_CALIBRATION_IMAGES)]
     # (1, 10) and (1, 5, 5, 5) flattened and concatenated.
     assert np.load(path / "0.npy").shape == (135,)
+    prepared = exporter._create_source_dir(
+        exporter.exporters["second"], "second"
+    )
+    np.testing.assert_array_equal(
+        np.load(prepared / "input0/0.npy"), np.load(path / "0.npy")
+    )
 
 
 def test_inference_results_are_marked(exporter: MultiStageExporter):
@@ -217,6 +229,269 @@ def test_linked_output_calibration_points_at_the_output_dir(
     ]
 
 
+@pytest.mark.parametrize("platform", [Platform.RVC3, Platform.RVC4])
+def test_direct_link_records_inferer_output_layout(
+    exporter: MultiStageExporter, config: Config, platform: Platform
+):
+    exporter.platform = platform
+    second = config.stages["second"]
+    second.inputs[0].calibration = LinkCalibrationConfig(
+        stage="first", output="output1"
+    )
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+
+    calibration = _resolved_calibration(config)
+    assert calibration.generated_from_link
+    expected = (
+        "NCHW"
+        if platform is Platform.RVC4
+        else config.stages["first"].outputs[1].layout
+    )
+    assert calibration.generated_layout == expected
+
+
+@pytest.mark.parametrize("source_layout", ["NHWC", "NCDE", "NWHC"])
+@pytest.mark.parametrize("input_layout", ["NCHW", "NHWC", "NCDE", "NWHC"])
+def test_direct_rvc3_link_uses_upstream_layout_for_feature_calibration(
+    exporter: MultiStageExporter,
+    config: Config,
+    work_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    source_layout: str,
+    input_layout: str,
+):
+    exporter.platform = Platform.RVC3
+    # Backbone features can be negative; POT expects HWC samples.
+    expected = np.arange(160, dtype=np.float32).reshape(4, 5, 8) - 80
+    source = (
+        expected[None]
+        if source_layout == "NHWC"
+        else expected.transpose(2, 0, 1)[None]
+    )
+    if source_layout == "NWHC":
+        source = expected.transpose(1, 0, 2)[None]
+    config.stages["first"].outputs = [
+        OutputConfig(
+            name="features", shape=list(source.shape), layout=source_layout
+        )
+    ]
+    monkeypatch.setattr(
+        StubInferer, "infer", lambda _self, _inputs: {"features": source}
+    )
+    inp = config.stages["second"].inputs[0]
+    dimensions = {"N": 1, "C": 8, "H": 4, "W": 5, "D": 4, "E": 5}
+    inp.shape = [dimensions[axis] for axis in input_layout]
+    inp.layout = input_layout
+    inp.calibration = LinkCalibrationConfig(stage="first", output="features")
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+
+    calibration = _resolved_calibration(config)
+    pot = object.__new__(RVC3Exporter)
+    pot.intermediate_outputs_dir = work_dir
+    pot._write_calibration_tensors(
+        inp, calibration, [calibration.path / "0.npy"], shape=inp.shape
+    )
+    np.testing.assert_array_equal(
+        np.load(work_dir / "calibration_tensors/0.npy"), expected
+    )
+
+
+def test_direct_flat_output_is_not_mislabeled_as_rank_four(
+    exporter: MultiStageExporter, config: Config
+):
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 10, 1, 1]
+    inp.layout = "NCHW"
+    inp.calibration = LinkCalibrationConfig(stage="first", output="output0")
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+
+    calibration = _resolved_calibration(config)
+    assert not calibration.generated_from_link
+    assert np.load(calibration.path / "0.npy").shape == (1, 10)
+
+
+def test_direct_hailo_link_keeps_hwc_calibration_and_prepares_chw_inference(
+    exporter: MultiStageExporter,
+    config: Config,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    exporter.platform = Platform.HAILO
+    source = np.arange(160, dtype=np.float32).reshape(4, 5, 8) - 80
+    config.stages["first"].outputs = [
+        OutputConfig(name="features", shape=[1, 8, 4, 5], layout="NCDE")
+    ]
+    monkeypatch.setattr(
+        StubInferer, "infer", lambda _self, _inputs: {"features": source}
+    )
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 8, 4, 5]
+    inp.layout = "NCDE"
+    inp.calibration = LinkCalibrationConfig(stage="first", output="features")
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+    calibration = _resolved_calibration(config)
+    np.testing.assert_array_equal(np.load(calibration.path / "0.npy"), source)
+    prepared = exporter._create_source_dir(
+        exporter.exporters["second"], "second"
+    )
+
+    np.testing.assert_array_equal(
+        np.load(prepared / inp.name / "0.npy"), source.transpose(2, 0, 1)
+    )
+
+
+@pytest.mark.parametrize("source_layout", ["CHW", "HWC"])
+@pytest.mark.parametrize("input_layout", ["NCHW", "NCDE"])
+def test_batchless_script_feature_map_uses_source_axes(
+    exporter: MultiStageExporter,
+    config: Config,
+    work_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    source_layout: str,
+    input_layout: str,
+):
+    exporter.platform = Platform.RVC3
+    expected = np.arange(160, dtype=np.float32).reshape(4, 5, 8) - 80
+    source = (
+        expected if source_layout == "HWC" else expected.transpose(2, 0, 1)
+    )
+    monkeypatch.setattr(
+        StubInferer, "infer", lambda _self, _inputs: {"features": source[None]}
+    )
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 8, 4, 5]
+    inp.layout = input_layout
+    inp.calibration = LinkCalibrationConfig(
+        stage="first",
+        script="def run_script(outputs):\n    return outputs['features'][0]\n",
+        layout=source_layout,
+    )
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+
+    calibration = _resolved_calibration(config)
+    pot = object.__new__(RVC3Exporter)
+    pot.intermediate_outputs_dir = work_dir
+    pot._write_calibration_tensors(
+        inp, calibration, [calibration.path / "0.npy"], shape=inp.shape
+    )
+    np.testing.assert_array_equal(
+        np.load(work_dir / "calibration_tensors/0.npy"), expected
+    )
+
+
+@pytest.mark.parametrize(
+    "platform", [Platform.RVC3, Platform.RVC4, Platform.HAILO]
+)
+@pytest.mark.parametrize(
+    "source_layout",
+    [
+        "NCHW",
+        "NHWC",
+        "CHW",
+        "HWC",
+        "NCDE",
+        "NDEC",
+        "CDE",
+        "DEC",
+        "NWHC",
+        "WHC",
+    ],
+)
+@pytest.mark.parametrize("input_layout", ["NCHW", "NCDE"])
+def test_linked_inference_sources_use_runtime_layout(
+    exporter: MultiStageExporter,
+    config: Config,
+    work_dir: Path,
+    *,
+    platform: Platform,
+    source_layout: str,
+    input_layout: str,
+):
+    exporter.platform = platform
+    nchw = np.arange(160, dtype=np.float32).reshape(1, 8, 4, 5) - 80
+    source = (
+        nchw.transpose(0, 2, 3, 1) if source_layout.endswith("C") else nchw
+    )
+    if source_layout.endswith("WHC"):
+        source = nchw.transpose(0, 3, 2, 1)
+    if "N" not in source_layout:
+        source = source[0]
+    directory = work_dir / "linked_features"
+    directory.mkdir()
+    np.save(directory / "0.npy", source)
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 8, 4, 5]
+    inp.layout = input_layout
+    calib = ImageCalibrationConfig(path=directory)
+    calib.mark_generated_from_link(source_layout)
+    inp.calibration = calib
+
+    prepared = exporter._create_source_dir(
+        exporter.exporters["second"], "second"
+    )
+
+    expected = nchw
+    if platform is Platform.RVC4:
+        expected = nchw.transpose(0, 2, 3, 1)
+        if "N" not in source_layout:
+            expected = expected[0]
+    elif platform is Platform.HAILO:
+        expected = nchw[0]
+    np.testing.assert_array_equal(
+        np.load(prepared / inp.name / "0.npy"), expected
+    )
+    np.testing.assert_array_equal(np.load(directory / "0.npy"), source)
+
+
+def test_linked_vector_keeps_its_buffer_order(
+    exporter: MultiStageExporter, config: Config, work_dir: Path
+):
+    exporter.platform = Platform.RVC4
+    source = np.arange(10, dtype=np.float32).reshape(1, 10)
+    directory = work_dir / "linked_vector"
+    directory.mkdir()
+    np.save(directory / "0.npy", source)
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 10]
+    inp.layout = "NC"
+    calib = ImageCalibrationConfig(path=directory)
+    calib.mark_generated_from_link("NC")
+    inp.calibration = calib
+
+    prepared = exporter._create_source_dir(
+        exporter.exporters["second"], "second"
+    )
+
+    np.testing.assert_array_equal(
+        np.load(prepared / inp.name / "0.npy"), source
+    )
+
+
+@pytest.mark.parametrize("platform", list(Platform))
+def test_script_link_records_declared_layout(
+    exporter: MultiStageExporter, config: Config, platform: Platform
+):
+    exporter.platform = platform
+    second = config.stages["second"]
+    second.inputs[0].calibration = LinkCalibrationConfig(
+        stage="first",
+        script="def run_script(outputs):\n    return outputs['output1']\n",
+        layout="NCHW",
+    )
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+
+    calibration = _resolved_calibration(config)
+    assert calibration.generated_from_link
+    assert calibration.generated_layout == "NCHW"
+
+
 def test_two_script_linked_inputs_calibrate_with_their_own_scripts(
     exporter: MultiStageExporter, config: Config
 ):
@@ -245,3 +520,72 @@ def test_two_script_linked_inputs_calibrate_with_their_own_scripts(
     # (1, 10) and (1, 5, 5, 5) concatenated for one input; only (1, 10)
     # flattened for the other.
     assert shapes == [(135,), (10,)]
+
+
+def test_direct_spatial_link_to_vector_requires_explicit_reshape(
+    config: Config,
+):
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 125]
+    inp.layout = "NC"
+    inp.calibration = LinkCalibrationConfig(stage="first", output="output1")
+
+    with pytest.raises(
+        ValidationError, match=r"rank 4 to rank 2.*calibration\.script"
+    ):
+        Config.model_validate(config.model_dump(by_alias=True))
+
+
+def test_script_can_flatten_spatial_output_in_explicit_order(
+    exporter: MultiStageExporter,
+    config: Config,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    exporter.platform = Platform.RVC3
+    source = np.arange(125, dtype=np.float32).reshape(1, 5, 5, 5) - 60
+    monkeypatch.setattr(
+        StubInferer, "infer", lambda _self, _inputs: {"output1": source}
+    )
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 125]
+    inp.layout = "NC"
+    inp.calibration = LinkCalibrationConfig(
+        stage="first",
+        script="def run_script(outputs):\n    return outputs['output1'].reshape(1, -1)\n",
+        layout="NC",
+    )
+    Config.model_validate(config.model_dump(by_alias=True))
+
+    exporter._produce_calibration_data(exporter.exporters["second"])
+    calibration = _resolved_calibration(config)
+    prepared = exporter._create_source_dir(
+        exporter.exporters["second"], "second"
+    )
+
+    expected = source.reshape(1, 125)
+    np.testing.assert_array_equal(
+        np.load(calibration.path / "0.npy"), expected
+    )
+    np.testing.assert_array_equal(
+        np.load(prepared / inp.name / "0.npy"), expected
+    )
+
+
+def test_linked_script_layout_must_match_input_rank(
+    exporter: MultiStageExporter, config: Config, work_dir: Path
+):
+    exporter.platform = Platform.RVC3
+    directory = work_dir / "linked_features"
+    directory.mkdir()
+    np.save(directory / "0.npy", np.ones((1, 8, 4, 5), dtype=np.float32))
+    inp = config.stages["second"].inputs[0]
+    inp.shape = [1, 160]
+    inp.layout = "NC"
+    calib = ImageCalibrationConfig(path=directory)
+    calib.mark_generated_from_link("NCHW")
+    inp.calibration = calib
+
+    with pytest.raises(
+        ModelconverterException, match=r"calibration\.script.*reshape"
+    ):
+        exporter._create_source_dir(exporter.exporters["second"], "second")

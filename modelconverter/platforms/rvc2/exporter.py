@@ -129,7 +129,8 @@ class RVC2Exporter(Exporter):
 
         self._validate_requested_preprocessing()
 
-        if not self._check_reverse_channels():
+        self._embed_channels_last_normalization()
+        if not self._check_reverse_channels() or self._mo_skips_reversal():
             self._reverse_channels_in_onnx()
         if not self._onnx_optimizations.all_disabled():
             self._optimize_onnx(skip_optimization=True)
@@ -146,6 +147,44 @@ class RVC2Exporter(Exporter):
     def _check_reverse_channels(self) -> bool:
         reverses = [inp.encoding_mismatch for inp in self._inputs.values()]
         return all(reverses) or not any(reverses)
+
+    def _mo_skips_reversal(self) -> bool:
+        """OpenVINO 2021.4 only reverses inputs with channels at axis 1."""
+        return OV_2021 and any(
+            inp.encoding_mismatch
+            and inp.layout is not None
+            and "C" in inp.layout
+            and inp.layout.index("C") != 1
+            for inp in self._inputs.values()
+        )
+
+    def _embed_channels_last_normalization(self) -> None:
+        """Keep NHWC mean/scale off the channel-first-only 2021.4 optimizer."""
+        if not OV_2021:
+            return
+        inputs = {
+            name: inp
+            for name, inp in self._inputs.items()
+            if inp.layout == "NHWC"
+            and (
+                (inp.mean_values is not None and any(inp.mean_values))
+                or (
+                    inp.scale_values is not None
+                    and any(value != 1 for value in inp.scale_values)
+                )
+            )
+        }
+        if not inputs:
+            return
+        self._input_model = onnx_attach_normalization_to_inputs(
+            self._input_model,
+            self._attach_suffix(self._input_model, "normalized.onnx"),
+            inputs,
+        )
+        for inp in inputs.values():
+            inp.mean_values = None
+            inp.scale_values = None
+            inp.encoding.from_ = inp.encoding.to
 
     def _validate_ir_preprocessing_contract(self) -> None:
         """Reject preprocessing that cannot be added to an existing IR."""
@@ -171,16 +210,13 @@ class RVC2Exporter(Exporter):
         return conf.name
 
     def _reverse_channels_in_onnx(self) -> None:
-        """Reverse the input channels in the ONNX model itself.
+        """Embed reversals the model optimizer cannot perform.
 
-        The model optimizer reverses the channels of every input or of
-        none, so a model that needs it for only some inputs gets the
-        reversal attached to the graph.
+        MO reverses all inputs together; OpenVINO 2021.4 also skips NHWC inputs.
         """
         logger.warning(
-            "The model optimizer does not support reversing "
-            "input channels for only some inputs. "
-            "Attempting to modify the ONNX model."
+            "The model optimizer cannot reverse the input channels of "
+            "this model. Attempting to modify the ONNX model."
         )
         self._input_model = onnx_attach_normalization_to_inputs(
             self._input_model,

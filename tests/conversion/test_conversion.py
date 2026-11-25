@@ -48,28 +48,37 @@ class Scenario:
 
 
 SCENARIOS: list[Scenario] = [
-    # Single-stage (resnet18), every input/output format combination.
     Scenario("archive-to-archive", f"{GS}/resnet18.tar.xz", "nn_archive"),
-    Scenario("archive-to-native", f"{GS}/resnet18.tar.xz", "native"),
+    # RVC2/RVC4 archive-to-native coverage lives in test_model_evaluation.
+    Scenario(
+        "archive-to-native",
+        f"{GS}/resnet18.tar.xz",
+        "native",
+        platforms=("rvc3", "hailo"),
+    ),
     Scenario(
         "config-to-archive",
         f"{GS}/resnet18.yaml",
         "nn_archive",
         archive_preprocess=True,
     ),
-    Scenario("config-to-native", f"{GS}/resnet18.yaml", "native"),
-    # Multistage (yolov5n-seg + mult) with full linked calibration: stage-2
-    # `coeffs` via a script, `prototypes` from stage-1 `protos_output`. A raw
-    # multistage NN archive cannot reconstruct that, so its non-image stage-2
-    # inputs would fall back to random calibration and fail -- hence the config.
+    # test_precision[resnet18] covers this conversion on RVC2/RVC3/RVC4.
+    Scenario(
+        "config-to-native",
+        f"{GS}/resnet18.yaml",
+        "native",
+        platforms=("hailo",),
+    ),
+    # The config preserves linked calibration that a raw archive loses.
+    # RVC3's multi-input failure is covered by the cheaper toy tests.
+    # Multistage archive output requires a two-stage NN Archive input.
     Scenario(
         "multistage-config-to-native",
         "configs/multistage.yaml",
         "native",
+        platforms=("rvc2", "rvc4", "hailo"),
         main_stage="yolov5n-seg",
         xfail={
-            # The postprocessor stage (`mult`) takes coeffs + prototypes.
-            "rvc3": "RVC3 quantization does not support multi-input models",
             # IndexError in the SDK's own `is_null_reshape`.
             "hailo": "Hailo SDK ONNX parser fails on this multistage model",
         },
@@ -126,7 +135,9 @@ def test_convert(platform_name: str, scenario: Scenario):
     convert(
         platform,
         *_scenario_options(platform_name, scenario),
-        *platform_options(platform),
+        *platform_options(
+            platform, superblob=scenario.to_format == "nn_archive"
+        ),
         *extra,
         path=scenario.path,
         output_dir=output_name,

@@ -1,25 +1,13 @@
-"""Numeric-fidelity helpers for the conversion precision tests.
+"""Precision metrics for converted model outputs.
 
-A converted model counts as faithful if each output stays close -- by cosine
-similarity -- to the original ONNX's output on the same image. Cosine similarity
-tolerates the overall scale shifts quantization introduces while still catching
-a model whose response has actually changed.
+Relative error catches scale mistakes that cosine similarity misses.
 """
 
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
-import onnx
-import onnxruntime as ort
-
-from modelconverter.utils.config import InputConfig
-from modelconverter.utils.onnx_tools import onnx_attach_normalization_to_inputs
-
-# The max IR version onnxruntime accepts varies by container (the Hailo 2024.10
-# image caps at 8). Clamping the golden model keeps it loadable everywhere; the
-# toy nets are opset 13, which only needs IR >= 7.
-_MAX_ORT_IR_VERSION = 8
 
 _MODEL_GLOB = {
     "rvc2": "*.xml",
@@ -28,6 +16,8 @@ _MODEL_GLOB = {
     "hailo": "*.har",
 }
 
+RecordProperty = Callable[[str, object], None]
+
 
 def cosine_similarity(
     a: npt.NDArray[np.generic], b: npt.NDArray[np.generic]
@@ -35,43 +25,40 @@ def cosine_similarity(
     """Cosine similarity between two arrays, compared as flat vectors."""
     x = np.asarray(a, dtype=np.float64).ravel()
     y = np.asarray(b, dtype=np.float64).ravel()
-    return float(np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y)))
+    x_norm = np.linalg.norm(x)
+    y_norm = np.linalg.norm(y)
+    if x_norm == 0 or y_norm == 0:
+        return 1.0 if x_norm == y_norm else 0.0
+    return float(np.dot(x, y) / (x_norm * y_norm))
 
 
-def golden_reference_outputs(
-    onnx_path: Path,
-    input_configs: dict[str, InputConfig],
-    work_dir: Path,
-    value: float,
-) -> dict[str, npt.NDArray[np.generic]]:
-    """Fp32 reference outputs the converted model should reproduce.
-
-    Bakes the config's preprocessing into the ONNX with modelconverter's own
-    ``onnx_attach_normalization_to_inputs`` -- the exact transform rvc2/rvc4
-    apply before the backend step -- then runs it on a constant ``value`` image.
-    Reusing that function avoids re-deriving the channel-reversal and
-    mean/scale-reversal semantics by hand.
-
-    Returns:
-        The outputs of the golden model, keyed by output name.
-    """
-    work_dir.mkdir(parents=True, exist_ok=True)
-    golden = onnx_attach_normalization_to_inputs(
-        Path(onnx_path), work_dir / "golden.onnx", input_configs
+def relative_error(
+    reference: npt.NDArray[np.generic],
+    converted: npt.NDArray[np.generic],
+) -> float:
+    """L2 norm of the difference, relative to the L2 norm of the reference."""
+    assert reference.shape == converted.shape, (
+        f"output shape mismatch: {reference.shape} vs {converted.shape}"
     )
-    model = onnx.load(str(golden))
-    model.ir_version = min(model.ir_version, _MAX_ORT_IR_VERSION)
-    session = ort.InferenceSession(
-        model.SerializeToString(), providers=["CPUExecutionProvider"]
-    )
-    feed = {
-        i.name: np.full(i.shape, value, dtype=np.float32)
-        for i in session.get_inputs()
-    }
-    names = [o.name for o in session.get_outputs()]
-    return dict(
-        zip(names, map(np.asarray, session.run(names, feed)), strict=True)
-    )
+    x = np.asarray(reference, dtype=np.float64).ravel()
+    y = np.asarray(converted, dtype=np.float64).ravel()
+    reference_norm = np.linalg.norm(x)
+    difference_norm = np.linalg.norm(x - y)
+    if reference_norm == 0:
+        return 0.0 if difference_norm == 0 else float("inf")
+    return float(difference_norm / reference_norm)
+
+
+def check_relative_error(
+    record_property: RecordProperty,
+    label: str,
+    reference: npt.NDArray[np.generic],
+    converted: npt.NDArray[np.generic],
+    limit: float,
+) -> None:
+    error = relative_error(reference, converted)
+    record_property(f"{label} error", round(error, 5))
+    assert error <= limit, f"{label}: relative error {error:.5f} > {limit}"
 
 
 def locate_converted_model(output_dir: Path, platform: str) -> Path:
@@ -79,13 +66,18 @@ def locate_converted_model(output_dir: Path, platform: str) -> Path:
 
     Prefers the final artifact directly in ``output_dir`` -- running an
     intermediate DLC would test the un-quantized graph -- and falls back to a
-    nested match for backends whose runnable model lives deeper (the rvc2/rvc3
-    OpenVINO IR ``.xml``).
+    nested match for backends whose runnable model lives deeper. A calibrated
+    RVC3 blob is compiled from the INT8 IR, so that IR wins over the FP16 IR
+    next to it.
 
     Returns:
-        The first direct match in sorted order, else the first nested
-        one.
+        The first RVC3 INT8 IR when one exists. Otherwise, the first direct
+        artifact match or the first nested match, in sorted order.
     """
+    if platform == "rvc3" and (
+        quantized := sorted(output_dir.rglob("optimized/*-int8.xml"))
+    ):
+        return quantized[0]
     pattern = _MODEL_GLOB[platform]
     matches = sorted(output_dir.glob(pattern)) or sorted(
         output_dir.rglob(pattern)

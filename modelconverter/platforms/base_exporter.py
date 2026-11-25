@@ -457,12 +457,27 @@ class Exporter(ABC):
             self._inputs[name].calibration = calibration
 
     @staticmethod
-    def _read_calibration_file(
+    def read_calibration_file(
         inp: InputConfig,
         calib: ImageCalibrationConfig,
         path: Path,
     ) -> tuple[npt.NDArray[np.generic], str]:
-        """Load a managed calibration file and apply preprocessing."""
+        """Load managed calibration data for quantization or linked inference.
+
+        Args:
+            inp: Input whose runtime values the file contains.
+            calib: Calibration source, including its generated tensor layout.
+            path: Image or managed tensor file to load.
+
+        Returns:
+            The array with externalized preprocessing applied, and its layout.
+
+        Raises:
+            ValueError: If the input has no shape or the file is an opaque
+                user tensor that must retain its backend-ready contract.
+            ModelconverterException: If a generated tensor's rank does not
+                match its recorded layout.
+        """
         if inp.shape is None:  # pragma: no cover - validated by each backend
             raise ValueError(
                 f"Input shape must be provided for calibration input '{inp.name}'."

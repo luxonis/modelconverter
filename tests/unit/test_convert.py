@@ -459,7 +459,7 @@ def test_fallback_regenerates_random_calibration_for_externalized_domain(
             assert isinstance(calibration, ImageCalibrationConfig)
             path = next(iter(calibration.path.iterdir()))
             source = np.load(path)
-            prepared, _ = self._read_calibration_file(inp, calibration, path)
+            prepared, _ = self.read_calibration_file(inp, calibration, path)
             prepared_samples.append((source, prepared))
             self._inference_model_path = self.output_dir / "model.dlc"
             return self._inference_model_path

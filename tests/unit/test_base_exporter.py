@@ -124,7 +124,7 @@ def test_user_tensor_is_not_read_as_managed_calibration(tmp_path: Path):
     calibration = ImageCalibrationConfig(path=tmp_path)
 
     with pytest.raises(ValueError, match="read_user_calibration_tensor"):
-        Exporter._read_calibration_file(_image_input(), calibration, path)
+        Exporter.read_calibration_file(_image_input(), calibration, path)
 
 
 def test_generated_array_must_match_its_generation_layout(tmp_path: Path):
@@ -135,4 +135,4 @@ def test_generated_array_must_match_its_generation_layout(tmp_path: Path):
     calibration._generated_layout = "NCHW"
 
     with pytest.raises(ModelconverterException, match="generation-time"):
-        Exporter._read_calibration_file(_image_input(), calibration, path)
+        Exporter.read_calibration_file(_image_input(), calibration, path)

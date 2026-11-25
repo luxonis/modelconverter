@@ -25,6 +25,7 @@ from modelconverter.utils.config import (
 )
 from modelconverter.utils.preprocessing import (
     channels_last_4d_layout,
+    channels_last_spatial_layout,
     read_user_calibration_tensor,
     reorder_layout,
 )
@@ -264,7 +265,11 @@ class RVC3Exporter(RVC2Exporter):
         # OpenVINO input, converts an HWC sample to the model layout.
         # Persisting the full NCHW tensor here would therefore make POT
         # interpret its axes as an NHWC sample.
-        sample_layout = channels_last_4d_layout(inp.layout).replace("N", "", 1)
+        sample_layout = (
+            channels_last_spatial_layout(inp.layout)
+            if calib.generated_from_link
+            else channels_last_4d_layout(inp.layout)
+        ).replace("N", "", 1)
         expected_shape = tuple(
             shape[inp.layout.index(axis)] for axis in sample_layout
         )
@@ -280,8 +285,16 @@ class RVC3Exporter(RVC2Exporter):
                     input_name=inp.name,
                 )
             else:
-                array, layout = self._read_calibration_file(inp, calib, file)
-                array = reorder_layout(array, layout, sample_layout)
+                array, layout = self.read_calibration_file(inp, calib, file)
+                # POT needs channels last, using the upstream feature axes.
+                tensor_layout = (
+                    channels_last_spatial_layout(layout).replace("N", "", 1)
+                    if calib.generated_from_link
+                    and len(layout) in {3, 4}
+                    and layout.count("C") == 1
+                    else sample_layout
+                )
+                array = reorder_layout(array, layout, tensor_layout)
             if array.shape != expected_shape:
                 raise ModelconverterException(
                     f"Calibration data for input '{inp.name}' has shape "

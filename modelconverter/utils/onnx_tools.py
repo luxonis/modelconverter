@@ -258,19 +258,27 @@ def _normalization_values(
     Raises:
         ONNXException: If ``cfg.validate_preprocessing`` rejects the
             input.
-        PreprocessingEmbeddingError: If the layout is neither ``NCHW``
-            nor ``NHWC``, or if the input needs mean or scale
-            normalization and is not of a floating-point type.
+        PreprocessingEmbeddingError: If the layout cannot be embedded,
+            or if the input needs mean or scale normalization and is not
+            of a floating-point type.
     """
     try:
         n_channels = cfg.validate_preprocessing(reverse_only=reverse_only)
     except ValueError as e:
         raise ONNXException(str(e)) from e
 
-    if cfg.layout not in ["NCHW", "NHWC"]:
+    supported_layouts = {"NCHW", "NHWC"}
+    if reverse_only:
+        supported_layouts.update({"CHW", "HWC"})
+    if cfg.layout not in supported_layouts:
+        layouts = (
+            "'CHW', 'HWC', 'NCHW', and 'NHWC'"
+            if reverse_only
+            else "'NCHW' and 'NHWC'"
+        )
         raise PreprocessingEmbeddingError(
             f"Cannot embed preprocessing for input '{input_name}' with "
-            f"layout '{cfg.layout}'; only 'NCHW' and 'NHWC' are supported."
+            f"layout '{cfg.layout}'; only {layouts} are supported."
         )
     if reverse_only:
         return n_channels, None, None
@@ -324,7 +332,7 @@ def _reverse_channel_nodes(
             f"Cannot embed channel reversal for input '{input_name}': {e}"
         ) from e
     split_names = [f"split_{i}_{input_name}" for i in range(3)]
-    axis = 1 if layout == "NCHW" else 3
+    axis = layout.index("C")
 
     if opset < 13:
         split_node = helper.make_node(
